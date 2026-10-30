@@ -2,7 +2,7 @@
   "id": "zf8hp",
   "title": "ZF 8HP",
   "description": "Experimental transmission monitor: live data, clutch fill adaptations, shift maps and temperature history",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "vendor": "custom",
   "loggingId": "OAA2",
   "iconGlyph": "8HP",
@@ -199,7 +199,7 @@
   ],
   "config": {
     "egsAddress": 24,
-    "expectedSgbdIndex": "0F25D0",
+    "supportedSgbdIndices": ["0F25D0", "0F21E0", "0F21D0", "0F1F20", "0F1890", "0F14B8", "0F14B0"],
     "readOnly": true
   }
 }

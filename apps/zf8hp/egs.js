@@ -10,9 +10,9 @@ function payload(did, uds) {
     return b.slice(3);
 }
 
-function decode(did, uds) {
+function decode(did, uds, catalog) {
     did = String(did).toUpperCase();
-    const meta = C.records[did], b = payload(did, uds);
+    const meta = (catalog || C).records[did], b = payload(did, uds);
     if (!meta || !b) return { ok: false, error: 'No matching positive response', values: [] };
     if (meta.length !== null && b.length !== meta.length) {
         return { ok: false, error: 'Unexpected length: ' + b.length + ', expected ' + meta.length, values: [] };

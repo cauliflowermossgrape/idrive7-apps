@@ -7,10 +7,11 @@ const path = require('path');
 const root = path.resolve(__dirname, '..', '..');
 const E = require(path.join(root, 'apps/zf8hp/egs'));
 const C = require(path.join(root, 'apps/zf8hp/catalog'));
+const Profiles = require(path.join(root, 'apps/zf8hp/profiles'));
 // Stage only the three reader sources and the transport helper. No SDK or build is needed.
 const testSource = fs.mkdtempSync(path.join(os.tmpdir(), 'zf8hp-source-'));
 fs.mkdirSync(path.join(testSource, 'kit'));
-for (const name of ['reader', 'catalog', 'egs']) {
+for (const name of ['reader', 'catalog', 'egs', 'profiles', 'profile_data']) {
     fs.copyFileSync(path.join(root, 'apps/zf8hp', name + '.js'), path.join(testSource, name + '.js'));
 }
 fs.copyFileSync(path.join(root, 'kit/runtime/diag.js'), path.join(testSource, 'kit/diag.js'));
@@ -42,6 +43,24 @@ const cold = { '41B6': { ok: true, values: Array.from({ length: 448 }, (x, i) =>
 assert.deepStrictEqual(E.mapValues(cold, { fromGear: 2, toGear: 3 }, 'cold1').values, Array.from({ length: 64 }, (x, i) => i + 64));
 assert.strictEqual(E.mapValues(cold, { fromGear: 3, toGear: 2 }, 'cold1').values.length, 0);
 assert.strictEqual(C.ranges.length, 23);
+const hybrid = Profiles.select('0F21E0');
+assert.strictEqual(hybrid.name, 'GSZFBHY1');
+assert.strictEqual(hybrid.oilDid, 'DA12');
+assert.strictEqual(hybrid.ranges.length, 13);
+assert.strictEqual(hybrid.records['413A'].fields[0].little, false);
+assert.deepStrictEqual(E.decode('413A', Buffer.from('62413affff0002fffd00040005', 'hex'), hybrid).values,
+    [-1, 2, -3, 4, 5]);
+assert.strictEqual(E.decode('413A', Buffer.from('62413affff', 'hex'), hybrid).ok, false);
+assert.strictEqual(E.decode('DA12', Buffer.from('62da120050', 'hex'), hybrid).values[0], 32);
+assert.strictEqual(Object.keys(Profiles.profiles).length, 7);
+for (const profile of Object.values(Profiles.profiles)) {
+    assert(profile.records.F150, profile.name + ' must have an identification record');
+    assert(profile.oilDid && profile.records[profile.oilDid].fields.length, profile.name + ' must expose oil temperature');
+    for (const [did, meta] of Object.entries(profile.records)) {
+        if (meta.length !== null) assert.strictEqual(meta.fields.reduce((n, f) => n + f.bytes, 0), meta.length,
+            profile.name + ' ' + did + ' field widths');
+    }
+}
 
 let checked = 0;
 for (const r of readings) {
@@ -75,6 +94,9 @@ for (const r of readings) {
     await assert.rejects(() => reader.read('FFFF'), /allowed read/);
     reader.save();
     const loaded = new Reader(ctx);
+    assert.strictEqual(loaded.records['6000'], undefined, 'A cached value must wait for a matching EGS identity');
+    loaded.diag = reader.diag;
+    await loaded.read('F150');
     assert.strictEqual(loaded.records['6000'].cached, true);
     loaded.diag = { available: true }; loaded.supported = true; loaded.checked = true;
     assert.strictEqual(loaded.status(), 'LINK STALE', 'A saved snapshot must not be presented as live');
@@ -92,6 +114,28 @@ for (const r of readings) {
     await new Promise((r) => setTimeout(r, 300));
     assert.strictEqual(calls.length, count, 'Polling must stop when the screen is hidden');
     hiddenReader.running = false; await running;
+    const hybridDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zf8hp-hybrid-'));
+    const hybridReader = new Reader({ dataDir: hybridDir, settings: ctx.settings, log: ctx.log });
+    const hybridCalls = [];
+    hybridReader.diag = { available: true, p: {}, physical: async (target, sid, args) => {
+        hybridCalls.push(args);
+        if (args[0] === 0xF1) return [0x62, 0xF1, 0x50, 0x0F, 0x21, 0xE0];
+        return [0x62, 0xDA, 0x12, 0x00, 0x50];
+    } };
+    await hybridReader.read('F150');
+    assert(hybridReader.supported);
+    await hybridReader.read('DA12');
+    assert.deepStrictEqual(hybridCalls[1], [0xDA, 0x12]);
+    assert.strictEqual(hybridReader.records.DA12.values[0], 32);
+    assert.strictEqual(hybridReader.history.length, 1);
+    hybridReader.save();
+    assert.strictEqual(JSON.parse(fs.readFileSync(hybridReader.snapshotFile)).sgbd, '0F21E0');
+    fs.rmSync(hybridDir, { recursive: true, force: true });
+    const unknown = new Reader(ctx);
+    unknown.diag = { available: true, p: {}, physical: async () => [0x62, 0xF1, 0x50, 0x0F, 0xFF, 0xFF] };
+    await unknown.read('F150');
+    assert(unknown.checked && !unknown.supported && !unknown.profile);
+    assert.strictEqual(unknown.status(), 'OTHER EGS');
     fs.rmSync(dir, { recursive: true, force: true });
     console.log('ZF 8HP synthetic decoder/read-only checks passed' + (checked ? '; ' + checked + ' optional local records validated.' : '.'));
 })().catch((e) => { console.error(e); process.exit(1); });

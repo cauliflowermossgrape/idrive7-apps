@@ -41,17 +41,22 @@ mgu.run({
         let message = '', messageUntil = 0;
         const demo = () => settings.get('demo') === 'on';
         const records = () => demo() ? DEMO.records : reader.records;
+        const schema = () => demo() ? C : reader.catalog;
+        const oilDid = () => demo() ? '6000' : reader.profile && reader.profile.oilDid || '6000';
         const rec = (d) => records()[d];
         const values = (d) => rec(d) && rec(d).ok ? rec(d).values : [];
         const value = (d, i) => values(d)[i || 0];
-        const maps = () => E.shiftRecords(String(settings.get('mapFamily')), settings.get('shiftGroup'));
+        const maps = () => E.shiftRecords(String(settings.get('mapFamily')), settings.get('shiftGroup'))
+            .filter((s) => !!schema().records[s.did]);
         const chosen = () => { const xs = maps(); if (shift >= xs.length) shift = 0; return xs[shift]; };
         const family = () => String(settings.get('mapFamily'));
         const say = (s) => { message = s; messageUntil = Date.now() + 6000; };
         const thermalDid = () => thermal % 2 ? '4440' : '4441';
 
         function wanted() {
-            let ds = ['6000', 'DA2E'];
+            // Include both oil identifiers before identity is known; the reader
+            // sends only the one documented by the selected EGS profile.
+            let ds = [oilDid(), '6000', 'DA12', 'DA2E'];
             if (page === 0) ds = ds.concat(['DA2A', 'DA34', '6005', '601D', 'DA22', 'DB03']);
             if (page === 1) ds = ds.concat(CLUTCH_DIDS);
             if (page === 2) {
@@ -62,7 +67,7 @@ mgu.run({
             if (page === 4) ds = ds.concat(['4441', '4440', '6005', '601D']);
             if (page === 5) {
                 if (detailMode === 0) ds = ds.concat(DETAIL_DIDS);
-                if (detailMode === 2) ds = ds.concat(Object.keys(C.records).sort().slice(recordPage * 7, recordPage * 7 + 7));
+                if (detailMode === 2) ds = ds.concat(Object.keys(schema().records).sort().slice(recordPage * 7, recordPage * 7 + 7));
             }
             reader.wantFaults = page === 5 && detailMode === 1;
             reader.setWanted(ds);
@@ -77,7 +82,7 @@ mgu.run({
             if (page === 2 || page === 3) shift = (shift + 1) % Math.max(1, maps().length);
             if (page === 4) thermal = (thermal + 1) % 2;
             if (page === 5) {
-                if (detailMode === 2) recordPage = (recordPage + 1) % Math.ceil(Object.keys(C.records).length / 7);
+                if (detailMode === 2) recordPage = (recordPage + 1) % Math.ceil(Object.keys(schema().records).length / 7);
                 else detailMode = (detailMode + 1) % 3;
             }
             if (page === 6) matrixGear = (matrixGear + 1) % 9;
@@ -122,8 +127,8 @@ mgu.run({
             if (sub) cv.text(sub, x + 18, 177, 17, t.dim);
         }
         function live(cv, t) {
-            const oil = value('6000'), gear = C.gearNames[value('DA2E')], selector = C.selectorNames[value('DA2E', 1)];
-            card(cv, t, 24, 374, 'Transmission oil', tN(oil), tU(), age(rec('6000')), BLUE);
+            const oil = value(oilDid()), gear = C.gearNames[value('DA2E')], selector = C.selectorNames[value('DA2E', 1)];
+            card(cv, t, 24, 374, 'Transmission oil', tN(oil), tU(), age(rec(oilDid())), BLUE);
             card(cv, t, 418, 374, 'Actual gear', gear || '--', selector || '', age(rec('DA2E')));
             card(cv, t, 812, 374, 'Turbine / input', n(value('DA2A')), 'rpm', age(rec('DA2A')));
             card(cv, t, 1206, 370, 'Output shaft', n(value('DA2A', 1)), 'rpm', 'Measured at the transmission');
@@ -147,7 +152,7 @@ mgu.run({
                 ['Engine speed', n(value('DA34')) + ' rpm'], ['Converter clutch', E.TCC[value('DA22')] || '--'],
                 ['Reported oil-service window', win.length === 2 ? tN(win[0]) + '..' + tN(win[1]) + ' ' + tU() : '--']];
             rows.forEach((r, i) => { cv.text(r[0], 1022, 287 + i * 39, 20, t.dim); cv.text(r[1], 1558, 287 + i * 39, 22, t.text, { align: 'right' }); });
-            footer(cv, t, 'Next item: change plotted temperature.  ' + freshness(['6000', 'DA2A', 'DA34', '6005', '601D', 'DA22']));
+            footer(cv, t, 'Next item: change plotted temperature.  ' + freshness([oilDid(), 'DA2A', 'DA34', '6005', '601D', 'DA22']));
         }
         function clutches(cv, t) {
             subtitle(cv, t, 'Clutch fill adaptation / A - E', freshness(CLUTCH_DIDS));
@@ -216,17 +221,20 @@ mgu.run({
             const d = thermalDid(), vs = values(d), total = vs.reduce((a, b) => a + b, 0), max = Math.max.apply(null, [1].concat(vs));
             subtitle(cv, t, (thermal % 2 ? 'EGS electronics' : 'Transmission oil') + ' / lifetime temperature distribution',
                 'Total recorded ' + n(total / 3600, 1) + ' h / ' + age(rec(d)));
-            for (let col = 0; col < 3; col++) {
-                const x = 24 + col * 524;
-                G.panel(cv, t, x, 94, 504, 390, col === 0 ? 'Cold / warm' : col === 1 ? 'Temperature bands' : 'Upper temperature bands');
+            const columns = schema().ranges.length <= 16 ? 2 : 3;
+            const width = columns === 2 ? 766 : 504;
+            for (let col = 0; col < columns; col++) {
+                const x = 24 + col * (width + 20);
+                G.panel(cv, t, x, 94, width, 390, col === 0 ? 'Cold / warm' : col === 1 ? 'Temperature bands' : 'Upper temperature bands');
                 for (let row = 0; row < 8; row++) {
                     const i = col * 8 + row;
-                    if (i >= C.ranges.length) continue;
+                    if (i >= schema().ranges.length) continue;
                     const y = 177 + row * 40, v = vs[i];
-                    cv.fillRect(x + 14, y - 23, 474 * (E.finite(v) ? v / max : 0), 29, withAlpha(BLUE, 0.14));
-                    cv.text(tRange(C.ranges[i]) + ' ' + tU(), x + 18, y, 22, t.text);
-                    cv.text(E.finite(v) ? n(v / 3600, 2) + ' h' : '--', x + 356, y, 23, t.text, { align: 'right', font: 'num' });
-                    cv.text(E.finite(v) && total ? n(v / total * 100, 1) + '%' : '--', x + 484, y, 19, t.dim, { align: 'right' });
+                    cv.fillRect(x + 14, y - 23, (width - 30) * (E.finite(v) ? v / max : 0), 29, withAlpha(BLUE, 0.14));
+                    const band = schema().ranges[i];
+                    cv.text(band === 'unknown' ? 'Unknown' : tRange(band) + ' ' + tU(), x + 18, y, 22, t.text);
+                    cv.text(E.finite(v) ? n(v / 3600, 2) + ' h' : '--', x + width - 148, y, 23, t.text, { align: 'right', font: 'num' });
+                    cv.text(E.finite(v) && total ? n(v / total * 100, 1) + '%' : '--', x + width - 20, y, 19, t.dim, { align: 'right' });
                 }
             }
             footer(cv, t, 'Next item: oil / electronics. Historical time counters read from EGS; these are not recommended temperature limits.');
@@ -234,7 +242,7 @@ mgu.run({
         function details(cv, t) {
             subtitle(cv, t, ['Converter / learning / service data', 'EGS fault memory', 'All available diagnostic records'][detailMode],
                 detailMode === 2 ? 'Next item: next records / View: return to summary' : 'Next item: next details view');
-            G.panel(cv, t, 24, 94, 1552, 390, ['Additional measured data', 'Pending and confirmed faults / read only', 'Record ' + (recordPage * 7 + 1) + ' / ' + Object.keys(C.records).length][detailMode]);
+            G.panel(cv, t, 24, 94, 1552, 390, ['Additional measured data', 'Pending and confirmed faults / read only', 'Record ' + (recordPage * 7 + 1) + ' / ' + Object.keys(schema().records).length][detailMode]);
             if (detailMode === 0) {
                 const lt = value('6081'), win = values('DB03'), rpm = values('DB04');
                 const left = [['EGS operating time (without standby)', n(E.finite(lt) ? lt / 60 : null, 1) + ' h'],
@@ -258,9 +266,9 @@ mgu.run({
                 });
                 footer(cv, t, 'ReadDTCByStatusMask 0x0C / no erase command. ' + (reader.faultsAt ? age({ at: reader.faultsAt }) : 'Not read yet'));
             } else {
-                const ids = Object.keys(C.records).sort().slice(recordPage * 7, recordPage * 7 + 7);
+                const ids = Object.keys(schema().records).sort().slice(recordPage * 7, recordPage * 7 + 7);
                 ids.forEach((d, i) => {
-                    const r = rec(d), y = 179 + i * 41, meta = C.records[d];
+                    const r = rec(d), y = 179 + i * 41, meta = schema().records[d];
                     cv.text(d, 44, y, 24, BLUE, { font: 'num' });
                     cv.text(fit(cv, meta.name.replace(/^_/, ''), 690, 19), 150, y, 19, t.text);
                     const deg = meta.fields[0] && meta.fields[0].unit === '°C';
@@ -272,7 +280,8 @@ mgu.run({
             }
         }
         function reference(cv, t) {
-            subtitle(cv, t, 'ZF 8HP / shift-element reference', 'Controller on this car: GSZFBCE / 0F25D0');
+            subtitle(cv, t, 'ZF 8HP / shift-element reference', demo() ? 'GSZFBCE / demo' :
+                reader.profile ? reader.profile.name + ' / ' + reader.index : 'Controller identifying');
             G.panel(cv, t, 24, 94, 795, 390, 'Expected applied elements / reference');
             const gs = ['R', '1', '2', '3', '4', '5', '6', '7', '8'];
             const rows = gs.map((g, i) => [{ text: g, color: i === matrixGear ? BLUE : t.text }].concat(PACKS.map((p) => C.clutchMatrix[g].indexOf(p) >= 0 ? { text: 'ON', color: BLUE } : '-')));
@@ -282,7 +291,7 @@ mgu.run({
             const lines = ['A / B: brakes. C / D / E: clutches.', 'Three elements transmit each forward ratio.',
                 'Fill pressure and time: learned corrections.', 'Positive / negative offsets are both possible.',
                 'KF1 / KF2 keep separate adaptation maps.', 'Cell indices do not reveal RPM/torque limits.',
-                'Temperature tables show accumulated time.', 'Data source: BMW/ZF GSZFBCE rev. 15.000.'];
+                'Temperature tables show accumulated time.', 'Data source: BMW/ZF ' + (demo() ? 'GSZFBCE.prg' : reader.profile ? reader.profile.source : 'EGS') + '.'];
             lines.forEach((s, i) => cv.text(s, 859, 174 + i * 38, 23, i === 2 ? BLUE : t.text));
             footer(cv, t, 'Reference matrix: ZF external transmission training, 8HP power flow. Applied-element diagram, not a pressure measurement.');
         }
