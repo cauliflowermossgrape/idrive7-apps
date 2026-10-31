@@ -516,7 +516,8 @@ async function runInner(impl) {
         controller: { grab(on) { display.grab(on); }, onInput(fn) { display.onCcu = fn; } },
         /**
          * onTab(fn): fn(i) when page tab i is tapped on the touchscreen (renderer with touch
-         * routing), or pressed with the controller after turning onto it.
+         * routing), or pressed with the controller after turning onto it. Where the kit runs the
+         * screen, fn(i, true) when that tap or press closed a sheet (Settings) over the page.
          */
         onTab(fn) { display.onTab = fn; },
         /** onTap(fn): fn(x, y) for a tap on the page (app drawing px), where the kit runs the screen. */

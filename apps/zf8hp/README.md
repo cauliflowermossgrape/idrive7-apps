@@ -52,14 +52,34 @@ confirmed faults), to EGS `0x18`. It has no adaptation-reset, DTC-clear,
 programming, actuation or coding commands. Existing apps and their sources are
 not changed by this addition.
 
-The app saves `data/egs-snapshot.json`, including raw payloads, decoded values
-and timestamps. The current-session temperature trace is bounded to 20 minutes.
+The app saves `data/egs-snapshot.json` every 10 seconds while it reads a
+supported EGS, including raw payloads, decoded values and timestamps. It loads
+the file when it starts. The current-session temperature trace is bounded to
+20 minutes.
 
-Controls: Next page cycles the seven views. Next item selects a pack/shift,
-temperature source, details view or diagnostic-record batch. View opens a
-selected shift map, changes the map family, refreshes data or saves the
-snapshot, as explained on each page. The settings select KF1/KF2 and the
-upshift/downshift/skip group.
+Controls, full-screen layout (the kit runs the screen): the header tabs open
+the seven views, and a tap on the current tab reads its data again (not when
+the tap closes Settings). Each page has its own controls, which work with a
+tap or the iDrive controller. Live selects the plotted temperature. Clutches
+selects a pack row. Shifts selects the map family and the up/down/skip table,
+and a shift row opens its map. Map selects the family and has a pill for each
+shift of the table, the one shown filled. Thermal selects oil or electronics.
+Details selects Summary, Faults or Records; Faults shows when the list was
+last read and has Read again. The fault list and the list of all records
+scroll with a finger or the controller; only the records in view are read.
+Reference highlights the gear the EGS reported within the last two live
+intervals, and names the controller on this car. There is no button bar, so
+the pages use the full height of the screen.
+
+Controls, standard layout (the HMI's bar): Next page cycles the seven views.
+Next item selects a pack/shift, temperature source, details view or
+diagnostic-record batch; Shifts shows seven shifts at a time, those around
+the selected one. View opens a selected shift map, changes the map family or
+refreshes data. The settings select KF1/KF2 and the upshift/downshift/skip
+group.
+
+On another EGS (not verified, and EGS variant not *Try any*), each page shows
+only that message, with no controls.
 
 Reference: [ZF external transmission training](https://w124performance.com/ISO/LR/ZF_Workbook-6-8HP.pdf),
 8HP power flow and controller matrix, printed pages 97–108; adaptation

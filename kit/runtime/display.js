@@ -224,8 +224,9 @@ class Display {
     _openTab(i) {
         const tl = this._tabList();
         if (i === tl.settings) { if (!(this.sheet && this.sheet.settings)) this._click('BTN_SETTINGS'); return; }
+        const closed = !!this.sheet;
         this.closeSheet();
-        if (this.onTab) try { Promise.resolve(this.onTab(i)).catch((e) => this.log.error('tab', e)); } catch (e) { this.log.error('tab', e); }
+        if (this.onTab) try { Promise.resolve(this.onTab(i, closed)).catch((e) => this.log.error('tab', e)); } catch (e) { this.log.error('tab', e); }
     }
     /**
      * What the controller's knob goes through, in order: the header's tabs, the page's targets, the bar. A
