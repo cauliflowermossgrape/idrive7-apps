@@ -538,7 +538,9 @@ function chart(cv, t, x, y, w, h, g) {
 
 /**
  * Table: cols = [{ label, w, align, color, font, size }], rows = [[cell, ...], ...] where a cell
- * is text or { text, color }. g = { rowH (40), headerSize (16), size (24), empty, stripe }.
+ * is text or { text, color }. g = { rowH (40), headerSize (16), size (24), empty, stripe, middle }.
+ * A row's text sits at 0.68 of its height (level with the kit's 40 px rows); with middle, in its
+ * middle, for taller rows.
  */
 function table(cv, t, x, y, w, cols, rows, g) {
     g = g || {};
@@ -559,7 +561,7 @@ function table(cv, t, x, y, w, cols, rows, g) {
             if (cell == null) return;
             const txt = typeof cell === 'object' ? cell.text : cell, cc = typeof cell === 'object' && cell.color ? col(t, cell.color, t.text) : col(t, c.color, t.text);
             const al = c.align || 'left', tx = al === 'right' ? xs[i] + c.w - 8 : al === 'center' ? xs[i] + c.w / 2 : xs[i];
-            cv.text(String(txt), tx, ry + rh * 0.68, c.size || sz, cc, { align: al, font: (typeof cell === 'object' && cell.font) || c.font || 'label' });
+            cv.text(String(txt), tx, ry + (g.middle ? rh / 2 + (c.size || sz) * 0.36 : rh * 0.68), c.size || sz, cc, { align: al, font: (typeof cell === 'object' && cell.font) || c.font || 'label' });
         });
     });
 }
