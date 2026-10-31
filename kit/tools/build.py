@@ -401,7 +401,11 @@ def build(app_id, language='en'):
     json.dump(manifest, open(os.path.join(src, 'manifest.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     shutil.copy(os.path.join(KIT, 'platform', 'permissions.json'), os.path.join(src, 'permissions.json'))
     json.dump({'name': app_id, 'version': ver, 'lockfileVersion': 1}, open(os.path.join(src, 'npm-shrinkwrap.json'), 'w', encoding='utf-8', newline='\n'))
-    json.dump({'settings': {app_id: spec.get('config', {})}}, open(os.path.join(src, 'config', 'base.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
+    # the SDK merges this over its own config. Newer SDKs (27.x, extracted from a newer donor app) build the app's
+    # screens and entry point only with these on, and some donors ship them off: the app then has no screens and
+    # crashed (issue #39). Older SDKs (24.x) ignore them.
+    json.dump({'rhmiLoadingEnabled': True, 'entryPointLoadingEnabled': True, 'settings': {app_id: spec.get('config', {})}},
+              open(os.path.join(src, 'config', 'base.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     # app code
     adir = os.path.join(APPS, app_id)
     fetch_assets(adir, spec.get('assets', []))

@@ -57,6 +57,16 @@ function fileLog(level, msg) {
         return original.apply(sdkLog, args);
     };
 });
+// ...and the SDK's info lines that say why it did not create the app's screens (a CONFIG_STATE start, a
+// resource error, or a newer SDK's "conditionalLoading rhmiLoadingEnabled skipping loading": issue #39)
+{
+    const original = sdkLog.info;
+    sdkLog.info = (...args) => {
+        const message = args.map((x) => x && x.stack || String(x)).join(' ');
+        if (/conditionalLoading|_createRhmiApplication/.test(message) && message.indexOf(SPEC.id + ': ') !== 0) fileLog('SDK_INFO', message);
+        return original.apply(sdkLog, args);
+    };
+}
 const log = {};
 ['error', 'warn', 'info', 'debug'].forEach((lvl) => {
     log[lvl] = (...a) => {
@@ -497,6 +507,15 @@ async function runInner(impl) {
     }
     await app.start();
     active();
+    if (!app.rhmiApplication) {
+        // The SDK did not create the app's screens: nothing can be shown. Stay up (idle) rather than throw: a
+        // crash makes CorruptAppsHandler wipe the app's data, and a second one uninstalls it (issue #39).
+        log.error('the SDK created no RHMI application, so the app has no screens and does not start. ' +
+            'Causes: the SDK config has rhmiLoadingEnabled off (an SDK extracted from a newer donor app; build.py ' +
+            'turns it on - rebuild the app), a CONFIG_STATE start, or the HMI could not load the app\'s resources ' +
+            '(see the SDK_ lines above). Idle until MainApp stops it.');
+        return;
+    }
     const ui = new Ui(app);
     const settings = new Settings(SPEC.settings);
     const display = new Display(ui, log, SPEC, settings, () => themes.theme(settings.get('theme')));

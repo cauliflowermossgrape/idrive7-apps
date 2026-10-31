@@ -866,6 +866,12 @@ explore it.
   there) and `sh deploy-car.sh status`.
 - **An app vanished after crashing.** That's MainApp's crash handler (4.3). Fix the crash, then
   run `install` again.
+- **The tiles are there but no app opens; the log says "the SDK created no RHMI application".**
+  The SDK made no screens for the app. An SDK extracted from a newer donor app (SDK 27.x) only
+  makes them with `rhmiLoadingEnabled` on, and some donors ship it off: apps built before this
+  fix crashed on that (issue #39). Rebuild and reinstall: `build.py` now turns it on in every
+  app's config. The `SDK_INFO` / `SDK_WARN` lines above it give the cause otherwise. Apps that
+  had already crashed may need a head-unit restart before taps reach them again.
 - **Never `kill` an app process.** Restart the platform instead:
   `systemctl restart oapcontroller` (the HMI's app list reloads).
 - **A removed app's tile is still shown.** The HMI caches tiles. `restore` handles this by
