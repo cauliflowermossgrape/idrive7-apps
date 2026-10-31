@@ -1,8 +1,8 @@
 {
   "id": "live_adjustments",
   "title": "Engine Config",
-  "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling",
-  "version": "0.6.2",
+  "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
+  "version": "0.7.0",
   "vendor": "custom",
   "loggingId": "OAA0",
   "iconGlyph": "sliders",
@@ -18,6 +18,13 @@
     },
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infrastructure.VehicleInformation": {
+      "statusGearboxDrive": "s",
+      "DataPowerTrain2": "s"
     }
   },
   "screens": [
@@ -83,6 +90,22 @@
         [
           "mhd",
           "MHD · engine map, Max Cooling"
+        ]
+      ]
+    },
+    {
+      "key": "xdrive",
+      "label": "xDrive (experimental)",
+      "type": "choice",
+      "default": "off",
+      "options": [
+        [
+          "off",
+          "Off · nothing is sent (safe)"
+        ],
+        [
+          "on",
+          "On · xDrive tab, xDrive off until ignition off"
         ]
       ]
     },

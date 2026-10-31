@@ -49,10 +49,36 @@ between map 1 and map 2. BM3: limited smoke testing on one G22 (as the former BM
 on their own car are welcome; please test in the live emulator (`node kit/tools/emu.js
 live_adjustments`) before opening a PR.
 
+## xDrive (experimental)
+
+Switches xDrive off (rear-wheel drive) until the next ignition cycle, using the DSC's own
+diagnostic job `LMV_FUNKTION` (issue #28). The *xDrive (experimental)* setting ships **Off**:
+then no tab appears and nothing is sent. Code: `xdrive.js`.
+
+- DSC, diagnostic address `0x29`, DID `0xDBE1`: `22 DB E1` reads it (1 = xDrive on, 0 = off),
+  `2E DB E1 00` switches xDrive off. The app sends no "on" command. A full ignition cycle
+  (terminal 15 off, then on) brings xDrive back.
+- The DSC accepts the write only with the ignition on, engine **off**, selector in P, parking
+  brake on and the car stationary. The app also refuses unless live data shows the engine off,
+  the car stationary and the selector not in R/N/D (it can't read the parking brake). The
+  button has to be pressed twice within 6 s.
+- With the engine off, DBE1 always reads 0, so the screen shows AWD / RWD only once the engine
+  is running. Started in the same ignition cycle, the cluster shows an all-wheel-drive notice.
+- Only the tab reads the DSC: the SGBD index (`22 F1 50`) once, then DBE1 every 4 s. A DSC that
+  refuses the read (a rear-wheel-drive car) is never written to.
+- Front-axle torque, to see the effect while driving: the transfer case (LMV, `0x19`), `22 DB 32`
+  (`LMV_MOMENT`: actual and requested Nm, raw / 4), every second while the tab is shown and the
+  engine runs, plus the highest requested value while moving. With xDrive off it stays at 0 Nm.
+
+Research: ezl0l's G22 M440i tests (DSC_G20, SGBD index `0F2510`; gist linked on issue #28),
+including a short closed-area drive where the LMV's front-axle torque request stayed at 0;
+IterioDev confirmed it on a 2023 230i xDrive. **Not established:** physical clutch state,
+ABS / stability control in motion, other DSC variants, prolonged use. Use at your own risk.
+
 ## Build and test
 
 ```sh
 python3 kit/tools/build.py live_adjustments
-node kit/tools/test_live_adjustments.js     # in-memory DMEs: off / MHD / BM3 / wrong tune / untuned
+node kit/tools/test_live_adjustments.js     # in-memory DMEs: off / MHD / BM3 / wrong tune / untuned; in-memory DSC: xDrive
 node kit/tools/test_bm3_protocol.js         # BM3 protocol and ROM profiles
 ```

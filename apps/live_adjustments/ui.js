@@ -3,7 +3,7 @@
  * ui.js - the Live Adjustments screen, a PURE draw(cv, G, t, v) so it renders both on the
  * car (main.js) and in the PC preview harness. v.pages = the tabs this car gets, v.page =
  * the one shown: 'Exhaust Flap' always; 'Engine Map', 'Max Cooling', 'Burbles', 'Active Sound'
- * for the tune picked in Settings (tune.js).
+ * for the tune picked in Settings (tune.js); 'xDrive' with the experimental setting (xdrive.js).
  *
  * House style of the other apps: an "Exhaust Flap" title with the M→white underline up
  * top, the twin tailpipes seen end-on with the butterfly valves opening/closing in the
@@ -39,6 +39,7 @@ function draw(cv, G, t, v, act) {
     if (page === 'Max Cooling') return drawCooling(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'Burbles') return drawBurbles(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'Active Sound') return drawAsd(cv, G, t, v.tune || {}, act || {}, bottom);
+    if (page === 'xDrive') return drawXDrive(cv, G, t, v.xdrive || {}, act || {}, bottom);
 
     // --- valve figure: twin tailpipes seen end-on, butterfly opening/closing ---
     drawExhaust(cv, G, t, W / 2 - 310, G.TOP + 18, 620, 250 + bottom - G.BOTTOM, v);
@@ -168,6 +169,44 @@ function drawAsd(cv, G, t, m, act, bottom) {
     noteLine(cv, G, t, m, bottom);
     buttonRow(cv, G, t, [['On', act.asd && act.asd(true), m.asd === true],
         ['Off', act.asd && act.asd(false), m.asd === false]], bottom, 236, m.busy, 'la_asd');
+    return cv;
+}
+
+/** xDrive (experimental, xdrive.js): the mode the DSC reports, the conditions it wants, one button. */
+function drawXDrive(cv, G, t, x, act, bottom) {
+    const cy = G.TOP + 30;
+    const word = x.mode === 'AWD' ? 'AWD' : x.mode === 'RWD' ? 'RWD' : x.mode === 'REQUESTED' ? 'RWD REQUESTED' : '–';
+    const col = x.mode === 'RWD' ? RED(t) : x.mode === 'AWD' ? t.text : x.mode === 'REQUESTED' ? (t.warn || '#d29922') : t.dim;
+    cv.text(word, W / 2, cy + 64, x.mode === 'REQUESTED' ? 64 : 96, col, { align: 'center', font: 'bold', spacing: 4 });
+    const sub = x.mode === 'AWD' ? 'xDrive active · read from the DSC'
+        : x.mode === 'RWD' ? 'xDrive off · read from the DSC · back after an ignition cycle'
+        : x.mode === 'REQUESTED' ? 'Start the engine without switching the ignition off'
+        : x.supported === false ? 'This DSC does not offer LMV_FUNKTION'
+        : 'The DSC reports the mode with the engine running';
+    cv.text(sub, W / 2, cy + 100, 18, t.dim, { align: 'center', font: 'label', spacing: 1 });
+
+    // the conditions the DSC wants: green = seen, red = not met, grey = the head unit cannot tell
+    const checks = x.checks || [];
+    const cw = 250, cx0 = (W - checks.length * cw) / 2, ry = cy + 150;
+    checks.forEach((c, i) => {
+        const dot = c.ok === true ? (t.go || '#2fd27a') : c.ok === false ? RED(t) : G.withAlpha('#ffffff', 0.35);
+        const x0 = cx0 + i * cw + 20;
+        cv.circle(x0 + 7, ry - 6, 7, dot);
+        cv.text(c.label, x0 + 22, ry, 17, c.ok === false ? t.text : t.dim, { font: 'label' });
+    });
+    const dsc = x.index ? 'DSC ' + x.index + (x.tested ? ' · tested variant' : ' · untested variant') : 'DSC variant unknown';
+    cv.text('Experimental · ' + dsc + ' · xDrive returns when the ignition is switched off', W / 2, ry + 40, 16,
+        x.index && !x.tested ? (t.warn || '#d29922') : t.dim, { align: 'center', font: 'label' });
+    // front-axle torque from the transfer case (LMV): 0 Nm while driving = xDrive is off
+    const nm = (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + ' Nm';
+    const tq = x.torqueOk === false ? 'Front axle torque · the transfer case does not report it'
+        : x.torque ? 'Front axle · requested ' + nm(x.torque.requested) + ' · actual ' + nm(x.torque.actual)
+            + (x.peakRequested != null ? ' · peak requested while moving ' + nm(x.peakRequested) : '')
+        : x.supported === true ? 'Front axle torque shows with the engine running' : null;
+    if (tq) cv.text(tq, W / 2, ry + 76, 18, x.torque ? t.text : t.dim, { align: 'center', font: 'label' });
+    noteLine(cv, G, t, x, bottom);
+    buttonRow(cv, G, t, [[x.confirming ? 'Confirm xDrive off' : 'xDrive off', act.xdriveOff, x.confirming]],
+        bottom, 360, x.busy, 'la_xd');
     return cv;
 }
 
