@@ -48,9 +48,9 @@ mgu.run({
         // where the kit runs the screen the Details lists scroll (scrolled): their offsets, and the records in view (read)
         const scroll = { faults: { y: 0, max: 0 }, records: { y: 0, max: 0 } };
         let recordIds = null;
-        // row height for n G.table rows from top (rows start under its header) whose last line ends on that margin:
-        // G.table writes a row's text at 0.68 of its height; the rows themselves end inside the panel (4 over its bottom)
-        const tableRow = (top, count) => Math.floor(Math.min((486 + ex - top) / (Math.max(1, count) - 0.32), (508 + ex - top) / Math.max(1, count)));
+        // row height for count G.table rows from top (rows start under its header) down to 4 over the panel's bottom,
+        // their text in their middle (G.table's middle, rowList)
+        const tableRow = (top, count) => Math.floor((508 + ex - top) / Math.max(1, count));
         const demo = () => settings.get('demo') === 'on';
         const records = () => demo() ? DEMO.records : reader.records;
         const rec = (d) => records()[d];
@@ -146,12 +146,12 @@ mgu.run({
             return x;
         }
         /**
-         * A panel's label / value rows from y top, rh px each: one per row, striped as G.table's. The text sits as in
-         * G.table's rows (level with a table beside them), or with mid in the middle of the row.
+         * A panel's label / value rows from y top, rh px each: one per row, striped as G.table's, the text in the
+         * middle of the row (level with a G.table with middle beside them).
          */
-        function rowList(cv, t, x, w, top, rh, rows, mid) {
+        function rowList(cv, t, x, w, top, rh, rows) {
             rows.forEach((r, i) => {
-                const ry = top + i * rh, ty = mid ? ry + rh / 2 + 10 : ry + rh * 0.68;
+                const ry = top + i * rh, ty = ry + rh / 2 + 10;
                 if (i % 2) cv.fillRect(x + 10, ry, w - 20, rh, withAlpha('#ffffff', 0.03));
                 cv.text(r[0], x + 18, ty, 24, t.dim);
                 cv.text(r[1], x + w - 26, ty, 30, t.text, { align: 'right' });
@@ -219,12 +219,12 @@ mgu.run({
             const rh = tableRow(189, PACKS.length);
             cv.roundRect(36, 189 + pack * rh, 1056, rh, 8, withAlpha(BLUE, 0.14));
             if (cv.own) PACKS.forEach((p, i) => cv.target(36, 189 + i * rh, 1056, rh, () => { pack = i; }, 'pack' + p, 8));
-            G.table(cv, t, 44, 157, 1040, cols, rows, { rowH: rh, headerSize: 18, size: 29 });
+            G.table(cv, t, 44, 157, 1040, cols, rows, { rowH: rh, headerSize: 18, size: 29, middle: true });
             G.panel(cv, t, 1124, 94, 452, 418, null);
             const details = [['Cold correction (raw units)', signed(value('418A', pack))], ['Cold evaluations', n(value('4189', pack))],
                 ['Cold shift counter', n(value('418B', pack))], ['Start evaluations', n(value('418C', pack))]];
             // its rows from under its top line down to its bottom (14 over it, as the lists'), the text in their middle
-            rowList(cv, t, 1124, 452, 104, (394 + ex) / details.length, details, true);
+            rowList(cv, t, 1124, 452, 104, (394 + ex) / details.length, details);
         }
         function counterFor(s) {
             if (!s) return null;
@@ -259,7 +259,7 @@ mgu.run({
                         { key: 'group' + g[0], primary: settings.get('shiftGroup') === g[0], busy: !groupHas(family(), g[0]) }) + 10;
                 });
             }
-            const top = py + 102, rh = Math.min(60, tableRow(top, shown.length));
+            const top = py + 104, rh = Math.min(60, tableRow(top, shown.length));
             const rows = shown.map((s, i) => {
                 const m = E.mapValues(records(), s, family()), z = E.summary(m.values);
                 return [{ text: s.label, color: first + i === shift ? BLUE : t.text, font: 'bold' }, n(counterFor(s)),
@@ -270,7 +270,7 @@ mgu.run({
             // the selected shift's row; where the kit runs the screen a row tapped, or pressed with the controller, opens its map
             if (xs.length) cv.roundRect(36, top + (shift - first) * rh, 1528, rh, 8, withAlpha(BLUE, 0.14));
             if (cv.own) xs.forEach((s, i) => cv.target(36, top + i * rh, 1528, rh, () => { shift = i; page = 3; wanted(); }, 'shift' + s.did, 8));
-            G.table(cv, t, 44, py + 70, 1512, cols, rows, { rowH: rh, size: Math.min(30, rh - 8), headerSize: 20 });
+            G.table(cv, t, 44, py + 70, 1512, cols, rows, { rowH: rh, size: Math.min(30, rh - 8), headerSize: 20, middle: true });
             if (!xs.length) cv.text('This map family has no selected shift group', 800, (py + 512 + ex) / 2 + 12, 28, t.dim, { align: 'center' });
         }
         function heatmap(cv, t) {
@@ -303,16 +303,17 @@ mgu.run({
                 }
             }
             if (!m.values.length) cv.text(m.error || 'Waiting for the selected map', 552, (py + 512 + ex) / 2 + 7, 25, t.dim, { align: 'center' });
-            G.panel(cv, t, 1100, py, 476, 512 - py, null);
+            // its title in the panel where the kit runs the screen (over its line where the HMI has the bar)
+            G.panel(cv, t, 1100, py, 476, 512 - py, cv.own ? 'Map summary' : null);
             const summary = [['Minimum', z ? signed(z.min) + ' mbar' : '--'], ['Mean', z ? signed(z.mean, 1) + ' mbar' : '--'],
                 ['Maximum', z ? signed(z.max) + ' mbar' : '--'], ['Adaptation count', n(counterFor(s))], ['Updated', age(m.record)]];
-            // where the kit runs the screen: every shift of the table at the panel's top, four a row, the one shown filled
+            // where the kit runs the screen: every shift of the table under the panel's title, four a row, the one shown filled
             // (else Next item); the summary's rows from under them down to the panel's bottom, the text in their middle
             const xs = cv.own ? maps() : [];
-            xs.forEach((x, i) => G.button(cv, t, 1118 + (i % 4) * 112, py + 12 + Math.floor(i / 4) * 50, 102, 40, x.label,
+            xs.forEach((x, i) => G.button(cv, t, 1118 + (i % 4) * 112, py + 62 + Math.floor(i / 4) * 50, 102, 40, x.label,
                 () => { shift = i; wanted(); }, { key: 'mapShift' + x.did, primary: i === shift }));
-            const top = xs.length ? py + 12 + Math.ceil(xs.length / 4) * 50 : py + 10;
-            rowList(cv, t, 1100, 476, top, (498 + ex - top) / summary.length, summary, true);
+            const top = xs.length ? py + 62 + Math.ceil(xs.length / 4) * 50 : py + 10;
+            rowList(cv, t, 1100, 476, top, (498 + ex - top) / summary.length, summary);
         }
         function temperatures(cv, t) {
             const d = thermalDid(), vs = values(d), total = vs.reduce((a, b) => a + b, 0), max = Math.max.apply(null, [1].concat(vs));
@@ -403,7 +404,7 @@ mgu.run({
                 G.table(cv, t, xs[1] + 18, 152, w - 36, [{ label: '', w: 252, size: 24 }, { label: 'D1', w: 72, align: 'right' },
                     { label: 'D2', w: 72, align: 'right' }, { label: 'R', w: 72, align: 'right' }],
                     [dr('Engage, mbar', '412F', signed), dr('Engage evaluations', '415F', n),
-                        dr('Release, mbar', '41B0', signed), dr('Release evaluations', '41B1', n)], { rowH: rh, size: 30, headerSize: 18 });
+                        dr('Release, mbar', '41B0', signed), dr('Release evaluations', '41B1', n)], { rowH: rh, size: 30, headerSize: 18, middle: true });
                 const lt = value('6081'), win = values('DB03'), rpm = values('DB04');
                 list(xs[2], [['Operating time (no standby)', n(E.finite(lt) ? lt / 60 : null, 1) + ' h'], ['Stationary adaptations', n(value('6090'))],
                     ['Oil-service temperature', win.length ? win.map((v) => tN(v)).join('..') + ' ' + tU() : '--'],
@@ -452,7 +453,7 @@ mgu.run({
             const rh = tableRow(135, gs.length);
             if (cur >= 0) cv.roundRect(36, 135 + cur * rh, 766, rh, 8, withAlpha(BLUE, 0.14));
             G.table(cv, t, 44, 103, 750, [{ label: 'Gear', w: 125 }].concat(PACKS.map((p) => ({ label: p, w: 125, align: 'center' }))), rows,
-                { rowH: rh, size: 22, headerSize: 18 });
+                { rowH: rh, size: 22, headerSize: 18, middle: true });
             G.panel(cv, t, 839, 44, 737, 468, 'Understanding the data');
             const lines = ['A / B: brakes. C / D / E: clutches.', 'Three elements transmit each forward ratio.',
                 'Fill pressure and time: learned corrections.', 'Positive / negative offsets are both possible.',
