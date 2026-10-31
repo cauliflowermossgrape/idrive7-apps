@@ -91,7 +91,10 @@ module.exports = function live(ctx, sh) {
     /* ---------- UDS: candidates with several fields on one reply ---------- */
     const pick = {};
     const fieldsOf = (c) => (c.array ? ['min', 'max', 'avg'] : Object.keys(c.fields || {}));
-    const primary = (c) => Object.assign({ ecu: c.ecu, did: c.did, timeoutMs: c.timeoutMs }, c.array || c.fields[fieldsOf(c)[0]]);
+    // short waits: one request that hangs holds the link for every read behind it (the power read too).
+    // The kit's defaults (busy: 1-4 s pauses, "response pending": 10 s, transport call: 8 s) are for one-off reads
+    const DIAG_OPTS = { retryBaseMs: 150, pendingTimeoutMs: 1500, callTimeoutMs: 2000 };
+    const primary = (c) => Object.assign({ ecu: c.ecu, did: c.did, timeoutMs: c.timeoutMs || (c.array ? 2000 : 1000), diagOpts: DIAG_OPTS }, c.array || c.fields[fieldsOf(c)[0]]);
     /** One candidate: { field: value } (a field outside its min..max is null), or null when it doesn't answer. */
     async function readFields(c) {
         const p = primary(c), v0 = await reader.read(p);
@@ -140,9 +143,28 @@ module.exports = function live(ctx, sh) {
     }
 
     let lastDrawT = 0;
-    // the app's screen, or its home-screen widget: either one gets the fast power reads
-    const shown = () => Date.now() - lastDrawT < SHOWN_MS || !!(ctx.widget && ctx.widget.active());
     const engineOn = () => G.isNum(L.rpm) && L.rpm > 400 && Date.now() - L.rpmT < 5000;
+    /* ---------- talking to the car only while it is in use ----------
+     * Every diagnostic request goes through the car's gateway and keeps the car awake. So these reads run
+     * only while the car is driven (moving or engine on, and 3 min after) or for 10 min after a live page
+     * was opened or a button pressed while parked. Parked longer (charging, screen left on): they stop, the
+     * pages say so, and the car can sleep. The home-screen widget counts only while driving. */
+    const IDLE_AFTER_MOVE = 3 * 60000, IDLE_AFTER_USER = 10 * 60000;
+    let lastUserT = Date.now(), lastActiveT = 0;
+    const driving = () => {
+        const now = Date.now();
+        if ((G.isNum(L.speed) && L.speed > 1) || engineOn()) {
+            if (now - lastActiveT >= IDLE_AFTER_MOVE) log.info('in use again (driving)');
+            lastActiveT = now;
+        }
+        return now - lastActiveT < IDLE_AFTER_MOVE;
+    };
+    const inUse = () => driving() || Date.now() - lastUserT < IDLE_AFTER_USER;
+    const touched = () => { const was = inUse(); lastUserT = Date.now(); if (!was) { log.info('in use again (user)'); schedulePower(); readSlow(); } };
+    // a live page drawn after a pause: it was just opened
+    const drawn = () => { const opened = Date.now() - lastDrawT > 5000; lastDrawT = Date.now(); if (opened) touched(); };
+    // the app's screen, or its home-screen widget (only while driving): either one gets the fast power reads
+    const shown = () => inUse() && (Date.now() - lastDrawT < SHOWN_MS || (!!(ctx.widget && ctx.widget.active()) && driving()));
 
     /* ---------- power: fast reads, drive totals, traces ---------- */
     const trip = { out: 0, regen: 0, charged: 0, climate: 0, peakOut: 0, peakIn: 0, since: Date.now() };
@@ -155,6 +177,8 @@ module.exports = function live(ctx, sh) {
     const USE_KM = 10, NOW_S = 60, useNow = [];
     const KW_KEEP = 15000;           // a missed power read: the last value stays (dimmed) this long
     function onPower(kw, now) {
+        // a gap in the power readings while shown: say how many were missed and how often the link was held
+        if (live.kwT && now - live.kwT > 3000 && shown()) log.warn('power gap ' + (now - live.kwT) + ' ms' + (pMiss ? ', ' + pMiss + ' missed so far' : '') + ', stalls ' + (exclusive.stalls || 0));
         if (live.kwT && G.isNum(live.kw)) {
             const h = Math.min(now - live.kwT, 3 * Math.max(BG_POWER_S, POWER_S) * 1000) / 3600000;
             const moving = G.isNum(L.speed) && L.speed > 1;
@@ -195,7 +219,7 @@ module.exports = function live(ctx, sh) {
     }
     async function readPower() {
         // a car without the current identifier: only every 30 s. One that has answered keeps being asked
-        if (!diag.available || (!iOk && iFail >= 3 && Date.now() - iTry < 30000)) return;
+        if (!diag.available || !inUse() || (!iOk && iFail >= 3 && Date.now() - iTry < 30000)) return;
         const queued = Date.now();
         await exclusive(async () => {
             const w = Date.now() - queued;
@@ -223,7 +247,7 @@ module.exports = function live(ctx, sh) {
                 const volts = live.vT && now - live.vT < 60000 ? live.v : L.lscVT && now - L.lscVT < 60000 ? L.lscV : null;
                 if (G.isNum(volts) && G.isNum(a)) onPower(volts * a / 1000 * (cfg.powerSign < 0 ? -1 : 1), now);
             } catch (e) { log.warn('power: ' + e); }
-        }, true);
+        }, true, 'power');
     }
     /** Power reads in the last 10 s: [time, ms it took]. */
     const rate = [];
@@ -233,13 +257,13 @@ module.exports = function live(ctx, sh) {
         clearTimeout(powerTimer);
         const s = shown() ? POWER_S : Math.max(BG_POWER_S, POWER_S);
         // 0.1 s: as fast as the battery unit answers (one read waits for the last)
-        powerTimer = setTimeout(() => readPower().then(schedulePower, schedulePower), Math.max(20, s * 1000 - (s <= 0.1 ? 1000 : 0)));
+        powerTimer = setTimeout(() => readPower().then(schedulePower, schedulePower), Math.max(60, s * 1000 - (s <= 0.1 ? 1000 : 0)));
     }
     schedulePower();
 
     /* ---------- slow reads (only while the screen is shown) ---------- */
     const SLOW = ['soc', 'cellV', 'cellT', 'coolant', 'limits'];
-    const slowFail = {}, slowLogT = {};
+    const slowFail = {}, slowLogT = {}, slowMiss = {}, slowSkipUntil = {};
     const SLOW_KEEP = 10 * 60000;      // a value that stops answering is kept (dimmed) this long, then blank
     // the pages with cells, temperatures and the climate unit's values (Battery, Battery unit, Scan): drawn this
     // recently. Elsewhere (Range, Energy: only the power) those reads wait, so the power reads get the link
@@ -248,30 +272,28 @@ module.exports = function live(ctx, sh) {
     async function readSlow() {
         if (!diag.available || !shown()) return;
         for (const name of SLOW) {
-            if (!(cfg.slow[name] || []).length) continue;
+            if (!(cfg.slow[name] || []).length || Date.now() < (slowSkipUntil[name] || 0)) continue;
             if (!pageShown() && name !== 'soc' && name !== 'limits') continue;
-            await exclusive(async () => {
-                try {
-                    let r = await readGroup(name, cfg.slow[name]);
-                    if (!r) {
-                        // busy or no reply (the battery unit is asked something ~10 times a second): once more
-                        await new Promise((res) => setTimeout(res, 150));
-                        r = await readGroup(name, cfg.slow[name]);
-                    }
-                    if (!r) {
-                        const c = cfg.slow[name][pick[name] || 0], raw = reader.raws[reader.key(primary(c))];
-                        slowFail[name] = (slowFail[name] || 0) + 1;
-                        if (Date.now() - (slowLogT[name] || 0) > 60000) {
-                            slowLogT[name] = Date.now();
-                            log.warn(name + ' (' + c.did + ') failed ' + slowFail[name] + 'x: ' + (raw ? raw.why + (raw.bytes ? ' [' + raw.bytes + ']' : '') : 'not read'));
-                        }
-                        return;
-                    }
-                    const f = fieldsOf(cfg.slow[name][pick[name]]);
-                    live[name] = f.length === 1 ? r[f[0]] : r;
-                    live.slowT[name] = Date.now();
-                } catch (e) { log.warn(name + ': ' + e); }
-            });
+            // each try is its own turn on the link, so a power read can go between them
+            const one = () => exclusive(() => readGroup(name, cfg.slow[name]).catch((e) => { log.warn(name + ': ' + e); return null; }), false, name);
+            let r = await one();
+            // busy or no reply (the battery unit is asked something ~10 times a second): once more
+            if (!r) { await new Promise((res) => setTimeout(res, 150)); r = await one(); }
+            if (!r) {
+                const c = cfg.slow[name][pick[name] || 0], raw = reader.raws[reader.key(primary(c))];
+                slowFail[name] = (slowFail[name] || 0) + 1;
+                if (Date.now() - (slowLogT[name] || 0) > 60000) {
+                    slowLogT[name] = Date.now();
+                    log.warn(name + ' (' + c.did + ') failed ' + slowFail[name] + 'x: ' + (raw ? raw.why + (raw.bytes ? ' [' + raw.bytes + ']' : '') : 'not read'));
+                }
+                // three rounds in a row without an answer: leave it alone for a minute
+                if ((slowMiss[name] = (slowMiss[name] || 0) + 1) >= 3) { slowSkipUntil[name] = Date.now() + 60000; slowMiss[name] = 0; log.warn(name + ': no answer 3 rounds, paused 60 s'); }
+                continue;
+            }
+            slowMiss[name] = 0;
+            const f = fieldsOf(cfg.slow[name][pick[name]]);
+            live[name] = f.length === 1 ? r[f[0]] : r;
+            live.slowT[name] = Date.now();
         }
         if (pageShown()) await readProbes();
     }
@@ -282,18 +304,25 @@ module.exports = function live(ctx, sh) {
      * give the scale, after which "factor" in app.json turns them into kW. */
     const PROBES = (ctx.spec.config && ctx.spec.config.probes) || [];
     const probe = {};                                   // name -> { raw, t }
+    const probeMiss = {}, probeSkipUntil = {};
     const PROBE_FILE = path.join(ctx.dataDir, 'probes.json');
     let samples = [];
     try { samples = JSON.parse(fs.readFileSync(PROBE_FILE, 'utf8')) || []; } catch (e) { /* none yet */ }
     async function readProbes() {
         if (!PROBES.length) return;
         for (const pr of PROBES) {
+            if (Date.now() < (probeSkipUntil[pr.name] || 0)) continue;
             await exclusive(async () => {
                 try {
-                    const v = await reader.read({ ecu: pr.ecu, did: pr.did, at: pr.at || 0, bytes: pr.bytes || 1 });
-                    if (v !== null) probe[pr.name] = { raw: v, t: Date.now() };
+                    const v = await reader.read({ ecu: pr.ecu, did: pr.did, at: pr.at || 0, bytes: pr.bytes || 1, timeoutMs: 800, diagOpts: DIAG_OPTS });
+                    if (v !== null) { probe[pr.name] = { raw: v, t: Date.now() }; probeMiss[pr.name] = 0; }
+                    else if ((probeMiss[pr.name] = (probeMiss[pr.name] || 0) + 1) >= 3) {
+                        // the climate unit asleep or busy: leave it alone for a minute rather than wait on it every round
+                        probeSkipUntil[pr.name] = Date.now() + 60000; probeMiss[pr.name] = 0;
+                        log.warn('climate unit ' + pr.did + ': no answer 3 rounds, paused 60 s');
+                    }
                 } catch (e) { /* not this time */ }
-            });
+            }, false, 'climate ' + pr.name);
         }
         const d = data(), cp = climatePower(d, Date.now());
         if (!d.demo && cp.how === 'measured' && PROBES.some((pr) => probe[pr.name] && Date.now() - probe[pr.name].t < 15000)) {
@@ -351,7 +380,7 @@ module.exports = function live(ctx, sh) {
     loadScan();
     settings.onChange((k) => { if (k === 'scanUnit') loadScan(); });
     async function runScan() {
-        if (scan.running || !diag.available) return;
+        if (scan.running || !diag.available || !inUse()) return;
         const u = scanUnit(), unit = SCAN_UNITS[u];
         loadScan();
         if (scan.t) { try { fs.writeFileSync(scanFile(u, true), JSON.stringify({ hits: scan.hits, done: scan.done, t: scan.t, noReply: scan.noReply })); } catch (e) { /* ok */ } }
@@ -389,7 +418,7 @@ module.exports = function live(ctx, sh) {
     const cmpState = { unit: 0, base: null, now: {}, flips: {}, t: 0, busy: false, cycles: 0 };
     function rebase() { Object.assign(cmpState, { unit: scan.unit, base: null, now: {}, flips: {}, t: Date.now(), cycles: 0 }); }
     async function watchCycle() {
-        if (cmpState.busy || scan.running || !scan.t || !scan.hits.length || !diag.available || sh.page() !== 'scan') return;
+        if (!inUse() || cmpState.busy || scan.running || !scan.t || !scan.hits.length || !diag.available || sh.page() !== 'scan') return;
         if (cmpState.unit !== scan.unit) rebase();
         cmpState.busy = true;
         const now = {};
@@ -544,6 +573,7 @@ module.exports = function live(ctx, sh) {
 
     /** Power for display: { text, col, what }; held 0.25 s so it doesn't flicker at 60 fps. */
     function power(d, t) {
+        if (!d.demo && !inUse()) return { kw: null, text: '--', col: t.dim, what: 'PAUSED - PARKED, CAR CAN SLEEP' };
         if (!G.isNum(d.kw)) {
             const why = d.demo ? 'DEMO' : !diag.available ? 'NO DIAGNOSTIC LINK' : iFail >= 3 ? (settings.get('diagPage') ? 'NO REPLY - SEE DIAGNOSTICS' : 'NO REPLY') : 'READING';
             return { kw: null, text: '--', col: t.dim, what: why };
@@ -888,12 +918,12 @@ module.exports = function live(ctx, sh) {
         DIAG: ['unit', 'scan'],
         NAMES: { battery: 'Battery', unit: 'Battery unit', scan: 'Scan' },
         /** This drive (energy used, regen, net, split, peaks) into a panel at x, y, w, h. */
-        drawTrip(cv, t, x, y, w, h, foot, inBattery) { lastDrawT = Date.now(); renderTrip(cv, t, data(), x, y, w, h, foot, inBattery); },
+        drawTrip(cv, t, x, y, w, h, foot, inBattery) { drawn(); renderTrip(cv, t, data(), x, y, w, h, foot, inBattery); },
         /** The Battery page's power panel (kW, bar, the last two minutes) at x, y, w, h. */
-        drawPower(cv, t, x, y, w, h) { lastDrawT = Date.now(); renderPowerPanel(cv, t, data(), x, y, w, h); },
+        drawPower(cv, t, x, y, w, h) { drawn(); renderPowerPanel(cv, t, data(), x, y, w, h); },
         /** "Battery power now" as the Range page's Full bar: label and kW, the bar (regen left, use right), 92 high from y. */
         drawPowerBar(cv, t, x, y, w) {
-            lastDrawT = Date.now();
+            drawn();
             const d = data(), pw = power(d, t);
             powerBar(cv, t, x, y, w, pw.kw, limitsKw(d), { label: 'Live battery usage', pw });
         },
@@ -910,7 +940,7 @@ module.exports = function live(ctx, sh) {
         },
         /** Draws page `name`; returns the data it showed. */
         draw(name, cv, t) {
-            lastDrawT = pageDrawT = Date.now();
+            drawn(); pageDrawT = Date.now();
             const d = data();
             ({ battery: renderBattery, unit: renderUnit, scan: renderScan })[name](cv, t, d);
             return d;
@@ -928,6 +958,7 @@ module.exports = function live(ctx, sh) {
         },
         /** The first bar button on page `name`: this drive's totals, or the scan (a new baseline, or scan again). */
         action(name) {
+            touched();
             if (name === 'scan') {
                 // a scan from the last week: a new baseline for the live comparison; else scan again
                 if (scan.t && !scan.running && Date.now() - scan.t < 7 * 86400000 && scan.hits.length) rebase();
