@@ -43,7 +43,7 @@ class DidReader {
         const sid = obd === null ? 0x22 : 0x01;
         const accept = (u) => (obd === null ? u[0] === 0x62 && ((u[1] << 8) | u[2]) === did : u[0] === 0x41 && u[1] === obd) || (u[0] === 0x7F && u[1] === sid);
         let uds;
-        try { uds = await this.diag.physical(ecu, sid, obd === null ? [did >> 8, did & 0xFF] : [obd], c.timeoutMs || 4000, accept); } catch (e) { r.why = String(e.message || e); return null; }
+        try { uds = await this.diag.physical(ecu, sid, obd === null ? [did >> 8, did & 0xFF] : [obd], c.timeoutMs || 4000, accept, c.diagOpts); } catch (e) { r.why = String(e.message || e); return null; }
         if (!uds) { r.why = 'no reply'; return null; }
         r.bytes = uds.map((x) => hex(x)).join(' ');
         if (uds[0] === 0x7F) { r.why = 'NRC ' + hex(uds[2]) + (NRC[uds[2]] ? ' ' + NRC[uds[2]] : ''); return null; }

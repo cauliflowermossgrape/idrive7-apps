@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, 12 V battery voltage and a home-screen widget",
-  "version": "2.6.14",
+  "version": "2.7.0",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -582,6 +582,7 @@
         "hvV": [
           {
             "did": "DDB4",
+            "timeoutMs": 600,
             "fields": {
               "v": {
                 "bytes": 2,
@@ -629,6 +630,7 @@
         "hvI": [
           {
             "did": "DD69",
+            "timeoutMs": 600,
             "fields": {
               "a": {
                 "bytes": 4,
@@ -757,9 +759,9 @@
     "scaling": {
       "batteryTemp": {
         "factor": 1,
-        "offset": -40,
+        "offset": -50,
         "invalid": 255,
-        "comment": "HV battery temperature (Efficiencytainment2.statusBatteryTemperature, avg / min / max): raw on the Signals page - adjust if it doesn't match"
+        "comment": "HV battery temperature (Efficiencytainment2.statusBatteryTemperature, avg / min / max): raw on the Signals page - adjust if it doesn't match. X5 45e: raw 76 with the cells at ~26 C (DDC0), so -50"
       },
       "ambient": {
         "factor": 0.5,
