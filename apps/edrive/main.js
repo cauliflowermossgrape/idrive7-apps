@@ -43,7 +43,7 @@ const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { Diag, hex } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
-const { plural } = require('./kit/i18n');
+const { t: translate, plural } = require('./kit/i18n');
 const { RangeModel } = require('./range');
 const startLive = require('./live');
 
@@ -682,7 +682,7 @@ mgu.run({
             const hold = has && d.soc <= HOLD_TOP + 0.5;       // low-battery hybrid zone
             if (hold) {
                 cv.text('HYBRID', 48, 196, 96, t.warn, { font: 'bold' });
-                cv.text('battery held at 5-' + HOLD_TOP + ' %', 720, 196, 26, t.dim, { align: 'right' });
+                cv.text(translate('battery held at') + ' 5-' + HOLD_TOP + ' %', 720, 196, 26, t.dim, { align: 'right' });
             } else {
                 // (the tabs' big value alike: 120 on y 196, the unit 38 beside it, as Energy and Battery)
                 const rw = cv.text(has ? String(Math.round(D(e.mid))) : '--', 48, 196, 120, has ? t.text : t.dim, { font: 'num' });
@@ -900,9 +900,9 @@ mgu.run({
         function renderDiag(cv, t, d) {
             G.panel(cv, t, 24, 44, 1552, 468, 'Battery diagnostics');
             const link = diag.p ? (diag.available ? 'link up' : 'link down') : 'no link (' + (diag.error || 'not started') + ')';
-            cv.text('UDS 22 ReadDataByIdentifier / OBD 01  ·  ' + link + '  ·  ambient ' + (G.isNum(live.ambient) ? G.fmt(live.ambient, 1) + ' °C' : 'n/a')
-                + '  ·  speed ' + (G.isNum(live.speed) ? G.fmt(G.hold('speed', live.speed), 0) + ' km/h' : 'n/a')
-                + '  ·  climate ' + (live.climate === null ? 'n/a' : live.climate ? 'on' : 'off') + (live.ac ? ' (A/C)' : ''), 48, 121, 24, t.text, { font: 'label' });
+            cv.text('UDS 22 ReadDataByIdentifier / OBD 01  ·  ' + link + '  ·  ' + translate('ambient') + ' ' + (G.isNum(live.ambient) ? G.fmt(live.ambient, 1) + ' °C' : translate('n/a'))
+                + '  ·  ' + translate('speed') + ' ' + (G.isNum(live.speed) ? G.fmt(G.hold('speed', live.speed), 0) + ' km/h' : translate('n/a'))
+                + '  ·  ' + translate('climate') + ' ' + (live.climate === null ? translate('n/a') : translate(live.climate ? 'on' : 'off')) + (live.ac ? ' (A/C)' : ''), 48, 121, 24, t.text, { font: 'label' });
             const cols = [48, 160, 260, 380, 820, 1000, 1290];
             ['VALUE', 'ECU', 'DID', 'REPLY', 'DECODED', 'STATUS', 'READ'].forEach((h, i) => cv.text(h, cols[i], 167, 22, t.dim, { font: 'bold', spacing: 1 }));
             cv.fillRect(48, 178, 1504, 1, t.tick);
@@ -931,13 +931,13 @@ mgu.run({
         /** The car's signals as received (climate, comfort, power figures), one per line - for checking scalings. */
         function renderSignals(cv, t, d) {
             G.panel(cv, t, 24, 44, 1552, 468, 'Car signals');
-            const seatTxt = Object.keys(live.seats).map((k) => k + ' ' + (live.seats[k] === null ? '?' : live.seats[k])).join(' ') || 'n/a';
+            const seatTxt = Object.keys(live.seats).map((k) => k + ' ' + (live.seats[k] === null ? '?' : live.seats[k])).join(' ') || translate('n/a');
             const bt = live.batt;
-            cv.text('climate ' + (live.climate === null ? 'n/a' : live.climate === 'ac' ? 'on (A/C)' : live.climate ? 'on' : 'off')
-                + '  ·  blower ' + (G.isNum(live.blower) ? live.blower + ' / ' + live.blowerTop : 'n/a') + '  ·  seats ' + seatTxt
-                + '  ·  wheel ' + (live.wheel === null ? 'n/a' : live.wheel ? 'on' : 'off') + '  ·  pace ' + (G.isNum(paceNow()) ? Math.round(paceNow()) + ' km/h' : 'n/a')
-                + '  ·  battery ' + (bt && G.isNum(bt.avg) ? bt.avg + ' °C (' + bt.min + '..' + bt.max + ')' : 'n/a')
-                + '  ·  HV ' + (G.isNum(live.hvV) ? live.hvV : 'n/a'), 48, 112, 21, t.text, { font: 'label' });
+            cv.text('climate ' + (live.climate === null ? translate('n/a') : live.climate === 'ac' ? translate('on') + ' (A/C)' : translate(live.climate ? 'on' : 'off'))
+                + '  ·  blower ' + (G.isNum(live.blower) ? live.blower + ' / ' + live.blowerTop : translate('n/a')) + '  ·  seats ' + seatTxt
+                + '  ·  wheel ' + (live.wheel === null ? translate('n/a') : translate(live.wheel ? 'on' : 'off')) + '  ·  pace ' + (G.isNum(paceNow()) ? Math.round(paceNow()) + ' km/h' : translate('n/a'))
+                + '  ·  battery ' + (bt && G.isNum(bt.avg) ? bt.avg + ' °C (' + bt.min + '..' + bt.max + ')' : translate('n/a'))
+                + '  ·  HV ' + (G.isNum(live.hvV) ? live.hvV : translate('n/a')), 48, 112, 21, t.text, { font: 'label' });
             cv.fillRect(48, 128, 1504, 1, t.tick);
             const rows = [['A/C', rawClimate['A/C']], ['blower', rawClimate.blower], ['compressor', rawClimate.compressor],
                 ['climate', rawClimate.climate], ['ac', rawClimate.ac]].concat(Object.keys(live.raw).sort().map((k) => [k, live.raw[k]]));
@@ -989,13 +989,13 @@ mgu.run({
             const rows = [
                 ['Driving', driveKw, null,
                     G.isNum(liveDrive) ? 'live, at ' + Math.round(D(d.speed)) + ' ' + (MI() ? 'mph' : 'km/h')
-                        : G.isNum(e.pace) ? 'at ' + Math.round(D(e.pace)) + ' ' + (MI() ? 'mph' : 'km/h') + (e.learned ? '' : ' (typical)') : 'learns as you drive'],
+                        : G.isNum(e.pace) ? translate('at') + ' ' + Math.round(D(e.pace)) + ' ' + (MI() ? 'mph' : 'km/h') + (e.learned ? '' : ' (typical)') : 'learns as you drive'],
                 ['Climate (heating / A/C)', climKw, has && d.climate !== false ? e.climateKm : null,
                     lc ? (lc.how === 'measured' ? 'from the battery' : lc.how === 'climate unit' ? 'climate unit' : 'measured before')
                         + (blow > 0 ? ', blower ~' + G.fmt(blow, 2) + ' kW' : '')
                         : d.climate === false ? 'off' : (e.auxLearned ? 'learned' : 'typical') + (blow > 0 ? ', blower ~' + G.fmt(blow, 2) + ' kW' : '')],
                 ['Seat heating', seatKw, has ? share(seatKw) : null, seatTxt ? seatTxt + ' (est.)' : 'off'],
-                ['Steering wheel', wheelKw, has ? share(wheelKw) : null, d.wheel === null || d.wheel === undefined ? 'n/a' : d.wheel ? 'on (est.)' : 'off'],
+                ['Steering wheel', wheelKw, has ? share(wheelKw) : null, d.wheel === null || d.wheel === undefined ? translate('n/a') : d.wheel ? 'on (est.)' : 'off'],
                 ['On-board electrics', base, null, 'screens, units, pumps'],
             ];
             ['', 'KW', 'RANGE', ''].forEach((h, i) => cv.text(h, [x0 + 24, x0 + 400, x0 + 500, 0][i], 116, 20, t.dim, { font: 'bold', spacing: 1, align: 'right' }));

@@ -30,7 +30,7 @@ const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { hex } = require('./kit/diag');
-const { plural } = require('./kit/i18n');
+const { t: translate, plural } = require('./kit/i18n');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
@@ -687,8 +687,8 @@ module.exports = function live(ctx, sh) {
             cv.text(v, hx, 148, 32, c, { font: 'bold' });
             if (sub) cv.text(sub, hx, 172, 16, t.dim);
         };
-        head(x + 24, 'LOWEST', cvv && G.isNum(cvv.min) ? G.fmt(cvv.min, 3) + ' V' : '--', t.warn, cvv && cvv.minAt ? 'cell ' + cvv.minAt : '');
-        head(x + 234, 'HIGHEST', cvv && G.isNum(cvv.max) ? G.fmt(cvv.max, 3) + ' V' : '--', t.accent2 || t.text, cvv && cvv.maxAt ? 'cell ' + cvv.maxAt : '');
+        head(x + 24, 'LOWEST', cvv && G.isNum(cvv.min) ? G.fmt(cvv.min, 3) + ' V' : '--', t.warn, cvv && cvv.minAt ? translate('cell') + ' ' + cvv.minAt : '');
+        head(x + 234, 'HIGHEST', cvv && G.isNum(cvv.max) ? G.fmt(cvv.max, 3) + ' V' : '--', t.accent2 || t.text, cvv && cvv.maxAt ? translate('cell') + ' ' + cvv.maxAt : '');
         head(x + 444, 'SPREAD', G.isNum(spread) ? G.fmt(spread, 0) + ' mV' : '--', scol,
             G.isNum(spread) ? (spread > 100 ? 'out of balance' : spread > 50 ? 'high (normal under load)' : 'well balanced') : '');
         const ct = cellTemps(d);
@@ -764,7 +764,7 @@ module.exports = function live(ctx, sh) {
         G.panel(cv, t, 24, 44, 1552, 468, 'Battery unit (UDS)');
         const link = diag.p ? (diag.available ? 'link up' : 'link down') : 'no link (' + (diag.error || 'not started') + ')';
         const rr = readRate();
-        cv.text('UDS 22  ·  ' + link + '  ·  power read ' + (rr ? G.fmt(rr.hz, 1) + 'x/s, ' + G.fmt(rr.ms, 0) + ' ms each' : 'n/a') + (pMiss ? '  ·  power missed ' + pMiss : '') + (Object.keys(slowFail).length ? '  ·  missed ' + Object.keys(slowFail).map((k) => k + ' ' + slowFail[k]).join(' ') : '') + '  ·  power sign ' + cfg.powerSign + '  ·  baseline ' + G.fmt(baseline(), 2) + ' kW (' + (st.baseN || 0) + ' samples)', 48, 112, 22, t.text, { font: 'label' });
+        cv.text('UDS 22  ·  ' + link + '  ·  power read ' + (rr ? G.fmt(rr.hz, 1) + 'x/s, ' + G.fmt(rr.ms, 0) + ' ms each' : translate('n/a')) + (pMiss ? '  ·  power missed ' + pMiss : '') + (Object.keys(slowFail).length ? '  ·  missed ' + Object.keys(slowFail).map((k) => k + ' ' + slowFail[k]).join(' ') : '') + '  ·  power sign ' + cfg.powerSign + '  ·  baseline ' + G.fmt(baseline(), 2) + ' kW (' + (st.baseN || 0) + ' samples)', 48, 112, 22, t.text, { font: 'label' });
         const cols = [48, 200, 290, 380, 900, 1290];
         ['VALUE', 'ECU', 'DID', 'REPLY', 'DECODED', 'STATUS'].forEach((h, i) => cv.text(h, cols[i], 156, 20, t.dim, { font: 'bold', spacing: 1 }));
         cv.fillRect(48, 168, 1504, 1, t.tick);
@@ -780,7 +780,7 @@ module.exports = function live(ctx, sh) {
             cv.text(c.did, cols[2], y, fz, t.text, { font: 'label' });
             const b = r ? r.bytes || '-' : '-';
             cv.text(b.length > 46 ? b.slice(0, 45) + '…' : b, cols[3], y, fz - 2, t.dim, { font: 'label' });
-            const dec = r && r.fields ? Object.keys(r.fields).map((k) => k + ' ' + (G.isNum(r.fields[k]) ? +r.fields[k].toFixed(3) : 'n/a')).join('  ')
+            const dec = r && r.fields ? Object.keys(r.fields).map((k) => k + ' ' + (G.isNum(r.fields[k]) ? +r.fields[k].toFixed(3) : translate('n/a'))).join('  ')
                 : r && G.isNum(r.value) ? String(+r.value.toFixed(3)) : '-';
             cv.text(dec.length > 34 ? dec.slice(0, 33) + '…' : dec, cols[4], y, fz - 2, t.text, { font: 'label' });
             const why = r ? (r.ok ? 'OK' : r.why) : 'not read';

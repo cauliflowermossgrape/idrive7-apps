@@ -380,7 +380,7 @@ mgu.run({
             if (detailMode === 0) afterHead(cv, t, head, freshness(DETAIL_DIDS), cv.own ? 1136 : 1250);
             // the summary: three panels (below); the fault and record lists: one
             const p = detailMode === 0 ? null : G.panel(cv, t, 24, 94, 1552, 418, ['', 'Pending and confirmed faults / read only',
-                cv.own ? 'All ' + all + ' ' + plural(all, 'records', 'records') : 'Records ' + (recordPage * 7 + 1) + '-' + Math.min(all, recordPage * 7 + 7) + ' of ' + all][detailMode]);
+                cv.own ? translate('All') + ' ' + all + ' ' + plural(all, 'records', 'records') : 'Records ' + (recordPage * 7 + 1) + '-' + Math.min(all, recordPage * 7 + 7) + ' of ' + all][detailMode]);
             // where the kit runs the screen: the view picked here and its action in the panel (else Next item and View)
             if (cv.own) choices(cv, t, 1166, 48, ['Summary', 'Faults', 'Records'], 130, detailMode, (i) => { detailMode = i; wanted(); }, 'details');
             if (detailMode === 1) {

@@ -580,11 +580,11 @@ mgu.run({
             const sigItem = (it) => ({ key: 'sig:' + it.id, fav: { sig: it.id, name: it.name }, name: it.name, text: () => sigText(it) });
             SIG.GROUPS.forEach((g) => {
                 const list = g.items.filter(sigListed).map(sigItem);
-                if (list.length) out.push({ name: g.items.every((it) => it.tc) ? g.group : 'Car signals: ' + g.group, items: list });
+                if (list.length) out.push({ name: g.items.every((it) => it.tc) ? g.group : translate('Car signals') + ': ' + translate(g.group), items: list });
             });
             const u = engineUnit();
             (usefulOf(u) || []).forEach((g) => out.push({
-                name: 'Engine unit: ' + g.group,
+                name: translate('Engine unit') + ': ' + translate(g.group),
                 items: g.items.map((ur) => ({
                     key: u.addr + ':useful:' + ur.item.name, name: ur.item.name, text: () => usefulValue(u, ur),
                     fav: { addr: u.addr, sgbd: u.sgbd, useful: ur.item.name, c: ur.item.c || ur.item.minus, minus: !!ur.item.minus, u: ur.item.u, name: ur.item.name },
@@ -680,7 +680,7 @@ mgu.run({
             cursor = i;
             const cur = sc.slots[i] || null;
             openSheet(picker = PICK.valueSheet({
-                title: 'Gauge ' + (i + 1) + ' (' + (SCR.KINDS[SCR.layout(sc.layout).slots[i]] || 'gauge') + ')',
+                title: translate('Gauge') + ' ' + (i + 1) + ' (' + translate(SCR.KINDS[SCR.layout(sc.layout).slots[i]] || 'gauge') + ')',
                 groups: pickGroups, current: cur ? cur.k : null,
                 choose: (c) => setSlot(sc, i, c),
                 layouts: SCR.LAYOUTS, layout: sc.layout, setLayout: (id) => setLayout(sc, id),
@@ -1135,7 +1135,7 @@ mgu.run({
             let note = u.msg, progress = null;
             if (sweep && sweep.u === u) { progress = sweep.i / sweep.rows.length; note = 'Reading ' + sweep.i + ' / ' + sweep.rows.length; } else if (!note) {
                 const ok = all.filter((r) => state(u.res[r.key]) === 'ok').length;
-                note = (scrolls ? '' : (pg.p * ROWS + 1) + '-' + Math.min(all.length, pg.p * ROWS + ROWS) + ' of ' + all.length + '  ·  ') + ok + ' of ' + all.length + ' read';
+                note = (scrolls ? '' : (pg.p * ROWS + 1) + '-' + Math.min(all.length, pg.p * ROWS + ROWS) + ' ' + translate('of') + ' ' + all.length + '  ·  ') + ok + ' ' + translate('of') + ' ' + all.length + ' ' + translate('read');
                 if (details() && c) note += '  ·  catalog ' + c.sgbd + (c.builtin ? ' (built in)' : '') + (u.closest ? ', the closest' : '');
                 if (u.silent) note += '  ·  not answering';
             }
