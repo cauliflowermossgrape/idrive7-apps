@@ -115,8 +115,9 @@ def resource_tables(strings, selected):
         words = load_locale(language)
         table = {key: text(value, words) for key, value in english.items()}
         for key in table:
-            if language == 'zh-CN' and key.endswith('_CN_CREDITS_TITLE'):
-                table[key] = zh_credit()['settingsTitle']
+            if key.endswith('_CN_CREDITS_TITLE') or key.endswith('_CN_CREDITS_LINK'):
+                table[key] = zh_credit()['settingsTitle'] if language == 'zh-CN' and key.endswith('_CN_CREDITS_TITLE') else \
+                    zh_credit()['settingsLink'] if language == 'zh-CN' else ''
         tables[language] = table
     return tables
 

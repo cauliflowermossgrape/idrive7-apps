@@ -209,7 +209,7 @@ def build_ui(spec, selected=None):
                 strings[sid(app, 'SET_' + s['key'])] = s['label']
                 items.append(comp('tworow', name, rows=[{'Text1stRow': {'value': s['label'], 'type': 'Text'},
                                                         'Text2ndRow': {'value': '', 'type': 'Text'}}]))
-        # Packages containing Chinese carry the translator's credit in every language.
+        # locale-ui shows this row only while Chinese is active; other language tables leave it empty.
         if 'zh-CN' in selected:
             credit_title, credit_link = sid(app, 'CN_CREDITS_TITLE'), sid(app, 'CN_CREDITS_LINK')
             strings[credit_title], strings[credit_link] = zh_credit()['settingsTitle'], zh_credit()['settingsLink']

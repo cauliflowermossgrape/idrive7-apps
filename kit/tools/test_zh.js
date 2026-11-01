@@ -65,6 +65,12 @@ async function main(){
   for(const bits of [0x01,0x80,0x04,0x08,0])assert.notStrictEqual(t(statusInfo(bits).label),statusInfo(bits).label,'untranslated Russian DTC status');
   for(const label of Object.values(NRC))assert.notStrictEqual(t(label),label,'untranslated Russian diagnostic rejection '+label);
  }
+ const {LocaleUi}=require(path.join(kit,'locale-ui'));
+ for(const language of available){
+  const visibility=[],localeUi=new LocaleUi({get:()=>language},{[language]:{}},{setStrings:async()=>{}},{refresh:async()=>{}},
+   (active)=>visibility.push(active==='zh-CN'));
+  await localeUi.refresh();assert.deepStrictEqual(visibility,[language==='zh-CN'],'Chinese credit row visibility for '+language);
+ }
  setLanguage(initial);
  assert.strictEqual(cv.text('Oil',10,50,32,'#ffffff',opts),r.text('Oil',10,50,32,'#ffffff',opts));
  assert.strictEqual(cv.textWidth('Oil',32,opts),r.textWidth('Oil',32,opts));

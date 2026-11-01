@@ -41,6 +41,10 @@ for manifest in sorted((root / 'apps').glob('*/app.json')):
         assert len(cn) == (2 if 'zh-CN' in selected else 0)
         if 'zh-CN' in selected:
             assert 'Translation by: 抖音 小白科技杂物社 / BiliBili 小白151' in tables['zh-CN'].values()
+        for language, table in tables.items():
+            if language != 'zh-CN':
+                assert all('JackieZ123430' not in value and '小白' not in value and '抖音' not in value
+                           for value in table.values()), language
         assert all(any('github.com/cauliflowermossgrape/idrive7-apps' in v for v in table.values()) for table in tables.values())
         shipped_hmi = hmi_resources(tables)
         assert 'de_DE' not in shipped_hmi and 'en_GB' in shipped_hmi
@@ -66,6 +70,9 @@ except ValueError:
 else:
     raise AssertionError('build must reject bundles exceeding 1024 strings')
 assert parse_languages('en, ru,en') == ['en', 'ru']
+chinese = load_locale('zh-CN')
+for key in ('page', 'values read', 'with a value', 'month', 'months', 'overdue'):
+    assert chinese.get(key), 'Missing Chinese UI translation: ' + key
 try:
     parse_languages('en,not-a-locale')
 except ValueError:

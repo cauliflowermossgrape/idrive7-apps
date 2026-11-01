@@ -24,7 +24,7 @@ const { OnlineApp, logging } = require('oap-sdk');
 const themes = require('./themes');
 const { Display } = require('./display');
 const { HmiText } = require('./hmi-text');
-const { setLanguage } = require('./i18n');
+const { setLanguage, getLanguage } = require('./i18n');
 const { LocaleUi } = require('./locale-ui');
 const { listSheet } = require('./sheet');
 
@@ -700,7 +700,8 @@ async function runInner(impl) {
     if (languageComp) {
         const bundle = languageComp.getStringBundle();
         const tables = JSON.parse(fs.readFileSync(path.join(__dirname, 'locale-strings.json'), 'utf8'));
-        const localeUi = new LocaleUi(settings, tables, bundle, ui._cnText);
+        const localeUi = new LocaleUi(settings, tables, bundle, ui._cnText,
+            (language) => ui.visible('CN_CREDITS', language === 'zh-CN'));
         await step('initial app language', localeUi.refresh(), 4000);
         settings.onChange((key) => {
             if (key === 'language') {
