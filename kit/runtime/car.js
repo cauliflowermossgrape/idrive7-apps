@@ -11,6 +11,7 @@
  * list the interfaces (see SIGNALS below for the exact entries).
  * Demo: setting "demo" = auto (until the car answers) / on / off.
  * data().stage = the selector position 'P' / 'R' / 'N' / 'D' (gearbox signal), else undefined.
+ * data().condition = BMW's vehicle state number ('condition' group; 10 = drive-ready), else undefined.
  */
 const Sim = require('./sim');
 
@@ -29,6 +30,13 @@ const gearOf = (x) => (typeof x === 'number' ? (x >= 3 && x <= 12 ? x - 2 : x ==
 // the gear field alone can't tell P from N (both N_OR_P)
 const STAGES = { P: 'P', R: 'R', N: 'N', D: 'D', 1: 'P', 2: 'R', 3: 'N', 4: 'D' };
 const stageOf = (x) => STAGES[x];
+// VehicleCondition.statusConditionVehicle (BMW's vehicle state): names or wire numbers -> number.
+// 5 = WOHNEN (living, no ignition), 7 = PRUEFEN_ANALYSE_DIAGNOSE (ignition on), 8 = drive
+// readiness starting, 10 = FAHREN (drive-ready / READY, also with the engine off on a hybrid),
+// 12 = drive readiness ending; 15 = no value.
+const CONDITIONS = { PARKEN_BN_NIO: 1, PARKEN_BN_IO: 2, STANDFUNKTIONEN_KUNDE_NICHT_IM_FZG: 3, WOHNEN: 5,
+    PRUEFEN_ANALYSE_DIAGNOSE: 7, FAHRBEREITSCHAFT_HERSTELLEN: 8, FAHREN: 10, FAHRBEREITSCHAFT_BEENDEN: 12 };
+const conditionOf = (x) => { const n = typeof x === 'number' ? x : CONDITIONS[x]; return n >= 1 && n <= 12 ? n : undefined; };
 /**
  * DataPowerTrain2.statusGearSelectionDrive: P / R / N and the engaged gear in one enum, names or
  * wire numbers (N = 1, R = 2, P = 3, NP = 4, _1 = 5 ... _9 = 13) -> { stage, gear } or undefined.
@@ -52,6 +60,7 @@ const SIGNALS = {
     accel: ['de.bmw.infotainment.vehicle.CDS2', 'statusLongitudinalAccelerationMassCenter', 'statusLateralAccelerationMassCenter'],
     gear: ['de.bmw.infrastructure.VehicleInformation', 'statusGearboxDrive', 'DataPowerTrain2'],
     torque: ['de.bmw.infotainment.drivingexcitement.FES', 'statusActualValueTorque2'],
+    condition: ['de.bmw.infrastructure.VehicleCondition', 'VehicleCondition'],
 };
 
 /**
@@ -117,6 +126,7 @@ class Car {
                 put('gear', sel.gear);
             });
         }
+        if (groups.includes('condition')) add('de.bmw.infrastructure.VehicleCondition', 'VehicleCondition', (v) => put('condition', conditionOf(v && v.statusConditionVehicle)));
         // negative torque (engine braking while the rpm falls) counts as 0
         if (groups.includes('torque')) add('de.bmw.infotainment.drivingexcitement.FES', 'statusActualValueTorque2', (v) => { const tq = sc('torque', v.actualValueTorqueCrankshaft); put('torque', tq === null ? null : Math.max(0, tq)); });
         // a parked car sends nothing new for minutes (fields are notified on change), so "no data for
@@ -170,4 +180,5 @@ class Car {
 Car.SIGNALS = SIGNALS;
 Car.GearGuess = GearGuess;
 Car.selectionOf = selectionOf;
+Car.conditionOf = conditionOf;
 module.exports = Car;

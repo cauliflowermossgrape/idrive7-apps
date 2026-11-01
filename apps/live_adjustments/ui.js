@@ -196,7 +196,8 @@ function drawXDrive(cv, G, t, x, act, bottom) {
         cv.text(c.label, x0 + 22, ry, 17, c.ok === false ? t.text : t.dim, { font: 'label' });
     });
     const dsc = x.index ? 'DSC ' + x.index + (x.tested ? ' · tested variant' : ' · untested variant') : 'DSC variant unknown';
-    cv.text('Experimental · ' + dsc + ' · xDrive returns when the ignition is switched off', W / 2, ry + 40, 16,
+    const lmv = x.lmvIndex ? ' · transfer case ' + (x.lmvName ? x.lmvName + ' (' + x.lmvIndex + ')' : x.lmvIndex) : '';
+    cv.text('Experimental · ' + dsc + lmv + ' · xDrive returns when the ignition is switched off', W / 2, ry + 40, 16,
         x.index && !x.tested ? (t.warn || '#d29922') : t.dim, { align: 'center', font: 'label' });
     // front-axle torque from the transfer case (LMV): 0 Nm while driving = xDrive is off
     const nm = (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + ' Nm';

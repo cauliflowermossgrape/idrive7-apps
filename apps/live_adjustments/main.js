@@ -45,7 +45,7 @@ mgu.run({
         const controller = new Controller(ctx);
         // engine speed for Max Cooling's rpm threshold: live values only, never the demo drive
         // xDrive (experimental) also wants speed and the selector: live values only as well
-        const car = new Car(ctx, ['rpm', 'speed', 'gear']);
+        const car = new Car(ctx, ['rpm', 'speed', 'gear', 'condition']);
         const tune = new TuneControl(ctx, { rpm: () => { const d = car.data(); return d.demo ? null : d.rpm; } });
         const xdrive = new XDriveControl(ctx, car);
         let angle = 0.18;

@@ -58,6 +58,10 @@ then no tab appears and nothing is sent. Code: `xdrive.js`.
 - DSC, diagnostic address `0x29`, DID `0xDBE1`: `22 DB E1` reads it (1 = xDrive on, 0 = off),
   `2E DB E1 00` switches xDrive off. The app sends no "on" command. A full ignition cycle
   (terminal 15 off, then on) brings xDrive back.
+- The same job is in BMW's descriptions of both G-series DSC families (DSC_G20 and DSC_G30N), so
+  the tab works on any G car whose DSC answers `22 DB E1`. If the DSC answers the write with "not
+  in this session" (NRC `7E` / `7F`), the app opens the extended session (`10 03`) and sends the
+  same write once more.
 - The DSC accepts the write only with the ignition on, engine **off**, selector in P, parking
   brake on and the car stationary. The app also refuses unless live data shows the engine off,
   the car stationary and the selector not in R/N/D (it can't read the parking brake). The
@@ -69,6 +73,10 @@ then no tab appears and nothing is sent. Code: `xdrive.js`.
 - Front-axle torque, to see the effect while driving: the transfer case (LMV, `0x19`), `22 DB 32`
   (`LMV_MOMENT`: actual and requested Nm, raw / 4), every second while the tab is shown and the
   engine runs, plus the highest requested value while moving. With xDrive off it stays at 0 Nm.
+- Transfer case variant: one `22 F1 50` (SGBD index) to the LMV when the tab opens, shown next to
+  the DSC variant. Known G-series units: `0F2180` (LMV-G ATC13, MPC5643L) and `0F29E0`
+  (LMV-G ATC13_2, TC233L). Read only: the app never codes or flashes the transfer case, so there
+  is no permanent xDrive off.
 
 Research: ezl0l's G22 M440i tests (DSC_G20, SGBD index `0F2510`; gist linked on issue #28),
 including a short closed-area drive where the LMV's front-axle torque request stayed at 0;
