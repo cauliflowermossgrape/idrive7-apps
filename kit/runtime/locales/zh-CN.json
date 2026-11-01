@@ -1163,5 +1163,11 @@
   "Max Cooling ON": "最大冷却 开启",
   "Max Cooling OFF": "最大冷却 关闭",
   "up": "升挡",
-  "m ago": "分钟前"
+  "m ago": "分钟前",
+  "page": "页码",
+  "values read": "项已读取",
+  "with a value": "项有数值",
+  "month": "个月",
+  "months": "个月",
+  "overdue": "已过期"
 }

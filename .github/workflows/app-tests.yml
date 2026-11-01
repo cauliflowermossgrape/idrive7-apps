@@ -13,6 +13,8 @@ on:
       - 'kit/tools/build.py'
       - 'kit/tools/pack_data.py'
       - 'kit/tools/localize.py'
+      - 'kit/tools/ista_diagnostic_ru.py'
+      - 'kit/tools/build_diagnostic_ru.py'
       - '.github/workflows/app-tests.yml'
   push:
     paths:
@@ -23,6 +25,8 @@ on:
       - 'kit/tools/build.py'
       - 'kit/tools/pack_data.py'
       - 'kit/tools/localize.py'
+      - 'kit/tools/ista_diagnostic_ru.py'
+      - 'kit/tools/build_diagnostic_ru.py'
       - '.github/workflows/app-tests.yml'
 
 permissions:
