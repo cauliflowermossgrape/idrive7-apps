@@ -156,21 +156,13 @@ def md5(p):
 
 def main():
     import argparse
-    from localize import languages, default_languages, parse_languages, package_version
+    from localize import languages, package_version
     parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument('--language', choices=languages(), help='legacy fixed-language kit')
-    group.add_argument('--languages', help='comma-separated catalogs to include; default: all available')
+    parser.add_argument('--language', choices=languages(), default='en')
     parser.add_argument('apps', nargs='*')
     args = parser.parse_args()
-    try:
-        selected = parse_languages(args.languages) if args.languages else [args.language] if args.language else default_languages()
-    except ValueError as error:
-        parser.error(str(error))
-    suffix = '-' + args.language if args.language and args.language != 'en' else ''
-    if args.languages and selected != default_languages():
-        suffix = '-' + '-'.join(selected)
-    name = 'mgu-custom-apps' + suffix
+    # English (the default) keeps the usual dist/mgu-custom-apps(.tar.gz); other languages get a suffix
+    name = 'mgu-custom-apps' + ('' if args.language == 'en' else '-' + args.language)
     OUT = os.path.join(DIST, name)
     archive = os.path.join(DIST, name + '.tar.gz')
     apps = args.apps or sorted(d for d in os.listdir(os.path.join(ROOT, 'apps'))
@@ -180,12 +172,10 @@ def main():
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(os.path.join(OUT, 'apps'))
     for app in apps:
-        language_args = ['--language', args.language] if args.language else ['--languages', ','.join(selected)]
-        r = subprocess.run([sys.executable, os.path.join(ROOT, 'kit', 'tools', 'build.py')] + language_args + [app], cwd=ROOT)
+        r = subprocess.run([sys.executable, os.path.join(ROOT, 'kit', 'tools', 'build.py'), '--language', args.language, app], cwd=ROOT)
         if r.returncode: sys.exit('build of %s failed' % app)
         ver = json.load(open(os.path.join(ROOT, 'apps', app, 'app.json'), encoding='utf-8'))['version']
-        if args.language:
-            ver = package_version(ver, args.language)
+        ver = package_version(ver, args.language)
         shutil.copyfile(os.path.join(DIST, '%s@%s.mgu' % (app, ver)), os.path.join(OUT, 'apps', '%s@%s.mgu' % (app, ver)))
     for src, dst in CAR_FILES:
         data = open(os.path.join(DEPLOY, src), 'rb').read().replace(b'\r\n', b'\n')

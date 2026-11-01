@@ -22,7 +22,7 @@ const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { fitText } = require('./kit/text-layout');
 const { diagnosticText } = require('./diagnostic-text');
-const { t: translateUI } = require('./kit/i18n');
+const { t: translateUI, plural } = require('./kit/i18n');
 const { Diag, parseDtcReply, statusInfo, hex, NRC } = require('./kit/diag');
 const DEMO = require('./demo');
 
@@ -237,7 +237,7 @@ mgu.run({
             if (!targets.length) { msg = scan ? 'Nothing to clear' : 'Scan first, then clear'; changed(); return; }
             if (!clearArmed) {
                 clearArmed = setTimeout(() => { clearArmed = null; clearLabel(); }, 5000);
-                msg = 'Clears ' + targets.length + ' control unit(s) - press again within 5 s'; changed();
+                msg = 'Clears ' + targets.length + ' ' + plural(targets.length, 'control unit(s) - press again within 5 s', 'control unit(s) - press again within 5 s'); changed();
                 return clearLabel();
             }
             clearTimeout(clearArmed); clearArmed = null; clearLabel();
@@ -265,7 +265,7 @@ mgu.run({
             log.info('cleared ' + ok + '/' + targets.length + (failed.length ? ' - not: ' + failed.join('; ') : ''));
             if (scan.demo) DEMO.ecus.forEach((e) => { e.dtcs = e.dtcs.filter((d) => d.mem !== 'fault' || (d.status & 1)); });
             busy = false;
-            msg = 'Cleared ' + ok + ' of ' + targets.length + ' control unit(s) - scanning again';
+            msg = 'Cleared ' + ok + ' of ' + targets.length + ' ' + plural(targets.length, 'control unit(s) - scanning again', 'control unit(s) - scanning again');
             changed();
             await new Promise((r) => setTimeout(r, 1500));
             const keep = msg;
@@ -330,7 +330,7 @@ mgu.run({
             tile(cv, t, 1, 'Faults', scan ? String(fm) : '--', im ? '+ ' + im + ' info' : 'stored', !scan ? t.dim : fm ? t.warn : GO);
             tile(cv, t, 2, 'Active now', scan ? String(active) : '--', 'present right now', !scan ? t.dim : active ? t.crit : GO);
             const c = ccList().length;
-            tile(cv, t, 3, 'Check Control', String(c), 'messages', c ? t.warn : GO);
+            tile(cv, t, 3, 'Check Control', String(c), plural(c, 'messages', 'messages'), c ? t.warn : GO);
         }
 
         function listPanel(cv, t, title, buttons) {
@@ -449,7 +449,7 @@ mgu.run({
                 cv.fillRect(x, y, 5, ch - 6, col);
                 cv.text(fit(cv, ecuName(e.addr), 22, cw - 120, { font: 'bold' }), x + 18, y + (e.nrc ? 23 : 32), 22, t.text, { font: 'bold' });
                 if (e.nrc) cv.text(NRC[e.nrc] || 'NRC ' + hex(e.nrc), x + 18, y + 44, 20, t.dim);
-                cv.text(n ? n + (n === 1 ? ' fault' : ' faults') : 'OK', x + cw - 12, y + 32, 22, col, { align: 'right', font: 'bold' });
+                cv.text(n ? n + ' ' + plural(n, 'fault', 'faults') : 'OK', x + cw - 12, y + 32, 22, col, { align: 'right', font: 'bold' });
                 // tapped (or pressed with the controller): the Faults page with this unit's faults alone
                 // (scrolled: the part of the tile in the panel, if it shows enough of it)
                 const ty = Math.max(y, from), th = Math.min(y + ch - 6, to) - ty;

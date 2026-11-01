@@ -33,10 +33,11 @@ const fire = async (pred) => {
 };
 
 // the kit modules: './kit/x' from kit/runtime, the SDK-bound ones stubbed
-let app = null, diag = null, values = {};
+let app = null, diag = null, reader = null, values = {};
 class FakeDiag extends EventEmitter { constructor() { super(); this.available = false; diag = this; } init() {} }
 class FakeReader {
-    constructor() { this.raws = {}; this.pick = {}; }
+    constructor() { this.raws = {}; this.pick = {}; reader = this; }
+    static label(c) { return c.did; }
     key(c) { return c.did; }
     async value(key) { return values[key] === undefined ? null : values[key]; }
 }
@@ -59,14 +60,22 @@ function context(dir, set) {
     const defaults = {};
     SPEC.settings.forEach((s) => { defaults[s.key] = s.default; });
     const S = Object.assign(defaults, { demo: 'off' }, set || {});
-    const clicks = {};
+    const clicks = {}, texts = [];
     return {
-        clicks, ui: { onClick: (id, fn) => { clicks[id] = fn; }, text() {}, image: async () => {} },
+        clicks, texts, ui: { onClick: (id, fn) => { clicks[id] = fn; }, text() {}, image: async () => {} },
         settings: { get: (k) => S[k], onChange() {} },
         log: quiet, spec: SPEC, dataDir: dir,
         signals: { watch: () => Promise.resolve({}) },
         onTab() {}, hideButton() {}, onScroll() {}, loop() {},
-        theme: () => themes.theme('m_tricolour'), canvas: (w, h) => new Canvas(w, h),
+        theme: () => themes.theme('m_tricolour'), canvas: (w, h) => {
+            const cv = new Canvas(w, h), text = cv.text.bind(cv);
+            cv.text = (str, x, y, size, color, opts) => {
+                const width = text(str, x, y, size, color, opts);
+                texts.push({ str: String(str), x, y, width });
+                return width;
+            };
+            return cv;
+        },
     };
 }
 
@@ -74,16 +83,18 @@ function context(dir, set) {
  * One start of eDrive (a fresh process): the battery unit answers `vals`; read() is one poll, readNow() the
  * "Read now" button (the health read too), exit() the process exiting (its exit handlers only: kept off this process's)
  */
-async function boot(dir, vals) {
+async function boot(dir, vals, set) {
     [MAIN, LIVE, path.join(ROOT, 'apps', 'edrive', 'range.js')].forEach((f) => { delete require.cache[f]; });
     require(MAIN);
     values = vals; timers = [];
-    const ctx = context(dir), before = process.listeners('exit');
+    const ctx = context(dir, set), before = process.listeners('exit');
     await app.start(ctx);
     const onExit = process.listeners('exit').filter((f) => before.indexOf(f) < 0);
     onExit.forEach((f) => process.removeListener('exit', f));
     await flush();
     return {
+        texts: ctx.texts, reader,
+        page: async () => { await ctx.clicks.BTN_PAGE(); await flush(); },
         read: async () => { diag.available = true; diag.emit('available', true); await flush(); },
         readNow: async () => { diag.available = true; ctx.clicks.BTN_READ(); await flush(); },
         exit: () => onExit.forEach((f) => f(0)),
@@ -209,6 +220,46 @@ const checks = [
         atExit.forEach((fn) => fn());                                       // MainApp's shutdown
         assert(liveState(dir).use.km > km0, 'the last minutes lost at shutdown');
         process.removeListener('exit', atExit[0]);
+    }],
+    ['5. plural forms come from the locale catalogs', async () => {
+        const { plural, PLURAL_RULES } = require(path.join(KIT, 'i18n'));
+        const ru = require(path.join(KIT, 'locales', 'ru.json'));
+        const form = (catalog, lang, n, one, other) => catalog[one + '|' + other].split('|')[PLURAL_RULES[lang](n)];
+        const cases = [[0, 2], [1, 0], [2, 1], [4, 1], [5, 2], [11, 2], [12, 2], [13, 2], [14, 2],
+            [21, 0], [22, 1], [24, 1], [25, 2], [101, 0], [102, 1], [105, 2], [111, 2], [114, 2]];
+        const faults = ['ошибка', 'ошибки', 'ошибок'], charges = ['зарядка', 'зарядки', 'зарядок'];
+        cases.forEach(([n, i]) => {
+            assert.strictEqual(form(ru, 'ru', n, 'fault', 'faults'), faults[i], n + ' faults');
+            assert.strictEqual(form(ru, 'ru', n, 'charge', 'charges'), charges[i], n + ' charges');
+        });
+        [0, 1, 2, 11, 21].forEach((n) => {
+            assert.strictEqual(plural(n, 'fault', 'faults'), n === 1 ? 'fault' : 'faults');
+            assert.strictEqual(plural(n, 'not', 'in catalog', 'ru'), n === 1 ? 'not' : 'in catalog', 'missing row falls back to English');
+        });
+    }],
+    ['6. English diagnostic status keeps its layout (Russian alone moves and fits the column)', async () => {
+        const b = await boot(tmp('status-width'), {}, { diagPage: true });
+        b.reader.raws[SPEC.config.battery.soc[0].did] = { why: 'WWWWWWWWWWWWWWWWWWWWWWWWWW', t: now };
+        for (let i = 0; i < 3; i++) await b.page();
+        b.texts.length = 0;
+        await b.page();
+        const status = b.texts.find((x) => x.x === 1000 && x.y > 178), read = b.texts.find((x) => x.x === 1290 && x.y > 178);
+        assert(status && read, 'diagnostic status and read cells drawn');
+        assert.strictEqual(status.str, 'W'.repeat(23) + '…', 'English status cut at 24 characters as before');
+    }],
+    ['7. charge totals keep English singular and plural', async () => {
+        const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
+        const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();
+        const log = Array.from({ length: 21 }, (_, i) => ({ from: 10, to: 20, fromT: current - 3600000, toT: i ? previous - i * 1000 : current, kwh: 1 }));
+        fs.writeFileSync(path.join(dir, 'battery.json'), JSON.stringify({ log }));
+        const b = await boot(dir, {});
+        assert.strictEqual(state(dir).log.length, 21, 'saved charge log loaded');
+        for (let i = 0; i < 2; i++) await b.page();
+        b.texts.length = 0;
+        await b.page();
+        const month = b.texts.find((x) => x.x === 1552 && x.y === 116), all = b.texts.find((x) => x.x === 1552 && x.y === 208);
+        assert(month && /^1 charge  ·  \+/.test(month.str), month && month.str);
+        assert(all && /^21 charges  ·  \+/.test(all.str), all && all.str);
     }],
 ];
 

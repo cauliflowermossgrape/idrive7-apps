@@ -64,6 +64,17 @@ class DiagnosticRuImportTest(unittest.TestCase):
         })
         self.assertEqual(conflicts, {})
 
+    def test_direct_matches_reject_changed_ids_and_numbers(self):
+        for en_id, ru_id, method in ((1, 1, 'label_id'), (2, 20, 'variant_address_code')):
+            with self.subTest(method=method):
+                english = [row(en_id, 'dme', 0x12, 1, 'Message 0x236 missing, level 2.5')]
+                for target in ('Ошибка, уровень 2,5', 'Ошибка 0x234, уровень 2,5',
+                               'Ошибка 0x236', 'Ошибка 0x236, уровень 3,5'):
+                    russian = [row(ru_id, 'dme', 0x12, 1, target)]
+                    self.assertEqual(pair_rows(english, russian), [])
+                russian = [row(ru_id, 'dme', 0x12, 1, 'Ошибка 0x0236, уровень 2,5')]
+                self.assertEqual([pair[2] for pair in pair_rows(english, russian)], [method])
+
     def test_pack_context_rejects_changed_ids_and_numbers(self):
         pairs = [('Old wording', 'Ошибка 0x234', 'label_id', ('dme', 0x12, 1))]
         tables = {'tables/variant/dme.json': {

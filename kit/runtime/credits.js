@@ -1,6 +1,6 @@
 'use strict';
-// The translation credit in the corner is drawn only while Chinese is active. Packages containing
-// Chinese carry its text in locale.json (build.py, from kit/localization/credit.zh-CN.json).
+// The translation credit in the corner: Chinese packages only. Its text is in their locale.json
+// (build.py, from kit/localization/credit.zh-CN.json); other packages carry none.
 const locale = require('./locale.json');
 const { getLanguage } = require('./i18n');
 const CREDIT = typeof locale.credit === 'string' ? locale.credit : '';

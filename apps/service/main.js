@@ -27,9 +27,10 @@ const G = require('./kit/gauges');
 const { Diag, hex, NRC, replyTo } = require('./kit/diag');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
-const { t: translate } = require('./kit/i18n');
+const { t: translate, getLanguage, plural } = require('./kit/i18n');
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_RU_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const STATUS = ['', 'Due now', 'Due soon', 'OK', 'Due soon'];
 /**
  * The car's due date ("09/2027", "09.2027", "15.09.2027", "2027-09") as { text: "September 2027",
@@ -42,9 +43,10 @@ function parseDue(s, now) {
     if (mo < 1 || mo > 12) return null;
     now = now || new Date();
     const months = (y - now.getFullYear()) * 12 + (mo - 1 - now.getMonth());
-    const n = Math.abs(months), unit = ' ' + translate(n === 1 ? 'month' : 'months');
+    const n = Math.abs(months), unit = ' ' + plural(n, 'month', 'months');
+    const month = d && getLanguage() === 'ru' ? MONTHS_RU_GENITIVE[mo - 1] : translate(MONTHS[mo - 1]);
     return {
-        text: (d ? d + ' ' : '') + translate(MONTHS[mo - 1]) + ' ' + y,
+        text: (d ? d + ' ' : '') + month + ' ' + y,
         left: months > 0 ? translate('in') + ' ' + n + unit : months === 0 ? translate('this month') : n + unit + ' ' + translate('overdue'),
         months,
     };
@@ -269,8 +271,8 @@ mgu.run({
             const s = summary();
             const red = its.filter((i) => i.colour === 1).length, soon = its.filter((i) => i.colour === 2 || i.colour === 4).length;
             tile(cv, t, 24, 760, 'Next service', s ? s.way || s.date || '--' : '--', s ? fit(cv, s.text, 22, 380) : 'waiting for the car', s ? COL(t, s.colour) : t.dim);
-            tile(cv, t, 804, 374, 'Due soon', String(soon), 'items', soon ? t.warn : GO);
-            tile(cv, t, 1198, 378, 'Due now', String(red), 'items', red ? t.crit : GO);
+            tile(cv, t, 804, 374, 'Due soon', String(soon), plural(soon, 'items', 'items'), soon ? t.warn : GO);
+            tile(cv, t, 1198, 378, 'Due now', String(red), plural(red, 'items', 'items'), red ? t.crit : GO);
             // room below the page (where the kit gives it): another row where one fits whole (the rows stay
             // compact, as Fault Scanner's); the bottom line moves down with the panel's bottom
             const ex = G.pageBottom(cv) - G.BOTTOM;
@@ -310,9 +312,9 @@ mgu.run({
             const lines = [
                 'KombiInterface_2: ' + (kombi ? (kombi.error ? 'error ' + kombi.error : kombi.available ? 'available' : 'not available yet') : 'connecting...'),
                 'cbsDataSBA: ' + (rawSba || 'nothing received'),
-                'cbsDataServiceList (' + (list ? list.length + ' items' : 'nothing received') + '):',
+                'cbsDataServiceList (' + (list ? list.length + ' ' + plural(list.length, 'items', 'items') : 'nothing received') + '):',
             ];
-            let y = 120;
+            let y = 96;
             lines.forEach((l) => { cv.text(fit(cv, l, 20, 1500), 48, y, 20, t.text); y += 32; });
             const chunk = 120;
             for (let i = 0; i < rawList.length && y < p.y + p.h - 12; i += chunk) { cv.text(rawList.slice(i, i + chunk), 48, y, 18, t.dim, { font: 'label' }); y += 26; }

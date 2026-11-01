@@ -25,7 +25,9 @@ def main():
     words = json.loads((ROOT / 'kit/runtime/locales/ru.json').read_text(encoding='utf-8'))
     from build_diagnostic_ru import catalog
     words.update(catalog())
-    chars = ''.join(sorted(set(baker.TEXT + ''.join(words.values()))))
+    credit = ROOT / 'kit/localization/credit.ru.json'
+    credit_source = credit.read_text(encoding='utf-8') if credit.exists() else ''
+    chars = ''.join(sorted(set(baker.TEXT + ''.join(words.values()) + credit_source)))
     atlas = baker.bake(font.name, (85, 500) if font.name == 'Ubuntu[wdth,wght].ttf' else None, 48, chars)
     if atlas['atlasH'] > 2048:
         raise SystemExit('Cyrillic atlas exceeds its reserved GPU budget')

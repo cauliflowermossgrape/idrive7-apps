@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 DIRECTORY = Path(__file__).resolve().parent.parent / 'runtime/locales'
+# Forms per plural row ("one|other<TAB>forms"); must match PLURAL_RULES in runtime/i18n.js.
+PLURAL_FORMS = {'ru': 3, 'zh-CN': 1}
 
 for source in sorted(DIRECTORY.glob('*.tsv')):
     words = {}
@@ -18,6 +20,10 @@ for source in sorted(DIRECTORY.glob('*.tsv')):
             raise SystemExit('%s:%d: empty source or translation' % (source.name, n))
         if english in words and words[english] != translated:
             raise SystemExit('%s:%d: conflicting translation for %s' % (source.name, n, english))
+        if '|' in english:
+            want = PLURAL_FORMS.get(source.stem)
+            if english.count('|') != 1 or want is None or translated.count('|') + 1 != want:
+                raise SystemExit('%s:%d: plural row needs one|other and %s form(s)' % (source.name, n, want))
         words[english] = translated
     target = source.with_suffix('.json')
     target.write_text(json.dumps(words, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')

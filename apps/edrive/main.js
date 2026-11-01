@@ -43,6 +43,7 @@ const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { Diag, hex } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
+const { plural } = require('./kit/i18n');
 const { RangeModel } = require('./range');
 const startLive = require('./live');
 
@@ -876,7 +877,7 @@ mgu.run({
                 cv.text('kWh', 1120 + kw, y + 52, 24, t.dim);
                 const m = money(sum(list));
                 if (m) cv.text(m, 1552, y + 52, 30, t.text, { align: 'right', font: 'bold' });
-                cv.text(list.length + (list.length === 1 ? ' charge' : ' charges') + '  ·  +' + Math.round(D(kmOf(list.reduce((a, c) => a + (c.to - c.from), 0)))) + ' ' + dU(), 1552, y, 22, t.dim, { align: 'right' });
+                cv.text(list.length + ' ' + plural(list.length, 'charge', 'charges') + '  ·  +' + Math.round(D(kmOf(list.reduce((a, c) => a + (c.to - c.from), 0)))) + ' ' + dU(), 1552, y, 22, t.dim, { align: 'right' });
             };
             block(116, 'THIS MONTH', month);
             block(208, 'ALL TIME', all);
@@ -902,7 +903,7 @@ mgu.run({
             cv.text('UDS 22 ReadDataByIdentifier / OBD 01  ·  ' + link + '  ·  ambient ' + (G.isNum(live.ambient) ? G.fmt(live.ambient, 1) + ' °C' : 'n/a')
                 + '  ·  speed ' + (G.isNum(live.speed) ? G.fmt(G.hold('speed', live.speed), 0) + ' km/h' : 'n/a')
                 + '  ·  climate ' + (live.climate === null ? 'n/a' : live.climate ? 'on' : 'off') + (live.ac ? ' (A/C)' : ''), 48, 121, 24, t.text, { font: 'label' });
-            const cols = [48, 160, 260, 380, 820, 1030, 1290];
+            const cols = [48, 160, 260, 380, 820, 1000, 1290];
             ['VALUE', 'ECU', 'DID', 'REPLY', 'DECODED', 'STATUS', 'READ'].forEach((h, i) => cv.text(h, cols[i], 167, 22, t.dim, { font: 'bold', spacing: 1 }));
             cv.fillRect(48, 178, 1504, 1, t.tick);
             // every candidate gets a row: the rows shrink to fit between the header and the note at the bottom
@@ -997,7 +998,7 @@ mgu.run({
                 ['Steering wheel', wheelKw, has ? share(wheelKw) : null, d.wheel === null || d.wheel === undefined ? 'n/a' : d.wheel ? 'on (est.)' : 'off'],
                 ['On-board electrics', base, null, 'screens, units, pumps'],
             ];
-            ['', 'KW', 'RANGE', ''].forEach((h, i) => cv.text(h, [x0 + 24, x0 + 400, x0 + 540, 0][i], 116, 20, t.dim, { font: 'bold', spacing: 1, align: 'right' }));
+            ['', 'KW', 'RANGE', ''].forEach((h, i) => cv.text(h, [x0 + 24, x0 + 400, x0 + 500, 0][i], 116, 20, t.dim, { font: 'bold', spacing: 1, align: 'right' }));
             rows.forEach(([name, kw, km, note], i) => {
                 const y = Math.round(160 + i * (52 + ex / 5));
                 cv.text(name, x0 + 24, y, 24, t.text, { font: 'bold' });

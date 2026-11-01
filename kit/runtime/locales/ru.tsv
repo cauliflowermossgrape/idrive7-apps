@@ -1,7 +1,7 @@
 # English<TAB>Русский. Только отображаемый текст; поля протокола и значения настроек не изменяются.
 M Vitals	M Vitals
 Redline	Обороты
-Virtual Dyno	Виртуальный диностенд
+Virtual Dyno	Диностенд
 Brake Test	Тест тормозов
 Drag Timer	Драг-таймер
 G-Force	Перегрузка
@@ -14,7 +14,7 @@ Settings	Настройки
 Next page	Следующая страница
 Previous page	Предыдущая
 Next item	Следующий пункт
-Details	Подробности
+Details	Сведения
 Read now	Считать
 Scan now	Сканировать
 Scan again	Сканировать снова
@@ -275,7 +275,7 @@ car sends no torque split	автомобиль не передаёт распр�
 transfer case	раздаточная коробка
 transfer case, estimated	раздаточная коробка, оценка
 transfer case: clutch open	раздаточная коробка: муфта разомкнута
- (transfer case)	 (раздаточная коробка)
+(transfer case)	(раздаточная коробка)
 target	цель
 max	макс.
 min	мин
@@ -291,7 +291,7 @@ raw	исходное
 front	перед
 Tach	Тахометр
 Shift accuracy	Точность переключений
-Shift log	Журнал переключений
+Shift log	Переключения
 Recent upshifts	Последние переключения вверх
 LAST SHIFT	ПОСЛЕДНЕЕ ПЕРЕКЛЮЧЕНИЕ
 SHIFT AT	ПЕРЕКЛЮЧЕНИЕ ПРИ
@@ -307,9 +307,8 @@ OIL COLD  ·  GO EASY	МАСЛО ХОЛОДНОЕ · БЕРЕГИТЕ ДВИГА
 AVG	СРЕД.
 No shifts yet - go and use the rev range.	Переключений пока нет — используйте диапазон оборотов.
 rpm vs shift point	обороты и точка переключения
-shifts)	переключений)
 Dyno sheet	График диностенда
-Saved runs	Сохранённые заезды
+Saved runs	Заезды
 No pull yet	Заездов пока нет
 No runs yet.	Заездов пока нет.
 Next run	Следующий заезд
@@ -352,7 +351,7 @@ vs best	относительно лучшего
 Drag timer	Драг-таймер
 Speed trace	График скорости
 Splits	Промежуточные результаты
-Best times	Лучшие времена
+Best times	Рекорды
 Recent runs	Последние заезды
 Come to a stop to arm	Остановитесь для активации
 Launch when ready	Стартуйте, когда будете готовы
@@ -409,7 +408,7 @@ paused - stay under	пауза — не превышайте
 Real electric range	Реальный запас хода на электротяге
 Range	Запас хода
 Energy	Энергия
-Charge log	Журнал зарядок
+Charge log	Зарядки
 Diagnostics	Диагностика
 Signals	Сигналы
 Car signals	Сигналы автомобиля
@@ -489,7 +488,7 @@ link up	связь установлена
 no hybrid battery unit: 12 V only	нет блока гибридной батареи: только 12 В
 available	доступно
 n/a	н/д
-Control units	Блоки управления
+Control units	Блоки
 Faults	Ошибки
 Check Control	Check Control
 Check Control messages	Сообщения Check Control
@@ -519,8 +518,6 @@ Scan failed:	Ошибка сканирования:
 Clears	Будет очищено
 Clearing	Очистка
 Cleared	Очищено
-control unit(s) - press again within 5 s	блок(ов) — нажмите снова в течение 5 с
-control unit(s) - scanning again	блок(ов) — повторное сканирование
 control units,	блоков управления,
 faults	ошибок
 fault	ошибка
@@ -835,11 +832,11 @@ ambient	окружающая
 power distribution	распределение мощности
 s (cell core), else the car	с (температура ячеек), иначе данные автомобиля
 Engine Config	Настройка двигателя
-Transmission Config	Настройка трансмиссии
+Transmission Config	Настройка АКПП
 Open	Открыть
 Close	Закрыть
 OEM	Заводское управление
-Exhaust Flap	Заслонка выпуска
+Exhaust Flap	Заслонка
 Disarmed — simulated (safe)	Отключено — симуляция (безопасно)
 Armed — actuates the real valve	Активировано — управление реальной заслонкой
 Tuning software	Программа тюнинга
@@ -943,7 +940,7 @@ DME detected but not supported	DME обнаружен, но не поддерж�
 DME took it	DME принял
 DME took it (read back)	DME принял (подтверждено чтением)
 ERROR	ОШИБКА
-Engine Map	Прошивка двигателя
+Engine Map	Прошивка
 Engine off — needs over	Двигатель выключен — требуется более
 Engine running —	Двигатель работает —
 Engine speed unknown	Обороты двигателя неизвестны
@@ -953,7 +950,7 @@ MG1 flap control is confirmed but not armed (needs bench validation + authorisat
 MHD flap control is not armed	Управление заслонкой MHD не активировано
 MHD — exhaust flap	MHD — заслонка выпуска
 Map	Карта
-Max Cooling	Максимальное охлаждение
+Max Cooling	Охлаждение
 NONE	НЕТ
 No answer from the DME	Нет ответа от DME
 Not available for this tune	Недоступно для этого тюнинга
@@ -1028,16 +1025,16 @@ Expected applied elements / reference	Ожидаемые включённые э
 Fast fill ms	Заполнение, мс
 Fill pressure and time: learned corrections.	Давление и время заполнения: изученные коррекции.
 Gear	Передача
-IDENTIFYING	ИДЕНТИФИКАЦИЯ
+IDENTIFYING	ПОИСК EGS
 KF1 / KF2 keep separate adaptation maps.	KF1 / KF2 используют отдельные карты адаптаций.
-LINK STALE	ДАННЫЕ СВЯЗИ УСТАРЕЛИ
+LINK STALE	ДАННЫЕ УСТАРЕЛИ
 LIVE	ОНЛАЙН
 LIVE — UNVERIFIED	ОНЛАЙН — НЕ ПРОВЕРЕНО
 LOCKED HIGH	ВЫСОКАЯ БЛОКИРОВКА
 LOCKED LOW	НИЗКАЯ БЛОКИРОВКА
 Learned offsets	Изученные смещения
 Learned pressure offset / mbar	Изученное смещение давления / мбар
-Live	Текущие
+Live	Онлайн
 Max mbar	Макс., мбар
 Maximum	Максимум
 Mean	Среднее
@@ -1084,7 +1081,7 @@ Rows: turbine-speed support-point index. Columns: torque support-point index; ph
 Settings: EGS variant, Try any (unverified) reads it anyway; values that don't fit show as errors	В настройках выберите вариант EGS; «Пробовать любой (непроверенный)» всё равно считает его, неподходящие значения показываются как ошибки
 Shift	Переключение
 Shift adaptation /	Адаптация переключений /
-Shifts	Переключения
+Shifts	Смены
 Snapshot saved in the app data folder	Снимок сохранён в папке данных приложения
 Start evaluations	Оценки запуска
 Stationary adaptation counter	Счётчик адаптаций на месте
@@ -1098,7 +1095,7 @@ TO REGULATED HIGH	К ВЫСОКОМУ РЕГУЛИРОВАНИЮ
 TO REGULATED LOW	К НИЗКОМУ РЕГУЛИРОВАНИЮ
 Temperature bands	Температурные диапазоны
 Temperature tables show accumulated time.	Температурные таблицы показывают накопленное время.
-Thermal	Температура
+Thermal	Нагрев
 This EGS variant is not supported by the verified decoder	Проверенный декодер не поддерживает этот вариант EGS
 This map family has no selected shift group	В этом семействе карт нет выбранной группы переключений
 This map family has no such shift	В этом семействе карт нет такого переключения
@@ -1150,7 +1147,7 @@ Selected map · accepted by the DME	Выбранная прошивка · пр�
 Start the engine first · Max Cooling needs over	Сначала запустите двигатель · максимальному охлаждению требуется более
 The engine light may flash while the map changes · that is normal	При смене прошивки индикатор двигателя может мигать · это нормально
 selected · press Apply to send	выбрано · нажмите «Применить» для отправки
-LIVE · UNVERIFIED	В РЕАЛЬНОМ ВРЕМЕНИ · НЕ ПРОВЕРЕНО
+LIVE · UNVERIFIED	ОНЛАЙН · БЕЗ ПРОВЕРКИ
 60-0 / 100-0 mph	60–0 / 100–0 mph
 Parked only (pauses while driving)	Только на стоянке (пауза во время движения)
 Reset service	Сбросить обслуживание
@@ -1180,7 +1177,6 @@ Base-point evaluations	Оценки базовой точки
 Engage, mbar	Включение, мбар
 Engage evaluations	Оценки включения
 Release, mbar	Отключение, мбар
-Release evaluations	Оценки отключения
 Operating time (no standby)	Время работы (без ожидания)
 Stationary adaptations	Адаптации на месте
 Oil-service temperature	Температура замены масла
@@ -1385,7 +1381,6 @@ Traction control (ASC) status	Статус ASC
 Stability control (DSC) status	Статус DSC
 Driver braking	Торможение водителем
 Fuel and trip	Топливо и поездка
-Top speed	Макс. скорость
 No finished trip yet	Завершённых поездок нет
 Last trip	Последняя поездка
 Last trips	Последние поездки
@@ -1397,7 +1392,6 @@ Fuel: from the engine unit until the car's fuel signal has learned its scaling	�
 A trip runs from the engine start until the engine has been off for 10 minutes.  Currency: Settings.	Поездка длится от запуска двигателя до 10 минут после остановки. Валюта: настройки.
 Tap or press here to choose its value	Нажмите, чтобы выбрать значение
 page	страница
-of	из
 with a value	со значением
 
 # Live Data: полезные значения блока двигателя.
@@ -1417,7 +1411,6 @@ Engine unit	Блок двигателя
 Exhaust after catalyst (model)	Выхлоп после катализатора (модель)
 Particulate filter	Сажевый фильтр
 Catalyst, bank 1 sensor 1	Катализатор, банк 1 датчик 1
-Oil	Масло
 Oil pressure	Давление масла
 Oil pressure (absolute)	Давление масла (абсолютное)
 Oil level above minimum	Уровень масла выше минимума
@@ -1428,7 +1421,6 @@ Engine hours on this oil	Моточасы на этом масле
 Distance on this oil	Пробег на этом масле
 Fuel in the oil	Топливо в масле
 Oil pump duty cycle	Рабочий цикл масляного насоса
-Fuel	Топливо
 Fuel tank level	Уровень топлива в баке
 Time since refuelling	Время с заправки
 High pressure fuel (rail)	Топливо высокого давления (рейка)
@@ -1492,3 +1484,19 @@ Scan units to see the car's control units (ignition on)	Сканируйте б�
 Only reads: identification and live values, nothing is written or changed in the car.	Только чтение: идентификация и текущие значения; ничего не записывается и не изменяется в автомобиле.
 Reading the DME - press again in a moment	Чтение DME — повторите через мгновение
 Take a photo when it says DONE. Settings > Scan unit picks the unit. Replies are saved in the app's data folder (scan_07.json).	После ГОТОВО сделайте фото. Блок выбирается в настройках. Ответы сохраняются в scan_07.json.
+
+# Plural forms: English for 1|English for many (as English shows it) <TAB> every form the language needs, in kit/runtime/i18n.js PLURAL_RULES order
+fault|faults	ошибка|ошибки|ошибок
+charge|charges	зарядка|зарядки|зарядок
+messages|messages	сообщение|сообщения|сообщений
+items|items	пункт|пункта|пунктов
+month|months	месяц|месяца|месяцев
+shifts|shifts	переключение|переключения|переключений
+cells|cells	ячейка|ячейки|ячеек
+records|records	запись|записи|записей
+control unit(s) - press again within 5 s|control unit(s) - press again within 5 s	блок — нажмите снова в течение 5 с|блока — нажмите снова в течение 5 с|блоков — нажмите снова в течение 5 с
+control unit(s) - scanning again|control unit(s) - scanning again	блок — повторное сканирование|блока — повторное сканирование|блоков — повторное сканирование
+control units answered|control units answered	блок управления ответил|блока управления ответили|блоков управления ответили
+answered|answered	ответил|ответили|ответили
+identifiers known for this car|identifiers known for this car	идентификатор известен для этого автомобиля|идентификатора известно для этого автомобиля|идентификаторов известно для этого автомобиля
+possible texts (depends on unit type)|possible texts (depends on unit type)	возможное описание (зависит от типа блока)|возможных описания (зависит от типа блока)|возможных описаний (зависит от типа блока)

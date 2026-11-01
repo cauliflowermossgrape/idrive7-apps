@@ -295,31 +295,30 @@ too; the tool lists anything missing.
 ### 3.2 Build
 
 ```sh
-python3 kit/tools/build.py            # all apps, all languages -> dist/<id>@<ver>.mgu
-python3 kit/tools/build.py redline    # just one app, all languages
-python3 kit/tools/build.py --languages en,ru redline   # only English + Russian resources/fonts
-python3 kit/tools/build.py --languages zh-CN          # Chinese-only apps
-node kit/tools/preview.js dist/redline preview wait=10 --set language=ru   # Russian PC preview
+python3 kit/tools/build.py            # all apps, English -> dist/<id>@<ver>.mgu
+python3 kit/tools/build.py redline    # just one app, English
+python3 kit/tools/build.py --language ru       # Russian -> dist/<id>@<ver>-ru.<revision>.mgu
+python3 kit/tools/build.py --language zh-CN    # Simplified Chinese -> dist/<id>@<ver>-zh.cn.2.mgu
+node kit/tools/preview.js dist/redline preview wait=10   # English PC preview -> preview/*.png
 ```
 
 (On Windows type `python` instead of `python3`.)
 
-By default each app ships every available UI language: **English, Simplified Chinese and Russian**.
-Choose **Settings → Language** in the app; the choice is saved. English is initially selected when
-included, otherwise the first included language is used. A one-language package has no unnecessary
-language selector.
+English is the default and the only UI language in a default package. Every package is fixed-language:
+there is no **Settings → Language** setting or runtime switch, and `--languages` multilanguage
+subsets are not supported. Use `--language ru` with `build.py` or `make_kit.py` for a Russian build;
+its version has a language suffix (`dist/<id>@<ver>-ru.<revision>.mgu`). `--language zh-CN` keeps the
+existing fixed Chinese build behavior. Installing another language's package swaps it like an update.
 
-Use `--languages` with a comma-separated subset to keep packages light: unselected translation
-catalogs, HMI string tables and supplemental font atlases are not included. The base Latin font is
-always included; the Chinese atlas is added only with `zh-CN`, and the small Cyrillic atlas only
-with `ru`. Russian translates every app's UI and the available complete Fault Scanner descriptions;
-uncatalogued diagnostic prose remains English. The Chinese database translation is included with
-`zh-CN`. `kit/tools/ista_diagnostic_ru.py` imports a fuller Russian catalog from your own EN/RU ISTA
-`DiagDocDb` databases without changing the bundled English `dtc_db.pack`.
+Every package contains all **33 HMI locale tables**, with all 256 `SID_CN_DYNAMIC` slots populated
+in every table. Existing Chinese resources and credit behavior stay unchanged; the small Cyrillic
+atlas is added only with `ru`. Russian translates every app's UI and the available
+complete Fault Scanner descriptions; uncatalogued diagnostic prose remains English. The Chinese
+database translation is included with `zh-CN`. `kit/tools/ista_diagnostic_ru.py` imports a fuller
+Russian catalog from your own EN/RU ISTA `DiagDocDb` databases without changing the bundled English
+`dtc_db.pack`.
 
-The old `--language zh-CN` (or `--language ru`) command remains available for a fixed-language
-package with a language version suffix (`dist/<id>@<ver>-<language>.<revision>.mgu`). It has no
-language selector. Chinese translation by 小白151
+Chinese translation by 小白151
 ([JackieZ123430](https://github.com/JackieZ123430), [idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn));
 guides: [中文](README.zh-CN.md), [Русский](README.ru.md).
 
@@ -331,11 +330,11 @@ Car parked, ignition on, ideally with a battery charger connected. First pack th
 apps, the installer and the GPU renderer) into `dist/mgu-custom-apps.tar.gz`:
 
 ```sh
-deploy/make-car-kit.sh                 # macOS / Linux / WSL: all apps + all languages
+deploy/make-car-kit.sh                 # macOS / Linux / WSL: all apps, English
 deploy\make-car-kit.cmd                # Windows (cmd or PowerShell)
-python3 kit/tools/make_kit.py redline  # any OS; just some apps
-python3 kit/tools/make_kit.py --languages en,ru   # subset -> dist/mgu-custom-apps-en-ru(.tar.gz)
-python3 kit/tools/make_kit.py --language zh-CN    # legacy fixed Chinese kit
+python3 kit/tools/make_kit.py redline  # any OS; just some apps, English
+python3 kit/tools/make_kit.py --language ru       # Russian kit -> dist/mgu-custom-apps-ru(.tar.gz)
+python3 kit/tools/make_kit.py --language zh-CN    # Chinese kit -> dist/mgu-custom-apps-zh-CN(.tar.gz)
 ```
 
 (For a kit with a filename suffix, give `push-to-car.sh` the matching `KIT=dist/<kit-folder>` and
@@ -673,9 +672,9 @@ the old copy. The unit runs stock and the custom apps are simply hidden. Run
 
 An app is two files in `apps/<id>/`: `app.json` (what it is) and `main.js` (what it does).
 `build.py` generates the BMW package around them: RHMI layout, entry point, icon, text bundles for
-the selected UI languages and their HMI locales, manifest, permissions and runner. Add a catalog as
+one fixed UI language and all 33 HMI locale tables, manifest, permissions and runner. Add a catalog as
 `kit/runtime/locales/<tag>.json` (an editable `<tag>.tsv` can be synced with
-`python3 kit/tools/sync_locales.py`); builds then offer it through `--languages`.
+`python3 kit/tools/sync_locales.py`); fixed-language builds then select it through `--language <tag>`.
 
 ### 6.1 `app.json`
 

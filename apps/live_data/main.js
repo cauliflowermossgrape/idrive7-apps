@@ -63,7 +63,7 @@ const TRIPS = require('./trips');
 const DEMO = require('./demo');
 const PICK = require('./picker');
 const PAGES = require('./pages');
-const { t: translate } = require('./kit/i18n');
+const { t: translate, plural } = require('./kit/i18n');
 const Sim = require('./kit/sim');
 
 const W = 1600, H = 520, COLS = 5, CARDS = 30, ROWS = PAGES.ROWS, ROW_H = PAGES.ROW_H;
@@ -988,7 +988,7 @@ mgu.run({
                 demoUnits = demo;
                 units.forEach((u) => { u.silent = false; log.info('unit ' + hex(u.addr) + ': SGBD index ' + (u.index || 'none') + ' -> ' + (u.variant || 'unknown type') + (u.sgbd ? ', catalog ' + u.sgbd + (u.closest ? ' (closest)' : '') + (catalog(u.sgbd).builtin ? ' (built in)' : '') : '')); });
                 try { fs.writeFileSync(UNITS_FILE, JSON.stringify({ at: Date.now(), demo, units: units.map((u) => ({ addr: u.addr, index: u.index, variant: u.variant })) })); } catch (e) { log.warn('save units: ' + e); }
-                msg = units.length ? units.length + ' control units answered' : 'No control unit answered - ignition on?';
+                msg = units.length ? units.length + ' ' + plural(units.length, 'control units answered', 'control units answered') : 'No control unit answered - ignition on?';
                 phase = 'done';
             } catch (e) {
                 log.warn('scan units: ' + e);
@@ -1098,7 +1098,7 @@ mgu.run({
             const p = G.panel(cv, t, 24, 52, 1552, 460, 'Control units');
             let bx = 42 + cv.textWidth('Control units', 26, { font: 'bold' }) + 28;
             bx += G.button(cv, t, bx, 62, 0, 38, busy ? 'Scanning...' : 'Scan units', scanUnits, { key: 'scan', busy, primary: !units.length }) + 12;
-            const note = browseNote('knob: choose  ·  press: open') || msg || (units.length ? units.length + ' answered' : '');
+            const note = browseNote('knob: choose  ·  press: open') || msg || (units.length ? units.length + ' ' + plural(units.length, 'answered', 'answered') : '');
             if (busy) {
                 const w = 300, x = 1552 - w, f = (Date.now() / 1200) % 1;
                 cv.roundRect(x, 71, w, 8, 4, t.track);
@@ -1255,9 +1255,9 @@ mgu.run({
             titleButtons(cv, t, 'Fuel price', [{ label: 'Change', run: openPrice, key: 'price' }]);
             G.readout(cv, t, 48, 414, { text: tc.price ? tc.price.toFixed(2) : 'not set', unit: tc.price ? cu + ' a litre' : '', size: 56 });
             const tx = 560;
-            cv.text(fit(cv, (cv.own ? 'Change it with the knob or the buttons.' : 'The Fuel price button, then the knob.') + ' This trip, and trips that had no price, follow it; the others keep theirs.', 20, 1000), tx, 426, 20, t.dim);
-            cv.text(fit(cv, flow.k || sigDemo() ? 'Fuel: from the car\'s own fuel signal' : 'Fuel: from the engine unit until the car\'s fuel signal has learned its scaling', 20, 1000), tx, 458, 20, t.dim);
-            cv.text(fit(cv, 'A trip runs from the engine start until the engine has been off for 10 minutes.  Currency: Settings.', 20, 1000), tx, 490, 20, t.dim);
+            cv.text((cv.own ? 'Change it with the knob or the buttons.' : 'The Fuel price button, then the knob.') + ' This trip, and trips that had no price, follow it; the others keep theirs.', tx, 426, 20, t.dim);
+            cv.text(flow.k || sigDemo() ? 'Fuel: from the car\'s own fuel signal' : 'Fuel: from the engine unit until the car\'s fuel signal has learned its scaling', tx, 458, 20, t.dim);
+            cv.text('A trip runs from the engine start until the engine has been off for 10 minutes.  Currency: Settings.', tx, 490, 20, t.dim);
         }
 
         /** a screen of your own: its gauges (the one chosen marked while browsing) */

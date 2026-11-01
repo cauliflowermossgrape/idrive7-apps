@@ -1,25 +1,38 @@
 'use strict';
 // Local display translation only. Never use this on signal names, IDs or stored settings.
 const locale = require('./locale.json');
-const available = locale.languages || [locale.language || 'en'];
-const dict = {};
+const dict = locale.strings || {};
+const language = locale.language || 'en';
+const localizedValues = new Set(Object.values(dict));
 const cache = new Map();
-let language = 'en', localizedValues = new Set(), folded = Object.create(null), pattern = /$^/;
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function getLanguage() { return language; }
-function setLanguage(value) {
-    language = available.indexOf(value) >= 0 ? value : available[0];
-    const strings = language === 'en' ? {} : require('./locales/' + language + '.json');
-    Object.keys(dict).forEach((key) => { delete dict[key]; });
-    Object.assign(dict, strings);
-    localizedValues = new Set(Object.values(dict));
-    folded = Object.create(null);
-    Object.keys(dict).forEach((key) => { folded[key.toLowerCase()] = dict[key]; });
-    const phrases = Object.keys(dict).filter((s) => s.length >= 4).sort((a, b) => b.length - a.length);
-    pattern = phrases.length ? new RegExp('(^|[^A-Za-z0-9_./])(' + phrases.map(escape).join('|') + ')(?=$|[^A-Za-z0-9_./])', 'gi') : /$^/;
-    cache.clear();
-    return language;
+// Plural forms live in the locale catalogs: "fault|faults<TAB>ошибка|ошибки|ошибок".
+// The key is the English text for 1 and for many, exactly as English shows it (both the same
+// when English does not change, e.g. "items|items"). Without a row the English form is returned
+// and the drawn line goes through t() as before, so catalogs without plural rows (zh-CN) render unchanged.
+// The rule picks the form index; Node 8 on the car has no Intl.PluralRules.
+const PLURAL_RULES = {
+    en: (n) => (n === 1 ? 0 : 1),
+    ru: (n) => { // one | few | many
+        const mod100 = Math.abs(n) % 100, mod10 = mod100 % 10;
+        if (mod100 >= 11 && mod100 <= 14) return 2;
+        if (mod10 === 1) return 0;
+        return mod10 >= 2 && mod10 <= 4 ? 1 : 2;
+    },
+    'zh-CN': () => 0,
+};
+function plural(n, one, other, lang) {
+    const key = one + '|' + other, lng = lang || language;
+    const translated = lng !== 'en' && Object.prototype.hasOwnProperty.call(dict, key) && (!lang || lang === language);
+    if (!translated) return n === 1 ? one : other;
+    const forms = dict[key].split('|'), rule = PLURAL_RULES[lng] || PLURAL_RULES.en;
+    return forms[Math.min(rule(n), forms.length - 1)];
 }
+const folded = Object.create(null);
+Object.keys(dict).forEach((key) => { folded[key.toLowerCase()] = dict[key]; });
+const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const phrases = Object.keys(dict).filter((s) => s.length >= 4 && s.indexOf('|') < 0).sort((a, b) => b.length - a.length);
+const pattern = new RegExp('(^|[^A-Za-z0-9_./])(' + phrases.map(escape).join('|') + ')(?=$|[^A-Za-z0-9_./])', 'gi');
 function t(value) {
     const s = String(value == null ? '' : value);
     if (language === 'en') return s;
@@ -45,5 +58,4 @@ function t(value) {
     cache.set(s, out);
     return out;
 }
-setLanguage(locale.language || available[0]);
-module.exports = { t, dict, getLanguage, setLanguage };
+module.exports = { t, plural, PLURAL_RULES, dict, getLanguage };

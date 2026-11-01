@@ -224,20 +224,20 @@ SDK 24.10.x из прошивки имеет полный публичный API
 ### 3.2 Сборка
 
 ```sh
-python3 kit/tools/build.py            # все приложения и языки -> dist/<id>@<ver>.mgu
-python3 kit/tools/build.py redline    # одно приложение, все языки
-python3 kit/tools/build.py --languages en,ru redline   # только английский + русский
-python3 kit/tools/build.py --languages zh-CN          # только китайский
-node kit/tools/preview.js dist/redline preview wait=10 --set language=ru   # русский предпросмотр
+python3 kit/tools/build.py            # все приложения на английском -> dist/<id>@<ver>.mgu
+python3 kit/tools/build.py redline    # одно приложение на английском
+python3 kit/tools/build.py --language ru       # русский -> dist/<id>@<ver>-ru.<revision>.mgu
+python3 kit/tools/build.py --language zh-CN    # упрощённый китайский -> dist/<id>@<ver>-zh.cn.2.mgu
+node kit/tools/preview.js dist/redline preview wait=10   # английский предпросмотр -> preview/*.png
 ```
 
 В Windows используйте `python` вместо `python3`.
 
-По умолчанию каждое приложение содержит все доступные языки интерфейса: **английский, упрощённый китайский и русский**. Выберите **Settings → Language** в приложении; выбор сохраняется. Если включён английский, он выбран первоначально, иначе используется первый включённый язык. В одноязычном пакете переключателя нет.
+По умолчанию собирается пакет только с английским интерфейсом. Язык каждого пакета фиксируется при сборке: настройки **Settings → Language**, переключения во время работы и многоязычных подмножеств через `--languages` нет. Для русской сборки используйте `--language ru` с `build.py` или `make_kit.py`; версия получает языковой суффикс (`dist/<id>@<ver>-ru.<revision>.mgu`). Команда `--language zh-CN` сохраняет прежнее поведение фиксированной китайской сборки. Установка пакета на другом языке заменяет приложение как обновление.
 
-`--languages` принимает список через запятую и позволяет уменьшить пакет: каталоги переводов, таблицы строк HMI и дополнительные атласы невыбранных языков не включаются. Базовый латинский шрифт есть всегда, китайский атлас добавляется только с `zh-CN`, небольшой кириллический — только с `ru`. Русский перевод охватывает интерфейс всех приложений и имеющиеся полные описания Fault Scanner; неизвестные описания остаются английскими. `kit/tools/ista_diagnostic_ru.py` импортирует более полный русский каталог из ваших EN/RU-баз ISTA `DiagDocDb`, не изменяя исходный английский `dtc_db.pack`.
+Каждый пакет содержит все **33 таблицы локалей HMI**, во всех таблицах заполнены все 256 слотов `SID_CN_DYNAMIC`. Существующие китайские ресурсы и поведение credit не меняются; небольшой кириллический атлас добавляется только с `ru`. Русский перевод охватывает интерфейс всех приложений и имеющиеся полные описания Fault Scanner; неизвестные описания остаются английскими. Китайский перевод базы включён в сборку `zh-CN`. `kit/tools/ista_diagnostic_ru.py` импортирует более полный русский каталог из ваших EN/RU-баз ISTA `DiagDocDb`, не изменяя исходный английский `dtc_db.pack`.
 
-Старая команда `--language zh-CN` (или `--language ru`) создаёт фиксированный одноязычный пакет с языковым суффиксом версии (`dist/<id>@<ver>-<language>.<revision>.mgu`) и без переключателя. Китайский перевод: 小白151 ([JackieZ123430](https://github.com/JackieZ123430), [idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn)); руководства: [English](README.md), [中文](README.zh-CN.md).
+Китайский перевод: 小白151 ([JackieZ123430](https://github.com/JackieZ123430), [idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn)); руководства: [English](README.md), [中文](README.zh-CN.md).
 
 Файлы `.mgu` содержат SDK BMW — используйте их только для своего автомобиля и не публикуйте.
 
@@ -247,11 +247,11 @@ node kit/tools/preview.js dist/redline preview wait=10 --set language=ru   # р�
 Автомобиль на стоянке, зажигание включено, желательно подключить зарядное устройство. Сначала соберите приложения, установщик и GPU-движок в `dist/mgu-custom-apps.tar.gz`:
 
 ```sh
-deploy/make-car-kit.sh                 # macOS / Linux / WSL: все приложения и языки
+deploy/make-car-kit.sh                 # macOS / Linux / WSL: все приложения на английском
 deploy\make-car-kit.cmd                # Windows (cmd или PowerShell)
-python3 kit/tools/make_kit.py redline  # любая ОС; только выбранные приложения
-python3 kit/tools/make_kit.py --languages en,ru   # подмножество -> dist/mgu-custom-apps-en-ru(.tar.gz)
-python3 kit/tools/make_kit.py --language zh-CN    # старый фиксированный китайский комплект
+python3 kit/tools/make_kit.py redline  # любая ОС; только выбранные приложения на английском
+python3 kit/tools/make_kit.py --language ru       # русский комплект -> dist/mgu-custom-apps-ru(.tar.gz)
+python3 kit/tools/make_kit.py --language zh-CN    # китайский комплект -> dist/mgu-custom-apps-zh-CN(.tar.gz)
 ```
 
 Для комплекта с суффиксом передайте `push-to-car.sh` соответствующий `KIT=dist/<папка-комплекта>`, а `push-to-car.ps1` — `-Kit dist\<файл-комплекта>.tar.gz`.
@@ -465,7 +465,7 @@ MainApp показывает только приложения из подпис
 <a id="6-writing-your-own-app"></a>
 ## 6. Создание своего приложения
 
-Приложение состоит из двух файлов в `apps/<id>/`: `app.json` (описание) и `main.js` (поведение). `build.py` создаёт вокруг них пакет BMW: RHMI-разметку, входную точку, значок, строковые пакеты для выбранных языков и соответствующих локалей HMI, manifest, permissions и runner. Новый каталог добавляется как `kit/runtime/locales/<tag>.json`; редактируемый `<tag>.tsv` синхронизируется командой `python3 kit/tools/sync_locales.py`, после чего язык доступен через `--languages`.
+Приложение состоит из двух файлов в `apps/<id>/`: `app.json` (описание) и `main.js` (поведение). `build.py` создаёт вокруг них пакет BMW: RHMI-разметку, входную точку, значок, строковые пакеты для одного фиксированного языка интерфейса и всех 33 таблиц локалей HMI, manifest, permissions и runner. Новый каталог добавляется как `kit/runtime/locales/<tag>.json`; редактируемый `<tag>.tsv` синхронизируется командой `python3 kit/tools/sync_locales.py`, после чего язык выбирается для фиксированной сборки через `--language <tag>`.
 
 <a id="61-appjson"></a>
 ### 6.1 `app.json`

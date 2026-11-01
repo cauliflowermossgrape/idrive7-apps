@@ -4,7 +4,7 @@ const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
 const { withAlpha, mix } = require('./kit/canvas');
 const { fitText } = require('./kit/text-layout');
-const { t: translate, getLanguage } = require('./kit/i18n');
+const { t: translate, getLanguage, plural } = require('./kit/i18n');
 const C = require('./catalog');
 const E = require('./egs');
 const Reader = require('./reader');
@@ -263,7 +263,7 @@ mgu.run({
             const rows = shown.map((s, i) => {
                 const m = E.mapValues(records(), s, family()), z = E.summary(m.values);
                 return [{ text: s.label, color: first + i === shift ? BLUE : t.text, font: 'bold' }, n(counterFor(s)),
-                    z ? signed(z.min) : '--', z ? signed(z.mean, 1) : '--', z ? signed(z.max) : '--', z ? z.count + ' cells' : 'not read', age(m.record)];
+                    z ? signed(z.min) : '--', z ? signed(z.mean, 1) : '--', z ? signed(z.max) : '--', z ? z.count + ' ' + plural(z.count, 'cells', 'cells') : 'not read', age(m.record)];
             });
             const cols = [{ label: 'Shift', w: 160 }, { label: 'Adapt. count', w: 220, align: 'right' }, { label: 'Min mbar', w: 220, align: 'right' },
                 { label: 'Mean mbar', w: 220, align: 'right' }, { label: 'Max mbar', w: 220, align: 'right' }, { label: 'Map', w: 220, align: 'right' }, { label: 'Age', w: 240, align: 'right' }];
@@ -380,7 +380,7 @@ mgu.run({
             if (detailMode === 0) afterHead(cv, t, head, freshness(DETAIL_DIDS), cv.own ? 1136 : 1250);
             // the summary: three panels (below); the fault and record lists: one
             const p = detailMode === 0 ? null : G.panel(cv, t, 24, 94, 1552, 418, ['', 'Pending and confirmed faults / read only',
-                cv.own ? 'All ' + all + ' records' : 'Records ' + (recordPage * 7 + 1) + '-' + Math.min(all, recordPage * 7 + 7) + ' of ' + all][detailMode]);
+                cv.own ? 'All ' + all + ' ' + plural(all, 'records', 'records') : 'Records ' + (recordPage * 7 + 1) + '-' + Math.min(all, recordPage * 7 + 7) + ' of ' + all][detailMode]);
             // where the kit runs the screen: the view picked here and its action in the panel (else Next item and View)
             if (cv.own) choices(cv, t, 1166, 48, ['Summary', 'Faults', 'Records'], 130, detailMode, (i) => { detailMode = i; wanted(); }, 'details');
             if (detailMode === 1) {

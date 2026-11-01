@@ -30,7 +30,7 @@ const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { hex } = require('./kit/diag');
-const { getLanguage } = require('./kit/i18n');
+const { plural } = require('./kit/i18n');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
@@ -795,11 +795,10 @@ module.exports = function live(ctx, sh) {
         G.panel(cv, t, 24, 44, 1552, 468, 'Scan: ' + SCAN_UNITS[scan.unit].name + ' 0x' + hex(scan.unit));
         const pct = Math.round(scan.done / scan.total * 100);
         const ago = (ms) => (ms < 90000 ? 'just now' : ms < 5400000 ? Math.round(ms / 60000) + ' min ago' : Math.round(ms / 3600000) + ' h ago');
-        const statusX = getLanguage() === 'ru' ? 1416 : 1552;
         cv.text(scan.running ? 'SCANNING  ' + pct + ' %  (' + scan.done + ' / ' + scan.total + ')  -  stay on this page, car in READY'
-            : scan.known ? scan.hits.length + ' identifiers known for this car  ·  Reset = new baseline'
+            : scan.known ? scan.hits.length + ' ' + plural(scan.hits.length, 'identifiers known for this car', 'identifiers known for this car') + '  ·  Reset = new baseline'
             : scan.t ? 'DONE ' + ago(Date.now() - scan.t) + '  ·  ' + scan.hits.length + ' answer' + (scan.noReply >= 25 && !scan.hits.length ? ' (unit not answering)' : '') + '  ·  Reset = new baseline'
-            : diag.available ? 'starting...' : 'no diagnostic link yet', statusX, 80, 20, scan.running ? t.warn : t.dim, { font: 'bold', align: 'right' });
+            : diag.available ? 'starting...' : 'no diagnostic link yet', 1552, 80, 20, scan.running ? t.warn : t.dim, { font: 'bold', align: 'right' });
         const cells = [], packs = [], ch = changes();
         if (scan.unit === 7) scan.hits.forEach((h) => guesses(h.bytes).forEach((g) => (g.kind === 'cell' ? cells : packs).push(h.did + '@' + g.at + ' ' + (g.kind === 'cell' ? g.value.toFixed(3) : g.value.toFixed(1)))));
         const block = (y, label, list) => {

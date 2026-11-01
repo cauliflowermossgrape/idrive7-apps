@@ -1,4 +1,4 @@
-[English](README.md) | **简体中文（完整译文）** | [Русский](README.ru.md)
+[English](README.md) | **简体中文（完整译文）**
 
 <h1 align="center">MGU 自定义应用</h1>
 
@@ -206,20 +206,15 @@ Windows PowerShell 也可执行这些命令，内置 scp 和 tar；请将 `x_cal
 ### 3.2 构建
 
 ```sh
-python3 kit/tools/build.py            # 全部应用、全部语言 -> dist/<id>@<ver>.mgu
-python3 kit/tools/build.py redline    # 仅一个应用，包含全部语言
-python3 kit/tools/build.py --languages en,ru redline   # 仅英文和俄文资源/字体
-python3 kit/tools/build.py --languages zh-CN          # 仅简体中文
-node kit/tools/preview.js dist/redline preview wait=10 --set language=ru   # 俄文电脑预览
+python3 kit/tools/build.py            # 全部应用 -> dist/<id>@<ver>.mgu
+python3 kit/tools/build.py redline    # 仅一个应用
+python3 kit/tools/build.py --language zh-CN   # 简体中文 -> dist/<id>@<ver>-zh.cn.2.mgu
+node kit/tools/preview.js dist/redline preview wait=10   # 在电脑上预览 -> preview/*.png
 ```
 
-Windows 将 `python3` 换成 `python`。默认每个应用包含全部可用界面语言：英文、简体中文和俄文。在应用的 **Settings → Language** 中选择并保存语言；包含英文时初始为英文，否则使用第一种包含的语言。单语言包不显示多余的语言选择项。
+Windows 将 `python3` 换成 `python`。默认构建英文；`--language zh-CN` 将所有应用构建为简体中文，语言在构建时固定，不受车机语言设置影响。安装另一语言包相当于更新同一应用，不会另装一套。
 
-使用 `--languages` 指定逗号分隔的子集可减小体积：未选择的翻译目录、HMI 字符串表和补充字体图集不会打入包内。基础拉丁字体始终包含，中文图集仅随 `zh-CN` 打包，小型西里尔字母图集仅随 `ru` 打包。俄文覆盖所有应用界面及已有的完整故障说明，未知说明保留英文；`zh-CN` 仍包含中文故障库翻译。`kit/tools/ista_diagnostic_ru.py` 可从用户自己的 EN/RU ISTA `DiagDocDb` 导入更完整的俄文目录，不更改随附的英文 `dtc_db.pack`。
-
-原有的 `--language zh-CN`（或 `--language ru`）仍可用于固定单语言包，版本号带语言后缀（`dist/<id>@<ver>-<language>.<revision>.mgu`），且不显示语言选择项。
-
-Translation by：小白151（[JackieZ123430](https://github.com/JackieZ123430)，[idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn)）。另见[俄文指南](README.ru.md)。示例中的版本后缀会随应用版本和语言修订变化。
+Translation by：小白151（[JackieZ123430](https://github.com/JackieZ123430)，[idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn)）。本中文指南即 [README.zh-CN.md](README.zh-CN.md)。示例中的版本后缀会随应用版本和语言修订变化。
 
 `.mgu` 文件包含 BMW SDK，仅供自己的车机使用，请勿公开发布。
 
@@ -229,14 +224,13 @@ Translation by：小白151（[JackieZ123430](https://github.com/JackieZ123430)�
 车辆停稳、点火开启，最好连接电瓶充电器。先把应用、安装器和 GPU 渲染器打包为 `dist/mgu-custom-apps.tar.gz`：
 
 ```sh
-deploy/make-car-kit.sh                 # macOS / Linux / WSL：全部应用和语言
+deploy/make-car-kit.sh                 # macOS / Linux / WSL
 deploy\make-car-kit.cmd                # Windows (cmd or PowerShell)
 python3 kit/tools/make_kit.py redline  # 任意系统，仅部分应用
-python3 kit/tools/make_kit.py --languages en,ru   # 语言子集 -> dist/mgu-custom-apps-en-ru(.tar.gz)
-python3 kit/tools/make_kit.py --language zh-CN    # 原有的固定中文套件
+python3 kit/tools/make_kit.py --language zh-CN   # 中文套件 -> dist/mgu-custom-apps-zh-CN(.tar.gz)
 ```
 
-文件名带后缀的套件，shell 部署需指定对应的 `KIT=dist/<套件目录>`，PowerShell 部署指定 `-Kit dist\<套件文件>.tar.gz`。
+中文套件的 shell 部署需指定 `KIT=dist/mgu-custom-apps-zh-CN`，PowerShell 部署指定 `-Kit dist\mgu-custom-apps-zh-CN.tar.gz`。
 
 随后通过 SSH 推送。macOS/Linux/WSL：
 

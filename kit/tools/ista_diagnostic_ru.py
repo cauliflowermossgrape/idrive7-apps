@@ -110,7 +110,7 @@ def pair_rows(english, russian):
     ru_contexts = one_per_key(ru_left, lambda row: row['context'])
     for context in en_contexts.keys() & ru_contexts.keys():
         pairs.append((en_contexts[context], ru_contexts[context], 'variant_address_code', context))
-    return pairs
+    return [pair for pair in pairs if context_compatible(pair[0], pair[1])]
 
 
 def load_pack_tables():

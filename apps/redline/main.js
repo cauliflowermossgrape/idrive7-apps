@@ -18,6 +18,7 @@
 const mgu = require('./kit/mgu');
 const { withAlpha, ramp } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { plural } = require('./kit/i18n');
 const Car = require('./kit/car');
 
 const W = 1600, H = 520;
@@ -276,7 +277,7 @@ mgu.run({
             const cnt = (v) => shifts.filter((s) => s.verdict === v).length;
             const spot = cnt('SPOT ON');
             cv.text(n ? Math.round(spot / n * 100) + '%' : '--', 832, 199, 96, n ? GREEN : t.dim, { font: 'num' });
-            cv.text('SPOT ON  (' + n + ' shifts)', 836, 235, 22, t.dim, { font: 'bold', spacing: 1 });
+            cv.text('SPOT ON  (' + n + ' ' + plural(n, 'shifts', 'shifts') + ')', 836, 235, 22, t.dim, { font: 'bold', spacing: 1 });
             ['EARLY', 'SPOT ON', 'LATE', 'COLD REV', 'LIMITER'].forEach((v, i) => {
                 const y = 276 + Math.round(i * pitch), c = cnt(v), f = n ? c / n : 0;
                 cv.text(v, 836, y + 22, 22, VCOL[v], { font: 'bold', spacing: 1 });
