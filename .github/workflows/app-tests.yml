@@ -47,3 +47,4 @@ jobs:
       - run: node kit/tools/test_gforce.js
       - run: node kit/tools/test_zh.js
       - run: cd kit/tools && python3 test_zh.py
+      - run: python3 kit/tools/test_ista_diagnostic_ru.py

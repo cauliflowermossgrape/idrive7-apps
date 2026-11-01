@@ -17,7 +17,8 @@ import json, os, re, shutil, sys, tarfile, tempfile, uuid
 from xml.sax.saxutils import escape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pack_data  # noqa: E402
-from localize import unicode_resources, localize_spec, load_locale, languages, zh_credit
+from localize import (unicode_resources, resource_tables, hmi_resources, load_locale, languages,
+                      default_languages, parse_languages, with_languages, package_version, zh_credit)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
@@ -26,10 +27,6 @@ APPS = os.path.join(ROOT, 'apps')
 DIST = os.path.join(ROOT, 'dist')
 SDK = os.path.join(ROOT, 'oap-sdk')
 NS = uuid.UUID('6b1d3a52-8f0e-4c4b-9a77-0d0c4d4e5f10')
-
-LANGS = ['ar_AE', 'cs_CZ', 'da_DK', 'de_DE', 'el_GR', 'en_GB', 'en_US', 'es_ES', 'fi_FI', 'fr_FR', 'he_IL',
-         'hu_HU', 'id_ID', 'it_IT', 'ja_JP', 'ko_KR', 'nb_NO', 'nl_NL', 'no_NO', 'pl_PL', 'pt_BR', 'pt_PT',
-         'ro_RO', 'ru_RU', 'sk_SK', 'sl_SI', 'sv_SE', 'th_TH', 'tr_TR', 'uk_UA', 'vi_VN', 'zh_CN', 'zh_TW']
 
 NATIVE = ['certmgr', 'codings', 'ecu', 'nare_logging', 'necemapaths', 'personalization',
           'smrf-native-cpp', 'someip', 'wscpp-client']
@@ -151,8 +148,11 @@ def fetch_assets(adir, assets):
         open(dst, 'wb').write(data)
 
 
-def build_ui(spec, language='en'):
+def build_ui(spec, selected=None):
     """screens/settings -> (application.xml, uiDescription.json, strings, screen meta)"""
+    selected = selected or ['en']
+    if isinstance(selected, str):
+        selected = [selected]
     app = spec['id']
     nid = Ids()
     strings = {sid(app, 'TITLE'): spec['title']}
@@ -209,8 +209,8 @@ def build_ui(spec, language='en'):
                 strings[sid(app, 'SET_' + s['key'])] = s['label']
                 items.append(comp('tworow', name, rows=[{'Text1stRow': {'value': s['label'], 'type': 'Text'},
                                                         'Text2ndRow': {'value': '', 'type': 'Text'}}]))
-        # Chinese builds only: credit for the Chinese translation (localize.py sets the Chinese title)
-        if language == 'zh-CN':
+        # Packages containing Chinese carry the translator's credit in every language.
+        if 'zh-CN' in selected:
             credit_title, credit_link = sid(app, 'CN_CREDITS_TITLE'), sid(app, 'CN_CREDITS_LINK')
             strings[credit_title], strings[credit_link] = zh_credit()['settingsTitle'], zh_credit()['settingsLink']
             items.append(comp('tworow', 'CN_CREDITS', rows=[{
@@ -324,7 +324,7 @@ def make_icon(spec, out):
 WIDGET_COMPONENT_ID = 501
 
 
-def build_start_widget(spec, app_id, icon_src, out):
+def build_start_widget(spec, app_id, icon_src, out, translations):
     """app.json "startWidget" -> rhmiDataStartWidget/ (installed format), the home-screen widget.
 
     Same shape as BMW's own widgets on this firmware (Drive Recorder, Weather, News): a logical
@@ -361,15 +361,21 @@ def build_start_widget(spec, app_id, icon_src, out):
                                              'SelectionName': {'value': sid_name, 'type': 'StringId'},
                                              'SelectionIcon': {'value': icon, 'type': 'ResourceId'}}}}}}}
     json.dump(ui, open(os.path.join(out, 'uiDescription', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
-    for lang in LANGS:
-        json.dump({sid_name: name}, open(os.path.join(out, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+    widget_tables = {language: {sid_name: load_locale(language).get(name, name)} for language in translations}
+    for lang, table in hmi_resources(widget_tables).items():
+        json.dump(table, open(os.path.join(out, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(icon_src, os.path.join(out, 'resources', icon))
     return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
 
 
-def build(app_id, language='en'):
-    spec = json.load(open(os.path.join(APPS, app_id, 'app.json'), encoding='utf-8'))
-    spec = localize_spec(spec, language)
+def build(app_id, selected=None, fixed=False):
+    if selected is None:
+        selected = ['en']
+    if isinstance(selected, str):
+        selected, fixed = [selected], True
+    original = json.load(open(os.path.join(APPS, app_id, 'app.json'), encoding='utf-8'))
+    spec = with_languages(original, selected)
+    spec['version'] = package_version(original['version'], selected[0]) if fixed else original['version']
     spec.setdefault('id', app_id)
     ver = spec['version']
     stage = os.path.join(DIST, app_id)
@@ -380,10 +386,11 @@ def build(app_id, language='en'):
     os.makedirs(os.path.join(src, 'node_modules', 'oap-sdk'))
 
     manifest = manifest_for(json.loads(json.dumps(spec)))
-    xml, uidesc, strings, state_ids = build_ui(spec, language)
-    unicode_resources(uidesc, strings, language)
+    xml, uidesc, strings, state_ids = build_ui(spec, selected)
+    unicode_resources(uidesc, strings)
     for lang, tbl in spec.get('strings', {}).items():
         strings.update(tbl)
+    translations = resource_tables(strings, selected)
 
     # --- source/ (the npm package) ---
     pkg = {
@@ -424,27 +431,43 @@ def build(app_id, language='en'):
             # a committed pack (e.g. dtc_scanner/dtc_db.pack); a local folder of the same name replaces it
             shutil.copy(os.path.join(adir, f), os.path.join(src, 'javascript', f))
             print('  %s (committed)' % f)
-    # kit runtime
-    if app_id == 'dtc_scanner' and language == 'zh-CN':
-        from build_diagnostic_zh import catalog
+    # kit runtime: only the selected catalogs and their supplemental glyph atlases.
+    if app_id == 'dtc_scanner' and ('zh-CN' in selected or 'ru' in selected):
         with tempfile.TemporaryDirectory(prefix='mgu-diagnostic-') as temporary:
-            data = os.path.join(temporary, 'zh-CN.json')
-            with open(data, 'w', encoding='utf-8', newline='\n') as file:
-                json.dump(catalog(), file, ensure_ascii=False, separators=(',', ':'))
+            for language in ('zh-CN', 'ru'):
+                if language not in selected:
+                    continue
+                module = 'build_diagnostic_zh' if language == 'zh-CN' else 'build_diagnostic_ru'
+                catalog = __import__(module).catalog
+                data = os.path.join(temporary, language + '.json')
+                with open(data, 'w', encoding='utf-8', newline='\n') as file:
+                    json.dump(catalog(), file, ensure_ascii=False, separators=(',', ':'))
             pack_data.pack(temporary, os.path.join(src, 'javascript', 'diagnostic_i18n.pack'))
     kr = os.path.join(KIT, 'runtime')
+    runtime_out = os.path.join(src, 'javascript', 'kit')
     for f in os.listdir(kr):
         p = os.path.join(kr, f)
         if os.path.isdir(p):
-            shutil.copytree(p, os.path.join(src, 'javascript', 'kit', f))
+            shutil.copytree(p, os.path.join(runtime_out, f))
         else:
-            shutil.copy(p, os.path.join(src, 'javascript', 'kit', f))
-    if language == 'zh-CN':
-        # Diagnostic glyphs are Chinese-only; keep the English runtime atlas intact.
+            shutil.copy(p, os.path.join(runtime_out, f))
+    for catalog in os.listdir(os.path.join(runtime_out, 'locales')):
+        stem, extension = os.path.splitext(catalog)
+        if extension == '.tsv' or (extension == '.json' and stem not in selected):
+            os.remove(os.path.join(runtime_out, 'locales', catalog))
+    fonts_out = os.path.join(runtime_out, 'fonts')
+    if 'zh-CN' not in selected:
+        for name in ('cjk.json', 'OFL-NotoSansSC.txt'):
+            p = os.path.join(fonts_out, name)
+            if os.path.exists(p):
+                os.remove(p)
+    if 'ru' in selected:
+        shutil.copy(os.path.join(KIT, 'localization', 'fonts', 'cyrillic-ru.json'), os.path.join(fonts_out, 'cyrillic.json'))
+    if 'zh-CN' in selected:
+        # The Fault Scanner has a larger atlas for its translated diagnostic catalog.
         if app_id == 'dtc_scanner':
-            shutil.copy(os.path.join(KIT, 'localization', 'fonts', 'diagnostic-zh-CN.json'),
-                        os.path.join(src, 'javascript', 'kit', 'fonts', 'cjk.json'))
-        # The translation credit in the installed Chinese entry code, as plain comments.
+            shutil.copy(os.path.join(KIT, 'localization', 'fonts', 'diagnostic-zh-CN.json'), os.path.join(fonts_out, 'cjk.json'))
+        # The translation credit in the installed entry code, as plain comments.
         entry = os.path.join(src, 'javascript', 'app.js')
         credit = ''.join('// %s\n' % line for line in zh_credit()['comment'])
         with open(entry, 'rb') as file:
@@ -453,11 +476,13 @@ def build(app_id, language='en'):
             file.write(credit.encode('utf-8') + body)
     rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'config', 'startWidget')}
     rt_spec['stateIds'] = state_ids
-    json.dump(rt_spec, open(os.path.join(src, 'javascript', 'kit', 'app-spec.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
-    locale = {'language': language, 'strings': load_locale(language)}
-    if language == 'zh-CN':
+    json.dump(rt_spec, open(os.path.join(runtime_out, 'app-spec.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
+    default_language = 'en' if 'en' in selected else selected[0]
+    locale = {'language': default_language, 'languages': selected, 'strings': load_locale(default_language)}
+    if 'zh-CN' in selected:
         locale['credit'] = zh_credit()['corner']
-    json.dump(locale, open(os.path.join(src, 'javascript', 'kit', 'locale.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+    json.dump(locale, open(os.path.join(runtime_out, 'locale.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+    json.dump(translations, open(os.path.join(runtime_out, 'locale-strings.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(os.path.join(SDK, 'index.js'), os.path.join(src, 'node_modules', 'oap-sdk', 'index.js'))
     shutil.copy(os.path.join(SDK, 'package.json'), os.path.join(src, 'node_modules', 'oap-sdk', 'package.json'))
 
@@ -489,8 +514,8 @@ def build(app_id, language='en'):
     json.dump(pj, open(os.path.join(pr, 'application.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     open(os.path.join(pr, 'uiDescriptions', 'ID7', 'application.xml'), 'w', encoding='utf-8', newline='\n').write(xml)
     json.dump(uidesc, open(os.path.join(pr, 'uiDescriptions', 'ID7', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
-    for lang in LANGS:
-        json.dump(strings, open(os.path.join(pr, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+    for lang, table in hmi_resources(translations).items():
+        json.dump(table, open(os.path.join(pr, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     make_icon(spec, os.path.join(pr, 'variantGroups', 'Common', 'images', icon))
 
     ir = os.path.join(stage, 'rhmiData')
@@ -506,16 +531,16 @@ def build(app_id, language='en'):
     json.dump(ij, open(os.path.join(ir, 'application.json'), 'w', encoding='utf-8', newline='\n'), separators=(',', ':'))
     open(os.path.join(ir, 'uiDescription', 'application.xml'), 'w', encoding='utf-8', newline='\n').write(xml)
     json.dump(uidesc, open(os.path.join(ir, 'uiDescription', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
-    for lang in LANGS:
-        json.dump(strings, open(os.path.join(ir, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+    for lang, table in hmi_resources(translations).items():
+        json.dump(table, open(os.path.join(ir, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(os.path.join(pr, 'variantGroups', 'Common', 'images', icon), os.path.join(ir, 'resources', icon))
     if spec.get('startWidget'):
-        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'))
+        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'), translations)
         print('  home-screen widget: %s (%s)' % (info['component'], info['layout']))
 
     # --- installer helpers + metadata ---
     shutil.copytree(os.path.join(KIT, 'tools', 'oapgen'), os.path.join(stage, 'oapgen'))
-    meta = {'id': app_id, 'version': ver, 'title': spec['title'], 'native': NATIVE, 'kit': 1}
+    meta = {'id': app_id, 'version': ver, 'title': spec['title'], 'native': NATIVE, 'kit': 1, 'languages': selected}
     # app.json signals with "_optional": "<what the app loses>": a unit without that interface
     # still installs the app, without it (deploy/mgu-app-install.sh says what is missing)
     optional = {i: f['_optional'] for i, f in spec.get('signals', {}).items() if isinstance(f, dict) and f.get('_optional')}
@@ -534,18 +559,24 @@ def build(app_id, language='en'):
     with tarfile.open(npm, 'w:gz') as tf:
         tf.add(src, arcname='package')
     print(f'{app_id} {ver}: {os.path.relpath(bundle, ROOT)} ({os.path.getsize(bundle) // 1024} KiB), '
-          f'{len(uidesc["containers"])} screens, states {state_ids}')
+          f'{len(uidesc["containers"])} screens, languages {",".join(selected)}, states {state_ids}')
 
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--language', choices=languages(), default='en')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--language', choices=languages(), help='legacy fixed-language package (adds a language version suffix)')
+    group.add_argument('--languages', help='comma-separated catalogs to include; default: all available')
     parser.add_argument('apps', nargs='*')
     args = parser.parse_args()
+    try:
+        selected = parse_languages(args.languages) if args.languages else [args.language] if args.language else default_languages()
+    except ValueError as error:
+        parser.error(str(error))
     ids = args.apps or sorted(d for d in os.listdir(APPS) if os.path.exists(os.path.join(APPS, d, 'app.json')))
     for i in ids:
-        build(i, args.language)
+        build(i, selected, fixed=bool(args.language))
 
 
 if __name__ == '__main__':

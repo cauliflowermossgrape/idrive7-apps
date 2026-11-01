@@ -54,6 +54,14 @@ function headUnit(stage, o) {
     }
 
     let display = null;
+    const i18n = require(path.join(kitDir, 'i18n'));
+    i18n.setLanguage(settings.get('language'));
+    settings.onChange((key) => {
+        if (key === 'language') {
+            i18n.setLanguage(settings.get('language'));
+            if (display) { display.recorders.clear(); display.app = null; display.lastWords = null; }
+        }
+    });
     const softImage = (n, cv) => ui._image(n, cv);
     const ui = hu.ui = live ? liveUi(hu, () => display, softImage) : {
         image: (name, cv) => display.present(name, cv, softImage),

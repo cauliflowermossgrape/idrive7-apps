@@ -6,16 +6,18 @@ const { fitText } = require(path.join(stage, 'kit/text-layout'));
 const { Canvas } = require(path.join(stage, 'kit/canvas'));
 const { Recorder } = require(path.join(stage, 'kit/record'));
 const fonts = require(path.join(stage, 'kit/fonts'));
-const { getLanguage } = require(path.join(stage, 'kit/i18n'));
-const language = getLanguage();
-if (language === 'en') {
+const i18n = require(path.join(stage, 'kit/i18n'));
+const locale = require(path.join(stage, 'kit/locale.json'));
+if (!(locale.languages || [locale.language]).includes('zh-CN')) {
     const complete = require('../localization/diagnostic-full.zh-CN.json');
     for (const source of Object.keys(complete)) assert.strictEqual(diagnosticText(source),source);
     assert.strictEqual(diagnosticText('5 possible texts (depends on unit type)'), '5 possible texts (depends on unit type)');
-    assert(!fs.existsSync(path.join(stage,'diagnostic_i18n.pack')));
-    console.log('PASS en: every corpus description is unchanged; no diagnostic translation pack shipped');
+    if (!(locale.languages || [locale.language]).includes('ru')) assert(!fs.existsSync(path.join(stage,'diagnostic_i18n.pack')));
+    console.log('PASS '+i18n.getLanguage()+': every corpus description is unchanged; no unselected diagnostic translation pack shipped');
     process.exit(0); // Test process only; never installed as application code.
 }
+i18n.setLanguage('zh-CN');
+const language = i18n.getLanguage();
 const pair = (cn, tw) => language === 'zh-TW' ? tw : cn;
 // Regression: owner scan descriptions and HU Ethernet signal-quality wording.
 const overrides = require('../localization/diagnostic-overrides.zh-CN.json');

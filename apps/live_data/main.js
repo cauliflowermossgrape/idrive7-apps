@@ -63,6 +63,7 @@ const TRIPS = require('./trips');
 const DEMO = require('./demo');
 const PICK = require('./picker');
 const PAGES = require('./pages');
+const { t: translate } = require('./kit/i18n');
 const Sim = require('./kit/sim');
 
 const W = 1600, H = 520, COLS = 5, CARDS = 30, ROWS = PAGES.ROWS, ROW_H = PAGES.ROW_H;
@@ -1157,7 +1158,7 @@ mgu.run({
             const items = all.filter((r) => !r.header);
             const ok = items.filter((r) => (r.useful ? usefulRows(u, r.useful).every((x) => state(u.res[x.key]) === 'ok') : state(u.res[r.key]) === 'ok')).length;
             const note = browseNote('knob: scroll  ·  push up / down: page') || (u.silent ? 'The engine unit isn\'t answering (ignition on?)'
-                : (scrolls || items.length <= ROWS ? '' : 'page ' + (pg.p + 1) + ' of ' + pg.n + '  ·  ') + ok + ' of ' + items.length + ' values read');
+                : (scrolls || items.length <= ROWS ? '' : translate('page') + ' ' + (pg.p + 1) + ' ' + translate('of') + ' ' + pg.n + '  ·  ') + ok + ' ' + translate('of') + ' ' + items.length + ' ' + translate('values read'));
             gliding = PAGES.listPanel(cv, t, G, fit, {
                 title: 'Engine', note, noteColor: u.silent ? t.warn : null, details: details(),
                 rows: rows.map((row) => {
@@ -1175,7 +1176,7 @@ mgu.run({
             const all = sigView(), items = all.filter((r) => r.sig), rows = listRows(pg);
             const n = items.filter((r) => { const v = sigValue(r.sig); return v && !v.bad; }).length;
             const note = browseNote('knob: scroll  ·  push up / down: page') || (!sigSubs && !sigDemo() ? 'connecting...'
-                : (scrolls ? '' : 'page ' + (pg.p + 1) + ' of ' + pg.n + '  ·  ') + n + ' of ' + items.length + ' with a value');
+                : (scrolls ? '' : translate('page') + ' ' + (pg.p + 1) + ' ' + translate('of') + ' ' + pg.n + '  ·  ') + n + ' ' + translate('of') + ' ' + items.length + ' ' + translate('with a value'));
             gliding = PAGES.listPanel(cv, t, G, fit, {
                 title: 'Car signals', note, details: details(),
                 rows: rows.map((row) => {
@@ -1254,9 +1255,9 @@ mgu.run({
             titleButtons(cv, t, 'Fuel price', [{ label: 'Change', run: openPrice, key: 'price' }]);
             G.readout(cv, t, 48, 414, { text: tc.price ? tc.price.toFixed(2) : 'not set', unit: tc.price ? cu + ' a litre' : '', size: 56 });
             const tx = 560;
-            cv.text((cv.own ? 'Change it with the knob or the buttons.' : 'The Fuel price button, then the knob.') + ' This trip, and trips that had no price, follow it; the others keep theirs.', tx, 426, 20, t.dim);
-            cv.text(flow.k || sigDemo() ? 'Fuel: from the car\'s own fuel signal' : 'Fuel: from the engine unit until the car\'s fuel signal has learned its scaling', tx, 458, 20, t.dim);
-            cv.text('A trip runs from the engine start until the engine has been off for 10 minutes.  Currency: Settings.', tx, 490, 20, t.dim);
+            cv.text(fit(cv, (cv.own ? 'Change it with the knob or the buttons.' : 'The Fuel price button, then the knob.') + ' This trip, and trips that had no price, follow it; the others keep theirs.', 20, 1000), tx, 426, 20, t.dim);
+            cv.text(fit(cv, flow.k || sigDemo() ? 'Fuel: from the car\'s own fuel signal' : 'Fuel: from the engine unit until the car\'s fuel signal has learned its scaling', 20, 1000), tx, 458, 20, t.dim);
+            cv.text(fit(cv, 'A trip runs from the engine start until the engine has been off for 10 minutes.  Currency: Settings.', 20, 1000), tx, 490, 20, t.dim);
         }
 
         /** a screen of your own: its gauges (the one chosen marked while browsing) */

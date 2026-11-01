@@ -24,6 +24,8 @@ const { OnlineApp, logging } = require('oap-sdk');
 const themes = require('./themes');
 const { Display } = require('./display');
 const { HmiText } = require('./hmi-text');
+const { setLanguage } = require('./i18n');
+const { LocaleUi } = require('./locale-ui');
 const { listSheet } = require('./sheet');
 
 const sdkLog = logging.getSDKLogger();
@@ -522,6 +524,7 @@ async function runInner(impl) {
     }
     const ui = new Ui(app);
     const settings = new Settings(SPEC.settings);
+    setLanguage(settings.get('language'));
     const display = new Display(ui, log, SPEC, settings, () => themes.theme(settings.get('theme')));
     ui.display = display;
     const ctx = {
@@ -693,6 +696,27 @@ async function runInner(impl) {
         .concat(SPEC.settings && SPEC.settings.length ? [{ name: 'SETTINGS' }] : [])
         .map((s) => ui.comp(s.name)).filter((st) => st && st.updateResources)
         .map((st) => st.updateResources())), 4000);
+    const languageComp = settings.item('language') && ui.comp('SET_LANGUAGE');
+    if (languageComp) {
+        const bundle = languageComp.getStringBundle();
+        const tables = JSON.parse(fs.readFileSync(path.join(__dirname, 'locale-strings.json'), 'utf8'));
+        const localeUi = new LocaleUi(settings, tables, bundle, ui._cnText);
+        await step('initial app language', localeUi.refresh(), 4000);
+        settings.onChange((key) => {
+            if (key === 'language') {
+                setLanguage(settings.get('language'));
+                display.recorders.clear(); display.app = null; display.lastWords = null;
+                localeUi.refresh().catch((e) => log.warn('language switch: ' + e));
+            }
+        });
+        // The SDK may reload resources when the vehicle language changes; keep the explicit app choice.
+        if (bundle.currentVehicleUnits && bundle.currentVehicleUnits.on && bundle.updateStringBundleQueued) {
+            bundle.currentVehicleUnits.on('languageChanged', (value) => {
+                Promise.resolve(bundle.updateStringBundleQueued(value)).then(() => localeUi.refresh())
+                    .catch((e) => log.warn('language refresh: ' + e));
+            });
+        }
+    }
     await step('settings screen', wireSettings(ctx), 3000);
     if (impl && impl.start) await step('app start', Promise.resolve().then(() => impl.start(ctx)), 5000);
     await app.initialized();

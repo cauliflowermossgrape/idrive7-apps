@@ -17,6 +17,7 @@
  */
 const { withAlpha } = require('./canvas');
 const G = require('./gauges');
+const { t: translate } = require('./i18n');
 
 const W = 1600, TOP = 46, BOTTOM = 512;
 const ROW_H = 66, GAP = 8;
@@ -39,7 +40,7 @@ function chevron(r, t, x, y, c) {
     r.line(x + 9, y, x, y + 9, 3, c);
 }
 function fit(r, s, size, w, font) {
-    s = String(s);
+    s = translate(String(s));
     if (r.textWidth(s, size, { font }) <= w) return s;
     while (s.length > 1 && r.textWidth(s + '...', size, { font }) > w) s = s.slice(0, -1);
     return s + '...';

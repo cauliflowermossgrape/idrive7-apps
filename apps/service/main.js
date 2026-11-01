@@ -27,6 +27,7 @@ const G = require('./kit/gauges');
 const { Diag, hex, NRC, replyTo } = require('./kit/diag');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
+const { t: translate } = require('./kit/i18n');
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const STATUS = ['', 'Due now', 'Due soon', 'OK', 'Due soon'];
@@ -41,10 +42,10 @@ function parseDue(s, now) {
     if (mo < 1 || mo > 12) return null;
     now = now || new Date();
     const months = (y - now.getFullYear()) * 12 + (mo - 1 - now.getMonth());
-    const n = Math.abs(months), unit = n === 1 ? ' month' : ' months';
+    const n = Math.abs(months), unit = ' ' + translate(n === 1 ? 'month' : 'months');
     return {
-        text: (d ? d + ' ' : '') + MONTHS[mo - 1] + ' ' + y,
-        left: months > 0 ? 'in ' + n + unit : months === 0 ? 'this month' : n + unit + ' overdue',
+        text: (d ? d + ' ' : '') + translate(MONTHS[mo - 1]) + ' ' + y,
+        left: months > 0 ? translate('in') + ' ' + n + unit : months === 0 ? translate('this month') : n + unit + ' ' + translate('overdue'),
         months,
     };
 }
@@ -128,7 +129,7 @@ mgu.run({
             changed();
             try {
                 if (useDemo()) {
-                    hint.text = 'Service due ' + [it.way && 'in ' + it.way, it.date && 'by ' + it.date].filter(Boolean).join(' or ') + ' (demo)';
+                    hint.text = 'Service due ' + [it.way && translate('in') + ' ' + it.way, it.date && translate('by') + ' ' + it.date].filter(Boolean).join(' ' + translate('or') + ' ') + ' (demo)';
                     changed();
                     return;
                 }
@@ -311,7 +312,7 @@ mgu.run({
                 'cbsDataSBA: ' + (rawSba || 'nothing received'),
                 'cbsDataServiceList (' + (list ? list.length + ' items' : 'nothing received') + '):',
             ];
-            let y = 96;
+            let y = 120;
             lines.forEach((l) => { cv.text(fit(cv, l, 20, 1500), 48, y, 20, t.text); y += 32; });
             const chunk = 120;
             for (let i = 0; i < rawList.length && y < p.y + p.h - 12; i += chunk) { cv.text(rawList.slice(i, i + chunk), 48, y, 18, t.dim, { font: 'label' }); y += 26; }

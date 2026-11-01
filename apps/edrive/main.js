@@ -902,7 +902,7 @@ mgu.run({
             cv.text('UDS 22 ReadDataByIdentifier / OBD 01  ·  ' + link + '  ·  ambient ' + (G.isNum(live.ambient) ? G.fmt(live.ambient, 1) + ' °C' : 'n/a')
                 + '  ·  speed ' + (G.isNum(live.speed) ? G.fmt(G.hold('speed', live.speed), 0) + ' km/h' : 'n/a')
                 + '  ·  climate ' + (live.climate === null ? 'n/a' : live.climate ? 'on' : 'off') + (live.ac ? ' (A/C)' : ''), 48, 121, 24, t.text, { font: 'label' });
-            const cols = [48, 160, 260, 380, 820, 1000, 1290];
+            const cols = [48, 160, 260, 380, 820, 1030, 1290];
             ['VALUE', 'ECU', 'DID', 'REPLY', 'DECODED', 'STATUS', 'READ'].forEach((h, i) => cv.text(h, cols[i], 167, 22, t.dim, { font: 'bold', spacing: 1 }));
             cv.fillRect(48, 178, 1504, 1, t.tick);
             // every candidate gets a row: the rows shrink to fit between the header and the note at the bottom
@@ -997,7 +997,7 @@ mgu.run({
                 ['Steering wheel', wheelKw, has ? share(wheelKw) : null, d.wheel === null || d.wheel === undefined ? 'n/a' : d.wheel ? 'on (est.)' : 'off'],
                 ['On-board electrics', base, null, 'screens, units, pumps'],
             ];
-            ['', 'KW', 'RANGE', ''].forEach((h, i) => cv.text(h, [x0 + 24, x0 + 400, x0 + 500, 0][i], 116, 20, t.dim, { font: 'bold', spacing: 1, align: 'right' }));
+            ['', 'KW', 'RANGE', ''].forEach((h, i) => cv.text(h, [x0 + 24, x0 + 400, x0 + 540, 0][i], 116, 20, t.dim, { font: 'bold', spacing: 1, align: 'right' }));
             rows.forEach(([name, kw, km, note], i) => {
                 const y = Math.round(160 + i * (52 + ex / 5));
                 cv.text(name, x0 + 24, y, 24, t.text, { font: 'bold' });

@@ -26,8 +26,9 @@ function family(name) {
 
 /** Smallest baked size >= requested (downscaling looks better), else largest. */
 function get(name, size, text) {
-    // A shared CJK atlas avoids duplicating hundreds of glyphs in every numeric size.
+    // Shared supplemental atlases avoid duplicating glyphs in every numeric size.
     if (text && /[\u3000-\u9fff\uff00-\uffef]/.test(text)) name = 'cjk';
+    else if (text && /[\u0400-\u04ff]/.test(text)) name = 'cyrillic';
     const fam = family(name) || family('label');
     if (!fam) return null;
     let best = null;
