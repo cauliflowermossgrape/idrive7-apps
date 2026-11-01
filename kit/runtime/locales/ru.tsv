@@ -1245,8 +1245,8 @@ Accepted by the DSC · start the engine without switching the ignition off	Пр�
 No answer from the DSC	Нет ответа от DSC
 conditions not met · ignition on, engine off, P, parking brake on, car stationary	условия не выполнены · зажигание вкл., двигатель выкл., P, стояночный тормоз, автомобиль на месте
 not supported by this DSC	не поддерживается этим DSC
-refused (security access) · switch the engine off first	отказано (доступ) · сначала выключите двигатель
-not allowed in the current diagnostic session	не разрешено в текущей диагностической сессии
+refused (security access) · switch drive readiness off: engine off, not READY (ignition on only)	отказано (доступ) · выключите готовность к движению: двигатель выкл., только зажигание
+not allowed even in the extended diagnostic session	не разрешено даже в расширенной диагностической сессии
 overdue	просрочено
 
 # Live Data: страницы, макеты, поездки и настройки.
@@ -1688,3 +1688,10 @@ read	прочитано
 battery held at	заряд удерживается на
 speed	скорость
 off	выкл.
+# Live Adjustments 0.7.2: xDrive
+Engine off, not READY	Двигатель и готовность выкл.
+Needs: engine off, not READY	Нужно: выключить двигатель и готовность к движению
+Needs: stationary	Нужно: автомобиль на месте
+Needs: selector in p	Нужно: селектор в P
+Needs: parking brake on	Нужно: стояночный тормоз включён
+DSC refused the extended diagnostic session	DSC отказал в расширенной диагностической сессии
