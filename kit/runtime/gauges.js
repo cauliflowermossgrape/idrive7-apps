@@ -761,7 +761,8 @@ function headerCompact(cv, t, x, y, w, h, title, tabs, sel, badges) {
     const room = w - 20 - (badgesW ? badgesW + 12 : 0);
     const tw = tabWidths(cv, names, 18, opt, 132, 44, room - 20, 20);
     const tabsW = tw.reduce((a, b) => a + b, 0);
-    const showTitle = title && titleW + 32 + tabsW <= room;
+    // the tabs start 20 px in: the name shows only where every tab still fits after it (else the last tab, Settings, drops)
+    const showTitle = title && 20 + titleW + 32 + tabsW <= room;
     // only as wide as the content: the rest of the strip stays the HMI's
     let end = x + 20 + (showTitle ? titleW + 32 : 0);
     names.forEach((n, i) => { if (end + tw[i] <= x + room) end += tw[i]; });

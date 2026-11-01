@@ -97,6 +97,7 @@ async function main(){
    ['live_adjustments BM3+xDrive','Engine Config',['Exhaust Flap','Engine Map','Burbles','Active Sound','xDrive','Settings'],[sim]],
    ['live_adjustments MHD','Engine Config',['Exhaust Flap','Engine Map','Max Cooling','Settings'],[sim]],
    ['live_data','Live Data',['New screen','Trips','Signals 1/2','Engine 1/2','Units','Settings'],[demo,knob]],
+   ['live_data gauges','Live Data',['Gauges 1/3','Trips','Signals','Engine','Units','Settings'],[demo]],
    ['redline','Redline',['Tach','Shift log','Settings'],[demo]],
    ['service','Service',['Service','Diagnostics','Settings'],[demo]],
    ['warmup','Warm-Up',['Warm-up','Settings'],[demo]],
@@ -110,7 +111,7 @@ async function main(){
   };
   for(const args of cases)checkTabs(...args);
   for(const state of ['DEMO','NO LINK','IDENTIFYING','OTHER EGS','LINK STALE','LIVE','LIVE · UNVERIFIED'])
-   checkTabs('zf8hp '+state,'Transmission Config',cases[14][2],[{text:'EXPERIMENTAL',color:'warn'},{text:state,color:'warn'}]);
+   checkTabs('zf8hp '+state,'Transmission Config',cases.find(c=>c[0]==='zf8hp')[2],[{text:'EXPERIMENTAL',color:'warn'},{text:state,color:'warn'}]);
  }
  assert.strictEqual(cv.text('Oil',10,50,32,'#ffffff',opts),r.text('Oil',10,50,32,'#ffffff',opts));
  assert.strictEqual(cv.textWidth('Oil',32,opts),r.textWidth('Oil',32,opts));
