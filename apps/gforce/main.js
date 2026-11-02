@@ -96,7 +96,9 @@ mgu.run({
             }
             cv.line(cx - r, cy, cx + r, cy, 2, withAlpha(t.tick, 0.5));
             cv.line(cx, cy - r, cx, cy + r, 2, withAlpha(t.tick, 0.5));
-            const P = (lat, lon) => [cx - G.clamp(lat / max, -1.08, 1.08) * r, cy - G.clamp(lon / max, -1.08, 1.08) * r];
+            const flipLong = settings.get('flipLong');      // brake on top, accel at the bottom (issue #62)
+            const ySign = flipLong ? 1 : -1;
+            const P = (lat, lon) => [cx - G.clamp(lat / max, -1.08, 1.08) * r, cy + ySign * G.clamp(lon / max, -1.08, 1.08) * r];
             // grip envelope (left = positive lat drawn to the left)
             const pts = S.env.map((g, i) => {
                 const a = (i + 0.5) * (360 / SECT) * Math.PI / 180;
@@ -114,8 +116,9 @@ mgu.run({
                 cv.circle(x, y, 12, t.accent);
                 cv.circle(x, y, 5, t.text);
             }
-            cv.text('ACCEL', cx, cy - r - 20, 22, t.dim, { align: 'center', font: 'bold', spacing: 1.5 });
-            cv.text('BRAKE', cx, cy + r + 38, 22, t.dim, { align: 'center', font: 'bold', spacing: 1.5 });
+            const [topLbl, botLbl] = flipLong ? ['BRAKE', 'ACCEL'] : ['ACCEL', 'BRAKE'];
+            cv.text(topLbl, cx, cy - r - 20, 22, t.dim, { align: 'center', font: 'bold', spacing: 1.5 });
+            cv.text(botLbl, cx, cy + r + 38, 22, t.dim, { align: 'center', font: 'bold', spacing: 1.5 });
             cv.text('L', cx - r - 30, cy + 8, 22, t.dim, { align: 'center', font: 'bold' });
             cv.text('R', cx + r + 30, cy + 8, 22, t.dim, { align: 'center', font: 'bold' });
         }
