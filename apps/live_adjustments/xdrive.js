@@ -260,7 +260,9 @@ class XDriveControl {
         }
         return [
             { label: 'Live car data', ok: !d.demo },
-            { label: 'Engine off', ok: d.demo ? false : d.rpm === null ? false : d.rpm < ENGINE_OFF_RPM },
+            // ignition on and not READY (state 7): the engine cannot run, whatever the rpm signal
+            // still says - it stays above 50 for minutes after switching off on some cars (issue #28)
+            { label: 'Engine off', ok: d.demo ? false : d.condition === IGNITION ? true : d.rpm === null ? false : d.rpm < ENGINE_OFF_RPM },
             // the DSC wants terminal 15: with the infotainment alone on (WOHNEN) it answers NRC 33
             { label: 'Ignition on', ok: d.demo ? false : d.condition === null ? null : d.condition === IGNITION || this.driveReady() === true },
             { label: 'Stationary', ok: d.demo ? false : d.speed === null ? false : d.speed < 0.5 },
@@ -317,7 +319,9 @@ class XDriveControl {
                 this.note = name + ' refused the extended diagnostic session' + (r[1] != null ? ' (NRC ' + hex2(r[1]) + ')' : ' (no answer)');
                 this.noteType = 'warn';
             } else if (r && r[0] === 0x7F) {
-                this.note = name + ' refused: ' + (NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
+                // a VIP that wants a security unlock (G05 xDrive45e, issue #52): this app does no security access
+                this.note = name + ' refused: ' + (vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
+                    : NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
                 this.noteType = 'warn';
             } else {
                 this.note = 'No answer from the ' + name;

@@ -72,8 +72,12 @@ then no tab appears and nothing is sent. Code: `xdrive.js`.
 - The DSC accepts the DBE1 write only with the ignition on, engine **off**, selector in P, parking
   brake on and the car stationary; on a hybrid, READY with the engine stopped is allowed. The app
   also refuses unless live data shows the ignition on, the engine off, the car stationary and the
-  selector not in R/N/D (it can't read the parking brake). The button has to be pressed twice
+  selector not in R/N/D (it can't read the parking brake). With the car reporting ignition on
+  (not READY) the engine counts as off whatever the rpm says: on some cars the rpm signal stays
+  above 50 for minutes after switching off (issue #28). The button has to be pressed twice
   within 6 s.
+- A VIP that answers NRC `33` (security access, G05 xDrive45e) wants an unlock this app doesn't
+  do; the tab says so.
 - With the engine off, DBE1 always reads 0, so the screen shows AWD / RWD only once the engine
   is running. Started in the same ignition cycle, the cluster shows an all-wheel-drive notice.
 - Only the tab reads the DSC: the SGBD index (`22 F1 50`) once, then DBE1 every 4 s. A DSC that

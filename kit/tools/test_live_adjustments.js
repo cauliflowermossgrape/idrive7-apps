@@ -67,11 +67,13 @@ function dsc(kind) {
         st.calls.push((target === 0x29 ? 'dsc ' : target === 0x19 ? 'lmv ' : target === 0x39 ? 'vip ' : 'other ') + req);
         let r;
         // G05 xDrive45e (issue #52): IB_G05 at 0x29 answers DBE1 but it does nothing; VIP_G05 at 0x39
-        if (kind === 'g05' && target === 0x29 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x00];
-        else if (kind === 'g05' && target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x30];
-        else if (kind === 'g05' && target === 0x39 && sid === 0x22 && data[0] === 0xDB && data[1] === 0x44) r = [0x62, 0xDB, 0x44, st.vip === undefined ? 1 : st.vip];
-        else if (kind === 'g05' && target === 0x39 && sid === 0x2E && data[0] === 0xDB && data[1] === 0x2F) {
-            if (!st.engine) r = [0x7F, 0x2E, 0x22];
+        const g05 = kind === 'g05' || kind === 'g05vip33';
+        if (g05 && target === 0x29 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x00];
+        else if (g05 && target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x30];
+        else if (g05 && target === 0x39 && sid === 0x22 && data[0] === 0xDB && data[1] === 0x44) r = [0x62, 0xDB, 0x44, st.vip === undefined ? 1 : st.vip];
+        else if (g05 && target === 0x39 && sid === 0x2E && data[0] === 0xDB && data[1] === 0x2F) {
+            if (kind === 'g05vip33') r = [0x7F, 0x2E, 0x33];
+            else if (!st.engine) r = [0x7F, 0x2E, 0x22];
             else { st.vip = data[2]; r = [0x6E, 0xDB, 0x2F]; }
         } else if (target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x30];  // G22: VIP_G05 too
         else if (target === 0x19 && sid === 0x22 && data[0] === 0xF1 && data[1] === 0x50) r = kind === 'nolmv' ? [0x7F, 0x22, 0x31] : [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x21, 0x80];
@@ -261,6 +263,25 @@ async function xdriveChecks() {
     s.d.lmv = 1; clock += 5000;
     await s.x.tick();
     assert.strictEqual(s.x.view().mode, 'AWD');
+
+    // issue #28: rpm still above 50 just after switching off, but the car says ignition on (7): sent
+    for (const rpm of [80, 600, null]) {
+        s = await mk('on', 'g22', { rpm, condition: 7 });
+        await s.x.requestOff(); await s.x.requestOff();
+        assert.deepStrictEqual(writes(s.d), ['dsc 2e db e1 00'], 'stale rpm ' + rpm + ' with ignition on must send');
+    }
+    // ...but with the engine running (READY, rpm up) it is still blocked
+    s = await mk('on', 'g22', { rpm: 750, condition: 10 });
+    await s.x.requestOff(); await s.x.requestOff();
+    assert.deepStrictEqual(writes(s.d), [], 'sent with the engine running');
+
+    // a VIP that wants security access (G05, issue #52): said plainly, nothing recorded as done
+    s = await mk('on', 'g05vip33', { rpm: 0, condition: 10 });
+    s.d.engine = true;
+    await s.x.requestOff(); await s.x.requestOff();
+    assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), ['vip 2e db 2f 00']);
+    assert(/VIP refused: security access/.test(s.x.note), s.x.note);
+    assert.strictEqual(s.x.requested, false);
 
     // a confirm press that comes too late only asks again
     s = await mk('on', 'g22');
