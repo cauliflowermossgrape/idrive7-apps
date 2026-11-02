@@ -56,8 +56,11 @@ diagnostic job `LMV_FUNKTION` (issue #28). The *xDrive (experimental)* setting s
 then no tab appears and nothing is sent. Code: `xdrive.js`.
 
 - DSC, diagnostic address `0x29`, DID `0xDBE1`: `22 DB E1` reads it (1 = xDrive on, 0 = off),
-  `2E DB E1 00` switches xDrive off. The app sends no "on" command. A full ignition cycle
-  (terminal 15 off, then on) brings xDrive back.
+  `2E DB E1 00` switches xDrive off. A full ignition cycle (terminal 15 off, then on) brings
+  xDrive back. On the DSC variants where `2E DB E1 01` was measured to bring it back at once
+  (`ON_INDEX` in `xdrive.js`: DSC_G30N `0F2850`, G01 X3 M40i) the tab also has an **xDrive on**
+  button - the same write with `01`, the same checks and double press. Elsewhere no "on" command
+  is sent.
 - The same job is in BMW's descriptions of both G-series DSC families (DSC_G20 and DSC_G30N), so
   the tab works on any G car whose DSC answers `22 DB E1`. If the DSC answers the write with "not
   in this session" (NRC `7E` / `7F`), the app opens the extended session (`10 03`) and sends the
@@ -72,19 +75,33 @@ then no tab appears and nothing is sent. Code: `xdrive.js`.
 - The DSC accepts the DBE1 write only with the ignition on, engine **off**, selector in P, parking
   brake on and the car stationary; on a hybrid, READY with the engine stopped is allowed. The app
   also refuses unless live data shows the ignition on, the engine off, the car stationary and the
-  selector not in R/N/D (it can't read the parking brake). With the car reporting ignition on
+  selector not in R/N/D (it can't read the parking brake). Exception, measured on a G01 X3 M40i
+  (DSC_G30N `0F2850`, `ENGINE_RUNNING_OK` in `xdrive.js`): that DSC takes the write with the
+  engine **running** (P, parking brake, stationary) - and also in D during an auto start/stop
+  engine stop with the parking brake off, so "stationary in P" stays this app's own gate there;
+  the "Engine off" check is left out on that variant. With the car reporting ignition on
   (not READY) the engine counts as off whatever the rpm says: on some cars the rpm signal stays
   above 50 for minutes after switching off (issue #28). The button has to be pressed twice
   within 6 s.
 - A VIP that answers NRC `33` (security access, G05 xDrive45e) wants an unlock this app doesn't
   do; the tab says so.
-- With the engine off, DBE1 always reads 0, so the screen shows AWD / RWD only once the engine
-  is running. Started in the same ignition cycle, the cluster shows an all-wheel-drive notice.
+- The mode comes from the transfer case itself when it has been read: the requested-torque
+  qualifier in `22 DB 32` (bytes 7-8, also the last byte of `DB31`) is `0x20` / `0x21` while the
+  LMV is active and `0xE8` after the OFF write (`(q & 0xC0) == 0xC0` = off; the same two values are
+  in ezl0l's G22 samples and in the G01 logs), engine on or off. Right after an accepted write the
+  LMV is read once more and the `command_accepted` line says `physicalEffect: verified_by_lmv`
+  when its qualifier agrees. Without a DB32 answer the old rule holds: with the engine off DBE1
+  reads 0 on the DSC_G20, so AWD / RWD from DBE1 is shown only once the engine is running (on the
+  DSC_G30N `0F2850` DBE1 reads 1 with the engine off too). Started in the same ignition cycle, the
+  cluster shows an all-wheel-drive notice. While xDrive is off the DSC stores DTC `480724` (LMV
+  function unavailable, sub-function inactive); after the ON write it stays as a historic entry.
 - Only the tab reads the DSC: the SGBD index (`22 F1 50`) once, then DBE1 every 4 s. A DSC that
   refuses the read (a rear-wheel-drive car) is never written to.
 - Front-axle torque, to see the effect while driving: the transfer case (LMV, `0x19`), `22 DB 32`
-  (`LMV_MOMENT`: actual and requested Nm, raw / 4), every second while the tab is shown and the
-  engine runs, plus the highest requested value while moving. With xDrive off it stays at 0 Nm.
+  (`LMV_MOMENT`: actual and requested Nm, raw / 4), every second while the tab is shown (the Nm
+  are shown with the engine running), plus the highest requested value while moving. With xDrive
+  off it stays at 0 Nm (−1.75…−2.5 Nm on every launch to 66 km/h on the G01, against 256…433 Nm
+  peaks before the write).
 - Transfer case variant: one `22 F1 50` (SGBD index) to the LMV when the tab opens, shown next to
   the DSC variant. Known G-series units: `0F2180` (LMV-G ATC13, MPC5643L) and `0F29E0`
   (LMV-G ATC13_2, TC233L). Read only: the app never codes or flashes the transfer case, so there
@@ -92,8 +109,11 @@ then no tab appears and nothing is sent. Code: `xdrive.js`.
 
 Research: ezl0l's G22 M440i tests (DSC_G20, SGBD index `0F2510`; gist linked on issue #28),
 including a short closed-area drive where the LMV's front-axle torque request stayed at 0;
-IterioDev confirmed it on a 2023 230i xDrive. **Not established:** physical clutch state,
-ABS / stability control in motion, other DSC variants, prolonged use. Use at your own risk.
+IterioDev confirmed it on a 2023 230i xDrive. G01 X3 M40i LCI 2022 (DSC_G30N `0F2850`, LMV
+`0F29E0`): two closed-area drives with DB32 logged every 250 ms - write accepted with the engine
+running, `2E DB E1 01` restores AWD at once, front torque −1.75 Nm after / 433 Nm before, RWD
+persists after an engine start in the same ignition cycle. **Not established:** physical clutch
+state, ABS / stability control in motion, other DSC variants, prolonged use. Use at your own risk.
 
 ## xDrive diagnostic logging
 

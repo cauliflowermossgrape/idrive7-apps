@@ -46,6 +46,26 @@
  *
  * Tested by others on a G22 M440i (DSC_G20, SGBD index 0F2510) and a G42 230i. Front-axle torque
  * dropped to 0 in their logs; ABS / DSC behaviour in motion was not measured. Experimental.
+ *
+ * Measured on a G01 X3 M40i LCI 2022 (DSC_G30N, SGBD index 0F2850; LMV 0F29E0), two closed-area
+ * drives with DB32 logged every 250 ms (issue #28 / #63 follow-up):
+ *   - the DSC took 2E DB E1 00 with the ENGINE RUNNING (692 rpm, P, parking brake, stationary)
+ *     -> 6E DB E1; front-axle torque -1.75..-2.5 Nm on every launch after it (to 66 km/h, D and
+ *     R; 256..433 Nm on the same launches before). So on this variant the engine need not be
+ *     stopped: ENGINE_RUNNING_OK lists it and the "Engine off" check is left out there.
+ *   - 2E DB E1 01 -> 6E DB E1 brings xDrive back at once, no ignition cycle: the next launch
+ *     showed 433 Nm in front. ON_INDEX lists the variants where this was measured; only those get
+ *     the "xDrive on" button (the same write with 01, the same checks and double press).
+ *   - the transfer case reports the state itself: the requested-torque qualifier in DB32 (bytes
+ *     7-8, last byte also in DB31) reads 0x20 / 0x21 while LMV is active and 0xE8 after the OFF
+ *     write - the same two values are in ezl0l's G22 samples (.. 00 20 in AWD, .. 00 E8 off).
+ *     (qualifier & 0xC0) === 0xC0 -> xDrive off. It answers with the engine off too, so the mode
+ *     comes from the LMV whenever DB32 was read, and DBE1 only when it was not.
+ *   - DBE1 on 0F2850 reads 01 in AWD with the engine off as well, 00 after the write.
+ *   - while off the DSC stores DTC 480724 (LMV function unavailable, sub-function inactive);
+ *     after the ON write it stays as a historic entry.
+ *   - the DSC also took the OFF write in D during an auto start/stop engine stop (parking brake
+ *     off): "P + parking brake" is this app's gate, the DSC does not check it. Kept.
  */
 
 const DSC = 0x29;                       // DSC (BMW diagnostic address)
@@ -56,7 +76,11 @@ const DID_LMV = [0xDB, 0xE1];           // LMV_FUNKTION
 const VIP = 0x39;                       // VIP (BMW diagnostic address)
 const DID_VIP_LMV = [0xDB, 0x2F];       // VIP STEUERN_LMV_FUNKTION_QDM (write)
 const DID_VIP_STATUS = [0xDB, 0x44];    // VIP STATUS_LMV_FUNKTION_QDM (read)
-const TESTED_INDEX = ['0F2510'];        // DSC_G20, the variant the research ran on
+const TESTED_INDEX = ['0F2510', '0F2850'];   // DSC_G20 (ezl0l's G22), DSC_G30N (G01 X3 M40i, see the header)
+const ENGINE_RUNNING_OK = ['0F2850'];   // DSC variants measured to take the DBE1 write with the engine running
+const ON_INDEX = ['0F2850'];            // DSC variants where 2E DB E1 01 was measured to bring xDrive back at once
+const DTC_LMV_OFF = '480724';           // the DSC's "LMV function unavailable" entry, stored while xDrive is off
+const LMV_OFF_MASK = 0xC0;              // DB32 requested-torque qualifier: 0x20/0x21 active, 0xE8 switched off
 const DBE1_UNITS = {                    // units at 0x29 that take the DBE1 write, by SGBD index
     '0F1970': 'DSC_I1', '0F1C50': 'DSC_I1', '0F1CE0': 'DSC_I1', '0F2100': 'DSC_G11',
     '0F2510': 'DSC_G20', '0F2850': 'DSC_G30N', '0F2CE0': 'IB_G2X',
@@ -135,12 +159,14 @@ class XDriveControl {
         this.lmvRunning = false;        // DBE1 was read with the engine running (only then it means anything)
         this.lastRead = 0;
         this.torque = null;             // { actual, requested } Nm, last LMV read
+        this.lmvState = null;           // 'on' | 'off' from the DB32 requested-torque qualifier (the LMV itself)
         this.torqueOk = null;           // false: the LMV refused the read (stop asking)
         this.peakRequested = null;      // highest requested front torque seen while moving
         this.lastTorque = 0;
         this.reading = false;
         this.busy = false;
         this.confirmUntil = 0;
+        this.confirmWhat = null;        // 'off' | 'on': the button the first press came from
         this.note = null;
         this.noteType = 'dim';
         this._readEvidence = {};
@@ -210,6 +236,7 @@ class XDriveControl {
             reads,
             acceptedRequestTracked: this.requested,
             physicalClutchState: 'not_measured',
+            lmvState: this.lmvState,
         };
     }
 
@@ -285,7 +312,7 @@ class XDriveControl {
         if (!this.enabled || this.busy || this.reading || this.supported === false || !this._linkUp()) return null;
         const jobs = [];
         if (this.now() - this.lastRead >= POLL_MS) jobs.push(this.path === 'vip' ? this._readVip() : this._readLmv());
-        if (this.supported === true && this.torqueOk !== false && this.engineRunning() && this.now() - this.lastTorque >= TORQUE_MS) {
+        if (this.supported === true && this.torqueOk !== false && this.now() - this.lastTorque >= TORQUE_MS) {
             jobs.push(this._readTorque());
         }
         if (!jobs.length) return null;
@@ -340,9 +367,19 @@ class XDriveControl {
             if (!d.demo && d.speed !== null && d.speed >= MOVING_KMH) {
                 this.peakRequested = Math.max(this.peakRequested === null ? -Infinity : this.peakRequested, this.torque.requested);
             }
-        } else if (r.nrc != null) {
-            this.torqueOk = false;
+            // the requested-torque qualifier is the transfer case's own word on the mode
+            const q = r.data[6] << 8 | r.data[7];
+            const state = (q & LMV_OFF_MASK) === LMV_OFF_MASK ? 'off' : 'on';
+            if (state !== this.lmvState) {
+                this.log.info('xdrive: LMV DB32 qualifier ' + hex2(r.data[6]) + hex2(r.data[7]) + ' -> xDrive ' + state
+                    + ' rpm ' + d.rpm + ' condition ' + d.condition);
+            }
+            this.lmvState = state;
+            if (state === 'on') this.requested = false;         // xDrive is back (ON write or ignition cycle)
+        } else if (r.nrc != null && this.engineRunning()) {
+            this.torqueOk = false;                             // asked with the engine running and refused: left alone
             this.torque = null;
+            this.lmvState = null;
         }
     }
 
@@ -373,16 +410,25 @@ class XDriveControl {
         }
         return [
             { label: 'Live car data', ok: !d.demo },
+        ].concat(this.engineMayRun() ? [] : [
             // ignition on and not READY (state 7): the engine cannot run, whatever the rpm signal
             // still says - it stays above 50 for minutes after switching off on some cars (issue #28)
             { label: 'Engine off', ok: d.demo ? false : d.condition === IGNITION ? true : d.rpm === null ? false : d.rpm < ENGINE_OFF_RPM },
-            // the DSC wants terminal 15: with the infotainment alone on (WOHNEN) it answers NRC 33
-            { label: 'Ignition on', ok: d.demo ? false : d.condition === null ? null : d.condition === IGNITION || this.driveReady() === true },
+        ]).concat([
+            // the DSC wants terminal 15: with the infotainment alone on (WOHNEN) it answers NRC 33;
+            // the engine running (READY) counts as the ignition on
+            { label: 'Ignition on', ok: d.demo ? false : d.condition === null ? (this.engineMayRun() && this.engineRunning() ? true : null)
+                : d.condition === IGNITION || this.driveReady() === true },
             { label: 'Stationary', ok: d.demo ? false : d.speed === null ? false : d.speed < 0.5 },
             { label: 'Selector in P', ok: d.demo ? false : d.stage === 'P' ? true : d.stage ? false : null },
             { label: 'Parking brake on', ok: null },
-        ];
+        ]);
     }
+
+    /** The DSC variant was measured to take the DBE1 write with the engine running (G01, 0F2850). */
+    engineMayRun() { return this.path === 'dsc' && !!this.index && ENGINE_RUNNING_OK.indexOf(this.index) >= 0; }
+    /** The DSC variant was measured to bring xDrive back on 2E DB E1 01: the "xDrive on" button is offered. */
+    onAvailable() { return this.path === 'dsc' && !!this.index && ON_INDEX.indexOf(this.index) >= 0; }
 
     /** Why a press would not send, or null when it may. */
     blocker() {
@@ -395,7 +441,22 @@ class XDriveControl {
     }
 
     /** "xDrive off": the first press asks, the second (within CONFIRM_MS) sends the one write. */
-    async requestOff() {
+    requestOff() { return this._request('off'); }
+
+    /** "xDrive on" (2E DB E1 01): only on the variants where it was measured to work (ON_INDEX);
+     * the same checks and the same double press. Nowhere else: an "on" that does nothing would
+     * only mislead, and a DSC reset is not something this app sends. */
+    requestOn() {
+        if (!this.onAvailable()) {
+            this.note = 'xDrive on is not offered on this DSC · it returns after an ignition cycle'; this.noteType = 'warn';
+            this._diagnostic('blocked', { reason: 'xDrive on not offered on this variant' });
+            return Promise.resolve();
+        }
+        return this._request('on');
+    }
+
+    async _request(what) {
+        const on = what === 'on';
         if (this.busy) { this._diagnostic('blocked', { reason: 'Busy' }); return; }
         const why = this.blocker();
         if (why) {
@@ -403,22 +464,25 @@ class XDriveControl {
             this._diagnostic('blocked', { reason: why });
             return;
         }
-        if (this.now() > this.confirmUntil) {
+        if (this.now() > this.confirmUntil || this.confirmWhat !== what) {
             this._attemptId = this.now() + '-' + (++this._attemptSequence);
             this._traceUntil = this.now() + TRACE_MS;
             this.confirmUntil = this.now() + CONFIRM_MS;
-            this.note = 'Press again to switch xDrive off until the ignition is switched off';
+            this.confirmWhat = what;
+            this.note = on ? 'Press again to switch xDrive back on'
+                : 'Press again to switch xDrive off' + (this.onAvailable() ? '' : ' until the ignition is switched off');
             this.noteType = 'warn';
-            this._diagnostic('confirmation_required');
+            this._diagnostic('confirmation_required', { command: what });
             return;
         }
         this.confirmUntil = 0;
+        this.confirmWhat = null;
         this.busy = true;
         const vip = this.path === 'vip';
         const name = vip ? 'VIP' : 'DSC', ecu = vip ? VIP : DSC;
         this.note = 'Sending to the ' + name + '…'; this.noteType = 'dim';
         try {
-            let r = await this._writeOff();
+            let r = await this._write(on);
             // Some software versions take the write only in the extended diagnostic session:
             // open it (10 03) and send the same write once more. Nothing else is sent.
             if (r && r[0] === 0x7F && SESSION_NRC.indexOf(r[2]) >= 0) {
@@ -426,28 +490,34 @@ class XDriveControl {
                 const ses = await this._exchange(ecu, 0x10, [0x03], 3000,
                     (u) => (u[0] === 0x50 && u[1] === 0x03) || (u[0] === 0x7F && u[1] === 0x10));
                 this.log.info('UDS <- ' + name + ' ' + (ses ? ses.map(hex2).join(' ') : 'no answer'));
-                if (ses && ses[0] === 0x50) r = await this._writeOff();
+                if (ses && ses[0] === 0x50) r = await this._write(on);
                 else r = ses && ses[0] === 0x7F ? ['session', ses[2]] : ['session', null];
             }
             if (r && r[0] === 0x6E) {
-                this.requested = true;
-                this._diagnostic('command_accepted', { physicalEffect: 'not_verified' });
-                this.note = vip ? 'Accepted by the VIP · drive without switching off and watch the front-axle torque'
+                this.requested = !on;
+                // the transfer case says at once whether it took effect (DB32 qualifier), engine on or off
+                if (!vip && this.torqueOk !== false) { try { await this._readTorque(); } catch (e) { /* the read is retried by tick() */ } }
+                const verified = this.lmvState !== null && this.lmvState === (on ? 'on' : 'off');
+                this._diagnostic('command_accepted', { command: what, physicalEffect: verified ? 'verified_by_lmv' : 'not_verified' });
+                this.note = on ? (verified ? 'xDrive is back · the transfer case reports it on' : 'Accepted by the DSC')
+                        + ' · DTC ' + DTC_LMV_OFF + ' stays stored in the DSC as a historic entry'
+                    : vip ? 'Accepted by the VIP · drive without switching off and watch the front-axle torque'
+                    : verified ? 'xDrive off · the transfer case reports it · drive without switching the ignition off'
                     : this.engineRunning() ? 'Accepted by the DSC · drive without switching the ignition off'
                         : 'Accepted by the DSC · start the engine without switching the ignition off';
                 this.noteType = 'go';
             } else if (r && r[0] === 'session') {
-                this._diagnostic('command_not_accepted', { reason: 'extended_session_not_accepted' });
+                this._diagnostic('command_not_accepted', { command: what, reason: 'extended_session_not_accepted' });
                 this.note = name + ' refused the extended diagnostic session' + (r[1] != null ? ' (NRC ' + hex2(r[1]) + ')' : ' (no answer)');
                 this.noteType = 'warn';
             } else if (r && r[0] === 0x7F) {
-                this._diagnostic('command_not_accepted', { reason: 'ecu_negative_response' });
+                this._diagnostic('command_not_accepted', { command: what, reason: 'ecu_negative_response' });
                 // a VIP that wants a security unlock (G05 xDrive45e, issue #52): this app does no security access
                 this.note = name + ' refused: ' + (vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
                     : NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
                 this.noteType = 'warn';
             } else {
-                this._diagnostic('command_not_accepted', { reason: 'no_matching_positive_response' });
+                this._diagnostic('command_not_accepted', { command: what, reason: 'no_matching_positive_response' });
                 this.note = 'No answer from the ' + name;
                 this.noteType = 'warn';
             }
@@ -458,14 +528,15 @@ class XDriveControl {
         } finally {
             this.busy = false;
             this.lastRead = 0;              // read DBE1 again on the next frame
+            this.lastTorque = 0;            // and the transfer case
         }
     }
 
-    async _writeOff() {
+    async _write(on) {
         const vip = this.path === 'vip';
-        const name = vip ? 'VIP' : 'DSC', did = vip ? DID_VIP_LMV : DID_LMV;
-        this.log.info('UDS -> ' + name + ' 2E ' + did.map(hex2).join(' ') + ' 00 (xDrive off, experimental)');
-        const r = await this._exchange(vip ? VIP : DSC, 0x2E, did.concat([0x00]), 3000,
+        const name = vip ? 'VIP' : 'DSC', did = vip ? DID_VIP_LMV : DID_LMV, value = on ? 0x01 : 0x00;
+        this.log.info('UDS -> ' + name + ' 2E ' + did.map(hex2).join(' ') + ' ' + hex2(value) + ' (xDrive ' + (on ? 'on' : 'off') + ', experimental)');
+        const r = await this._exchange(vip ? VIP : DSC, 0x2E, did.concat([value]), 3000,
             (u) => (u[0] === 0x6E && u[1] === did[0] && u[2] === did[1]) || (u[0] === 0x7F && u[1] === 0x2E));
         this.log.info('UDS <- ' + name + ' ' + (r ? r.map(hex2).join(' ') : 'no answer'));
         return r;
@@ -474,12 +545,17 @@ class XDriveControl {
     /** What the screen shows: mode 'AWD' | 'RWD' | 'REQUESTED' | 'UNKNOWN'. */
     view() {
         const running = this.engineRunning();
-        let mode = 'UNKNOWN';
-        if (this.path === 'dsc' && running && this.lmvRunning && this.lmv !== null) mode = this.lmv ? 'AWD' : 'RWD';
+        let mode = 'UNKNOWN', modeFrom = null;
+        if (this.lmvState !== null) { mode = this.lmvState === 'off' ? 'RWD' : 'AWD'; modeFrom = 'lmv'; }
+        else if (this.path === 'dsc' && running && this.lmvRunning && this.lmv !== null) { mode = this.lmv ? 'AWD' : 'RWD'; modeFrom = 'dsc'; }
         else if (this.requested) mode = 'REQUESTED';
         return {
             enabled: this.enabled,
             mode,
+            modeFrom,
+            onAvailable: this.onAvailable(),
+            engineMayRun: this.engineMayRun(),
+            confirmWhat: this.now() <= this.confirmUntil ? this.confirmWhat : null,
             running,
             path: this.path,
             index: this.index,
@@ -502,4 +578,4 @@ class XDriveControl {
     }
 }
 
-module.exports = { XDriveControl, DSC, LMV, VIP, TESTED_INDEX, DBE1_UNITS, VIP_UNITS, LMV_VARIANTS, ENGINE_OFF_RPM, ENGINE_ON_RPM };
+module.exports = { XDriveControl, DSC, LMV, VIP, TESTED_INDEX, DBE1_UNITS, VIP_UNITS, LMV_VARIANTS, ENGINE_OFF_RPM, ENGINE_ON_RPM, ENGINE_RUNNING_OK, ON_INDEX };

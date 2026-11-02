@@ -68,6 +68,7 @@ mgu.run({
             burblesOff: tuneAct(() => tune.applyBurbles(true)),
             asd: (on) => tuneAct(() => tune.setAsd(on)),
             xdriveOff: tuneAct(() => xdrive.requestOff()),
+            xdriveOn: tuneAct(() => xdrive.requestOn()),
         };
         const pages = () => pagesFor(tune.features(), xdrive.enabled);
 

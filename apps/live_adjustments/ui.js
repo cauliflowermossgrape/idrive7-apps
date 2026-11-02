@@ -173,19 +173,21 @@ function drawAsd(cv, G, t, m, act, bottom) {
     return cv;
 }
 
-/** xDrive (experimental, xdrive.js): the mode the DSC reports, the conditions it wants, one button. */
+/** xDrive (experimental, xdrive.js): the mode the transfer case / DSC reports, the conditions it wants, the button(s). */
 function drawXDrive(cv, G, t, x, act, bottom) {
     const cy = G.TOP + 30;
     const word = x.mode === 'AWD' ? 'AWD' : x.mode === 'RWD' ? 'RWD' : x.mode === 'REQUESTED' ? 'RWD REQUESTED' : '–';
     const col = x.mode === 'RWD' ? RED(t) : x.mode === 'AWD' ? t.text : x.mode === 'REQUESTED' ? (t.warn || '#d29922') : t.dim;
     cv.text(word, W / 2, cy + 64, x.mode === 'REQUESTED' ? 64 : 96, col, { align: 'center', font: 'bold', spacing: 4 });
-    const sub = x.mode === 'AWD' ? 'xDrive active · read from the DSC'
-        : x.mode === 'RWD' ? 'xDrive off · read from the DSC · back after an ignition cycle'
+    const from = x.modeFrom === 'lmv' ? 'read from the transfer case' : 'read from the DSC';
+    const back = x.onAvailable ? 'xDrive on brings it back' : 'back after an ignition cycle';
+    const sub = x.mode === 'AWD' ? 'xDrive active · ' + from
+        : x.mode === 'RWD' ? 'xDrive off · ' + from + ' · ' + back
         : x.mode === 'REQUESTED' ? (x.path === 'vip' ? 'Accepted by the VIP · the front-axle torque shows the effect'
             : 'Start the engine without switching the ignition off')
         : x.supported === false ? 'This DSC does not offer LMV_FUNKTION'
         : x.path === 'vip' ? 'Sent through the VIP · the front-axle torque shows the effect'
-        : 'The DSC reports the mode with the engine running';
+        : 'The transfer case reports the mode once read';
     cv.text(sub, W / 2, cy + 100, 18, t.dim, { align: 'center', font: 'label', spacing: 1 });
 
     // the conditions the DSC wants: green = seen, red = not met, grey = the head unit cannot tell
@@ -200,7 +202,7 @@ function drawXDrive(cv, G, t, x, act, bottom) {
     const dsc = (x.index ? (x.unit || 'DSC') + ' ' + x.index + (x.tested ? ' · tested variant' : ' · untested variant') : 'DSC variant unknown')
         + (x.path === 'vip' ? ' · via VIP ' + x.vipIndex : '');
     const lmv = x.lmvIndex ? ' · transfer case ' + (x.lmvName ? x.lmvName + ' (' + x.lmvIndex + ')' : x.lmvIndex) : '';
-    cv.text('Experimental · ' + dsc + lmv + ' · xDrive returns when the ignition is switched off', W / 2, ry + 40, 16,
+    cv.text('Experimental · ' + dsc + lmv + (x.onAvailable ? ' · xDrive on restores it, or an ignition cycle' : ' · xDrive returns when the ignition is switched off'), W / 2, ry + 40, 16,
         x.index && !x.tested ? (t.warn || '#d29922') : t.dim, { align: 'center', font: 'label' });
     // front-axle torque from the transfer case (LMV): 0 Nm while driving = xDrive is off
     const nm = (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + ' Nm';
@@ -210,8 +212,12 @@ function drawXDrive(cv, G, t, x, act, bottom) {
         : x.supported === true ? 'Front axle torque shows with the engine running' : null;
     if (tq) cv.text(tq, W / 2, ry + 76, 18, x.torque ? t.text : t.dim, { align: 'center', font: 'label' });
     noteLine(cv, G, t, x, bottom);
-    buttonRow(cv, G, t, [[x.confirming ? 'Confirm xDrive off' : 'xDrive off', act.xdriveOff, x.confirming]],
-        bottom, 360, x.busy, 'la_xd');
+    const offBtn = [x.confirmWhat === 'off' ? 'Confirm xDrive off' : 'xDrive off', act.xdriveOff, x.confirmWhat === 'off'];
+    // "xDrive on" only on the DSC variants where 2E DB E1 01 was measured to work (xdrive.js ON_INDEX)
+    if (x.onAvailable) {
+        buttonRow(cv, G, t, [offBtn, [x.confirmWhat === 'on' ? 'Confirm xDrive on' : 'xDrive on', act.xdriveOn, x.confirmWhat === 'on']],
+            bottom, 300, x.busy, 'la_xd');
+    } else buttonRow(cv, G, t, [offBtn], bottom, 360, x.busy, 'la_xd');
     return cv;
 }
 
