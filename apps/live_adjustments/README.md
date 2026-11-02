@@ -95,6 +95,35 @@ including a short closed-area drive where the LMV's front-axle torque request st
 IterioDev confirmed it on a 2023 230i xDrive. **Not established:** physical clutch state,
 ABS / stability control in motion, other DSC variants, prolonged use. Use at your own risk.
 
+## xDrive diagnostic logging
+
+Lines prefixed `xdrive-diagnostic ` contain JSON for both DSC and VIP paths, including
+unknown variants. They record identification, blocked/confirmation presses, each existing
+write and session request, and the raw result (positive, negative, pending, unexpected,
+no response or transport error). Exchange IDs pair requests and results; attempt IDs group
+the two-press action. NRC names describe the response, not a diagnosis of its root cause.
+In particular, `33` alone does not prove that the engine is running or establish the unlock
+required by a particular ECU.
+
+Snapshots include the app version, route/target, ECU indexes, available vehicle values,
+the existing checks and recent read evidence with its age. Missing values are `null`;
+the parking brake and per-signal freshness are explicitly unknown. The SDK does not
+provide per-signal timestamps, so cached vehicle values must not be assumed fresh.
+An accepted write is logged as `physicalEffect: "not_verified"`: neither DBE1 nor a
+zero torque sample independently establishes the physical clutch state.
+
+Successful polling replies are included for 60 seconds after the first confirmation
+press; identification and failed exchanges are always recorded. Only the app's existing
+polls are observed, while the tab is shown: logging adds no ECU requests, retries, security
+unlock, reset or changes to the safety checks. It does not expose intermediate transport
+frames consumed internally by `Diag.physical()`. Failed reads replace the last evidence
+for that request with an explicit failure, not a cached successful value.
+
+For an issue, share the `xdrive-diagnostic` lines from identification through the refusal
+and subsequent normal reads, including `uds_request`/`uds_result` exchange IDs. These
+records deliberately omit VIN, ECU serial numbers and arbitrary vehicle/config objects.
+Review the rest of the app log for personal information before sharing it.
+
 ## Build and test
 
 ```sh

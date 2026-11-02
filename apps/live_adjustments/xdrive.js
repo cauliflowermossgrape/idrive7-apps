@@ -76,8 +76,28 @@ const READY = 10, READY_START = 8;      // VehicleCondition: FAHREN (drive-ready
 const IGNITION = 7;                     // VehicleCondition: PRUEFEN_ANALYSE_DIAGNOSE (ignition on, not ready)
 const CONFIRM_MS = 6000;                // the second press must come within this
 const SESSION_NRC = [0x7E, 0x7F];       // "not in this session": retry once in the extended session
+const TRACE_MS = 60000;
+const CONDITION_NAMES = {
+    1: 'PARKEN_BN_NIO', 2: 'PARKEN_BN_IO', 3: 'STANDFUNKTIONEN_KUNDE_NICHT_IM_FZG',
+    5: 'WOHNEN', 7: 'PRUEFEN_ANALYSE_DIAGNOSE', 8: 'FAHRBEREITSCHAFT_HERSTELLEN',
+    10: 'FAHREN', 12: 'FAHRBEREITSCHAFT_BEENDEN',
+};
+const NRC_NAMES = {
+    0x10: 'generalReject', 0x11: 'serviceNotSupported', 0x12: 'subFunctionNotSupported',
+    0x13: 'incorrectMessageLengthOrInvalidFormat', 0x21: 'busyRepeatRequest',
+    0x22: 'conditionsNotCorrect', 0x24: 'requestSequenceError', 0x25: 'noResponseFromSubnetComponent',
+    0x26: 'failurePreventsExecutionOfRequestedAction', 0x31: 'requestOutOfRange',
+    0x33: 'securityAccessDenied', 0x35: 'invalidKey', 0x36: 'exceedNumberOfAttempts',
+    0x37: 'requiredTimeDelayNotExpired', 0x72: 'generalProgrammingFailure',
+    0x78: 'requestCorrectlyReceivedResponsePending', 0x7E: 'subFunctionNotSupportedInActiveSession',
+    0x7F: 'serviceNotSupportedInActiveSession', 0x81: 'rpmTooHigh', 0x82: 'rpmTooLow',
+    0x83: 'engineIsRunning', 0x84: 'engineIsNotRunning', 0x88: 'vehicleSpeedTooHigh',
+    0x89: 'vehicleSpeedTooLow', 0x8F: 'brakeSwitchNotClosed', 0x90: 'shifterLeverNotInPark',
+    0x92: 'voltageTooHigh', 0x93: 'voltageTooLow',
+};
 
 const hex2 = (b) => b.toString(16).padStart(2, '0').toUpperCase();
+const bytesHex = (data) => data == null ? null : Array.from(data, hex2).join(' ');
 const sgbdIndex = (data) => data.map(hex2).join('').replace(/^0+(?=.{6})/, '');
 const NRC_TEXT = {
     0x22: 'conditions not met · ignition on, engine off, P, parking brake on, car stationary',
@@ -96,6 +116,10 @@ class XDriveControl {
         this.log = ctx.log;
         this.now = now || (() => Date.now());
         this.link = null;
+        this._attemptSequence = 0;
+        this._exchangeSequence = 0;
+        this._attemptId = null;
+        this._traceUntil = 0;
         this.requested = false;         // this app had the write accepted (until xDrive reads back 1)
         this._reset();
     }
@@ -119,6 +143,7 @@ class XDriveControl {
         this.confirmUntil = 0;
         this.note = null;
         this.noteType = 'dim';
+        this._readEvidence = {};
     }
 
     get enabled() { return this.ctx.settings.get('xdrive') === 'on'; }
@@ -150,9 +175,97 @@ class XDriveControl {
             + (this.path === 'vip' ? ' path VIP ' + this.vipIndex + ' DB44 ' + this.vipStatus
                 : ' DBE1 ' + (this.supported === false ? 'refused' : this.lmv))
             + (this.lmvIndex ? ' LMV ' + this.lmvIndex : ''));
+        this._diagnostic('identified');
     }
 
     unitName() { return this.index ? DBE1_UNITS[this.index] || OTHER_UNITS[this.index] || null : null; }
+
+    _snapshot() {
+        const d = this._live(), now = this.now();
+        const value = (v) => v == null ? null : v;
+        const reads = {};
+        Object.keys(this._readEvidence).forEach((key) => {
+            const r = this._readEvidence[key];
+            reads[key] = Object.assign({}, r, { ageMs: Math.max(0, now - r.atMs) });
+        });
+        return {
+            appVersion: this.ctx.spec && this.ctx.spec.version || null,
+            enabled: this.enabled, linkAvailable: this._linkUp(),
+            path: this.path, target: hex2(this.path === 'vip' ? VIP : DSC),
+            dscIndex: this.index, dscUnit: this.unitName(), vipIndex: this.vipIndex, lmvIndex: this.lmvIndex,
+            supported: this.supported,
+            vehicle: {
+                source: d.demo ? 'demo' : 'car',
+                rpm: value(d.rpm), speedKmh: value(d.speed),
+                selector: ['P', 'R', 'N', 'D'].indexOf(d.stage) >= 0 ? d.stage : null,
+                condition: value(d.condition),
+                conditionName: CONDITION_NAMES[d.condition] || 'unknown',
+                signalFreshness: 'unknown: Car.data() provides no per-signal timestamps',
+                parkingBrake: { status: 'unknown', reason: 'not read by this app' },
+            },
+            checks: this.checks().map((c) => ({
+                label: c.label,
+                status: c.ok === true ? 'satisfied' : c.ok === false ? 'not_satisfied' : 'unknown',
+            })),
+            reads,
+            acceptedRequestTracked: this.requested,
+            physicalClutchState: 'not_measured',
+        };
+    }
+
+    _diagnostic(event, details) {
+        this.log.info('xdrive-diagnostic ' + JSON.stringify(Object.assign({
+            schema: 1, event, atMs: this.now(), attemptId: this._attemptId,
+            snapshot: this._snapshot(),
+        }, details)));
+    }
+
+    async _exchange(ecu, sid, data, timeoutMs, accept) {
+        const id = ++this._exchangeSequence, started = this.now();
+        const attemptId = started <= this._traceUntil ? this._attemptId : null;
+        const request = bytesHex([sid].concat(data));
+        const identifying = sid === 0x22 && data[0] === 0xF1 && data[1] === 0x50;
+        const trace = sid !== 0x22 || identifying || attemptId !== null;
+        const details = { exchangeId: id, attemptId, target: hex2(ecu), request, timeoutMs };
+        if (sid !== 0x22) this._diagnostic('uds_request', details);
+        let response;
+        try {
+            response = await this.link.diag.physical(ecu, sid, data, timeoutMs, accept);
+        } catch (e) {
+            if (sid === 0x22) {
+                this._readEvidence[hex2(ecu) + ':' + bytesHex(data)] = {
+                    atMs: this.now(), status: 'transport_error', response: null,
+                };
+            }
+            this._diagnostic('uds_result', Object.assign({}, details, {
+                status: 'transport_error', response: null, elapsedMs: Math.max(0, this.now() - started),
+                error: String(e && e.message || e),
+            }));
+            throw e;
+        }
+        let status, nrc = null;
+        if (!response || !response.length) status = 'no_response';
+        else if (response[0] === 0x7F && response.length === 3 && response[1] === sid) {
+            nrc = response[2];
+            status = nrc === 0x78 ? 'response_pending' : 'negative_response';
+        } else if (response[0] === sid + 0x40
+            && response[1] === data[0] && (sid === 0x10 ? response.length >= 2
+                : response[2] === data[1] && response.length >= (sid === 0x22 ? 4 : 3))) status = 'positive_response';
+        else status = 'unexpected_response';
+        const result = {
+            status, response: bytesHex(response), elapsedMs: Math.max(0, this.now() - started),
+            nrc: nrc === null ? null : { hex: hex2(nrc), name: NRC_NAMES[nrc] || 'unknownNrc' },
+        };
+        if (sid === 0x22) {
+            this._readEvidence[hex2(ecu) + ':' + bytesHex(data)] = {
+                atMs: this.now(), status, response: result.response,
+            };
+        }
+        if (trace || status !== 'positive_response') {
+            this._diagnostic('uds_result', Object.assign({}, details, result));
+        }
+        return response;
+    }
 
     /** VIP path: DB44 now and then, logged when it changes (it is not the mode, see the header). */
     async _readVip() {
@@ -185,7 +298,7 @@ class XDriveControl {
 
     async _read(did, ecu) {
         try {
-            const r = await this.link.diag.physical(ecu || DSC, 0x22, did, 2500,
+            const r = await this._exchange(ecu || DSC, 0x22, did, 2500,
                 (u) => (u[0] === 0x62 && u[1] === did[0] && u[2] === did[1]) || (u[0] === 0x7F && u[1] === 0x22));
             if (!r || !r.length) return { ok: false, nrc: null };
             if (r[0] === 0x7F) return { ok: false, nrc: r[2] };
@@ -283,13 +396,20 @@ class XDriveControl {
 
     /** "xDrive off": the first press asks, the second (within CONFIRM_MS) sends the one write. */
     async requestOff() {
-        if (this.busy) return;
+        if (this.busy) { this._diagnostic('blocked', { reason: 'Busy' }); return; }
         const why = this.blocker();
-        if (why) { this.confirmUntil = 0; this.note = why; this.noteType = 'warn'; return; }
+        if (why) {
+            this.confirmUntil = 0; this.note = why; this.noteType = 'warn';
+            this._diagnostic('blocked', { reason: why });
+            return;
+        }
         if (this.now() > this.confirmUntil) {
+            this._attemptId = this.now() + '-' + (++this._attemptSequence);
+            this._traceUntil = this.now() + TRACE_MS;
             this.confirmUntil = this.now() + CONFIRM_MS;
             this.note = 'Press again to switch xDrive off until the ignition is switched off';
             this.noteType = 'warn';
+            this._diagnostic('confirmation_required');
             return;
         }
         this.confirmUntil = 0;
@@ -303,7 +423,7 @@ class XDriveControl {
             // open it (10 03) and send the same write once more. Nothing else is sent.
             if (r && r[0] === 0x7F && SESSION_NRC.indexOf(r[2]) >= 0) {
                 this.log.info('UDS -> ' + name + ' 10 03 (extended session, the ' + name + ' asked for it)');
-                const ses = await this.link.diag.physical(ecu, 0x10, [0x03], 3000,
+                const ses = await this._exchange(ecu, 0x10, [0x03], 3000,
                     (u) => (u[0] === 0x50 && u[1] === 0x03) || (u[0] === 0x7F && u[1] === 0x10));
                 this.log.info('UDS <- ' + name + ' ' + (ses ? ses.map(hex2).join(' ') : 'no answer'));
                 if (ses && ses[0] === 0x50) r = await this._writeOff();
@@ -311,19 +431,23 @@ class XDriveControl {
             }
             if (r && r[0] === 0x6E) {
                 this.requested = true;
+                this._diagnostic('command_accepted', { physicalEffect: 'not_verified' });
                 this.note = vip ? 'Accepted by the VIP · drive without switching off and watch the front-axle torque'
                     : this.engineRunning() ? 'Accepted by the DSC · drive without switching the ignition off'
                         : 'Accepted by the DSC · start the engine without switching the ignition off';
                 this.noteType = 'go';
             } else if (r && r[0] === 'session') {
+                this._diagnostic('command_not_accepted', { reason: 'extended_session_not_accepted' });
                 this.note = name + ' refused the extended diagnostic session' + (r[1] != null ? ' (NRC ' + hex2(r[1]) + ')' : ' (no answer)');
                 this.noteType = 'warn';
             } else if (r && r[0] === 0x7F) {
+                this._diagnostic('command_not_accepted', { reason: 'ecu_negative_response' });
                 // a VIP that wants a security unlock (G05 xDrive45e, issue #52): this app does no security access
                 this.note = name + ' refused: ' + (vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
                     : NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
                 this.noteType = 'warn';
             } else {
+                this._diagnostic('command_not_accepted', { reason: 'no_matching_positive_response' });
                 this.note = 'No answer from the ' + name;
                 this.noteType = 'warn';
             }
@@ -341,7 +465,7 @@ class XDriveControl {
         const vip = this.path === 'vip';
         const name = vip ? 'VIP' : 'DSC', did = vip ? DID_VIP_LMV : DID_LMV;
         this.log.info('UDS -> ' + name + ' 2E ' + did.map(hex2).join(' ') + ' 00 (xDrive off, experimental)');
-        const r = await this.link.diag.physical(vip ? VIP : DSC, 0x2E, did.concat([0x00]), 3000,
+        const r = await this._exchange(vip ? VIP : DSC, 0x2E, did.concat([0x00]), 3000,
             (u) => (u[0] === 0x6E && u[1] === did[0] && u[2] === did[1]) || (u[0] === 0x7F && u[1] === 0x2E));
         this.log.info('UDS <- ' + name + ' ' + (r ? r.map(hex2).join(' ') : 'no answer'));
         return r;

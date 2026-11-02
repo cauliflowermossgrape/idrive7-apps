@@ -99,13 +99,20 @@ function dsc(kind) {
 
 async function xdriveChecks() {
     let clock = 100000;
-    const mk = async (setting, kind, live) => {
+    const mk = async (setting, kind, live, decorate) => {
         const d = dsc(kind);
-        const ctx = { settings: { get: (k) => (k === 'xdrive' ? setting : undefined) }, log: { info() {}, warn() {}, error() {} } };
+        if (decorate) d.link.diag.physical = decorate(d.link.diag.physical);
+        const events = [];
+        const ctx = { spec: { version: 'test-version' },
+            settings: { get: (k) => (k === 'xdrive' ? setting : undefined) },
+            log: { info(line) {
+                const prefix = 'xdrive-diagnostic ';
+                if (line.indexOf(prefix) === 0) events.push(JSON.parse(line.slice(prefix.length)));
+            }, warn() {}, error() {} } };
         const car = { v: Object.assign({ rpm: 0, speed: 0, stage: 'P', demo: false }, live), data() { return Object.assign({}, this.v); } };
         const x = new XDriveControl(ctx, car, () => clock);
         await x.start(d.link);
-        return { x, d, car };
+        return { x, d, car, events };
     };
     const writes = (d) => d.calls.filter((c) => c.startsWith('dsc 2e'));
 
@@ -319,6 +326,120 @@ async function xdriveChecks() {
     s.d.link.available = false; s.d.calls.length = 0;
     await s.x.refresh(); await s.x.requestOff(); await s.x.requestOff(); s.x.tick();
     assert.deepStrictEqual(s.d.calls, []);
+
+    // Diagnostics observe existing traffic; raw NRCs do not imply an engine-state diagnosis.
+    for (const kind of ['g22', 'g05']) {
+        for (const nrc of [0x13, 0x22, 0x31, 0x33, 0x42, 0x83, 0x90]) {
+            const live = { rpm: kind === 'g05' ? 800 : 0, condition: kind === 'g05' ? 10 : 7 };
+            s = await mk('on', kind, live, (physical) => async (target, sid, data, timeout, accept) =>
+                sid === 0x2E ? [0x7F, sid, nrc] : physical(target, sid, data, timeout, accept));
+            await s.x.requestOff(); await s.x.requestOff();
+            const tx = s.events.find((e) => e.event === 'uds_request' && e.request.startsWith('2E'));
+            const rx = s.events.find((e) => e.event === 'uds_result' && e.exchangeId === tx.exchangeId);
+            assert.strictEqual(rx.status, 'negative_response');
+            assert.strictEqual(rx.response, '7F 2E ' + nrc.toString(16).padStart(2, '0').toUpperCase());
+            assert.strictEqual(rx.nrc.hex, nrc.toString(16).padStart(2, '0').toUpperCase());
+            assert.strictEqual(typeof rx.nrc.name, 'string');
+            if (nrc === 0x42) assert.strictEqual(rx.nrc.name, 'unknownNrc');
+            if (nrc === 0x33) assert.strictEqual(rx.nrc.name, 'securityAccessDenied');
+            assert.strictEqual(rx.target, kind === 'g05' ? '39' : '29');
+            assert.strictEqual(tx.request, kind === 'g05' ? '2E DB 2F 00' : '2E DB E1 00');
+            assert.strictEqual(rx.attemptId, tx.attemptId);
+            assert.strictEqual(rx.snapshot.vehicle.rpm, live.rpm);
+            assert.strictEqual(rx.snapshot.vehicle.condition, live.condition);
+            assert.strictEqual(rx.snapshot.vehicle.parkingBrake.status, 'unknown');
+            assert.strictEqual(rx.snapshot.appVersion, 'test-version');
+            assert.strictEqual(rx.snapshot.physicalClutchState, 'not_measured');
+            assert.strictEqual(s.x.requested, false);
+        }
+    }
+
+    for (const kind of ['session', 'session7e', 'nosession']) {
+        s = await mk('on', kind, { condition: 7 });
+        await s.x.requestOff(); await s.x.requestOff();
+        const requests = s.events.filter((e) => e.event === 'uds_request');
+        assert.deepStrictEqual(requests.map((e) => e.request),
+            kind === 'nosession' ? ['2E DB E1 00', '10 03'] : ['2E DB E1 00', '10 03', '2E DB E1 00']);
+        assert.strictEqual(new Set(requests.map((e) => e.exchangeId)).size, requests.length);
+        assert.strictEqual(new Set(requests.map((e) => e.attemptId)).size, 1);
+        assert.strictEqual(s.events.some((e) => e.event === 'command_accepted'), kind !== 'nosession');
+    }
+
+    for (const [response, expected] of [[null, 'no_response'], [[], 'no_response'],
+        [[0x6E, 0xDB], 'unexpected_response'], [[0x7F, 0x22, 0x33], 'unexpected_response'],
+        [[0x7F, 0x2E, 0x78], 'response_pending']]) {
+        s = await mk('on', 'g22', { condition: 7 });
+        s.d.link.diag.physical = async () => response;
+        assert.strictEqual(await s.x._exchange(0x29, 0x2E, [0xDB, 0xE1, 0], 3000, () => true), response);
+        assert.strictEqual(s.events[s.events.length - 1].status, expected);
+    }
+
+    s = await mk('on', 'g22', { condition: 7 });
+    const err = new Error('test transport unavailable');
+    s.d.link.diag.physical = async () => { throw err; };
+    await assert.rejects(s.x._exchange(0x29, 0x22, [0xDB, 0xE1], 2500, () => true),
+        (e) => e === err);
+    let event = s.events[s.events.length - 1];
+    assert.strictEqual(event.status, 'transport_error');
+    assert.strictEqual(event.error, err.message);
+    assert.strictEqual(event.snapshot.reads['29:DB E1'].status, 'transport_error');
+    assert.strictEqual(event.snapshot.reads['29:DB E1'].response, null);
+
+    // Unknown identities and missing telemetry remain explicit; arbitrary fields are not dumped.
+    s = await mk('on', 'g22', { rpm: null, speed: null, stage: undefined, condition: 6,
+        vin: 'DO-NOT-LOG', serialNumber: 'DO-NOT-LOG', other: { private: 'DO-NOT-LOG' } },
+    (physical) => async (target, sid, data, timeout, accept) =>
+        sid === 0x22 && data[0] === 0xF1 ? [0x62, 0xF1, 0x50, 0xAA, 0xBB, 0xCC]
+            : physical(target, sid, data, timeout, accept));
+    await s.x.requestOff();
+    event = s.events[s.events.length - 1];
+    assert.strictEqual(event.event, 'blocked');
+    assert.strictEqual(event.snapshot.dscIndex, 'AABBCC');
+    assert.strictEqual(event.snapshot.dscUnit, null);
+    assert.strictEqual(event.snapshot.vehicle.rpm, null);
+    assert.strictEqual(event.snapshot.vehicle.selector, null);
+    assert.strictEqual(event.snapshot.vehicle.conditionName, 'unknown');
+    assert(event.snapshot.checks.some((c) => c.label === 'Parking brake on' && c.status === 'unknown'));
+    assert(!JSON.stringify(s.events).includes('DO-NOT-LOG'));
+
+    s = await mk('on', 'g22', { demo: true });
+    await s.x.requestOff();
+    event = s.events[s.events.length - 1];
+    assert.strictEqual(event.snapshot.vehicle.source, 'demo');
+    assert.strictEqual(event.snapshot.vehicle.rpm, null);
+    assert.strictEqual(event.snapshot.vehicle.condition, null);
+    assert.strictEqual(event.event, 'blocked');
+    assert.deepStrictEqual(writes(s.d), []);
+
+    s = await mk('on', 'g22');
+    s.x.busy = true;
+    await s.x.requestOff();
+    event = s.events[s.events.length - 1];
+    assert.strictEqual(event.reason, 'Busy');
+    assert.deepStrictEqual(writes(s.d), []);
+
+    // Successful reads are bounded to the trace window; failed reads are still recorded afterwards.
+    s = await mk('on', 'g22', { condition: 7 });
+    await s.x.requestOff(); await s.x.requestOff();
+    const accepted = s.events.find((e) => e.event === 'command_accepted');
+    assert.strictEqual(accepted.physicalEffect, 'not_verified');
+    s.car.v.rpm = 800; s.car.v.condition = 10; clock += 5000;
+    await s.x.tick();
+    const poll = s.events.find((e) => e.event === 'uds_result' && e.request === '22 DB 32');
+    assert(poll && poll.attemptId === accepted.attemptId);
+    assert.strictEqual(poll.response, '62 DB 32 00 9E 00 02 00 98 00 20');
+    let count = s.events.length;
+    clock += 61000;
+    await s.x.tick();
+    assert.strictEqual(s.events.length, count);
+    const snapshot = s.x._snapshot();
+    assert.strictEqual(snapshot.reads['19:F1 50'].ageMs, 66000);
+    assert.strictEqual(snapshot.reads['29:DB E1'].ageMs, 0);
+    s.d.link.diag.physical = async () => [0x7F, 0x22, 0x31];
+    clock += 5000;
+    await s.x.tick();
+    assert(s.events.length > count);
+    assert(s.events.slice(count).every((e) => e.attemptId === null));
 }
 
 (async () => {
