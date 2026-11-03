@@ -125,10 +125,15 @@ function preferredRecord(records, id) {
     return matches.find((r) => r.address === owner) || (matches.length === 1 ? matches[0] : null);
 }
 
+const SHOW_UDS_ONLY = false;
+
 function mergeCbs(native, records) {
     const result = native.map((it) => Object.assign({}, it, {
         key: 'hmi:' + it.id, record: preferredRecord(records, it.id), native: true,
     }));
+    // UDS-only records (not a service requirement the HMI lists, e.g. the particulate filter) stay off the
+    // list: their fields aren't verified for the car. They are still on the Diagnostics page.
+    if (!SHOW_UDS_ONLY) return result;
     records.forEach((r) => {
         if (CBS_TECHNICAL_IDS.includes(r.id) || native.some((it) => it.id === r.id)
             || result.some((it) => it.id === r.id && it.record === preferredRecord(records, r.id))) return;
