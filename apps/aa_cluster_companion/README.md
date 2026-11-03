@@ -14,6 +14,6 @@ and must be installed first, version 0.5.0 or newer. The app talks to the tool's
 the app shows a demo and says what to install.
 
 - `main.js` the screen, `ctl.js` the client for the tool's socket (`/dev/shm/aa-on-cluster/ctl.sock`).
-- Build and preview as any app: `python3 kit/tools/build.py aa_cluster`.
+- Build and preview as any app: `python3 kit/tools/build.py aa_cluster_companion`.
 
 Copyright (C) 2026 mlurker@gmail.com. GPL-3.0-or-later.
