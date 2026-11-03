@@ -20,6 +20,16 @@
  * (mgu-render/1), a tap on an item (or "Details") opens its card: due date, time and distance left,
  * the car's hint, and Reset, then "Confirm reset" within 5 s. Elsewhere: select the item with
  * "Next item", press "Reset service", then "Reset service" again within 5 s to confirm.
+ *
+ * Extended from upstream aa7517f42bfb00577dc786723525cc2be10bdc94.
+ * Read-only enrichment: KOMBI/DME/DSC CBS records, counters, intervals and raw diagnostics.
+ * UDS field interpretations are candidates until verified for this car; native HMI values win.
+ * Uses the upstream app.json unchanged (including its TASU permission and diagPage setting).
+ * Enable "Diagnostics page" in Settings for paginated replies; "Read CBS" refreshes on demand.
+ * Otherwise CBS is read at startup and 60 s after the last scan; explicit demo mode disables reads.
+ * "CBS details" cycles through the extra card fields without crowding the native three-tile layout.
+ * HMI Polish letters use ASCII equivalents because the upstream font atlases lack Polish glyphs.
+ * Raw diagnostic JSON preserves Unicode as escaped code units rather than unreadable glyphs.
  */
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
@@ -28,6 +38,7 @@ const { Diag, hex, NRC, replyTo } = require('./kit/diag');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
 const { t: translate, getLanguage, plural } = require('./kit/i18n');
+const fonts = require('./kit/fonts');
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MONTHS_RU_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -59,6 +70,78 @@ const COLORS = { DEFAULT: 0, RED: 1, YELLOW: 2, GREEN: 3, ORANGE: 4 };
 const KOMBI_ECU = 0x60;
 const RESETTABLE = { 0x03: 'Brake fluid', 0x64: 'Vehicle check' };
 const CONFIRM_MS = 5000;
+const CBS_NAMES = {
+    0x01: 'Engine oil', 0x02: 'Front brake pads', 0x03: 'Brake fluid',
+    0x05: 'Service Inclusive', 0x06: 'Rear brake pads', 0x07: 'Particulate filter (OPF/DPF)',
+    0x08: 'State of Health', 0x0A: 'Spark / glow plugs', 0x0D: 'NOx additive',
+    0x11: 'Visual inspection / vehicle check', 0x14: 'Delivery inspection', 0x15: 'Running-in check',
+    0x17: 'Water filter', 0x20: 'Statutory vehicle inspection (HU)', 0x21: 'Emissions inspection (AU)',
+    0x23: 'Transmission oil', 0x31: 'Tyres', 0x32: 'Clutch',
+    0x33: 'Pedestrian-protection bonnet struts', 0x34: 'First-aid kit', 0x35: 'Tyre repair kit',
+    0x36: 'Catalytic converter', 0x37: 'Shock absorbers', 0x64: 'Vehicle check',
+};
+const CBS_SOURCES = [
+    { address: KOMBI_ECU, name: 'KOMBI', dids: [0x1001, 0x1002] },
+    { address: 0x12, name: 'DME', dids: [0x1001, 0x1002, 0x1003] },
+    { address: 0x29, name: 'DSC', dids: [0x1001] },
+];
+const CBS_REFRESH_MS = 60000;
+const CBS_RECORD_SIZE = 12;
+const CBS_TECHNICAL_IDS = [0xE0, 0xE1, 0xFF];
+const bytesText = (a) => Array.from(a, (b) => hex(b)).join(' ');
+const recordKey = (r) => hex(r.address) + ':' + hex(r.id);
+const readKey = (address, did) => hex(address) + ':' + hex(did, 4);
+const cbsName = (id) => CBS_NAMES[id] || 'CBS 0x' + hex(id);
+const CBS_STATUS = ['OK', 'Substitute value', 'OK (modular)', 'Substitute value (modular)', 'Manipulated data'];
+const valueText = (v, suffix) => v === null || v === undefined ? '--' : String(v) + (suffix || '');
+
+function decodeCbs(data, source) {
+    if (data.length % CBS_RECORD_SIZE) throw new Error('CBS 1001: invalid payload length ' + data.length);
+    const records = [];
+    for (let i = 0; i < data.length; i += CBS_RECORD_SIZE) {
+        const b = data.slice(i, i + CBS_RECORD_SIZE);
+        const rawRemaining = (b[1] << 8) | b[2], unitCode = b[3] & 15;
+        const unit = ['%', 'km', 'days'][unitCode] || null;
+        let remaining = rawRemaining === 0x8000 || rawRemaining === 0x7FFF || !unit
+            ? null : rawRemaining >= 0x8000 ? rawRemaining - 0x10000 : rawRemaining;
+        if (remaining !== null && unit === 'km') remaining *= 10;
+        const month = b[7] & 15, statusCode = b[3] >> 4;
+        records.push({
+            id: b[0], address: source.address, source: source.name, raw: bytesText(b),
+            remaining, unit, status: CBS_STATUS[statusCode] || 'Unknown 0x' + hex(statusCode),
+            count: b[4] & 31, avail: b[5] <= 150 ? b[5] : null,
+            intervalKm: b[6] > 0 && b[6] < 255 ? b[6] * 1000 : null,
+            date: month >= 1 && month <= 12 ? String(month).padStart(2, '0') + '/' + (2000 + (b[8] & 31)) : '',
+            intervalMonths: b[9] > 0 && b[9] < 255 ? b[9] : null,
+        });
+    }
+    return records;
+}
+
+function preferredRecord(records, id) {
+    const owner = [0x01, 0x07, 0x0A, 0x0D, 0x23].includes(id) ? 0x12
+        : [0x02, 0x06].includes(id) ? 0x29 : KOMBI_ECU;
+    const matches = records.filter((r) => r.id === id);
+    return matches.find((r) => r.address === owner) || (matches.length === 1 ? matches[0] : null);
+}
+
+function mergeCbs(native, records) {
+    const result = native.map((it) => Object.assign({}, it, {
+        key: 'hmi:' + it.id, record: preferredRecord(records, it.id), native: true,
+    }));
+    records.forEach((r) => {
+        if (CBS_TECHNICAL_IDS.includes(r.id) || native.some((it) => it.id === r.id)
+            || result.some((it) => it.id === r.id && it.record === preferredRecord(records, r.id))) return;
+        const chosen = preferredRecord(records, r.id);
+        if (chosen && chosen !== r) return;
+        result.push({
+            key: recordKey(r), id: r.id, name: cbsName(r.id) + ' [UDS]', colour: 0,
+            way: r.unit === 'km' ? valueText(r.remaining, ' km') : '',
+            date: r.date, record: r, native: false,
+        });
+    });
+    return result;
+}
 
 /**
  * the object holding `key` somewhere inside v (unions arrive wrapped in their member's name). With
@@ -70,10 +153,51 @@ function find(v, key, str) {
     for (const k of Object.keys(v)) { const r = find(v[k], key, str); if (r) return r; }
     return null;
 }
-/** JSON without the item icons (each answer carries a PNG as a long list of byte numbers) */
-const brief = (v) => JSON.stringify(v, (k, x) => (k === 'symbolData' ? '[icon]' : x));
+/** JSON without icons, with lossless Unicode escapes for the ASCII-only diagnostic font. */
+const brief = (v) => JSON.stringify(v, (k, x) => (k === 'symbolData' ? '[icon]' : x))
+    .replace(/[^\x20-\x7e]/g, (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
 const colour = (c) => (typeof c === 'number' ? c : COLORS[String(c)] !== undefined ? COLORS[String(c)] : 0);
-const txt = (s) => String(s === undefined || s === null ? '' : s).replace(/[^\x20-\x7e]/g, (ch) => ({ 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ß': 'ss' }[ch] || ch)).replace(/[\x00-\x1f\x7f]/g, '').trim();
+const HMI_ASCII = {
+    'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ß': 'ss',
+    '\u0105': 'a', '\u0107': 'c', '\u0119': 'e', '\u0142': 'l', '\u0144': 'n',
+    '\u00f3': 'o', '\u015b': 's', '\u017a': 'z', '\u017c': 'z',
+    '\u0104': 'A', '\u0106': 'C', '\u0118': 'E', '\u0141': 'L', '\u0143': 'N',
+    '\u00d3': 'O', '\u015a': 'S', '\u0179': 'Z', '\u017b': 'Z',
+    '\u00a0': ' ', '\u202f': ' ',
+};
+const txt = (s) => String(s === undefined || s === null ? '' : s).normalize('NFC')
+    .replace(/[^\x20-\x7e]/g, (ch) => HMI_ASCII[ch] || ch)
+    .replace(/[\x00-\x1f\x7f]/g, '').trim();
+
+/*
+ * Texts the fonts cannot draw. The car words the items in the iDrive's language; for a language the baked fonts
+ * have no glyphs for (Korean, ...) every character would be drawn as "?", and some cars send such texts as "?"
+ * already. Those texts are not shown: an item's name becomes its English name by CBS id (translated as the
+ * app's own texts are), a distance or date keeps its numbers, a hint is left out. Texts the fonts can draw
+ * (English, German, the Chinese and Russian builds' own glyphs) are shown as the car sends them.
+ */
+const NAMES = {
+    0x01: 'Engine oil', 0x02: 'Front brakes', 0x03: 'Brake fluid', 0x06: 'Rear brakes', 0x11: 'Vehicle check',
+    0x20: 'Statutory vehicle inspection', 0x21: 'Exhaust emissions test', 0x64: 'Vehicle check',
+};
+/** every character of s is in the font that would draw it */
+const drawable = (s) => {
+    const f = fonts.get('bold', 30, s);
+    return !!f && Array.from(s).every((ch) => f.glyphs[ch.codePointAt(0)]);
+};
+/** a car text that can be shown: drawable and not already broken ("?" / U+FFFD for a lost character) */
+const usable = (s) => !!s && drawable(s) && !/[?\ufffd]/.test(s);
+const nameOf = (id, s) => (usable(s) ? s : NAMES[id] || 'Service item ' + id);
+/** a distance or date the fonts cannot draw: its numbers ("2027년 9월" -> "09/2027", which parseDue reads) */
+const value = (s) => {
+    if (!s || drawable(s)) return s;
+    const ym = s.match(/(\d{4})\D+(\d{1,2})(?!\d)/), my = s.match(/(?:^|\D)(\d{1,2})\D+(\d{4})/);
+    if (ym) return ym[2].padStart(2, '0') + '/' + ym[1];
+    if (my) return my[1].padStart(2, '0') + '/' + my[2];
+    return Array.from(s).filter((ch) => drawable(ch)).join('').replace(/\s+/g, ' ').trim();
+};
+/** the code points of a text the fonts cannot draw, for the log (what the car really sent) */
+const codes = (s) => String(s).replace(/[^\x20-\x7e]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 
 const DEMO = {
     list: [
@@ -93,8 +217,18 @@ mgu.run({
         const sig = ctx.signals;
         let list = null, sba = null, rawList = '', rawSba = '';
         let kombi = null, sel = 0, page = 0, msg = '', hint = null, version = 0;
+        let diagInit = null, scanBusy = false, scanAt = null, scanMessage = 'Not read yet', diagPage = 0, diagPageCount = 1;
+        const cbsReads = new Map();
+        const liveRecords = () => Array.from(cbsReads.values())
+            .filter((r) => r.did === 0x1001 && r.state === 'ok').reduce((a, r) => a.concat(r.records), []);
         const changed = () => { version++; };
-        const useDemo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !list && !sba);
+        /** the summary's name: that of the list item the car words the same way (one item, or items of one name) */
+        const sbaName = (text) => {
+            const names = Array.from(new Set((text ? list || [] : []).filter((i) => i.carName === text).map((i) => i.name)));
+            return names.length === 1 ? names[0] : usable(text) ? text : '';
+        };
+        const useDemo = () => settings.get('demo') === 'on'
+            || (settings.get('demo') === 'auto' && !list && !sba && !liveRecords().length);
 
         /* ---------- reading ---------- */
         sig.watch(KOMBI, '1', {
@@ -103,16 +237,22 @@ mgu.run({
                 const arr = Array.isArray(v) ? v : (v && (v.cbsDataServiceList || v.value)) || [];
                 list = arr.map((e) => {
                     const s = find(e, 'cBSIdentifier') || {};
-                    return { id: s.cBSIdentifier, colour: colour(s.cBSColor), name: txt(s.cBSServcieName || s.cBSServiceName),
-                        way: txt(s.cBSServiceWay), date: txt(s.cBSServiceDate) };
-                }).filter((e) => e.id !== undefined && e.name);
-                log.info('service list: ' + list.length + ' item(s)');
+                    const name = txt(s.cBSServcieName || s.cBSServiceName);
+                    return { id: s.cBSIdentifier, colour: colour(s.cBSColor), name: nameOf(s.cBSIdentifier, name), carName: name,
+                        way: value(txt(s.cBSServiceWay)), date: value(txt(s.cBSServiceDate)) };
+                }).filter((e) => e.id !== undefined && e.carName);
+                const unusable = list.filter((i) => !usable(i.carName));
+                log.info('service list: ' + list.length + ' item(s)' + (unusable.length ? ', shown by id: '
+                    + unusable.map((i) => i.id + ' ' + codes(i.carName)).join(' | ') : ''));
+                if (sba) sba.text = sbaName(sba.carText);       // the summary came before the list
                 changed();
             },
             cbsDataSBA: (v) => {
                 rawSba = brief(v);
                 const s = find(v, 'cBSDataSBAText') || {};
-                sba = { text: txt(s.cBSDataSBAText), way: txt(s.cBSDataSBADistance), date: txt(s.cBSDataSBADate), colour: colour(s.cBSDataSBAColor) };
+                const text = txt(s.cBSDataSBAText);
+                sba = { carText: text, text: sbaName(text), way: value(txt(s.cBSDataSBADistance)),
+                    date: value(txt(s.cBSDataSBADate)), colour: colour(s.cBSDataSBAColor) };
                 changed();
             },
         }, log, { pollMs: 60000 }).then((r) => {
@@ -120,7 +260,7 @@ mgu.run({
             if (r.error) log.warn('KombiInterface_2: ' + r.error);
         });
 
-        const items = () => (useDemo() ? DEMO.list : list || []);
+        const items = () => mergeCbs(useDemo() ? DEMO.list : list || [], useDemo() ? [] : liveRecords());
         const summary = () => (useDemo() ? DEMO.sba : sba);
 
         /* ---------- details (the iDrive's detail view) ---------- */
@@ -135,10 +275,17 @@ mgu.run({
                     changed();
                     return;
                 }
+                if (!it.native) {
+                    hint.text = 'Read-only UDS record; fields need validation for this car. No native service hint.';
+                    changed();
+                    return;
+                }
                 if (!kombi || !kombi.proxy) throw new Error('instrument cluster not reachable');
                 const r = await sig.call(kombi.proxy, 'requestCBSServiceHint', { id: it.id }, 6000);
                 const h = find(r, 'cBSServiceHint', true) || {};
-                hint.text = [txt(h.cBSServiceHint), txt(h.cBSServiceWay), txt(h.cBSServiceDate)].filter(Boolean).join('   ') || 'No details for this item';
+                const ht = txt(h.cBSServiceHint);
+                hint.text = [usable(ht) ? ht : '', value(txt(h.cBSServiceWay)), value(txt(h.cBSServiceDate))]
+                    .filter(Boolean).join('   ') || 'No details for this item';
                 log.info('hint ' + it.id + ': ' + brief(r));
             } catch (e) {
                 log.warn('requestCBSServiceHint ' + it.id + ': ' + e);
@@ -152,9 +299,57 @@ mgu.run({
         const showMsg = (s) => { hint = null; msg = s; log.info("msg: " + s); changed(); };
         const nrc = (r) => (r && r[0] === 0x7F ? 'refused: ' + (NRC[r[2]] || '0x' + hex(r[2])) : 'no answer from the instrument cluster');
         async function link() {
-            if (!diag) { diag = new Diag(sig, log); await diag.init(); }
+            if (!diagInit) {
+                diag = new Diag(sig, log);
+                diagInit = diag.init().then(() => {
+                    if (!diag.p) throw new Error(diag.error || 'TASU not available');
+                }).catch((e) => { diagInit = null; throw e; });
+            }
+            await diagInit;
             if (!diag.p) throw new Error('no diagnostic link (' + (diag.error || 'not available') + ')');
             return diag;
+        }
+        async function refreshCbs() {
+            if (scanBusy || reset || settings.get('demo') === 'on') return;
+            scanBusy = true; scanMessage = 'Reading CBS (read-only)...'; changed();
+            try {
+                const d = await link();
+                for (const source of CBS_SOURCES) {
+                    for (const did of source.dids) {
+                        if (settings.get('demo') === 'on') { scanMessage = 'CBS read stopped (demo enabled)'; return; }
+                        const entry = { address: source.address, source: source.name, did, records: [], raw: '', state: 'reading', at: null };
+                        cbsReads.set(readKey(source.address, did), entry);
+                        scanMessage = 'Reading ' + source.name + ' 22 ' + hex(did, 4); changed();
+                        try {
+                            const data = [did >> 8, did & 255];
+                            const r = await d.physical(source.address, 0x22, data, 5000, replyTo(0x22, data));
+                            entry.at = Date.now();
+                            entry.raw = r ? bytesText(r) : '';
+                            if (!r) throw new Error('No reply / timeout');
+                            if (r[0] === 0x7F) throw new Error('NRC 0x' + hex(r[2]) + ': ' + (NRC[r[2]] || 'unknown refusal'));
+                            if (r.length < 3 || r[0] !== 0x62 || r[1] !== data[0] || r[2] !== data[1]) {
+                                throw new Error('Unexpected UDS reply');
+                            }
+                            const payload = Array.from(r.slice(3));
+                            if (did === 0x1001) entry.records = decodeCbs(payload, source);
+                            if (did === 0x1002 && payload.length % 3) throw new Error('CBS 1002: invalid payload length');
+                            entry.state = 'ok';
+                        } catch (e) {
+                            entry.state = 'error'; entry.error = e.message || String(e);
+                            log.warn(source.name + ' ' + hex(did, 4) + ': ' + entry.error);
+                        }
+                        changed();
+                    }
+                }
+                const failed = Array.from(cbsReads.values()).filter((r) => r.state === 'error').length;
+                scanMessage = 'CBS read complete' + (failed ? ' - ' + failed + ' read(s) failed; see below' : '');
+            } catch (e) {
+                scanMessage = 'CBS read failed: ' + (e.message || e);
+                cbsReads.forEach((r) => { r.state = 'error'; r.error = scanMessage; });
+                log.warn(scanMessage);
+            } finally {
+                scanAt = Date.now(); scanBusy = false; changed();
+            }
         }
         /** the cluster's CBS record: { id: {avail, count} } */
         async function readCbs(d) {
@@ -169,9 +364,12 @@ mgu.run({
         async function resetPress() {
             if (settings.get('resetOn') !== true) return showMsg('Reset is off - turn on "Service reset" in Settings');
             if (useDemo()) return showMsg('No reset in demo mode');
+            if (scanBusy) return showMsg('CBS read in progress - wait before resetting');
             if (reset && reset.busy) return;
             if (reset && reset.item && Date.now() - reset.at < CONFIRM_MS) return doReset();
             const its = items(), cur = its[sel];
+            if (!cur || !cur.native || !RESETTABLE[cur.id]) return showMsg('Reset is limited to native brake fluid and vehicle check items');
+            reset = { busy: true };
             showMsg('Asking the instrument cluster what can be reset...');
             try {
                 const d = await link();
@@ -183,8 +381,7 @@ mgu.run({
                 }
                 log.info('resettable: ' + ok.map((x) => hex(x)).join(',') + ' (reply ' + r.map((x) => hex(x)).join(' ') + ')');
                 if (!ok.length) { reset = null; return showMsg('The instrument cluster allows no reset right now'); }
-                // the selected item, if it is one that can be reset; else the only one there is
-                const id = cur && ok.includes(cur.id) ? cur.id : ok.length === 1 ? ok[0] : null;
+                const id = ok.includes(cur.id) ? cur.id : null;
                 if (id === null) {
                     reset = null;
                     return showMsg('Select ' + ok.map((x) => RESETTABLE[x]).join(' or ') + ' with "Next item", then "Reset service"');
@@ -218,6 +415,7 @@ mgu.run({
                 showMsg(it.name + ' NOT reset: ' + (e.message || e));
             } finally {
                 reset = null;
+                scanAt = null;
             }
         }
 
@@ -228,23 +426,51 @@ mgu.run({
             sel = i;
             hint = null; msg = '';
             reset = reset && reset.busy ? reset : null;
-            const due = parseDue(it.date);
+            let cardPage = 0;
+            const current = () => items().find((item) => item.key === it.key)
+                || Object.assign({}, it, { record: null, way: '', date: '' });
             const card = cardSheet({
                 title: it.name,
                 heading: it.name,
-                subtitle: () => STATUS[it.colour] || '',
+                subtitle: () => cardPage ? 'UDS candidate fields - validate for this car'
+                    : it.native ? STATUS[it.colour] || '' : 'UDS only - not a native service requirement',
                 color: () => [null, '#ef2b2d', '#ffb020', GO, '#ffb020'][it.colour] || null,
-                rows: () => [
-                    ['Due by', due ? due.text : it.date || '--', due && due.months < 0 ? '#ef2b2d' : null],
-                    due ? ['Time left', due.left] : null,
-                    ['Distance left', it.way || '--'],
-                ],
-                note: () => msg || (hint && hint.text) || '',
+                rows: () => {
+                    const item = current(), r = item.record, due = parseDue(item.date);
+                    if (cardPage === 1) return [
+                        ['Service counter*', r ? String(r.count) : '--'],
+                        ['Availability*', r ? valueText(r.avail, ' %') : '--'],
+                        ['Source', r ? r.source + ' 0x' + hex(r.address) : 'Not read / unavailable'],
+                    ];
+                    if (cardPage === 2) return [
+                        ['Distance interval*', r ? valueText(r.intervalKm, ' km') : '--'],
+                        ['Time interval*', r ? valueText(r.intervalMonths, ' months') : '--'],
+                        ['Remaining*', r ? valueText(r.remaining, r.unit ? ' ' + r.unit : '') : '--'],
+                    ];
+                    if (cardPage === 3) return [
+                        ['Record status*', r ? r.status : '--'],
+                        ['UDS due date*', r ? r.date || '--' : '--'],
+                        ['CBS identifier', '0x' + hex(item.id)],
+                    ];
+                    return [
+                        ['Due by', due ? due.text : item.date || '--', due && due.months < 0 ? '#ef2b2d' : null],
+                        due ? ['Time left', due.left] : null,
+                        ['Distance left', item.way || '--'],
+                    ];
+                },
+                note: () => msg || (cardPage ? '* Candidate decoding; see Diagnostics for all ECU records and raw bytes.'
+                    : (hint && hint.text) || ''),
                 actions: () => [{
+                    label: 'CBS details ' + (cardPage + 1) + '/4',
+                    run: () => { cardPage = (cardPage + 1) % 4; changed(); return null; },
+                }, {
+                    label: scanBusy ? 'Reading...' : 'Read CBS',
+                    run: () => { refreshCbs(); return null; },
+                }].concat(it.native && RESETTABLE[it.id] ? [{
                     label: reset && reset.item && reset.item.id === it.id && !reset.busy ? 'Confirm reset' : 'Reset',
                     color: reset && reset.item && reset.item.id === it.id ? '#ef2b2d' : null,
                     run: () => { resetPress(); return null; },
-                }],
+                }] : []),
             });
             card.onClose = () => { hint = null; msg = ''; reset = reset && reset.busy ? reset : null; changed(); };
             if (!ctx.sheet(card)) return false;
@@ -279,7 +505,12 @@ mgu.run({
             const rows = PER_PAGE + Math.floor(ex / 55);
             // the bottom line: an item's details, or what the last button did (reset)
             // (where the kit runs the screen the item's card shows its hint and the reset's progress)
-            const line = cv.own ? '' : hint ? hint.name + ':  ' + hint.text : msg;
+            const selectedRecord = its[sel] && its[sel].record;
+            const extra = selectedRecord ? 'UDS candidate: ' + selectedRecord.source + ', counter ' + selectedRecord.count
+                + ', availability ' + valueText(selectedRecord.avail, '%')
+                + ', interval ' + valueText(selectedRecord.intervalKm, ' km')
+                + ' / ' + valueText(selectedRecord.intervalMonths, ' months') : '';
+            const line = cv.own ? '' : msg || (hint ? hint.name + ':  ' + hint.text : extra);
             const per = line ? rows - 1 : rows;                  // the bottom line takes the last row
             G.panel(cv, t, 24, 176, 1552, 336, 'Service requirements' + (its.length > per ? '  ' + (Math.floor(sel / per) + 1) + '/' + Math.ceil(its.length / per) : ''));
             if (line) {
@@ -294,34 +525,90 @@ mgu.run({
             its.slice(first, first + per).forEach((it, i) => {
                 const y = 232 + i * 55, col = COL(t, it.colour);
                 // a row tapped, or pressed with the controller: its card
-                if (cv.own) cv.target(40, y - 4, 1520, 50, () => openCard(first + i), 'item' + it.id, 8);
+                if (cv.own) cv.target(40, y - 4, 1520, 50, () => openCard(first + i),
+                    'item' + (it.native ? it.id : it.key), 8);
                 if (!cv.own && first + i === sel) cv.roundRect(40, y - 4, 1520, 50, 8, withAlpha(t.accent, 0.18));   // (the kit rings the row the controller is on)
                 cv.roundRect(48, y + 4, 8, 34, 4, col);
                 cv.text(fit(cv, it.name, 30, 720, { font: 'bold' }), 76, y + 32, 30, t.text, { font: 'bold' });
                 cv.text(it.way || '--', 1040, y + 32, 30, it.way ? t.text : t.dim, { align: 'right', font: 'bold' });
                 cv.text(it.date || '--', 1250, y + 32, 28, it.date ? t.text : t.dim, { align: 'right' });
-                if (LBL[it.colour]) {
+                if (LBL[it.colour] || !it.native) {
                     cv.roundRect(1310, y + 6, 230, 34, 6, withAlpha(col, 0.22));
-                    cv.text(LBL[it.colour], 1425, y + 31, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
+                    cv.text(it.native ? LBL[it.colour] : 'UDS / UNVERIFIED', 1425, y + 31, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
                 }
             });
         }
 
         function drawDiag(cv, t) {
-            const p = G.panel(cv, t, 24, 44, 1552, 468, 'Diagnostics - what the instrument cluster sends');
+            const p = G.panel(cv, t, 24, 44, 1552, 468, 'Diagnostics - read-only CBS');
             const lines = [
                 'KombiInterface_2: ' + (kombi ? (kombi.error ? 'error ' + kombi.error : kombi.available ? 'available' : 'not available yet') : 'connecting...'),
-                'cbsDataSBA: ' + (rawSba || 'nothing received'),
-                'cbsDataServiceList (' + (list ? list.length + ' ' + plural(list.length, 'items', 'items') : 'nothing received') + '):',
+                settings.get('demo') === 'on' ? 'DEMO: diagnostic requests disabled' : scanMessage,
+                'Last scan: ' + (scanAt === null ? '--' : new Date(scanAt).toISOString()),
+                'UDS candidate decoding: not certified for this car. Native HMI date/distance take precedence.',
             ];
+            CBS_SOURCES.forEach((source) => source.dids.forEach((did) => {
+                const read = cbsReads.get(readKey(source.address, did));
+                const prefix = source.name + ' [0x' + hex(source.address) + '] 22 ' + hex(did, 4);
+                lines.push(prefix + ': ' + (read ? read.state + (read.error ? ' - ' + read.error : '') : 'not read'));
+                if (!read) return;
+                lines.push('Read at: ' + (read.at ? new Date(read.at).toISOString() : '--'));
+                if (read.state === 'ok' && did === 0x1001) {
+                    if (!read.records.length) lines.push('No CBS records');
+                    read.records.forEach((r) => {
+                        lines.push('0x' + hex(r.id) + ' ' + cbsName(r.id)
+                            + (CBS_TECHNICAL_IDS.includes(r.id) ? ' (technical; not in service list)' : ''));
+                        lines.push('remaining=' + valueText(r.remaining, r.unit ? ' ' + r.unit : '')
+                            + '; due=' + (r.date || '--') + '; status=' + r.status);
+                        lines.push('counter=' + r.count + '; availability=' + valueText(r.avail, '%')
+                            + '; interval=' + valueText(r.intervalKm, ' km') + '/' + valueText(r.intervalMonths, ' months'));
+                        lines.push('Record raw: ' + r.raw);
+                    });
+                }
+                if (read.state === 'ok' && did === 0x1002) {
+                    const payload = read.raw.split(' ').slice(3);
+                    for (let i = 0; i < payload.length; i += 3) {
+                        lines.push('Reset eligibility (candidate): id=0x' + payload[i]
+                            + ' reason=0x' + payload[i + 1] + ' reserve=0x' + payload[i + 2]);
+                    }
+                }
+                if (did === 0x1003) lines.push('1003: raw only; layout not verified');
+                lines.push('Reply raw: ' + (read.raw || '--'));
+            }));
+            lines.push('cbsDataSBA: ' + (rawSba || 'nothing received'));
+            lines.push('cbsDataServiceList: ' + (rawList || 'nothing received'));
+            const wrapped = [];
+            lines.forEach((line) => {
+                for (let i = 0; i < line.length; i += 116) wrapped.push(line.slice(i, i + 116));
+            });
+            const per = Math.max(1, Math.floor((p.y + p.h - 72 - 96) / 26));
+            const count = Math.max(1, Math.ceil(wrapped.length / per));
+            diagPageCount = count;
+            diagPage = Math.max(0, Math.min(diagPage, count - 1));
             let y = 96;
-            lines.forEach((l) => { cv.text(fit(cv, l, 20, 1500), 48, y, 20, t.text); y += 32; });
-            const chunk = 120;
-            for (let i = 0; i < rawList.length && y < p.y + p.h - 12; i += chunk) { cv.text(rawList.slice(i, i + chunk), 48, y, 18, t.dim, { font: 'label' }); y += 26; }
+            wrapped.slice(diagPage * per, (diagPage + 1) * per).forEach((line) => {
+                cv.text(fit(cv, line, 18, 1500), 48, y, 18, t.text); y += 26;
+            });
+            const by = p.y + p.h - 54;
+            const controls = [
+                { x: 48, label: 'Previous', run: () => { diagPage = Math.max(0, diagPage - 1); changed(); } },
+                { x: 350, label: 'Next (' + (diagPage + 1) + '/' + count + ')', run: () => { diagPage = (diagPage + 1) % count; changed(); } },
+                { x: 652, label: scanBusy ? 'Reading...' : 'Read CBS', run: () => { refreshCbs(); } },
+            ];
+            controls.forEach((button, i) => {
+                cv.roundRect(button.x, by, 280, 40, 6, withAlpha(t.accent, 0.18));
+                cv.text(button.label, button.x + 140, by + 28, 22, t.text, { align: 'center' });
+                if (cv.own) cv.target(button.x, by, 280, 40, button.run, 'cbs-diag-' + i, 6);
+            });
         }
 
         let drawn = -1;
         async function render(force) {
+            if (reset && !reset.busy && Date.now() - reset.at >= CONFIRM_MS) {
+                reset = null; changed();
+            }
+            if (settings.get('demo') !== 'on' && !scanBusy && !reset
+                && (scanAt === null || Date.now() - scanAt >= CBS_REFRESH_MS)) refreshCbs();
             if (!force && drawn === version) return;
             drawn = version;
             const t = ctx.theme();
@@ -339,19 +626,32 @@ mgu.run({
             const n = items().length;
             reset = reset && reset.busy ? reset : null;         // any other button disarms a reset
             hint = null; msg = '';
-            if (page > 0) { page = 0; sel = 0; } else if (n && sel + 1 < n) sel++;
+            if (page > 0) {
+                if (diagPage + 1 < diagPageCount) diagPage++;
+                else { page = 0; sel = 0; diagPage = 0; }
+            } else if (n && sel + 1 < n) sel++;
             else if (pages().length > 1) page = 1; else sel = 0;
             changed();
         });
         ui.onClick('BTN_DETAILS', () => {
+            if (page > 0) { refreshCbs(); return; }
             if (page === 0 && openCard(sel)) return;
             reset = reset && reset.busy ? reset : null; msg = ''; details();
         });
-        ui.onClick('BTN_RESET', () => { resetPress(); });
+        ui.onClick('BTN_RESET', () => {
+            if (page > 0) { showMsg('Diagnostics is read-only'); return; }
+            resetPress();
+        });
         // where the kit runs the screen the rows open their cards (with Reset): none of these in its bar
         ['BTN_SELECT', 'BTN_DETAILS', 'BTN_RESET'].forEach((b) => ctx.hideButton(b));
         ctx.onLayout(changed);           // (it draws only on changes: a new layout is one)
-        ctx.onTab((i) => { if (i !== page) { page = i; sel = 0; msg = ''; changed(); } });
+        ctx.onTab((i) => {
+            if (i !== page) {
+                page = i; sel = 0; msg = ''; diagPage = 0;
+                reset = reset && reset.busy ? reset : null;
+                changed();
+            }
+        });
 
         ctx.loop('MAIN', 2, () => render(false));
         // back from Settings or a popup: draw again (this app only draws when something changed)

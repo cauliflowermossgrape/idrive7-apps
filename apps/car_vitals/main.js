@@ -21,6 +21,7 @@ const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const Demo = require('./demo');
+const Engine = require('./kit/engine');
 const { GearGuess, selectionOf } = require('./kit/car');
 const { Diag } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
@@ -244,6 +245,8 @@ mgu.run({
                 live.gearGuess = live.speed < 3 ? null : g;
             }
         };
+        // engine profile (diesel / petrol): rpm bar end and the Auto redline
+        const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
         const watches = [
             ['de.bmw.infotainment.vehicle.CDS', {
                 statusEngineSpeed2: (v) => put('rpm', sc('rpm', v.actualValueRPMEngineCrankshaft)),
@@ -272,7 +275,7 @@ mgu.run({
                     log.info('car units: pressure ' + (press || '?') + ', temperature ' + (temp || '?'));
                 },
             }],
-            ['de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (v) => put('speed', sc('speed', v.speedVehicleCentreOfGravity)) }],
+            ['de.bmw.infotainment.vehicle.Vehicle2', Object.assign({ statusCarSpeed2: (v) => put('speed', sc('speed', v.speedVehicleCentreOfGravity)) }, engine.handlers())],
             ['de.bmw.infotainment.drivingexcitement.FES', {
                 statusSwitchDriveDynamicSport2: (v) => {
                     logRaw('FES boost', v.displayBoostPressure);
@@ -358,6 +361,8 @@ mgu.run({
             .then((all) => log.info('signals: ' + all.map((s) => s.iface.split('.').pop() + (s.error ? '(err)' : '')).join(' ')));
 
         const demo = new Demo();
+        demo.setRedline(engine.redline());
+        engine.onChange(() => demo.setRedline(engine.redline()));
         // Auto: demo only until the car answers - a parked car sends nothing new for minutes, which is not "no car"
         const carPresent = () => lastCar > 0 || subs.some((s) => s.available);
         const usingDemo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !carPresent() && Date.now() - startT > 5000);
@@ -577,9 +582,21 @@ mgu.run({
         }
         const PW = (kw) => (G.isNum(kw) ? kw * ({ kw: 1, hp: 1.34102, ps: 1.35962 }[settings.get('powerUnit')] || 1) : null);
         const pwU = () => ({ kw: 'kW', hp: 'hp', ps: 'PS' }[settings.get('powerUnit')] || 'kW');
-        // torque: the car sends Nm; lb-ft on request (1 Nm = 0.737562 lb-ft)
-        const TQ = (nm) => (G.isNum(nm) ? (settings.get('torqueUnit') === 'lbft' ? nm * 0.737562 : nm) : null);
-        const tqU = () => (settings.get('torqueUnit') === 'lbft' ? 'lb-ft' : 'Nm');
+        // torque: the car sends Nm; lb-ft or kgm on request (1 Nm = 0.737562 lb-ft = 1 / 9.80665 kgm)
+        const TQ = (nm) => (G.isNum(nm) ? nm * ({ nm: 1, lbft: 0.737562, kgm: 1 / 9.80665 }[settings.get('torqueUnit')] || 1) : null);
+        const tqU = () => ({ nm: 'Nm', lbft: 'lb-ft', kgm: 'kgm' }[settings.get('torqueUnit')] || 'Nm');
+        /**
+         * End of the torque bar. kgm: the "Torque gauge max (kgm only)" setting as it is (40 = a 0-40 kgm bar);
+         * its default 100 is the Nm scale's end in kgm (900 Nm = 91.8 kgm, rounded up), as before this setting.
+         * Nm / lb-ft: as the original app, 900 Nm in the unit shown, rounded up (the setting is ignored).
+         */
+        function tqScale() {
+            if (settings.get('torqueUnit') === 'kgm') {
+                const m = settings.get('maxTorqueKgm') || 100;
+                return { max: m, niceMax: false, step: m <= 25 ? 5 : m <= 50 ? 10 : 20 };
+            }
+            return { max: TQ(900), niceMax: true };
+        }
 
         /**
          * { letter, num, est } for the gear readout, or null without any gear information.
@@ -617,8 +634,8 @@ mgu.run({
         function drawEngine(cv, t, d) {
             engineSeen = Date.now();
             if (boostFromDme()) kickFuel();
-            const red = settings.get('redline');
-            const max = Math.ceil((red + 1000) / 1000) * 1000;
+            const red = engine.redline();
+            const max = engine.scaleMax();
             const showPk = settings.get('peaks');
             // demo data keeps its own peaks, so they never mix with the car's; raising them every frame
             // also lets a held peak drop back while the car sends nothing new
@@ -642,7 +659,7 @@ mgu.run({
                     label: pw.calc ? 'Power (torque x rpm)' : 'Power', value: PW(pw.kw), unit: pwU(), max: powMax, niceMax: true, ramp: 'hot',
                     peak: showPk && G.isNum(pk.power) ? PW(pk.power) : null,
                 });
-                G.bar(cv, t, x, y + gap, w, 92, { label: 'Torque', value: TQ(d.torque), unit: tqU(), max: TQ(900), niceMax: true, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null });
+                G.bar(cv, t, x, y + gap, w, 92, Object.assign({ label: 'Torque', value: TQ(d.torque), unit: tqU(), decimals: settings.get('torqueUnit') === 'kgm' ? 1 : 0, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null }, tqScale()));
             };
             if (shown('boost')) {
                 const psi = settings.get('pressUnit') === 'psi', bmax = BOOST_MAX[settings.get('boostMax')] || BOOST_MAX['3.5'], pmax = psi ? bmax[1] : bmax[0];
@@ -825,7 +842,7 @@ mgu.run({
             // g line ends G.MARGIN over the panel's bottom, as the tyres' and xDrive's last lines; the xDrive bars spread over it
             const room = G.pageBottom(cv) - G.BOTTOM, grow = Math.round(G.toMargin(room, 38) / 2), dx = G.toMargin(room, 28);
             G.panel(cv, t, 24, G.TOP, gw, G.BOTTOM - G.TOP, 'G-force');
-            G.gmeter(cv, t, 24 + gw / 2, 258 + grow, 164 + grow, { lat: d.gLat, long: d.gLong, trail, max: 1.5 });
+            G.gmeter(cv, t, 24 + gw / 2, 258 + grow, 164 + grow, { lat: d.gLat, long: d.gLong, trail, max: 1.5, flipLong: settings.get('flipLong') });
             if (showTyres) drawTyres(cv, t, 528, G.TOP, right - 528, G.BOTTOM - G.TOP, d);
             if (showAwd) {
                 const ax = 1220, aw = 356;

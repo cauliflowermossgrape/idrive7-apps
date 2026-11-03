@@ -20,6 +20,7 @@ const { withAlpha, ramp } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { plural } = require('./kit/i18n');
 const Car = require('./kit/car');
+const Engine = require('./kit/engine');
 
 const W = 1600, H = 520;
 // rev bar (G20 style): left to right, slanted segments; top edge shifted right by 'slant'
@@ -32,17 +33,22 @@ const N_LEDS = 12, LED_RANGE = 2000;
 mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear']);
+        // engine profile (diesel / petrol): rev scale top and the Auto redline / cold limit
+        const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], { [Engine.SIGNAL[0]]: engine.handlers() });
 
         /* ---------- derived limits ---------- */
-        const redline = () => settings.get('redline');
-        const maxRpm = () => Math.ceil((redline() + 800) / 1000) * 1000;
-        const normalShift = () => redline() - settings.get('shiftBefore');
+        const redline = () => engine.redline();
+        const maxRpm = () => engine.scaleMax();
+        // never below 2500: shifts under that are not scored
+        const normalShift = () => Math.max(2500, redline() - settings.get('shiftBefore'));
+        car.setRedline(redline());
+        engine.onChange(() => car.setRedline(redline()));
         /** shift point right now (lowered while the oil is cold). */
         function shiftPoint(oil) {
             const n = normalShift();
             if (!settings.get('coldGuard') || !G.isNum(oil)) return { rpm: n, cold: false };
-            const warm = settings.get('warmOil'), cold = Math.min(settings.get('coldLimit'), n);
+            const warm = settings.get('warmOil'), cold = Math.min(engine.value('coldLimit', { diesel: 3000, petrol: 4500 }), n);
             if (oil >= warm) return { rpm: n, cold: false };
             const f = G.clamp((oil - 30) / (warm - 30), 0, 1);
             return { rpm: Math.round((cold + (n - cold) * f) / 50) * 50, cold: true };

@@ -9,6 +9,7 @@
  *     raw = 'bytes' big-endian bytes from 'at' (0 = first data byte after the DID),
  *     value = raw * factor + offset, outside min..max = not plausible; signed: true = raw is
  *     two's complement (e.g. a torque that can be negative)
+ *     bit: k = only bit k of raw (0 or 1), before factor / offset (a status flag)
  *   or { ecu, obd: '0F', ... }: the same PID with OBD service 01 instead of 0x22 F4xx
  *     (for engine units that refuse the F4xx identifiers with NRC 31); 'at' counts from the
  *     first data byte after the PID
@@ -52,6 +53,7 @@ class DidReader {
         let raw = 0;
         for (let i = 0; i < n; i++) raw = raw * 256 + uds[at + i];
         if (c.signed && raw >= Math.pow(2, 8 * n - 1)) raw -= Math.pow(2, 8 * n);      // two's complement
+        if (c.bit != null) raw = (raw >> c.bit) & 1;                                    // one flag of the value
         const v = raw * (c.factor == null ? 1 : c.factor) + (c.offset || 0);
         r.value = v;
         if ((c.min != null && v < c.min) || (c.max != null && v > c.max)) { r.why = 'out of range'; return null; }

@@ -1,0 +1,71 @@
+'use strict';
+/**
+ * engine.js - diesel / petrol profile: rpm scale top and default redline.
+ *
+ *   const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
+ *   // merge into the app's Vehicle2 watch (one proxy per interface):
+ *   watches[Engine.SIGNAL[0]] = Object.assign({}, watches[Engine.SIGNAL[0]], engine.handlers());
+ *   engine.scaleMax()  -> 6000 diesel / 8000 petrol (not a setting)
+ *   engine.redline()   -> setting "redline" (0 = Auto: the profile's), never above scaleMax()
+ *   engine.value('coldLimit', { diesel: 3000, petrol: 4500 })  -> the setting, or per profile when 0
+ *
+ * The profile comes from setting "engine" (auto / diesel / petrol). Auto reads typeEngine from
+ * Vehicle2.statusVehiclePartType; the last valid type is kept in data/engine.json so the first
+ * frames after a start already use it. Nothing known = petrol. "No value" never clears it.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const PROFILES = { diesel: { scaleMax: 6000, redline: 5000 }, petrol: { scaleMax: 8000, redline: 7000 } };
+// VehicleTypes.TypeEngine, by name or wire number; 0 (no information) / 15 (invalid) = unknown
+const TYPES = {
+    4: 'petrol', 5: 'petrol', 6: 'diesel', 7: 'diesel', 8: 'petrol', 9: 'petrol',
+    BENZIN_DIREKTEINSPRITZUNG: 'petrol', BENZIN_KONVENTIONELL: 'petrol', DIESEL_DIREKTEINSPRITZUNG: 'diesel',
+    DIESEL_KONVENTIONELL: 'diesel', ELEKTROMOTOR: 'petrol', HYBRIDMOTOR: 'petrol',
+};
+const typeOf = (raw) => (raw !== undefined && raw !== null && Object.prototype.hasOwnProperty.call(TYPES, raw) ? TYPES[raw] : null);
+
+class Engine {
+    constructor(opts) {
+        this.settings = opts.settings; this.log = opts.log;
+        this.file = path.join(opts.dataDir, 'engine.json');
+        this.listeners = []; this.logged = false;
+        this.type = null;
+        try { const t = JSON.parse(fs.readFileSync(this.file, 'utf8')).type; this.type = t === 'diesel' || t === 'petrol' ? t : null; } catch (e) { /* not yet */ }
+        this.last = this.profile();
+        if (this.settings.onChange) this.settings.onChange((key) => { if (key === 'engine' || key === 'redline') this._changed(true); });
+    }
+    /** statusVehiclePartType value. */
+    feed(v) {
+        const raw = v ? v.typeEngine : undefined, t = typeOf(raw);
+        if (!this.logged) { this.logged = true; if (this.log) this.log.info('engine type: ' + JSON.stringify(raw) + ' -> ' + (t || 'unknown')); }
+        if (!t || t === this.type) return;
+        this.type = t;
+        try { fs.writeFileSync(this.file, JSON.stringify({ type: t })); } catch (e) { if (this.log) this.log.warn('engine save: ' + e); }
+        this._changed(false);
+    }
+    handlers() { return { statusVehiclePartType: (v) => this.feed(v) }; }
+    detected() { return this.type; }
+    profile() {
+        const s = this.settings.get('engine');
+        return s === 'diesel' || s === 'petrol' ? s : this.type || 'petrol';
+    }
+    scaleMax() { return PROFILES[this.profile()].scaleMax; }
+    value(key, perProfile) {
+        const v = this.settings.get(key);
+        return typeof v === 'number' && v !== 0 ? v : perProfile[this.profile()];
+    }
+    redline() { return Math.min(this.value('redline', { diesel: PROFILES.diesel.redline, petrol: PROFILES.petrol.redline }), this.scaleMax()); }
+    onChange(fn) { this.listeners.push(fn); }
+    _changed(always) {
+        const p = this.profile();
+        if (!always && p === this.last) return;
+        this.last = p;
+        this.listeners.forEach((fn) => { try { fn(); } catch (e) { if (this.log) this.log.error(e); } });
+    }
+}
+Engine.SIGNAL = ['de.bmw.infotainment.vehicle.Vehicle2', 'statusVehiclePartType'];
+Engine.PROFILES = PROFILES;
+Engine.typeOf = typeOf;
+
+module.exports = Engine;

@@ -17,6 +17,7 @@ const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const Car = require('./kit/car');
+const Engine = require('./kit/engine');
 
 const W = 1600, H = 520;
 const BIN = 100, MIN_SPAN = 1500;
@@ -26,7 +27,11 @@ const GO = '#2fd27a';
 mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const car = new Car(ctx, ['rpm', 'speed', 'accel', 'torque']);
+        // engine profile (diesel / petrol): the graph's rpm axis on Auto
+        const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
+        const car = new Car(ctx, ['rpm', 'speed', 'accel', 'torque'], { [Engine.SIGNAL[0]]: engine.handlers() });
+        car.setRedline(engine.redline());
+        engine.onChange(() => car.setRedline(engine.redline()));
 
         /* ---------- storage ---------- */
         const FILE = path.join(ctx.dataDir, 'dyno_runs.json');
@@ -114,7 +119,7 @@ mgu.run({
         const nice = (x, step) => Math.max(step, Math.ceil(x / step) * step);
 
         function plot(cv, t, x, y, w, h, runs) {
-            const rMin = 1000, rMax = settings.get('maxRpm');
+            const rMin = 1000, rMax = engine.value('maxRpm', { diesel: 6000, petrol: 8000 });
             const all = runs.filter(Boolean).reduce((a, r) => a.concat(r.curve), []);
             const pMax = nice(Math.max(150, ...all.map((c) => pw(c.p) * 1.12)), 50);
             const tMax = nice(Math.max(150, ...all.map((c) => Math.max(tq(c.t), tq(c.ecu) || 0) * 1.12)), 50);

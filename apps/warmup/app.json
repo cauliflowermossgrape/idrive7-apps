@@ -2,7 +2,7 @@
   "id": "warmup",
   "title": "Warm-Up",
   "description": "Oil and coolant warm-up calculator (time to ready), safe rev limit and turbo cool-down",
-  "version": "1.6.16",
+  "version": "1.7.0",
   "vendor": "custom",
   "loggingId": "OA9A",
   "iconGlyph": "temp",
@@ -12,7 +12,8 @@
       "statusEngineTemperature": "rs"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "statusCarSpeed2": "rs"
+      "statusCarSpeed2": "rs",
+      "statusVehiclePartType": "rs"
     },
     "de.bmw.infotainment.drivingexcitement.FES": {
       "statusActualValueTorque2": "rs"
@@ -64,12 +65,26 @@
       ]
     },
     {
+      "key": "engine",
+      "label": "Engine",
+      "type": "choice",
+      "default": "auto",
+      "options": [
+        ["auto", "Auto (from the car)"],
+        ["diesel", "Diesel"],
+        ["petrol", "Petrol"]
+      ]
+    },
+    {
       "key": "coldLimit",
       "label": "Rev limit when cold",
       "type": "number",
       "unit": "rpm",
-      "default": 3500,
+      "default": 0,
+      "labels": {"0": "Auto"},
+      "reset": 1,
       "steps": [
+        0,
         2500,
         3000,
         3500,
@@ -82,8 +97,11 @@
       "label": "Redline",
       "type": "number",
       "unit": "rpm",
-      "default": 7000,
+      "default": 0,
+      "labels": {"0": "Auto"},
+      "reset": 1,
       "steps": [
+        0,
         4500,
         5000,
         5500,
@@ -92,9 +110,7 @@
         7000,
         7200,
         7500,
-        8000,
-        8500,
-        9000
+        8000
       ]
     },
     {
