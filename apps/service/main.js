@@ -28,6 +28,7 @@ const { Diag, hex, NRC, replyTo } = require('./kit/diag');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
 const { t: translate, getLanguage, plural } = require('./kit/i18n');
+const fonts = require('./kit/fonts');
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MONTHS_RU_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -75,6 +76,36 @@ const brief = (v) => JSON.stringify(v, (k, x) => (k === 'symbolData' ? '[icon]' 
 const colour = (c) => (typeof c === 'number' ? c : COLORS[String(c)] !== undefined ? COLORS[String(c)] : 0);
 const txt = (s) => String(s === undefined || s === null ? '' : s).replace(/[^\x20-\x7e]/g, (ch) => ({ 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ß': 'ss' }[ch] || ch)).replace(/[\x00-\x1f\x7f]/g, '').trim();
 
+/*
+ * Texts the fonts cannot draw. The car words the items in the iDrive's language; for a language the baked fonts
+ * have no glyphs for (Korean, ...) every character would be drawn as "?", and some cars send such texts as "?"
+ * already. Those texts are not shown: an item's name becomes its English name by CBS id (translated as the
+ * app's own texts are), a distance or date keeps its numbers, a hint is left out. Texts the fonts can draw
+ * (English, German, the Chinese and Russian builds' own glyphs) are shown as the car sends them.
+ */
+const NAMES = {
+    0x01: 'Engine oil', 0x02: 'Front brakes', 0x03: 'Brake fluid', 0x06: 'Rear brakes', 0x11: 'Vehicle check',
+    0x20: 'Statutory vehicle inspection', 0x21: 'Exhaust emissions test', 0x64: 'Vehicle check',
+};
+/** every character of s is in the font that would draw it */
+const drawable = (s) => {
+    const f = fonts.get('bold', 30, s);
+    return !!f && Array.from(s).every((ch) => f.glyphs[ch.codePointAt(0)]);
+};
+/** a car text that can be shown: drawable and not already broken ("?" / U+FFFD for a lost character) */
+const usable = (s) => !!s && drawable(s) && !/[?\ufffd]/.test(s);
+const nameOf = (id, s) => (usable(s) ? s : NAMES[id] || 'Service item ' + id);
+/** a distance or date the fonts cannot draw: its numbers ("2027년 9월" -> "09/2027", which parseDue reads) */
+const value = (s) => {
+    if (!s || drawable(s)) return s;
+    const ym = s.match(/(\d{4})\D+(\d{1,2})(?!\d)/), my = s.match(/(?:^|\D)(\d{1,2})\D+(\d{4})/);
+    if (ym) return ym[2].padStart(2, '0') + '/' + ym[1];
+    if (my) return my[1].padStart(2, '0') + '/' + my[2];
+    return Array.from(s).filter((ch) => drawable(ch)).join('').replace(/\s+/g, ' ').trim();
+};
+/** the code points of a text the fonts cannot draw, for the log (what the car really sent) */
+const codes = (s) => String(s).replace(/[^\x20-\x7e]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+
 const DEMO = {
     list: [
         { id: 1, colour: 3, name: 'Engine oil', way: '12 300 km', date: '09/2027' },
@@ -94,6 +125,11 @@ mgu.run({
         let list = null, sba = null, rawList = '', rawSba = '';
         let kombi = null, sel = 0, page = 0, msg = '', hint = null, version = 0;
         const changed = () => { version++; };
+        /** the summary's name: that of the list item the car words the same way (one item, or items of one name) */
+        const sbaName = (text) => {
+            const names = Array.from(new Set((text ? list || [] : []).filter((i) => i.carName === text).map((i) => i.name)));
+            return names.length === 1 ? names[0] : usable(text) ? text : '';
+        };
         const useDemo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !list && !sba);
 
         /* ---------- reading ---------- */
@@ -103,16 +139,22 @@ mgu.run({
                 const arr = Array.isArray(v) ? v : (v && (v.cbsDataServiceList || v.value)) || [];
                 list = arr.map((e) => {
                     const s = find(e, 'cBSIdentifier') || {};
-                    return { id: s.cBSIdentifier, colour: colour(s.cBSColor), name: txt(s.cBSServcieName || s.cBSServiceName),
-                        way: txt(s.cBSServiceWay), date: txt(s.cBSServiceDate) };
-                }).filter((e) => e.id !== undefined && e.name);
-                log.info('service list: ' + list.length + ' item(s)');
+                    const name = txt(s.cBSServcieName || s.cBSServiceName);
+                    return { id: s.cBSIdentifier, colour: colour(s.cBSColor), name: nameOf(s.cBSIdentifier, name), carName: name,
+                        way: value(txt(s.cBSServiceWay)), date: value(txt(s.cBSServiceDate)) };
+                }).filter((e) => e.id !== undefined && e.carName);
+                const unusable = list.filter((i) => !usable(i.carName));
+                log.info('service list: ' + list.length + ' item(s)' + (unusable.length ? ', shown by id: '
+                    + unusable.map((i) => i.id + ' ' + codes(i.carName)).join(' | ') : ''));
+                if (sba) sba.text = sbaName(sba.carText);       // the summary came before the list
                 changed();
             },
             cbsDataSBA: (v) => {
                 rawSba = brief(v);
                 const s = find(v, 'cBSDataSBAText') || {};
-                sba = { text: txt(s.cBSDataSBAText), way: txt(s.cBSDataSBADistance), date: txt(s.cBSDataSBADate), colour: colour(s.cBSDataSBAColor) };
+                const text = txt(s.cBSDataSBAText);
+                sba = { carText: text, text: sbaName(text), way: value(txt(s.cBSDataSBADistance)),
+                    date: value(txt(s.cBSDataSBADate)), colour: colour(s.cBSDataSBAColor) };
                 changed();
             },
         }, log, { pollMs: 60000 }).then((r) => {
@@ -138,7 +180,9 @@ mgu.run({
                 if (!kombi || !kombi.proxy) throw new Error('instrument cluster not reachable');
                 const r = await sig.call(kombi.proxy, 'requestCBSServiceHint', { id: it.id }, 6000);
                 const h = find(r, 'cBSServiceHint', true) || {};
-                hint.text = [txt(h.cBSServiceHint), txt(h.cBSServiceWay), txt(h.cBSServiceDate)].filter(Boolean).join('   ') || 'No details for this item';
+                const ht = txt(h.cBSServiceHint);
+                hint.text = [usable(ht) ? ht : '', value(txt(h.cBSServiceWay)), value(txt(h.cBSServiceDate))]
+                    .filter(Boolean).join('   ') || 'No details for this item';
                 log.info('hint ' + it.id + ': ' + brief(r));
             } catch (e) {
                 log.warn('requestCBSServiceHint ' + it.id + ': ' + e);
