@@ -17,7 +17,16 @@ const { Recorder } = require(path.join(KIT, 'record'));
 const themes = require(path.join(KIT, 'themes'));
 
 let app = null;
-const stubs = { './kit/mgu': { run(a) { app = a; } } };
+// the diagnostic link: none by default (as on the VM); a test sets `uds` to answer UDS reads like a car
+const realDiag = require(path.join(KIT, 'diag'));
+let uds = null;
+const sent = [];
+class FakeDiag {
+    constructor() { this.p = null; this.error = 'TASU not available'; }
+    async init() { if (uds) this.p = {}; }
+    async physical(target, sid, data) { sent.push([target, sid].concat(data)); return uds(target, sid, data); }
+}
+const stubs = { './kit/mgu': { run(a) { app = a; } }, './kit/diag': Object.assign({}, realDiag, { Diag: FakeDiag }) };
 const load = Module._load;
 Module._load = function (req, parent, isMain) {
     if (stubs[req]) return stubs[req];
@@ -33,13 +42,14 @@ const item = (id, name, way, date, color) => ({ cBSDataServiceListEntry: {
 const summary = (text, way, date) => ({ cBSDataSBA: { cBSDataSBAText: text, cBSDataSBADistance: way || '', cBSDataSBADate: date || '', cBSDataSBAColor: 'GREEN' } });
 
 /** A fresh Service (a new process); returns { feed, render, details, logs } */
-async function start(hint) {
+async function start(hint, set) {
     delete require.cache[MAIN];
     require(MAIN);
     const S = {};
     SPEC.settings.forEach((s) => { S[s.key] = s.default; });
     S.demo = 'off';
-    let texts = [], frame = null, watch = null;
+    Object.assign(S, set || {});
+    let texts = [], frame = null, watch = null, tab = null;
     const clicks = {}, logs = [];
     await app.start({
         ui: { image: async () => {}, onClick: (n, fn) => { clicks[n] = fn; }, onVisible() {}, onFocus() {} },
@@ -56,12 +66,13 @@ async function start(hint) {
             watch: async (iface, inst, handlers) => { watch = handlers; return { iface, available: true, proxy: {} }; },
             call: async () => hint,
         },
-        display: {}, sheet: () => false, hideButton() {}, onLayout() {}, onTab() {},
+        display: {}, sheet: () => false, hideButton() {}, onLayout() {}, onTab: (fn) => { tab = fn; },
     });
     await new Promise((r) => setImmediate(r));
     return {
         feed: (field, v) => watch[field](v),
         render: async () => { await frame(); return texts; },
+        tab: (i) => tab(i),
         details: async () => { clicks.BTN_DETAILS(); await new Promise((r) => setTimeout(r, 0)); await frame(); return texts; },
         logs,
     };
@@ -109,6 +120,26 @@ const hasQ = (texts) => texts.some((x) => {
     assert(!has(t, 'Engine oil') && !has(t, 'Service item'), 'no English name where the car\'s own can be drawn');
     t = await s.details();
     assert(t.some((x) => x.indexOf('Change engine oil') >= 0), 'details: the car\'s hint');
+
+    // the cluster's, DME's and DSC's own CBS records (UDS 22 1001), read-only, next to what the HMI lists
+    const rec = (h) => Array.from(Buffer.from(h, 'hex'));
+    const answers = { 0x60: rec('010ABF01035321361C180000' + '03800001E23A003BDB18FFFF' + '6417A301E25B4236DE30FFFF'),
+        0x12: rec('0754B00101FDBD0000000000') };
+    uds = (target, sid, data) => (sid === 0x22 && data[0] === 0x10 && data[1] === 0x01 && answers[target]
+        ? [0x62, 0x10, 0x01].concat(answers[target]) : [0x7F, sid, 0x31]);
+    s = await start(null, { diagPage: true });
+    s.feed('cbsDataServiceList', [item(1, 'Engine oil', '12,300 km', '09/2027'), item(3, 'Brake fluid', '', '11/2026', 'YELLOW')]);
+    await s.render();
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    t = await s.render();
+    assert(has(t, 'Engine oil') && has(t, 'Brake fluid'), 'the HMI items stay: ' + t.join(' | '));
+    assert(has(t, 'Particulate filter (OPF/DPF) [UDS]') && t.includes('UDS / UNVERIFIED'), 'a DME-only record is listed, marked: ' + t.join(' | '));
+    s.tab(1);
+    t = await s.render();
+    for (const want of ['KOMBI [0x60] 22 1001: ok', '0x01 Engine oil', 'remaining=27510 km; due=06/2028; status=OK',
+        'counter=3; availability=83%; interval=33000 km/24 months', 'CBS read complete - 4 read(s) failed', 'Next (1/']) assert(has(t, want), want + ' in ' + t.join(' | '));
+    assert(sent.length && sent.every((r) => r[1] === 0x22), 'reads only (UDS 22), no writes: ' + JSON.stringify(sent));
+    uds = null;
 
     global.setInterval = realInterval;
     console.log('service: OK');
