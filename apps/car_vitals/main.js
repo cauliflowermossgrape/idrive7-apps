@@ -575,9 +575,21 @@ mgu.run({
         }
         const PW = (kw) => (G.isNum(kw) ? kw * ({ kw: 1, hp: 1.34102, ps: 1.35962 }[settings.get('powerUnit')] || 1) : null);
         const pwU = () => ({ kw: 'kW', hp: 'hp', ps: 'PS' }[settings.get('powerUnit')] || 'kW');
-        // torque: the car sends Nm; lb-ft on request (1 Nm = 0.737562 lb-ft)
-        const TQ = (nm) => (G.isNum(nm) ? (settings.get('torqueUnit') === 'lbft' ? nm * 0.737562 : nm) : null);
-        const tqU = () => (settings.get('torqueUnit') === 'lbft' ? 'lb-ft' : 'Nm');
+        // torque: the car sends Nm; lb-ft or kgm on request (1 Nm = 0.737562 lb-ft = 1 / 9.80665 kgm)
+        const TQ = (nm) => (G.isNum(nm) ? nm * ({ nm: 1, lbft: 0.737562, kgm: 1 / 9.80665 }[settings.get('torqueUnit')] || 1) : null);
+        const tqU = () => ({ nm: 'Nm', lbft: 'lb-ft', kgm: 'kgm' }[settings.get('torqueUnit')] || 'Nm');
+        /**
+         * End of the torque bar. kgm: the "Torque gauge max (kgm only)" setting as it is (40 = a 0-40 kgm bar);
+         * its default 100 is the Nm scale's end in kgm (900 Nm = 91.8 kgm, rounded up), as before this setting.
+         * Nm / lb-ft: as the original app, 900 Nm in the unit shown, rounded up (the setting is ignored).
+         */
+        function tqScale() {
+            if (settings.get('torqueUnit') === 'kgm') {
+                const m = settings.get('maxTorqueKgm') || 100;
+                return { max: m, niceMax: false, step: m <= 25 ? 5 : m <= 50 ? 10 : 20 };
+            }
+            return { max: TQ(900), niceMax: true };
+        }
 
         /**
          * { letter, num, est } for the gear readout, or null without any gear information.
@@ -640,7 +652,7 @@ mgu.run({
                     label: pw.calc ? 'Power (torque x rpm)' : 'Power', value: PW(pw.kw), unit: pwU(), max: powMax, niceMax: true, ramp: 'hot',
                     peak: showPk && G.isNum(pk.power) ? PW(pk.power) : null,
                 });
-                G.bar(cv, t, x, y + gap, w, 92, { label: 'Torque', value: TQ(d.torque), unit: tqU(), max: TQ(900), niceMax: true, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null });
+                G.bar(cv, t, x, y + gap, w, 92, Object.assign({ label: 'Torque', value: TQ(d.torque), unit: tqU(), decimals: settings.get('torqueUnit') === 'kgm' ? 1 : 0, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null }, tqScale()));
             };
             if (shown('boost')) {
                 const psi = settings.get('pressUnit') === 'psi', pmax = psi ? 36 : 2.5;
