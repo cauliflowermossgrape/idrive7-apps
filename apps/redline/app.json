@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.10.16",
+  "version": "1.11.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -12,7 +12,8 @@
       "statusEngineTemperature": "rs"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "statusCarSpeed2": "rs"
+      "statusCarSpeed2": "rs",
+      "statusVehiclePartType": "rs"
     },
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
@@ -33,16 +34,18 @@
     }
   ],
   "settings": [
-    {"key": "redline", "label": "Redline", "type": "number", "unit": "rpm", "default": 7000,
-     "steps": [4500, 5000, 5500, 6000, 6500, 7000, 7200, 7500, 7800, 8000, 8500, 9000]},
+    {"key": "engine", "label": "Engine", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto (from the car)"], ["diesel", "Diesel"], ["petrol", "Petrol"]]},
+    {"key": "redline", "label": "Redline", "type": "number", "unit": "rpm", "default": 0, "labels": {"0": "Auto"}, "reset": 1,
+     "steps": [0, 4500, 5000, 5500, 6000, 6500, 7000, 7200, 7500, 7800, 8000]},
     {"key": "shiftBefore", "label": "Shift point before redline", "type": "number", "unit": "rpm", "default": 300,
      "steps": [0, 100, 200, 300, 500, 800, 1000]},
     {"key": "lights", "label": "Shift light style", "type": "choice", "default": "m",
      "options": [["m", "M (green-yellow-red)"], ["f1", "Race (green-red-blue)"], ["mono", "Theme colour"]]},
     {"key": "flash", "label": "Blink and flash at shift point", "type": "bool", "default": false, "reset": 1},
     {"key": "coldGuard", "label": "Cold-engine rev guard", "type": "bool", "default": true},
-    {"key": "coldLimit", "label": "Cold rev limit", "type": "number", "unit": "rpm", "default": 4500,
-     "steps": [2500, 3000, 3500, 4000, 4500, 5000, 5500]},
+    {"key": "coldLimit", "label": "Cold rev limit", "type": "number", "unit": "rpm", "default": 0, "labels": {"0": "Auto"}, "reset": 1,
+     "steps": [0, 2500, 3000, 3500, 4000, 4500, 5000, 5500]},
     {"key": "warmOil", "label": "Oil warm at", "type": "number", "unit": "°C", "default": 80,
      "steps": [60, 70, 80, 90]},
     {"key": "speedUnit", "label": "Units", "type": "choice", "default": "kmh",
