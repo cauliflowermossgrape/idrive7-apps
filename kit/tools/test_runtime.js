@@ -98,8 +98,10 @@ test('unchanged frames: not sent again, but one a second (the renderer hides an 
         assert.strictEqual(c.frames.length, n + 1, 'the header changed');
         page(t.d, 20); await sleep(50);
         assert.strictEqual(c.frames.length, n + 1, 'the same page with the same header');
-        // shown again: the same page goes out at once
+        // shown again: the picture comes back once the HMI's page has opened (display.js SHOW_DELAY_MS, 350 ms),
+        // then the same page goes out at once
         t.ui.setVisible(false); t.ui.setVisible(true);
+        await sleep(450);
         n = c.frames.length;
         page(t.d, 20); await sleep(50);
         assert.strictEqual(c.frames.length, n + 1, 'shown again');
