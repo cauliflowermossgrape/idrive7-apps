@@ -141,7 +141,7 @@
       "key": "boostMax",
       "label": "Boost gauge max",
       "type": "choice",
-      "default": "3.5",
+      "default": "2.5",
       "options": [
         ["2.0", "2.0 bar / 30 psi"],
         ["2.5", "2.5 bar / 36 psi"],
