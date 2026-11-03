@@ -2,7 +2,7 @@
   "id": "aa_cluster_companion",
   "title": "AA Cluster Companion App",
   "description": "Android Auto map on the instrument cluster: how much map (density) and whether the turn card shows by mlurker@gmail.com",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "vendor": "custom",
   "loggingId": "OA9E",
   "signals": {},
