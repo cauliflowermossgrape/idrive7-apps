@@ -657,15 +657,24 @@ async function runInner(impl) {
         .then(() => { mapped[uuid] = true; log.info('mapped entry ' + uuid + ' -> ' + mainName); })
         .catch((e) => log.error('map entry state', e))));
     let opening = null;
-    const openEntry = (uuid) => {
+    // tries: right after a tap started the app the HMI can still refuse the state (INVALID_UUID /
+    // INVALID_COMPONENTID) - then it is asked again, 0.8 s apart, instead of needing a second tap
+    const openEntry = (uuid, tries) => {
         if (opening) return opening;   // MainApp can send the same tap twice
+        let again = false;
         const map = mapped[uuid] ? Promise.resolve() : ui.rhmi.mapEntryState(uuid, mainState).then(() => { mapped[uuid] = true; });
         opening = map
             .then(() => (mainState && mainState.updateResources ? mainState.updateResources().catch(() => {}) : null))
             .then(() => ui.rhmi.openEntryState(uuid))
             .then(() => ui._setVisible(mainName, true))
-            .catch((e) => log.error('open entry state', e))
-            .then(() => { opening = null; });
+            .catch((e) => {
+                if ((tries || 1) > 1 && /INVALID/.test(String(e && e.message ? e.message : e) + ' ' + JSON.stringify(e || {}))) again = true;
+                else log.error('open entry state', e);
+            })
+            .then(() => {
+                opening = null;
+                if (again) setTimeout(() => openEntry(uuid, tries - 1), 800);
+            });
         return opening;
     };
     // a tap on the home-screen widget opens the app
@@ -700,7 +709,7 @@ async function runInner(impl) {
     // launched by a tile tap / bookmark: the execute event came before we
     // listened, so open the screen ourselves (M Laptimer does the same)
     const lastEntry = app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid();
-    if (lastEntry && ['ENTRY_POINT', 'BOOKMARK', 'LUM'].indexOf(String(app.startReason)) >= 0) openEntry(lastEntry);
+    if (lastEntry && ['ENTRY_POINT', 'BOOKMARK', 'LUM'].indexOf(String(app.startReason)) >= 0) openEntry(lastEntry, 6);
     process.on('unhandledRejection', (e) => log.error('unhandled', e));
     return ctx;
 }
