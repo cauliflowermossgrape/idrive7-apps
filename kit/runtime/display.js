@@ -75,6 +75,9 @@ const FULL = {
 };
 const LAYOUTS = ['full', 'standard'];
 
+// the HMI's page animation when a screen opens (the picture shows after it)
+const SHOW_DELAY_MS = 350;
+
 class Display {
     constructor(ui, log, spec, settings, themeFn) {
         this.ui = ui; this.log = log; this.spec = spec; this.settings = settings; this.theme = themeFn;
@@ -589,7 +592,21 @@ class Display {
     _syncVisible() {
         if (!this.gpu) return;
         const on = this._shown();
-        if (on && !this.gpu.visible) { this.shownT = Date.now(); this.softDone = false; }
+        if (!on && this.showTimer) { clearTimeout(this.showTimer); this.showTimer = null; }
+        if (on && !this.gpu.visible) {
+            // the HMI zooms / slides its page in when the screen opens: the picture shows once the page
+            // stands where it ends, not shifted and too big for a moment on top of the animation
+            if (!this.showTimer) {
+                this.showTimer = setTimeout(() => {
+                    this.showTimer = null;
+                    if (!this.gpu || this.gpu.visible || !this._shown()) return;
+                    this.shownT = Date.now(); this.softDone = false;
+                    this.gpu.show(true);
+                    this.lastWords = null;
+                }, SHOW_DELAY_MS);
+            }
+            return;
+        }
         this.gpu.show(on);
         if (on) this.lastWords = null;
     }
