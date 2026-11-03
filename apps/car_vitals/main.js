@@ -840,7 +840,7 @@ mgu.run({
             // g line ends G.MARGIN over the panel's bottom, as the tyres' and xDrive's last lines; the xDrive bars spread over it
             const room = G.pageBottom(cv) - G.BOTTOM, grow = Math.round(G.toMargin(room, 38) / 2), dx = G.toMargin(room, 28);
             G.panel(cv, t, 24, G.TOP, gw, G.BOTTOM - G.TOP, 'G-force');
-            G.gmeter(cv, t, 24 + gw / 2, 258 + grow, 164 + grow, { lat: d.gLat, long: d.gLong, trail, max: 1.5 });
+            G.gmeter(cv, t, 24 + gw / 2, 258 + grow, 164 + grow, { lat: d.gLat, long: d.gLong, trail, max: 1.5, flipLong: settings.get('flipLong') });
             if (showTyres) drawTyres(cv, t, 528, G.TOP, right - 528, G.BOTTOM - G.TOP, d);
             if (showAwd) {
                 const ax = 1220, aw = 356;
