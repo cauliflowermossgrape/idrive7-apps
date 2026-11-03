@@ -21,6 +21,7 @@ const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const Demo = require('./demo');
+const Engine = require('./kit/engine');
 const { GearGuess, selectionOf } = require('./kit/car');
 const { Diag } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
@@ -242,6 +243,8 @@ mgu.run({
                 live.gearGuess = live.speed < 3 ? null : g;
             }
         };
+        // engine profile (diesel / petrol): rpm bar end and the Auto redline
+        const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
         const watches = [
             ['de.bmw.infotainment.vehicle.CDS', {
                 statusEngineSpeed2: (v) => put('rpm', sc('rpm', v.actualValueRPMEngineCrankshaft)),
@@ -270,7 +273,7 @@ mgu.run({
                     log.info('car units: pressure ' + (press || '?') + ', temperature ' + (temp || '?'));
                 },
             }],
-            ['de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (v) => put('speed', sc('speed', v.speedVehicleCentreOfGravity)) }],
+            ['de.bmw.infotainment.vehicle.Vehicle2', Object.assign({ statusCarSpeed2: (v) => put('speed', sc('speed', v.speedVehicleCentreOfGravity)) }, engine.handlers())],
             ['de.bmw.infotainment.drivingexcitement.FES', {
                 statusSwitchDriveDynamicSport2: (v) => {
                     logRaw('FES boost', v.displayBoostPressure);
@@ -356,6 +359,8 @@ mgu.run({
             .then((all) => log.info('signals: ' + all.map((s) => s.iface.split('.').pop() + (s.error ? '(err)' : '')).join(' ')));
 
         const demo = new Demo();
+        demo.setRedline(engine.redline());
+        engine.onChange(() => demo.setRedline(engine.redline()));
         // Auto: demo only until the car answers - a parked car sends nothing new for minutes, which is not "no car"
         const carPresent = () => lastCar > 0 || subs.some((s) => s.available);
         const usingDemo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !carPresent() && Date.now() - startT > 5000);
@@ -627,8 +632,8 @@ mgu.run({
         function drawEngine(cv, t, d) {
             engineSeen = Date.now();
             if (boostFromDme()) kickFuel();
-            const red = settings.get('redline');
-            const max = Math.ceil((red + 1000) / 1000) * 1000;
+            const red = engine.redline();
+            const max = engine.scaleMax();
             const showPk = settings.get('peaks');
             // demo data keeps its own peaks, so they never mix with the car's; raising them every frame
             // also lets a held peak drop back while the car sends nothing new
