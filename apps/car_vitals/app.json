@@ -2,7 +2,7 @@
   "id": "car_vitals",
   "title": "M Vitals",
   "description": "Live engine, thermal, intake / fuel / ignition, tyre and chassis gauges",
-  "version": "2.21.4",
+  "version": "2.22.0",
   "vendor": "custom",
   "loggingId": "OA93",
   "iconGlyph": "gauge",
@@ -134,6 +134,18 @@
           "psi",
           "psi"
         ]
+      ]
+    },
+    {
+      "key": "boostMax",
+      "label": "Boost gauge max",
+      "type": "choice",
+      "default": "3.5",
+      "options": [
+        ["2.0", "2.0 bar / 30 psi"],
+        ["2.5", "2.5 bar / 36 psi"],
+        ["3.0", "3.0 bar / 44 psi"],
+        ["3.5", "3.5 bar / 50 psi"]
       ]
     },
     {

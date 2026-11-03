@@ -47,6 +47,8 @@ const RANGE = {
  * next start shows them straight away.
  */
 // (tyre temperatures are not doubtful any more: with the right scaling a car's "no data" is 65535)
+/** boostMax setting -> the boost dial's top in bar and in psi */
+const BOOST_MAX = { '2.0': [2, 30], '2.5': [2.5, 36], '3.0': [3, 44], '3.5': [3.5, 50] };
 const MOVE = { gearbox: 1, egs: 1, boostFes: 0.03, boostDme: 0.03 };
 /** Remembered per car: which groups sent real data (the "Auto" setting shows only those). */
 const GROUP = { gearbox: 'gearbox', boostFes: 'boost', boostDme: 'boost', tFL: 'tyreTemp', tFR: 'tyreTemp', tRL: 'tyreTemp', tRR: 'tyreTemp',
@@ -643,10 +645,10 @@ mgu.run({
                 G.bar(cv, t, x, y + gap, w, 92, { label: 'Torque', value: TQ(d.torque), unit: tqU(), max: TQ(900), niceMax: true, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null });
             };
             if (shown('boost')) {
-                const psi = settings.get('pressUnit') === 'psi', pmax = psi ? 36 : 2.5;
+                const psi = settings.get('pressUnit') === 'psi', bmax = BOOST_MAX[settings.get('boostMax')] || BOOST_MAX['3.5'], pmax = psi ? bmax[1] : bmax[0];
                 G.segBar(cv, t, 24, G.TOP + 242 + half, 1062, 226 - half, {
                     label: 'Boost', value: P(d.boost), unit: settings.get('pressUnit'), decimals: psi ? 1 : 2, min: 0, max: pmax,
-                    step: psi ? 2 : 0.125, scale: { every: psi ? 6 : 0.5, decimals: psi ? 0 : 1 }, ramp: 'hot', limit: pmax * 0.85,
+                    step: psi ? 2 : 0.125, scale: { every: psi ? (pmax > 40 ? 10 : 6) : 0.5, decimals: psi ? 0 : 1 }, ramp: 'hot', limit: pmax * 0.85,
                     marks: [{ value: pmax * 0.85, color: 'warn' }], peak: showPk ? P(pk.boost) : null,
                 });
                 if (!G.isNum(d.boost) && !usingDemo()) cv.text(boostWhy(), 48, G.pageBottom(cv) - 14, 22, t.dim);
