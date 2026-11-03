@@ -15,6 +15,7 @@ const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const Car = require('./kit/car');
+const Engine = require('./kit/engine');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
@@ -27,7 +28,11 @@ const TYPICAL = { oil: { drive: 4, idle: 1.5 }, coolant: { drive: 7, idle: 3 } }
 mgu.run({
     async start(ctx) {
         const { ui, settings } = ctx;
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'torque']);
+        // engine profile (diesel / petrol): the Auto redline and cold limit
+        const engine = new Engine({ settings, dataDir: ctx.dataDir, log: ctx.log });
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'torque'], { [Engine.SIGNAL[0]]: engine.handlers() });
+        car.setRedline(engine.redline());
+        engine.onChange(() => car.setRedline(engine.redline()));
 
         /* ---------- tracking ---------- */
         const hist = [];             // [t, oil, coolant] every 5 s, 20 min; t = steady clock (mono)
@@ -68,7 +73,7 @@ mgu.run({
         const tU = () => (F() ? '°F' : '°C');
 
         function limit(oil) {
-            const warm = settings.get('warmOil'), red = settings.get('redline'), cold = Math.min(settings.get('coldLimit'), red);
+            const warm = settings.get('warmOil'), red = engine.redline(), cold = Math.min(engine.value('coldLimit', { diesel: 3000, petrol: 3500 }), red);
             if (!G.isNum(oil)) return null;
             if (oil >= warm) return red;
             return Math.round((cold + (red - cold) * G.clamp((oil - 30) / (warm - 30), 0, 1)) / 100) * 100;
@@ -183,7 +188,7 @@ mgu.run({
             }
 
             // ---- safe rev limit (always) + trend
-            const red = settings.get('redline'), fl = lim ? lim / red : 0;
+            const red = engine.redline(), fl = lim ? lim / red : 0;
             cv.text('SAFE REV LIMIT', 952, 350, 22, t.dim, { font: 'bold', spacing: 1.5 });
             cv.text(lim ? lim + ' rpm' : '---- rpm', 1552, 352, 26, ready ? GO : t.text, { align: 'right', font: 'bold' });
             cv.roundRect(1160, 340, 230, 8, 4, t.track);
