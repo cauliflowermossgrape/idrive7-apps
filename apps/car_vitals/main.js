@@ -662,7 +662,7 @@ mgu.run({
                 G.bar(cv, t, x, y + gap, w, 92, Object.assign({ label: 'Torque', value: TQ(d.torque), unit: tqU(), decimals: settings.get('torqueUnit') === 'kgm' ? 1 : 0, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null }, tqScale()));
             };
             if (shown('boost')) {
-                const psi = settings.get('pressUnit') === 'psi', bmax = BOOST_MAX[settings.get('boostMax')] || BOOST_MAX['3.5'], pmax = psi ? bmax[1] : bmax[0];
+                const psi = settings.get('pressUnit') === 'psi', bmax = BOOST_MAX[settings.get('boostMax')] || BOOST_MAX['2.5'], pmax = psi ? bmax[1] : bmax[0];
                 G.segBar(cv, t, 24, G.TOP + 242 + half, 1062, 226 - half, {
                     label: 'Boost', value: P(d.boost), unit: settings.get('pressUnit'), decimals: psi ? 1 : 2, min: 0, max: pmax,
                     step: psi ? 2 : 0.125, scale: { every: psi ? (pmax > 40 ? 10 : 6) : 0.5, decimals: psi ? 0 : 1 }, ramp: 'hot', limit: pmax * 0.85,
