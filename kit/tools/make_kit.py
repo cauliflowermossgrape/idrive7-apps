@@ -14,7 +14,7 @@ kit takes kit/renderd/prebuilt/mgu-renderd, which is committed to the repository
 with a fingerprint of the source it was built from. A Docker build of changed source updates
 the prebuilt copy (commit it). If no renderer matching the source can be had, it asks.
 """
-import hashlib, io, json, os, shutil, subprocess, sys, tarfile
+import gzip, hashlib, io, json, os, shutil, subprocess, sys, tarfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEPLOY = os.path.join(ROOT, 'deploy')
@@ -199,7 +199,8 @@ def main():
         ti.uid = ti.gid = 0; ti.uname = ti.gname = 'root'
         ti.mode = 0o755 if ti.isdir() or ti.name.endswith(('.sh', '/mgu-renderd', '.so')) else 0o644
         return ti
-    with tarfile.open(archive, 'w:gz') as tf:
+    # no clock in the gzip header: it holds 32 bits, past 2106 it fails (see build.py gz_header_free)
+    with gzip.GzipFile(archive, 'wb', mtime=0) as gz, tarfile.open(fileobj=gz, mode='w') as tf:
         tf.add(OUT, arcname='mgu-custom-apps', filter=mode)
     if hasattr(os, 'chmod'):
         for n in ('deploy-car.sh', 'mgu-app-install.sh') + (('mgu-renderd',) if rd else ()):

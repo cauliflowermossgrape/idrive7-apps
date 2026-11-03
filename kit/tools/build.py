@@ -13,7 +13,7 @@ The RHMI layout (application.xml + uiDescription.json) is GENERATED from the
 "screens" + "settings" in app.json, using only widget templates that BMW's own
 apps use on this firmware (see reference/rhmi-widget-cells.md).
 """
-import json, os, re, shutil, sys, tarfile, tempfile, uuid
+import gzip, json, os, re, shutil, sys, tarfile, tempfile, uuid
 from xml.sax.saxutils import escape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pack_data  # noqa: E402
@@ -539,15 +539,22 @@ def build(app_id, language='en'):
     # --- archives ---
     os.makedirs(DIST, exist_ok=True)
     bundle = os.path.join(DIST, f'{app_id}@{ver}.mgu')
-    with tarfile.open(bundle, 'w:gz') as tf:
+    with gz_header_free(bundle) as gz, tarfile.open(fileobj=gz, mode='w') as tf:
         for n in ('meta.json', 'source', 'rhmiData', 'rhmiDataStartWidget', 'oapgen'):
             if os.path.exists(os.path.join(stage, n)):
                 tf.add(os.path.join(stage, n), arcname=n)
     npm = os.path.join(DIST, f'{app_id}@{ver}.tgz')
-    with tarfile.open(npm, 'w:gz') as tf:
+    with gz_header_free(npm) as gz, tarfile.open(fileobj=gz, mode='w') as tf:
         tf.add(src, arcname='package')
     print(f'{app_id} {ver}: {os.path.relpath(bundle, ROOT)} ({os.path.getsize(bundle) // 1024} KiB), '
           f'{len(uidesc["containers"])} screens, states {state_ids}')
+
+
+def gz_header_free(path):
+    """A gzip stream whose header carries no clock time (mtime 0). The header holds 32 bits, so on a
+    head unit whose clock is past 2106 (a car once showed 2179) every build failed.
+    Use: with gz_header_free(p) as gz, tarfile.open(fileobj=gz, mode='w') as tf"""
+    return gzip.GzipFile(path, 'wb', mtime=0)
 
 
 def main():
