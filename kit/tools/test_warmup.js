@@ -25,6 +25,7 @@ class FakeCar {
     constructor() { car = this; this.d = {}; }
     onSample(fn) { this.fn = fn; }
     data() { return this.d; }
+    setRedline() {}   // the demo drive's rpm (engine.js profile)
 }
 const stubs = { './kit/mgu': { run(a) { app = a; } }, './kit/car': FakeCar };
 const load = Module._load;
@@ -44,6 +45,7 @@ async function start() {
     let texts = [], frame = null;
     await app.start({
         ui: { image: async () => {} }, settings: { get: (k) => S[k], onChange() {} }, log: { info() {}, warn() {} },
+        dataDir: fs.mkdtempSync(path.join(require('os').tmpdir(), 'warmup-')),   // engine.js keeps its profile here
         theme: () => themes.theme('m_tricolour'), loop: (name, fps, fn) => { frame = fn; },
         canvas: (w, h) => {
             const cv = new Recorder(w, h), text = cv.text.bind(cv);
