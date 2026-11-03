@@ -2,7 +2,9 @@
 /**
  * car.js - the common driving signals, scaled, with demo fallback.
  *
- *   const car = new Car(ctx, ['rpm', 'speed', 'accel', 'temps', 'gear', 'torque']);
+ *   const car = new Car(ctx, ['rpm', 'speed', 'accel', 'temps', 'gear', 'torque'], extra);
+ *   extra (optional) = { iface: { field: fn } }, more fields on the same watches (one proxy per interface)
+ *   car.setRedline(rpm) -> the demo drive revs to this rpm (default 7000)
  *   car.data()      -> { rpm, speed, gLong, gLat, coolant, oil, gear, torque, demo }
  *   car.onSample(fn)-> fn(data, tMs) on every new speed/rpm/accel sample (also in demo, 20 Hz)
  *
@@ -82,7 +84,7 @@ class GearGuess {
 }
 
 class Car {
-    constructor(ctx, groups) {
+    constructor(ctx, groups, extra) {
         this.ctx = ctx; this.log = ctx.log;
         const over = (ctx.spec.config && ctx.spec.config.scaling) || {};
         this.S = Object.assign({}, SCALE, over);
@@ -129,6 +131,7 @@ class Car {
         if (groups.includes('condition')) add('de.bmw.infrastructure.VehicleCondition', 'VehicleCondition', (v) => put('condition', conditionOf(v && v.statusConditionVehicle)));
         // negative torque (engine braking while the rpm falls) counts as 0
         if (groups.includes('torque')) add('de.bmw.infotainment.drivingexcitement.FES', 'statusActualValueTorque2', (v) => { const tq = sc('torque', v.actualValueTorqueCrankshaft); put('torque', tq === null ? null : Math.max(0, tq)); });
+        Object.keys(extra || {}).forEach((iface) => Object.keys(extra[iface]).forEach((f) => add(iface, f, extra[iface][f])));
         // a parked car sends nothing new for minutes (fields are notified on change), so "no data for
         // a while" doesn't mean "no car": once a signal's provider is there, stay on live data
         this.subs = [];
@@ -170,6 +173,8 @@ class Car {
 
     /** fn(data, tMs) per sample; fn.reset() (optional) when the source switches live<->demo. */
     onSample(fn, reset) { this.listeners.push({ fn, reset }); }
+    /** The demo drive's rev limit (the app's redline). */
+    setRedline(rpm) { this.sim.setRedline(rpm); }
 
     _emit(d, t) {
         const data = Object.assign({}, d, { demo: this.demoActive });

@@ -45,6 +45,7 @@ jobs:
           python-version: '3.12'
       - run: node kit/tools/test_runtime.js
       - run: node kit/tools/test_dids.js
+      - run: node kit/tools/test_engine.js
       - run: node kit/tools/test_edrive.js
       - run: node kit/tools/test_warmup.js
       - run: node kit/tools/test_draggy.js

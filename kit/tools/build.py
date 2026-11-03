@@ -119,13 +119,15 @@ def hmi_text(s):
 
 def setting_options(s):
     """(values, labels) of a choice / number setting, in order - the drop-down's rows.
-    "markDefault": true adds " (default)" to the default's row."""
+    "markDefault": true adds " (default)" to the default's row; "labels": {"0": "Auto"} names
+    single number values (shown as is, no unit)."""
     if s['type'] == 'choice':
         values, labels = [o[0] for o in s['options']], [o[1] for o in s['options']]
     else:
         steps = s.get('steps') or []
         unit = (' ' + s['unit']) if s.get('unit') else ''
-        values, labels = list(steps), [('%g' % v) + unit for v in steps]
+        named = s.get('labels') or {}
+        values, labels = list(steps), [named.get('%g' % v, ('%g' % v) + unit) for v in steps]
     if s.get('markDefault'):
         labels = [lb + ' (default)' if v == s.get('default') else lb for v, lb in zip(values, labels)]
     return values, labels
