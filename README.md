@@ -1,8 +1,5 @@
 **English** | [中文 (Chinese translation)](README.zh-CN.md) | [Русский (Russian translation)](README.ru.md) | [한국어 수정본](README.ko.md)
 
-[한국어 패치만 다운로드·공유하기](KOREAN_PATCH.md)
-
-
 <h1 align="center">MGU Custom Apps</h1>
 
 <p align="center">
@@ -297,22 +294,6 @@ too; the tool lists anything missing.
 `oap-sdk/` is listed in `.gitignore`. Never commit it.
 
 ### 3.2 Build
-
-**한국어 미리보기:** 먼저 `--language ko`로 빌드하세요. `preview.js`는 빌드된 앱의
-언어를 사용합니다. 기본 빌드를 다시 실행하면 `dist/<id>`가 영문으로 바뀝니다.
-`ko-kr`, `ko-KR`, `ko_KR`도 `ko`와 같은 한국어 빌드 태그로 지원합니다.
-`aa_cluster_companion`도 한국어 빌드에 포함됩니다 (지도 배율·회전 안내 카드·적용·재시작 안내).
-Windows에서는 `python3` 대신 `python`을 사용하세요.
-
-```sh
-python3 kit/tools/build.py --language ko --preview-only redline service car_vitals
-node kit/tools/preview.js dist/redline preview/ko/redline render --set renderer=software
-node kit/tools/preview.js dist/service preview/ko/service render --set renderer=software
-node kit/tools/preview.js dist/car_vitals preview/ko/car_vitals render --set renderer=software
-```
-
-위 명령은 SDK 없이 화면만 확인합니다. 설치용 `.mgu`를 만들 때는 소유 차량의 SDK를
-준비하고 `--preview-only`를 제외하세요. 자세한 내용: [한국어 안내](README.ko.md).
 
 ```sh
 python3 kit/tools/build.py            # all apps, English -> dist/<id>@<ver>.mgu
