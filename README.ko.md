@@ -1,7 +1,7 @@
 8# MGU Custom Apps 한국어판
 
 원본: https://github.com/cauliflowermossgrape/idrive7-apps
-
+Translation by：jaimeen shim
 원본 `main` 기준 커밋: `68368fd`. 이 프로젝트의 한국어 빌드·미리보기 안내입니다.
 
 [한국어 패치 안내·공유](#한글화-변경분-공유) · [검증 기록](#검증-기록)
