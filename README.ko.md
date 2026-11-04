@@ -192,18 +192,6 @@ python kit/tools/test_ko.py
 `kit/localization/fonts/OFL-NotoSansKR.txt`에 포함되어 있습니다.
 
 
-## 한글화 변경분 공유
-
-한국어 빌드에 필요한 번역 사전·한글 글꼴·공통 런타임과 도구 변경 사항은
-[PR #87의 변경 파일](https://github.com/cauliflowermossgrape/idrive7-apps/pull/87/files)에서
-확인할 수 있습니다. [한국어 패치 diff 다운로드](https://github.com/cauliflowermossgrape/idrive7-apps/pull/87.diff)를
-공유하면 전체 소스 대신 한글화 변경분을 전달할 수 있습니다.
-중복된 배포 ZIP은 저장소에 포함하지 않습니다.
-
-수정 내용을 적용할 때는 대상 원본 버전과 변경 내용을 비교해 병합하세요.
-이전 파일을 그대로 덮어쓰면 원본의 새 기능이 이전 코드로 바뀔 수 있습니다.
-일반 빌드는 이 저장소 소스와 소유 차량에서 추출한 `oap-sdk`로 진행합니다.
-BMW SDK와 설치용 `.mgu`는 저장소에 포함하지 않습니다.
 
 ## 검증 기록
 
