@@ -167,6 +167,22 @@ class RenderClient extends EventEmitter {
         if (this.fd !== null) { fs.writeSync(this.fd, b); return true; }
         return this.sock && this.connected ? this.sock.write(b) : false;
     }
+    /* A buffer for one IMAGE message of `size` bytes: the one kept for that size once the socket has passed
+     * it on (a big picture every frame - DOOM's 1920 x 504 view - would otherwise leave two new copies of
+     * several MB a frame, which Node 8 frees late: the app's memory grows until the app manager stops it). */
+    _imageBuf(size) {
+        const pool = this.imgPool || (this.imgPool = new Map());
+        const free = this.fd !== null || !this.sock || this.sock.bufferSize === 0;
+        let b = free ? pool.get(size) : null;
+        if (!b) {
+            b = Buffer.allocUnsafe(size);
+            if (size >= 65536) {
+                if (pool.size >= 4) pool.delete(pool.keys().next().value);
+                pool.set(size, b);
+            }
+        }
+        return b;
+    }
     _u32msg(type, arr) { const u = new Uint32Array(arr); return msg(type, words(u)); }
 
     _data(d) {
@@ -286,10 +302,11 @@ class RenderClient extends EventEmitter {
         const im = rec.imageById.get(id);
         if (!im || !im.data) return;
         if (this.sent.image.get(id) === im.ver) return;
-        const head = Buffer.alloc(12);
-        head.writeUInt32LE(id, 0); head.writeUInt32LE(im.w, 4); head.writeUInt32LE(im.h, 8);
-        const px = Buffer.from(im.data.buffer, im.data.byteOffset, im.w * im.h * 4);
-        this._write(msg(M.IMAGE, Buffer.concat([head, px])));
+        const n = im.w * im.h * 4, b = this._imageBuf(8 + 12 + n);
+        b.writeUInt32LE(M.IMAGE, 0); b.writeUInt32LE(12 + n, 4);
+        b.writeUInt32LE(id, 8); b.writeUInt32LE(im.w, 12); b.writeUInt32LE(im.h, 16);
+        Buffer.from(im.data.buffer, im.data.byteOffset, n).copy(b, 20);
+        this._write(b);
         this.sent.image.set(id, im.ver);
     }
     _ensureLayer(id) {
