@@ -5,7 +5,8 @@
  *   const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
  *   // merge into the app's Vehicle2 watch (one proxy per interface):
  *   watches[Engine.SIGNAL[0]] = Object.assign({}, watches[Engine.SIGNAL[0]], engine.handlers());
- *   engine.scaleMax()  -> 6000 diesel / 8000 petrol (not a setting)
+ *   engine.scaleMax()  -> setting "rpmScale" (0 = Auto: follows the redline, redline + 800 rounded up
+ *                         to 1000, as before the profiles: 7000 -> 8000, 6000 -> 7000, 5000 -> 6000)
  *   engine.redline()   -> setting "redline" (0 = Auto: the profile's), never above scaleMax()
  *   engine.value('coldLimit', { diesel: 3000, petrol: 4500 })  -> the setting, or per profile when 0
  *
@@ -16,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 
+// scaleMax = the Auto scale for the profile's own redline (see scaleMax())
 const PROFILES = { diesel: { scaleMax: 6000, redline: 5000 }, petrol: { scaleMax: 8000, redline: 7000 } };
 // VehicleTypes.TypeEngine, by name or wire number; 0 (no information) / 15 (invalid) = unknown
 const TYPES = {
@@ -33,7 +35,7 @@ class Engine {
         this.type = null;
         try { const t = JSON.parse(fs.readFileSync(this.file, 'utf8')).type; this.type = t === 'diesel' || t === 'petrol' ? t : null; } catch (e) { /* not yet */ }
         this.last = this.profile();
-        if (this.settings.onChange) this.settings.onChange((key) => { if (key === 'engine' || key === 'redline') this._changed(true); });
+        if (this.settings.onChange) this.settings.onChange((key) => { if (key === 'engine' || key === 'redline' || key === 'rpmScale') this._changed(true); });
     }
     /** statusVehiclePartType value. */
     feed(v) {
@@ -50,12 +52,18 @@ class Engine {
         const s = this.settings.get('engine');
         return s === 'diesel' || s === 'petrol' ? s : this.type || 'petrol';
     }
-    scaleMax() { return PROFILES[this.profile()].scaleMax; }
+    /** Rev scale top: the "rpmScale" setting, or on Auto the redline + 800 rpm of red zone, rounded up to 1000. */
+    scaleMax() {
+        const s = this.settings.get('rpmScale');
+        if (typeof s === 'number' && s > 0) return s;
+        return Math.ceil((this._redline() + 800) / 1000) * 1000;
+    }
     value(key, perProfile) {
         const v = this.settings.get(key);
         return typeof v === 'number' && v !== 0 ? v : perProfile[this.profile()];
     }
-    redline() { return Math.min(this.value('redline', { diesel: PROFILES.diesel.redline, petrol: PROFILES.petrol.redline }), this.scaleMax()); }
+    _redline() { return this.value('redline', { diesel: PROFILES.diesel.redline, petrol: PROFILES.petrol.redline }); }
+    redline() { return Math.min(this._redline(), this.scaleMax()); }
     onChange(fn) { this.listeners.push(fn); }
     _changed(always) {
         const p = this.profile();
