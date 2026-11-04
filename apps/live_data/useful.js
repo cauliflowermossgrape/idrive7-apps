@@ -105,7 +105,7 @@ const DME = [
         { name: 'Mixture adaptation (factor)', c: ['4A9D'], d: 3 },
         { name: 'Injector flow adaptation (mean)', c: ['546E'], d: 3 },
     ].concat(cyl('Injector correction', ['55B4', '55B5', '55B6', '55B7', '55B8', '55B9'], { d: 3 })) },
-    { group: 'Battery and charging', items: [
+    { group: '12 V', items: [
         { name: 'Battery voltage', c: ['5853', 'OBD 42'], u: 'V', d: 2 },
         { name: 'Battery current', c: ['5852'], u: 'A', d: 1 },
         { name: 'Battery temperature', c: ['5854'], u: '°C', d: 0 },
@@ -127,10 +127,42 @@ const DME = [
     ] },
 ];
 
+const BY_SGBD = {
+    BATT48: [
+        { group: '48 V battery', items: [
+            { name: 'Battery voltage', c: ['AA56/0'], u: 'V', d: 2 },
+            { name: 'Battery current (negative = charging)', c: ['AA56/1'], u: 'A', d: 1 },
+            { name: 'Highest cell temperature', c: ['AA56/2'], u: '°C', d: 0 },
+            { name: 'State of charge (SOC)', c: ['AA56/7'], u: '%', d: 0 },
+            { name: 'SOC estimate quality', c: ['AA56/8'], u: '%', d: 0 },
+            { name: 'Pack voltage', c: ['AA56/9'], u: 'V', d: 2 },
+            { name: 'Nominal capacity', c: ['AA56/10'], u: 'Ah', d: 1 },
+            { name: 'Current capacity', c: ['AA56/15'], u: 'Ah', d: 1 },
+            { name: 'State of health (SOH)', c: ['AA56/18'], u: '%', d: 0 },
+            { name: 'Capacity SOH (separate estimate)', c: ['50AC'], u: '%', d: 0 },
+        ] },
+    ],
+    PCU48: [
+        { group: '48 V / 12 V converter', items: [
+            { name: 'Energy flow (converter mode)', c: ['DA90/6'], map: {
+                3: 'Passive standby', 5: 'Error', 6: 'Precharge', 8: 'Active standby',
+                9: '48 V -> 12 V (buck)', 10: '12 V -> 48 V (boost)', 12: 'Emergency mode', 13: 'Crash',
+                14: 'Diagnostic boost', 15: 'Diagnostic buck', 255: 'Invalid',
+            } },
+            { name: '12 V side voltage', c: ['DA90/0'], u: 'V', d: 2 },
+            { name: '48 V side voltage', c: ['DA90/1'], u: 'V', d: 2 },
+            { name: '12 V current', c: ['DA90/2'], u: 'A', d: 1 },
+            { name: '48 V current', c: ['DA90/3'], u: 'A', d: 1 },
+            { name: '12 V power', c: ['DA90/4'], u: 'W', d: 0 },
+            { name: '48 V power', c: ['DA90/5'], u: 'W', d: 0 },
+        ] },
+    ],
+};
+
 // unit conversions: from -> to -> factor
 const CONVERT = {
     hPa: { bar: 0.001 }, kPa: { bar: 0.01, hPa: 10 }, MPa: { bar: 10 }, 'ml/s': { 'l/h': 3.6 }, 'g/s': { 'kg/h': 3.6 },
-    cl: { l: 0.01 }, min: { h: 1 / 60 }, s: { h: 1 / 3600 }, '°CA': { '°': 1 }, '°C': { '°': 1 },
+    mV: { V: 0.001 }, cl: { l: 0.01 }, min: { h: 1 / 60 }, s: { h: 1 / 3600 }, '°CA': { '°': 1 }, '°C': { '°': 1 },
 };
 
-module.exports = { 0x12: DME, CONVERT };
+module.exports = { 0x12: DME, bySgbd: BY_SGBD, CONVERT };

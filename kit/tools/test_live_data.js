@@ -195,6 +195,58 @@ async function main() {
         });
     }));
 
+    /* ---------- Energy: mapped units, field offsets, scaling and converter directions ---------- */
+    const energyCatalogs = {};
+    for (const sgbd of ['BATT48', 'PCU48']) {
+        const cat = JSON.parse(fs.readFileSync(path.join(BUILTIN, sgbd + '.json'), 'utf8'));
+        const meta = JSON.parse(fs.readFileSync(path.join(BUILTIN, sgbd + '.meta.json'), 'utf8'));
+        energyCatalogs[sgbd] = cat;
+        assert.ok(meta.builtin && meta.sgbd === sgbd);
+        assert.deepStrictEqual(meta.order.slice().sort(), Object.keys(cat).sort());
+        assert.ok(Object.values(sgbdIndex).includes(sgbd), sgbd + ': discoverable');
+        const names = new Set();
+        USEFUL.bySgbd[sgbd].forEach((g) => g.items.forEach((it) => {
+            assert.ok(!names.has(it.name), sgbd + ': duplicate ' + it.name);
+            names.add(it.name);
+            it.c.forEach((c) => {
+                const [did, fi] = c.split('/'), e = cat[did];
+                assert.ok(e && (e.sid === undefined || e.sid === 0x22), c + ': read-only identifier');
+                const f = e.f[Number(fi || 0)];
+                assert.ok(f, c + ': field exists');
+                if (it.u && f.u && f.u !== it.u) assert.ok(USEFUL.CONVERT[f.u] && USEFUL.CONVERT[f.u][it.u]);
+            });
+        }));
+    }
+    assert.strictEqual(USEFUL.bySgbd.PCU48_2, undefined, 'do not reuse PCU48 offsets for PCU48_2');
+    assert.strictEqual(fs.existsSync(path.join(BUILTIN, 'PCU48_2.json')), false);
+    const battData = Buffer.alloc(28);
+    battData.writeUInt16BE(4850, 0);
+    battData.writeInt16BE(-125, 2);
+    battData.writeInt16BE(50, 4);
+    battData[14] = 76; battData[15] = 95;
+    battData.writeUInt16BE(4860, 16);
+    battData[18] = 100; battData[23] = 90; battData[26] = 92;
+    const batt = decode(energyCatalogs.BATT48.AA56, [0x62, 0xAA, 0x56].concat(Array.from(battData)));
+    assert.deepStrictEqual([batt[0].value, batt[1].value, batt[2].value], [48.5, -12.5, 25]);
+    assert.deepStrictEqual([batt[7].value, batt[8].value, batt[9].value, batt[10].value, batt[15].value, batt[18].value],
+        [76, 95, 48.6, 10, 9, 92]);
+    assert.strictEqual(decode(energyCatalogs.BATT48['50AC'], [0x62, 0x50, 0xAC, 88])[0].value, 88);
+    const pcuData = Buffer.alloc(13);
+    pcuData.writeUInt16BE(14200, 0); pcuData.writeUInt16BE(48500, 2);
+    pcuData.writeInt16BE(-123, 4); pcuData.writeInt16BE(45, 6);
+    pcuData.writeInt16BE(-175, 8); pcuData.writeInt16BE(218, 10);
+    const flowItem = USEFUL.bySgbd.PCU48[0].items.find((it) => it.c.includes('DA90/6'));
+    for (const [mode, text] of [[9, '48 V -> 12 V (buck)'], [10, '12 V -> 48 V (boost)'],
+        [3, 'Passive standby'], [5, 'Error'], [255, 'Invalid']]) {
+        pcuData[12] = mode;
+        const pcu = decode(energyCatalogs.PCU48.DA90, [0x62, 0xDA, 0x90].concat(Array.from(pcuData)));
+        assert.deepStrictEqual(pcu.map((v) => v.value), [14200, 48500, -12.3, 4.5, -175, 218, mode]);
+        assert.strictEqual(flowItem.map[pcu[6].raw], text);
+        assert.strictEqual((pcu[0].value * USEFUL.CONVERT.mV.V).toFixed(2), '14.20');
+    }
+    assert.strictEqual(flowItem.map[99], undefined, 'unknown modes are not assigned a direction');
+    assert.strictEqual(decode(energyCatalogs.PCU48.DA90, [0x62, 0xDA, 0x90, 0])[6].why, 'reply too short');
+
     /* ---------- the catalog tool keeps only readable rows ---------- */
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'live-data-'));
     try {
