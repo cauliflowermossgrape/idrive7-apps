@@ -327,8 +327,16 @@ def make_icon(spec, out):
 WIDGET_COMPONENT_ID = 501
 
 
-def build_start_widget(spec, app_id, icon_src, out):
+def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
     """app.json "startWidget" -> rhmiDataStartWidget/ (installed format), the home-screen widget.
+
+    With pkg_out, also the package format inside source/ (application.json with uiDescriptions
+    and variantGroups, like the package's rhmiData). MainApp's AppManagement installs it the way
+    it installs rhmiData (its config "rhmiDataStartWidget": source -> installed, then
+    mergeVariants), so an app installed through MainApp from the .tgz alone, as the MGU Store
+    does, gets its widget too. VERIFIED on a G05 (2026-11-03): after a Store install the widget
+    is in the home screen's widget list. deploy/mgu-app-install.sh still copies the installed
+    format beside source/ from the .mgu, as before.
 
     Same shape as BMW's own widgets on this firmware (Drive Recorder, Weather, News): a logical
     container with one startWidget component whose "Widget" cell names an HMI layout template.
@@ -367,6 +375,24 @@ def build_start_widget(spec, app_id, icon_src, out):
     for lang in LANGS:
         json.dump({sid_name: name}, open(os.path.join(out, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(icon_src, os.path.join(out, 'resources', icon))
+    if pkg_out:
+        shutil.rmtree(pkg_out, ignore_errors=True)
+        os.makedirs(os.path.join(pkg_out, 'uiDescriptions', 'ID7'))
+        os.makedirs(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts'))
+        os.makedirs(os.path.join(pkg_out, 'variantGroups', 'Common', 'images'))
+        a = app_json['application']
+        pj = {'schemaVersion': app_json['schemaVersion'], 'application': {k: a[k] for k in (
+            'uuid', 'type', 'name', 'vendor', 'version', 'defaultLanguage', 'stringBundleUuid', 'resourceBundleUuid', 'entryPoints')}}
+        pj['application']['uiDescriptions'] = [{'applicationFilePath': './uiDescriptions/ID7/application.xml',
+                                                'uiDescriptionFilePath': './uiDescriptions/ID7/uiDescription.json', 'hmi': ['ID7']}]
+        pj['application']['variantGroups'] = [{'stringsPath': './variantGroups/Common/texts',
+                                               'resourcesPath': './variantGroups/Common/images', 'hmi': ['ID7'], 'brands': ['BMW']}]
+        json.dump(pj, open(os.path.join(pkg_out, 'application.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
+        open(os.path.join(pkg_out, 'uiDescriptions', 'ID7', 'application.xml'), 'w', encoding='utf-8', newline='\n').write(xml)
+        json.dump(ui, open(os.path.join(pkg_out, 'uiDescriptions', 'ID7', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
+        for lang in LANGS:
+            json.dump({sid_name: name}, open(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+        shutil.copy(icon_src, os.path.join(pkg_out, 'variantGroups', 'Common', 'images', icon))
     return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
 
 
@@ -523,7 +549,8 @@ def build(app_id, language='en'):
         json.dump(strings, open(os.path.join(ir, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(os.path.join(pr, 'variantGroups', 'Common', 'images', icon), os.path.join(ir, 'resources', icon))
     if spec.get('startWidget'):
-        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'))
+        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'),
+                                  os.path.join(src, 'rhmiDataStartWidget'))
         print('  home-screen widget: %s (%s)' % (info['component'], info['layout']))
 
     # --- installer helpers + metadata ---

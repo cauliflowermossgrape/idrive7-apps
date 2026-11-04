@@ -63,8 +63,35 @@ const cases = {
     'redline manual'() {
         assert.strictEqual(make({ engine: 'diesel', redline: 5500 }).redline(), 5500);
     },
-    'redline clamps to scale'() {
-        assert.strictEqual(make({ engine: 'diesel', redline: 9000 }).redline(), 6000);
+    'auto scale follows the redline'() {
+        Object.keys(Engine.PROFILES).forEach((k) => assert.strictEqual(make({ engine: k }).scaleMax(), Engine.PROFILES[k].scaleMax, k));
+        assert.strictEqual(make({ engine: 'petrol', redline: 6000 }).scaleMax(), 7000);
+        assert.strictEqual(make({ engine: 'petrol', redline: 6500 }).scaleMax(), 8000);
+        assert.strictEqual(make({ engine: 'petrol', redline: 7000 }).scaleMax(), 8000);
+        const d = make({ engine: 'diesel', redline: 9000 });
+        assert.strictEqual(d.scaleMax(), 10000);
+        assert.strictEqual(d.redline(), 9000);
+        assert.strictEqual(make({ engine: 'diesel', redline: 5500 }).scaleMax(), 7000);
+        assert.strictEqual(make({ engine: 'petrol', redline: 7500 }).scaleMax(), 9000);
+        assert.strictEqual(make({ engine: 'petrol', redline: 7800 }).scaleMax(), 9000);
+        assert.strictEqual(make({ engine: 'petrol', redline: 8500 }).scaleMax(), 10000);
+    },
+    'scale manual'() {
+        assert.strictEqual(make({ engine: 'petrol', rpmScale: 7000, redline: 6200 }).redline(), 6200);
+        assert.strictEqual(make({ engine: 'diesel', rpmScale: 7000 }).scaleMax(), 7000);
+        assert.strictEqual(make({ engine: 'petrol', rpmScale: 9000, redline: 8500 }).redline(), 8500);
+        assert.strictEqual(make({ engine: 'petrol', rpmScale: 0 }).scaleMax(), 8000);
+    },
+    'redline clamps to a manual scale'() {
+        assert.strictEqual(make({ engine: 'diesel', rpmScale: 6000, redline: 9000 }).redline(), 6000);
+    },
+    'scale setting change fires'() {
+        const st = fakeSettings({}), e = new Engine({ settings: st, dataDir: tmp(), log });
+        let n = 0;
+        e.onChange(() => { n++; });
+        st.v.rpmScale = 9000; st.fn('rpmScale');
+        assert.strictEqual(n, 1);
+        assert.strictEqual(e.scaleMax(), 9000);
     },
     'value auto'() {
         assert.strictEqual(make({ engine: 'diesel', coldLimit: 0 }).value('coldLimit', { diesel: 3000, petrol: 4500 }), 3000);
