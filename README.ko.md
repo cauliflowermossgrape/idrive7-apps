@@ -74,13 +74,27 @@ python kit/tools/make_kit.py --language ko redline service car_vitals edrive war
 ```
 
 앱 이름을 생략하면 전체 16개 앱을 한국어로 빌드합니다.
+```sh
+python kit/tools/make_kit.py --language ko
+```
+
 AA Cluster Companion의 파일명은 `aa_cluster_companion@0.3.5-ko.1.mgu`입니다.
 12V Battery만 빌드하려면 `python kit/tools/build.py --language ko battery12v`를 실행하세요.
 파일명은 `battery12v@1.5.3-ko.1.mgu`입니다.
 Doom은 첫 빌드에 Freedoom 게임
 데이터를 다운로드하므로 인터넷 연결이 필요합니다. 차량 설치·제거 방법과 요구되는
 MGU 접근 환경은 원본 [README](README.md)와 [배포 안내](deploy/car/README.txt)를 따릅니다.
-이 수정본은 실차에서 검증되지 않았습니다.
+이 수정본은 실차에서 검증 되었습니다.
+
+체크
+```sh
+powershell.exe -ExecutionPolicy bypass -File push-to-car.ps1 check -key "key" -ip "ip" -kit mgu-custom-apps-ko.tar.gz
+```
+
+인스톨
+```sh
+powershell.exe -ExecutionPolicy bypass -File push-to-car.ps1 install -key "key" -ip "ip" -kit mgu-custom-apps-ko.tar.gz
+```
 
 ## SDK가 없을 때 미리보기
 
