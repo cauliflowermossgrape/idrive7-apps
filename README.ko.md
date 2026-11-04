@@ -134,15 +134,6 @@ node kit/tools/preview.js dist/car_vitals preview/ko/car_vitals render --set ren
 
 ## 검증
 
-### GitHub Actions 자동 검사
-
-[Korean localization 워크플로](.github/workflows/korean-localization.yml)는
-코드가 push되거나 PR이 생성·업데이트될 때 한국어 사전의 TSV/JSON 일치 여부와
-`test_ko.py`를 자동으로 검사합니다. 원본 업데이트를 이 저장소에 반영하면 실행되며,
-검사 결과는 저장소의 **Actions → Korean localization**에서 확인할 수 있습니다.
-**Run workflow**로 직접 실행할 수도 있습니다.
-원본 저장소의 변경을 자동으로 가져오거나 누락된 문구를 번역하는 기능은 아닙니다.
-
 ### 직접 검사
 
 ```sh
@@ -150,8 +141,6 @@ python kit/tools/test_ko.py
 python kit/tools/test_zh.py
 node kit/tools/test_service.js
 ```
-
-
 ### 사용자 실차 테스트 사진
 
 <img width="4000" height="2252" alt="20261104_214724" src="https://github.com/user-attachments/assets/1c097e1a-8725-413d-b60f-bea7941bf4b5" />
@@ -172,13 +161,7 @@ node kit/tools/test_service.js
 <img width="4000" height="2252" alt="20261104_221128" src="https://github.com/user-attachments/assets/a4a20777-4ce6-4206-9fac-1cf2a287dd6f" />
 <img width="4000" height="2252" alt="20261104_214734" src="https://github.com/user-attachments/assets/e0b8972a-bc2b-4b31-a901-643d6cfbbbaa" />
 
-
-한국어 검사에서는 15개 앱의 메뉴, 번역 글자 누락, Service 한국어 날짜·명칭·깨진
-입력의 대체 처리, 단위 유지, 소프트웨어 그리기와 GPU 명령 생성의 글자 폭을 확인합니다.
-AA Cluster Companion의 지도 배율·카드 선택·적용·재시작은 메모리 데모로 검사하며,
-실제 제어기에 보내는 숫자와 `shown`/`hidden` 값이 번역되지 않는지도 확인합니다.
-기존 영어·중국어·러시아어 레이아웃과 Service 테스트도 통과했습니다.
-자동 검사는 실차와 통신하지 않습니다. 위 사진은 사용자가 별도로 수행한 실차 테스트 기록입니다.
+위 사진은 실차 테스트 기록입니다.
 
 ## 남는 원문과 표시 한계
 
