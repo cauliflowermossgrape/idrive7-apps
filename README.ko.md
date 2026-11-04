@@ -48,6 +48,7 @@ Python 3와 Node.js 14 이상이 필요합니다. 기존 프로젝트에 이미 
    ```sh
    python kit/tools/build.py --language ko redline service
    ```
+<img width="4000" height="2252" alt="20261104_214410" src="https://github.com/user-attachments/assets/22266f78-18e3-41ca-9987-aafafc4c92b4" />
 
    생성 파일:
 
