@@ -20,6 +20,7 @@ const PLURAL_RULES = {
         return mod10 >= 2 && mod10 <= 4 ? 1 : 2;
     },
     'zh-CN': () => 0,
+    ko: () => 0,
 };
 function plural(n, one, other, lang) {
     const key = one + '|' + other, lng = lang || language;
@@ -48,7 +49,9 @@ function t(value) {
         out = s.slice(0, s.indexOf(key)) + folded[key.toLowerCase()] + s.slice(s.indexOf(key) + key.length);
     } else {
         // Short words need context: "min 70" is a minimum, "12 min" is minutes.
-        out = language === 'zh-CN' ? s.replace(/\bmin(?=\s+-?\d)/g, '最小').replace(/\bmax(?=\s+-?\d)/g, '最大')
+        // Keep numeric battery capacity values/units while removing the English "of".
+        out = language === 'ko' ? s.replace(/(\d+(?:\.\d+)?)\s+of\s+(\d+(?:\.\d+)?)\s+Ah\b/gi, '$1 / $2 Ah') :
+            language === 'zh-CN' ? s.replace(/\bmin(?=\s+-?\d)/g, '最小').replace(/\bmax(?=\s+-?\d)/g, '最大')
             .replace(/\bAVG(?=\s+[+-]?\d)/g, '平均').replace(/\bACC\b/g, '加速') :
             language === 'ru' ? s.replace(/\bmin(?=\s+-?\d)/g, 'мин.').replace(/\bmax(?=\s+-?\d)/g, 'макс.')
                 .replace(/\bAVG(?=\s+[+-]?\d)/g, 'СРЕД.').replace(/\bACC\b/g, 'РАЗГОН') : s;

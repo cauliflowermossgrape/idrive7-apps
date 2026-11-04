@@ -156,9 +156,10 @@ def md5(p):
 
 def main():
     import argparse
-    from localize import languages, package_version
+    from localize import languages, package_version, normalize_language
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--language', choices=languages(), default='en')
+    parser.add_argument('--language', type=normalize_language, choices=languages(), default='en',
+                        help='UI language; Korean also accepts ko-KR, ko-kr and ko_KR')
     parser.add_argument('apps', nargs='*')
     args = parser.parse_args()
     # English (the default) keeps the usual dist/mgu-custom-apps(.tar.gz); other languages get a suffix
@@ -174,9 +175,11 @@ def main():
     for app in apps:
         r = subprocess.run([sys.executable, os.path.join(ROOT, 'kit', 'tools', 'build.py'), '--language', args.language, app], cwd=ROOT)
         if r.returncode: sys.exit('build of %s failed' % app)
-        ver = json.load(open(os.path.join(ROOT, 'apps', app, 'app.json'), encoding='utf-8'))['version']
+        spec = json.load(open(os.path.join(ROOT, 'apps', app, 'app.json'), encoding='utf-8'))
+        app_id = spec.get('id', app)
+        ver = spec['version']
         ver = package_version(ver, args.language)
-        shutil.copyfile(os.path.join(DIST, '%s@%s.mgu' % (app, ver)), os.path.join(OUT, 'apps', '%s@%s.mgu' % (app, ver)))
+        shutil.copyfile(os.path.join(DIST, '%s@%s.mgu' % (app_id, ver)), os.path.join(OUT, 'apps', '%s@%s.mgu' % (app_id, ver)))
     for src, dst in CAR_FILES:
         data = open(os.path.join(DEPLOY, src), 'rb').read().replace(b'\r\n', b'\n')
         open(os.path.join(OUT, dst), 'wb').write(data)

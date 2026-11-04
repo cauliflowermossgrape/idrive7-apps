@@ -50,11 +50,17 @@ const STATUS = ['', 'Due now', 'Due soon', 'OK', 'Due soon'];
 function parseDue(s, now) {
     s = String(s || '').trim();
     let m, d = null, mo, y;
-    if ((m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(s))) { d = +m[1]; mo = +m[2]; y = +m[3]; } else if ((m = /^(\d{1,2})[./-](\d{4})$/.exec(s))) { mo = +m[1]; y = +m[2]; } else if ((m = /^(\d{4})[./-](\d{1,2})$/.exec(s))) { y = +m[1]; mo = +m[2]; } else return null;
+    if ((m = /^(\d{4})\s*년\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?$/.exec(s))) { y = +m[1]; mo = +m[2]; d = m[3] ? +m[3] : null; }
+    else if ((m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(s))) { d = +m[1]; mo = +m[2]; y = +m[3]; } else if ((m = /^(\d{1,2})[./-](\d{4})$/.exec(s))) { mo = +m[1]; y = +m[2]; } else if ((m = /^(\d{4})[./-](\d{1,2})$/.exec(s))) { y = +m[1]; mo = +m[2]; } else return null;
     if (mo < 1 || mo > 12) return null;
     now = now || new Date();
     const months = (y - now.getFullYear()) * 12 + (mo - 1 - now.getMonth());
     const n = Math.abs(months), unit = ' ' + plural(n, 'month', 'months');
+    if (getLanguage() === 'ko') return {
+        text: y + '년 ' + mo + '월' + (d ? ' ' + d + '일' : ''),
+        left: months > 0 ? n + '개월 후' : months === 0 ? '이번 달' : n + '개월 초과',
+        months,
+    };
     const month = d && getLanguage() === 'ru' ? MONTHS_RU_GENITIVE[mo - 1] : translate(MONTHS[mo - 1]);
     return {
         text: (d ? d + ' ' : '') + month + ' ' + y,
