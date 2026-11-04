@@ -22,6 +22,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { t: translate } = require('./kit/i18n');
 const { Ctl } = require('./ctl');
 
 const W = 1600, H = 520;
@@ -34,7 +35,9 @@ const SLOT_DPI = 235;                                            // the map slot
 // what a density gives against the slot's own size
 function note(d) {
     const p = Math.round((SLOT_DPI / d - 1) * 100);
-    return Math.abs(p) <= 3 ? "the slot's own size" : p > 0 ? 'about ' + p + '% more map' : 'about ' + -p + '% larger text';
+    return Math.abs(p) <= 3 ? translate("the slot's own size")
+        : translate(p > 0 ? 'about {percent}% more map' : 'about {percent}% larger text')
+            .replace('{percent}', String(Math.abs(p)));
 }
 const CARDS = [['shown', 'Shown'], ['hidden', 'Hidden']];
 const cardTxt = (c) => (c === 'hidden' ? 'card hidden' : 'card shown');

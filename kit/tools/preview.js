@@ -23,12 +23,10 @@ const localePath = path.join(stage, 'source', 'javascript', 'kit', 'locale.json'
 const previewLanguage = JSON.parse(fs.readFileSync(localePath, 'utf8')).language || 'en';
 const previewApp = JSON.parse(fs.readFileSync(path.join(stage, 'source', 'javascript', 'kit', 'app-spec.json'), 'utf8')).id;
 console.log('[preview] UI language: ' + previewLanguage + ' | stage: ' + stage);
-if (previewLanguage === 'en' && previewApp === 'aa_cluster_companion') {
-    console.log('[preview] AA Cluster Companion is excluded from Korean localization and stays in English.');
-} else if (previewLanguage === 'en') {
+if (previewLanguage === 'en') {
     const python = process.platform === 'win32' ? 'python' : 'python3';
     console.log('[preview] Korean preview: rebuild first with ' + python +
-        ' kit/tools/build.py --language ko --preview-only ' + path.basename(stage));
+        ' kit/tools/build.py --language ko --preview-only ' + previewApp);
 }
 const args = process.argv.slice(3);
 // outDir is optional: a first argument that is an option, a step or a component name (BTN_PAGE, SET_THEME) is not it

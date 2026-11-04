@@ -17,7 +17,7 @@ import gzip, json, os, re, shutil, sys, tarfile, tempfile, uuid
 from xml.sax.saxutils import escape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pack_data  # noqa: E402
-from localize import unicode_resources, localize_spec, load_locale, languages, credit, credit_name, normalize_language, effective_language
+from localize import unicode_resources, localize_spec, load_locale, languages, credit, credit_name, normalize_language
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
@@ -397,10 +397,7 @@ def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
 
 
 def build(app_id, language='en', preview_only=False):
-    requested_language = normalize_language(language)
-    language = effective_language(app_id, requested_language)
-    if language != requested_language:
-        print('%s: excluded from Korean localization; keeping the original English UI' % app_id)
+    language = normalize_language(language)
     if not preview_only and not all(os.path.isfile(os.path.join(SDK, name)) for name in ('index.js', 'package.json')):
         raise SystemExit('BMW oap-sdk is missing. Extract it from your own head unit with kit/tools/extract_sdk.js, '
                          'or use --preview-only for an offline preview (no installable package).')

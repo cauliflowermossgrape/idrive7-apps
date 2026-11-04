@@ -13,12 +13,6 @@ def normalize_language(language):
     return 'ko' if language.lower().replace('_', '-') in ('ko', 'ko-kr') else language
 
 
-def effective_language(app_id, language):
-    """Keep AA Cluster Companion in English when building the Korean app set."""
-    language = normalize_language(language)
-    return 'en' if app_id == 'aa_cluster_companion' and language == 'ko' else language
-
-
 def credit(language):
     """A translation's credit (corner, settings rows, entry comment), shipped only in that language's
     builds: kit/localization/credit.<language>.json. None when the language has no credit file."""
@@ -56,7 +50,7 @@ def package_version(version, language):
 
 
 def localize_spec(spec, language):
-    language = effective_language(spec.get('id'), language)
+    language = normalize_language(language)
     words = load_locale(language)
     s = copy.deepcopy(spec)
     s['version'] = package_version(s['version'], language)
