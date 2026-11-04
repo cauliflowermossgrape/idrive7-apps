@@ -86,7 +86,7 @@ Doom은 첫 빌드에 Freedoom 게임
 MGU 접근 환경은 원본 [README](README.md)와 [배포 안내](deploy/car/README.txt)를 따릅니다.
 이 수정본은 실차에서 검증 되었습니다.
 
-체크
+배포 체크
 ```sh
 powershell.exe -ExecutionPolicy bypass -File push-to-car.ps1 check -key "key" -ip "ip" -kit mgu-custom-apps-ko.tar.gz
 ```
