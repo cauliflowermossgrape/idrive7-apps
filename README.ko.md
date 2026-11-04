@@ -3,7 +3,9 @@
 원본: https://github.com/cauliflowermossgrape/idrive7-apps
 
 Translation by：jaimeen shim
+
 코딩나눔터(https://cafe.naver.com/codingbmw) : 서울||잼님
+
 네이버블로그(https://blog.naver.com/jaimeen77)
 
 
