@@ -97,6 +97,7 @@ Low pressure fuel	低压燃油
 Ignition timing	点火提前角
 Misfire counter	失火计数
 Cold rev limit	冷机转速上限
+Rev scale up to	转速刻度上限
 Cold-engine rev guard	冷机转速保护
 Oil warm at	机油暖机温度
 Shift point before redline	换挡提示距红线转速

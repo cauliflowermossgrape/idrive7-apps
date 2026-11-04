@@ -99,7 +99,11 @@ list.scroll = {};
 /* ---------------- settings ---------------- */
 function values(s) {
     if (s.type === 'choice') return (s.options || []).map((o) => [o[0], o[1]]);
-    if (s.type === 'number') return (s.steps || []).map((v) => [v, String(v) + (s.unit ? ' ' + s.unit : '') + (s.markDefault && v === s.default ? ' (default)' : '')]);
+    if (s.type === 'number') {
+        // "labels": a value's own text (e.g. 0 = "Auto"), as Settings.display() shows it
+        const text = (v) => (s.labels && s.labels[String(v)] !== undefined ? s.labels[String(v)] : String(v) + (s.unit ? ' ' + s.unit : ''));
+        return (s.steps || []).map((v) => [v, text(v) + (s.markDefault && v === s.default ? ' (default)' : '')]);
+    }
     return null;
 }
 
