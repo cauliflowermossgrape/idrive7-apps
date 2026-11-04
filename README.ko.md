@@ -71,6 +71,10 @@ MGU 접근 환경은 원본 [README](README.md)와 [배포 안내](deploy/car/RE
 
 ## SDK가 없을 때 미리보기
 
+`preview.js`는 `dist/<앱>/source/javascript/kit/locale.json`에 기록된 빌드 언어로
+화면을 그립니다. 한국어 사전이 소스에 있는 것만으로 영문 빌드가 한국어로 바뀌지는
+않습니다. 아래 두 단계를 같은 소스 폴더에서 순서대로 실행하세요.
+
 ```sh
 python kit/tools/build.py --language ko --preview-only redline service
 node kit/tools/preview.js dist/redline preview/ko/redline render --set renderer=software
@@ -79,6 +83,14 @@ node kit/tools/preview.js dist/service preview/ko/service render --set renderer=
 
 `preview/ko/` 아래에 PNG가 생성됩니다. 차량 연결 오류를 알리는 `preview` 로그는
 이 모드의 정상 동작입니다. 표시된 수치와 정비 항목은 데모 데이터입니다.
+
+미리보기 시작 시 `[preview] UI language: ko`가 표시되는지 확인하세요. `en`이면
+미리보기 대상 폴더가 영문 빌드입니다. `--language ko` 빌드를 다시 실행하고 같은
+앱 경로로 미리보기를 실행하세요. 예를 들어 Redline을 빌드했다면 `dist/redline`을
+지정해야 합니다. 인수 없이 실행한 `preview.js`의 기본 대상은 `dist/car_vitals`입니다.
+기본 빌드(`python kit/tools/build.py` 등)를 나중에 실행하면 같은 `dist` 폴더가
+영문으로 다시 만들어집니다. 로그의 `preview`, `subscribing signals` 같은 개발용
+문구는 번역 대상이 아니며 실제 한글 여부는 생성된 PNG에서 확인하세요.
 
 ## 검증
 
