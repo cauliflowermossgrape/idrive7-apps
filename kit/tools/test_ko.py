@@ -72,4 +72,5 @@ for path in sorted((ROOT / 'apps').glob('*/app.json')):
 subprocess.run(['node', str(ROOT / 'kit/tools/test_ko.js')], cwd=ROOT, check=True,
                env=dict(os.environ, MGU_TEST_PYTHON=sys.executable))
 subprocess.run(['node', str(ROOT / 'kit/tools/test_aa_ko.js')], cwd=ROOT, check=True)
+subprocess.run(['node', str(ROOT / 'kit/tools/test_battery12v.js')], cwd=ROOT, check=True)
 print('PASS: %d Korean app layouts including AA Cluster Companion; %d translations; complete translation glyph coverage; unchanged telemetry and settings' % (count, len(words)))

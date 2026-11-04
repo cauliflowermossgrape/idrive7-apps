@@ -2,6 +2,8 @@
 
 [한국어 패치만 다운로드·공유하기](KOREAN_PATCH.md)
 
+추가 앱: [12V Battery](apps/battery12v/) — 시동 배터리의 충전 상태·전압·전류·용량·이력.
+
 <h1 align="center">MGU Custom Apps</h1>
 
 <p align="center">

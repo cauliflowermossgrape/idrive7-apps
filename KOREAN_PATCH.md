@@ -11,10 +11,11 @@
 - 한국어 번역 사전과 한글 글꼴, 글꼴 라이선스
 - 공통 번역·빌드·미리보기 도구의 변경 파일
 - Service 한국어 날짜 처리와 AA Cluster Companion 표시 문구 수정
+- 사용자가 제공한 12V Battery 앱 소스 (`apps/battery12v/`)와 한국어 화면·설정 문구
 - 검사 도구와 한국어 안내서
 
 **원본 프로젝트 전체, BMW `oap-sdk`, 설치용 `.mgu`는 포함하지 않습니다.**
-AA Cluster Companion을 포함한 15개 앱의 한국어 빌드에 사용합니다.
+AA Cluster Companion과 12V Battery를 포함한 16개 앱의 한국어 빌드에 사용합니다.
 차량별 고장 설명 전체 데이터베이스와 Doom 게임 본문은 원문이 남아 있습니다.
 
 ## 적용할 원본 버전

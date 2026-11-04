@@ -30,6 +30,10 @@ for (const [english, korean] of [
 assert.strictEqual(t('14.60 V'), '14.60 V');
 assert.strictEqual(t('90 Ah'), '90 Ah');
 assert.strictEqual(t('Range'), '주행거리'); // voltage range must not change driving range
+assert.strictEqual(t('CURRENT'), '전류');
+assert.strictEqual(t('Current'), '현재');
+assert.strictEqual(t('normal'), '정상');
+assert.strictEqual(t('Normal'), '보통');
 assert.strictEqual(plural(1, 'month', 'months'), '개월');
 assert.strictEqual(plural(12, 'month', 'months'), '개월');
 assert.strictEqual(fonts.get('bold', 30, '엔진오일').family, 'korean');
