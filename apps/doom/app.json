@@ -204,7 +204,7 @@
       "key": "detail",
       "label": "Render resolution",
       "type": "choice",
-      "default": "medium",
+      "default": "full",
       "options": [
         [
           "full",

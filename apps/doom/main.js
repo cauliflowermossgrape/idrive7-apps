@@ -67,7 +67,7 @@ mgu.run({
         }
         function applyDetail() {
             applySpeed();
-            const d = DETAIL[settings.get('detail')] ? settings.get('detail') : 'medium';
+            const d = DETAIL[settings.get('detail')] ? settings.get('detail') : 'full';
             if (d !== detail && started && !err) { detail = d; game.setRes(DETAIL[d][0], DETAIL[d][1]); log.info('render ' + DETAIL[d].join(' x ')); }
         }
         // game frames per second (Doom's own rate is 35) -> log every 10 s while playing
