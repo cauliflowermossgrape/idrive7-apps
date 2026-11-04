@@ -128,6 +128,17 @@ node kit/tools/preview.js dist/car_vitals preview/ko/car_vitals render --set ren
 
 ## 검증
 
+### GitHub Actions 자동 검사
+
+[Korean localization 워크플로](.github/workflows/korean-localization.yml)는
+코드가 push되거나 PR이 생성·업데이트될 때 한국어 사전의 TSV/JSON 일치 여부와
+`test_ko.py`를 자동으로 검사합니다. 원본 업데이트를 이 저장소에 반영하면 실행되며,
+검사 결과는 저장소의 **Actions → Korean localization**에서 확인할 수 있습니다.
+**Run workflow**로 직접 실행할 수도 있습니다.
+원본 저장소의 변경을 자동으로 가져오거나 누락된 문구를 번역하는 기능은 아닙니다.
+
+### 직접 검사
+
 ```sh
 python kit/tools/test_ko.py
 python kit/tools/test_zh.py
