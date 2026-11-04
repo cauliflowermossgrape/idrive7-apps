@@ -1710,3 +1710,15 @@ Rough running, cylinder 3	회전 불균일, 실린더 3
 Rough running, cylinder 4	회전 불균일, 실린더 4
 Rough running, cylinder 5	회전 불균일, 실린더 5
 Rough running, cylinder 6	회전 불균일, 실린더 6
+State of charge	충전 상태
+Voltage	전압
+CAPACITY	용량
+ORIGINAL	초기 용량
+EARLIER	이전 기록
+Voltage range	전압 범위
+Voltage, last 2 min	전압, 최근 2분
+low	낮음
+resting	휴지 상태
+alternator	발전기
+voltage says:	전압 기준:
+voltage says: alternator charging	전압 기준: 발전기 충전 중

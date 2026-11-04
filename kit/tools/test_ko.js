@@ -17,6 +17,19 @@ assert.strictEqual(t('SPEED'), '속도');
 assert.strictEqual(t('OIL COLD  ·  GO EASY'), '냉간 · 저부하 주행');
 assert.strictEqual(t('rpm'), 'rpm');
 assert.strictEqual(t('12 300 km'), '12 300 km');
+// Whole battery headings must win over generic words such as charge/range.
+for (const [english, korean] of [
+    ['State of charge', '충전 상태'], ['STATE OF CHARGE', '충전 상태'],
+    ['Voltage', '전압'], ['CAPACITY', '용량'], ['ORIGINAL', '초기 용량'],
+    ['EARLIER', '이전 기록'], ['VOLTAGE RANGE', '전압 범위'],
+    ['VOLTAGE, LAST 2 MIN', '전압, 최근 2분'], ['low', '낮음'], ['resting', '휴지 상태'],
+    ['voltage says: alternator charging', '전압 기준: 발전기 충전 중'],
+    ['voltage says: resting', '전압 기준: 휴지 상태'],
+    ['~70 of 90 Ah', '~70 / 90 Ah'], ['~70.5 of 90.0 Ah', '~70.5 / 90.0 Ah'],
+]) assert.strictEqual(t(english), korean, english);
+assert.strictEqual(t('14.60 V'), '14.60 V');
+assert.strictEqual(t('90 Ah'), '90 Ah');
+assert.strictEqual(t('Range'), '주행거리'); // voltage range must not change driving range
 assert.strictEqual(plural(1, 'month', 'months'), '개월');
 assert.strictEqual(plural(12, 'month', 'months'), '개월');
 assert.strictEqual(fonts.get('bold', 30, '엔진오일').family, 'korean');

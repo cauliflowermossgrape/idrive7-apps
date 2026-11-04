@@ -5,11 +5,14 @@
 ## 통과
 
 - `python3 kit/tools/test_ko.py`: 15개 앱의 한국어 메뉴·리소스 한도,
-  번역 1,711개와 글꼴, Service 한국어 날짜·정비 명칭·힌트·깨진 값 대체,
+  번역 1,723개와 글꼴, Service 한국어 날짜·정비 명칭·힌트·깨진 값 대체,
   단위 유지, 단복수, 소프트웨어 및 GPU 명령 생성 경로의 텍스트 처리.
 - `python3 kit/tools/test_zh.py`: 기존 45개 언어별 레이아웃,
   HMI 문자열 표 1,485개 및 동적 문자열 ID 검사.
 - `node kit/tools/test_service.js`: 기존 Service 동작 회귀 검사.
+- 배터리 화면의 `State of charge`, 전압·용량·초기 용량·이전 기록과 전압 범위·상태
+  안내를 문장 단위로 번역하는지 검사. `70 of 90 Ah` 표기에서 숫자와 단위를 유지하고,
+  일반 주행거리 `Range` 번역은 유지하는지 확인.
 - 수정한 Python/JavaScript의 문법 검사 및 `git diff --check`.
 - 15개 앱 모두 `--language ko --preview-only` 스테이징 성공.
 - Redline, Service, M Vitals, eDrive, Live Data, Transmission Config의

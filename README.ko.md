@@ -11,7 +11,7 @@
   AA Cluster Companion, Doom의 공통 설정 및 앱 표시 문구 번역.
 - AA Cluster Companion (`aa_cluster_companion`)의 지도 배율, 회전 안내 카드,
   사용자 지정, 변경 적용·재시작 상태와 안내 문구도 한국어로 표시합니다.
-- `kit/runtime/locales/ko.tsv`와 `ko.json`: 한국어 사전 1,711개 항목.
+- `kit/runtime/locales/ko.tsv`와 `ko.json`: 한국어 사전 1,723개 항목.
 - Noto Sans CJK KR 기반 한글 글꼴. 번역에 쓰인 모든 글자, KS X 1001의 완성형
   한글 2,350자, 호환 자모, 숫자·단위·기호를 하나의 공용 아틀라스에 포함.
 - 한국어가 들어 있는 문장을 한글 글꼴로 그리도록 공통 런타임 수정.
