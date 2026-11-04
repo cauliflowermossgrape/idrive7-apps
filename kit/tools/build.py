@@ -396,7 +396,10 @@ def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
     return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
 
 
-def build(app_id, language='en'):
+def build(app_id, language='en', preview_only=False):
+    if not preview_only and not all(os.path.isfile(os.path.join(SDK, name)) for name in ('index.js', 'package.json')):
+        raise SystemExit('BMW oap-sdk is missing. Extract it from your own head unit with kit/tools/extract_sdk.js, '
+                         'or use --preview-only for an offline preview (no installable package).')
     spec = json.load(open(os.path.join(APPS, app_id, 'app.json'), encoding='utf-8'))
     spec = localize_spec(spec, language)
     spec.setdefault('id', app_id)
@@ -477,6 +480,13 @@ def build(app_id, language='en'):
     if language == 'ru':
         shutil.copy(os.path.join(KIT, 'localization', 'fonts', 'cyrillic-ru.json'),
                     os.path.join(src, 'javascript', 'kit', 'fonts', 'cyrillic.json'))
+    if language == 'ko':
+        # Korean and Chinese are separate fixed-language packages. Loading both large
+        # atlases could fragment the renderer's two 1024x4096 glyph shelves.
+        os.remove(os.path.join(src, 'javascript', 'kit', 'fonts', 'cjk.json'))
+        for name in ('korean.json', 'OFL-NotoSansKR.txt'):
+            shutil.copy(os.path.join(KIT, 'localization', 'fonts', name),
+                        os.path.join(src, 'javascript', 'kit', 'fonts', name))
     if language == 'zh-CN':
         # Diagnostic glyphs are Chinese-only; keep the English runtime atlas intact.
         if app_id == 'dtc_scanner':
@@ -497,6 +507,9 @@ def build(app_id, language='en'):
     if credit(language):
         locale['credit'] = credit(language)['corner']
     json.dump(locale, open(os.path.join(src, 'javascript', 'kit', 'locale.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+    if preview_only:
+        print('%s %s: offline preview in %s (NO SDK, NOT INSTALLABLE)' % (app_id, ver, stage))
+        return
     shutil.copy(os.path.join(SDK, 'index.js'), os.path.join(src, 'node_modules', 'oap-sdk', 'index.js'))
     shutil.copy(os.path.join(SDK, 'package.json'), os.path.join(src, 'node_modules', 'oap-sdk', 'package.json'))
 
@@ -588,11 +601,12 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--language', choices=languages(), default='en')
+    parser.add_argument('--preview-only', action='store_true', help='stage an offline preview without BMW SDK or installable archives')
     parser.add_argument('apps', nargs='*')
     args = parser.parse_args()
     ids = args.apps or sorted(d for d in os.listdir(APPS) if os.path.exists(os.path.join(APPS, d, 'app.json')))
     for i in ids:
-        build(i, args.language)
+        build(i, args.language, preview_only=args.preview_only)
 
 
 if __name__ == '__main__':

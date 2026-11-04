@@ -1,4 +1,4 @@
-**English** | [中文 (Chinese translation)](README.zh-CN.md) | [Русский (Russian translation)](README.ru.md)
+**English** | [中文 (Chinese translation)](README.zh-CN.md) | [Русский (Russian translation)](README.ru.md) | [한국어 수정본](README.ko.md)
 
 <h1 align="center">MGU Custom Apps</h1>
 

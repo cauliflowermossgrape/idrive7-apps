@@ -20,6 +20,7 @@ const PLURAL_RULES = {
         return mod10 >= 2 && mod10 <= 4 ? 1 : 2;
     },
     'zh-CN': () => 0,
+    ko: () => 0,
 };
 function plural(n, one, other, lang) {
     const key = one + '|' + other, lng = lang || language;

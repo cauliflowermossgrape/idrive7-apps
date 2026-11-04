@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """Sync editable runtime/locales/*.tsv catalogs to their runtime JSON files."""
 import json
+import sys
 from pathlib import Path
 
 DIRECTORY = Path(__file__).resolve().parent.parent / 'runtime/locales'
 # Forms per plural row ("one|other<TAB>forms"); must match PLURAL_RULES in runtime/i18n.js.
-PLURAL_FORMS = {'ru': 3, 'zh-CN': 1}
+PLURAL_FORMS = {'ru': 3, 'zh-CN': 1, 'ko': 1}
 
-for source in sorted(DIRECTORY.glob('*.tsv')):
+sources = sorted(DIRECTORY.glob('*.tsv'))
+if sys.argv[1:]:
+    requested = set(sys.argv[1:])
+    if requested - {p.stem for p in sources}:
+        raise SystemExit('Unknown locale: ' + ', '.join(sorted(requested - {p.stem for p in sources})))
+    sources = [p for p in sources if p.stem in requested]
+for source in sources:
     words = {}
     for n, line in enumerate(source.read_text(encoding='utf-8').splitlines(), 1):
         if not line or line.startswith('#'):

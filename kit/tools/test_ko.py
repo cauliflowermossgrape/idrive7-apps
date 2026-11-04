@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Korean layout/telemetry invariants, atlas coverage and display-path checks; no BMW SDK."""
+import copy
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import build
+from localize import localize_spec, unicode_resources
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+words = json.loads((ROOT / 'kit/runtime/locales/ko.json').read_text(encoding='utf-8'))
+atlas = json.loads((ROOT / 'kit/localization/fonts/korean.json').read_text(encoding='utf-8'))['sizes'][0]
+assert atlas['atlasW'] == 1024 and atlas['atlasH'] <= 3072
+assert all(str(ord(ch)) in atlas['glyphs'] for text in words.values() for ch in text if ch not in '\n\r\t')
+assert all(str(ord(ch)) in atlas['glyphs'] for ch in '엔진오일 브레이크액 차량 점검 2027년 9월 15일 교환 필요')
+
+count = 0
+for path in sorted((ROOT / 'apps').glob('*/app.json')):
+    original = json.loads(path.read_text(encoding='utf-8'))
+    spec = localize_spec(original, 'ko')
+    for key in ('id', 'signals', 'config', 'assets', 'startWidget', 'loggingId'):
+        assert spec.get(key) == original.get(key), (path, key)
+    assert spec['version'] == original['version'] + '-ko.1'
+    for a, b in zip(original['settings'], spec['settings']):
+        assert a['key'] == b['key'] and a['default'] == b['default']
+        assert [o[0] for o in a.get('options', [])] == [o[0] for o in b.get('options', [])]
+    labels = [original['title']]
+    for screen in original['screens']:
+        labels += [screen.get('title', '')] + [b[1] for b in screen.get('buttons', [])]
+    for setting in original['settings']:
+        labels += [setting['label']] + [o[1] for o in setting.get('options', [])]
+    # Units, currencies, acronyms and numeric presets deliberately stay unchanged.
+    for label in labels:
+        if ' ' in label and re.search('[A-Za-z]{2,}', label) and not re.match(r'^\d', label):
+            assert label in words, (path, 'untranslated menu label', label)
+    _, ui, strings, _ = build.build_ui(copy.deepcopy(spec), 'ko')
+    unicode_resources(ui, strings, 'ko')
+    assert len(strings) <= 1024
+    assert len([s for s in strings if s.startswith('SID_CN_DYNAMIC_')]) == 256
+    assert 'ko_KR' in build.LANGS
+    count += 1
+
+subprocess.run(['node', str(ROOT / 'kit/tools/test_ko.js')], cwd=ROOT, check=True,
+               env=dict(os.environ, MGU_TEST_PYTHON=sys.executable))
+print('PASS: %d Korean app layouts; %d translations; complete translation glyph coverage; unchanged telemetry and settings' % (count, len(words)))
