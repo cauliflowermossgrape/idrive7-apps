@@ -3,6 +3,9 @@
 원본: https://github.com/cauliflowermossgrape/idrive7-apps
 
 Translation by：jaimeen shim
+코딩나눔터(https://cafe.naver.com/codingbmw) : 서울||잼님
+네이버블로그(https://blog.naver.com/jaimeen77)
+
 
 원본 `main` 기준 커밋: `68368fd`. 이 프로젝트의 한국어 빌드·미리보기 안내입니다.
 
