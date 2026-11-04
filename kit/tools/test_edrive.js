@@ -60,12 +60,12 @@ function context(dir, set) {
     const defaults = {};
     SPEC.settings.forEach((s) => { defaults[s.key] = s.default; });
     const S = Object.assign(defaults, { demo: 'off' }, set || {});
-    const clicks = {}, texts = [];
+    const clicks = {}, texts = [], watchers = {};
     return {
-        clicks, texts, ui: { onClick: (id, fn) => { clicks[id] = fn; }, text() {}, image: async () => {} },
+        clicks, texts, watchers, ui: { onClick: (id, fn) => { clicks[id] = fn; }, text() {}, image: async () => {} },
         settings: { get: (k) => S[k], onChange() {} },
         log: quiet, spec: SPEC, dataDir: dir,
-        signals: { watch: () => Promise.resolve({}) },
+        signals: { watch: (iface, ver, handlers) => { Object.assign(watchers, handlers); return Promise.resolve({}); } },
         onTab() {}, hideButton() {}, onScroll() {}, loop() {},
         theme: () => themes.theme('m_tricolour'), canvas: (w, h) => {
             const cv = new Canvas(w, h), text = cv.text.bind(cv);
@@ -97,6 +97,7 @@ async function boot(dir, vals, set) {
         page: async () => { await ctx.clicks.BTN_PAGE(); await flush(); },
         read: async () => { diag.available = true; diag.emit('available', true); await flush(); },
         readNow: async () => { diag.available = true; ctx.clicks.BTN_READ(); await flush(); },
+        drive: (kmh) => ctx.watchers.statusCarSpeed2({ speedVehicleCentreOfGravity: kmh / 0.015625 }),
         exit: () => onExit.forEach((f) => f(0)),
     };
 }
@@ -127,8 +128,8 @@ const L0 = () => ({ speed: 0, rpm: 0, rpmT: 0, climate: false, seats: {}, wheel:
 
 const checks = [
     ['1. charge logged once across restarts', async () => {
-        // a charge done while the head unit slept is logged once: the start that logs it also keeps the charge it
-        // read, even when the head unit goes off within 2 min (before the next timed save)
+        // a charge done while the head unit slept stays open until the car drives off, then is logged once: each
+        // start keeps the charge it read, even when the head unit goes off within 2 min (before the next timed save)
         const dir = tmp('charge');
         let b = await boot(dir, { soc: 20, soh: 90, v12: 12.5 });
         await b.read();
@@ -136,26 +137,50 @@ const checks = [
         now += 10 * 3600000;                                     // overnight on the charger
         b = await boot(dir, { soc: 90, soh: 90, v12: 12.5 });
         await b.read();
-        assert.strictEqual(state(dir).log.length, 1, 'the charge is logged');
-        assert.strictEqual(state(dir).lastSoc, 90, 'battery.json keeps the charge that closed the session');
+        assert.deepStrictEqual([state(dir).log, state(dir).session.from, state(dir).session.to], [undefined, 20, 90],
+            'the charge is open until the car drives off');
+        assert.strictEqual(state(dir).lastSoc, 90, 'battery.json keeps the charge read');
         now += 3600000;                                          // switched off a minute later, on again an hour on
         b = await boot(dir, { soc: 90, soh: 90, v12: 12.5 });
         await b.read();
-        assert.strictEqual(state(dir).log.length, 1, 'the same charge is not logged again at the next start');
+        b.drive(30); values.soc = 89.8; now += 30000;
+        await b.read();
+        assert.deepStrictEqual(state(dir).log.map((c) => [c.from, c.to]), [[20, 90]], 'driving off logs the charge once');
         // the diagnostic link back after 10 min while charging, a save (the health read) just before: the charge
-        // logged by the next reading is saved with it, not left to the 2 min timer
-        values.soc = null; now += 10 * 60000;
+        // read by the next reading is saved with it, not left to the 2 min timer
+        b.drive(0); values.soc = null; now += 10 * 60000;
         await b.readNow();                                       // no charge reading, health read and saved
         values.soc = 97; now += 30000;
         await b.read();
-        assert.strictEqual(state(dir).log.length, 2, 'the second charge is logged');
-        assert.strictEqual(state(dir).lastSoc, 97, 'and saved with its reading');
-        // the head unit switched off: the reading the 2 min timer has not saved yet goes with the exit
-        values.soc = 96.5; now += 30000;
+        assert.deepStrictEqual([state(dir).session.from, state(dir).session.to, state(dir).lastSoc], [89.8, 97, 97],
+            'the second charge is saved with its reading');
+        b.drive(30); values.soc = 96.5; now += 30000;
         await b.read();
-        assert.strictEqual(state(dir).lastSoc, 97);
+        assert.strictEqual(state(dir).log.length, 2, 'the second charge is logged');
+        // the head unit switched off: the reading the 2 min timer has not saved yet goes with the exit
+        values.soc = 96.3; now += 30000;
+        await b.read();
+        assert.strictEqual(state(dir).lastSoc, 96.5);
         b.exit();
-        assert.strictEqual(state(dir).lastSoc, 96.5, 'saved on exit');
+        assert.strictEqual(state(dir).lastSoc, 96.3, 'saved on exit');
+    }],
+    ['1c. one charge across the car waking during it', async () => {
+        // plugged in at 7 %, the car wakes now and then while it charges (24 %, 70 %, 100 %): one charge, 7 % to 100 %
+        const dir = tmp('wakes');
+        let b = await boot(dir, { soc: 7, soh: 90, v12: 12.5 });
+        await b.read();
+        for (const soc of [24, 24.6, 70, 100]) {
+            now += soc === 24.6 ? 30000 : 2 * 3600000;           // 24.6: read while still awake
+            if (soc !== 24.6) b = await boot(dir, { soc, soh: 90, v12: 12.5 });
+            values.soc = soc;
+            await b.read();
+        }
+        assert.strictEqual(state(dir).log, undefined, 'nothing logged while parked');
+        now += 3600000;
+        b = await boot(dir, { soc: 100, soh: 90, v12: 12.5 });
+        b.drive(40);
+        await b.read();
+        assert.deepStrictEqual(state(dir).log.map((c) => [c.from, c.to]), [[7, 100]], 'one charge, 7 % to 100 %');
     }],
     ['1b. nothing to save: no file on exit', async () => {
         // demo / no hybrid system: nothing read, so the exit writes nothing (no battery.json on a first run)
@@ -182,6 +207,7 @@ const checks = [
         await b.read();
         now += 8 * 3600000;
         b = await boot(dir, { soc: 80, soh: null, v12: 12.5 });
+        b.drive(30);
         await b.read();
         const c = state(dir).log[0];
         assert(c && typeof c.kwh === 'number', 'logged charge has kWh: ' + JSON.stringify(c));

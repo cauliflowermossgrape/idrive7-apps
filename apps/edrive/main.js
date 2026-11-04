@@ -379,7 +379,8 @@ mgu.run({
 
         /* ---------- last charge ----------
          * A charge = the charge level rising by >= chargeMinPct while the car stands still
-         * (regen while driving doesn't count). The last reading is saved, so a charge done
+         * (regen while driving doesn't count), from the level before it to the last level read before the
+         * car drives off or the level really drops. The last reading is saved, so a charge done
          * while the head unit slept shows up as a jump at the next start: that jump counts even when
          * the car is already moving by the first reading (the diagnostic link takes a while to come up),
          * as readings come every few seconds while the car is on and regen never adds that much between them. */
@@ -414,10 +415,11 @@ mgu.run({
                 if (soc > prev + 0.3 && now - (st.lastSocT || now) > ASLEEP_MS
                     && soc >= (st.session ? st.session.from : prev) + cfg.chargeMinPct) {
                     // charged while the car was off (also one that began while the head unit was still awake):
-                    // the charge runs up to this reading and ended before it
+                    // the charge runs up to this reading. The car wakes now and then during a long charge, so the
+                    // session stays open until the car drives off: one charge from the first level to the last
                     if (!st.session) st.session = { from: prev, fromT: st.lastSocT };
                     st.session.to = soc; st.session.toT = now;
-                    closeSession();
+                    if (moving) closeSession();
                 } else if (soc > prev + 0.3 && !moving) {
                     if (!st.session) st.session = { from: prev, fromT: st.lastSocT || now };
                     st.session.to = soc; st.session.toT = now;
@@ -432,10 +434,13 @@ mgu.run({
             // a logged charge with the reading before it (the next start would log the same charge again)
             if (st.lastCharge !== logged || st.session !== open || (open && open.toT === now) || now - savedAt > 120000) save();
         }
-        /** The charge to show: one in progress (big enough to count), else the last finished one. */
+        /** The charge to show: the open session (big enough to count), else the last finished one.
+         *  open: the level rose within ASLEEP_MS (charging now); the session itself stays open until the car drives off. */
         function lastCharge() {
             const s = st.session;
-            if (s && s.to - s.from >= cfg.chargeMinPct) return Object.assign({}, s, { kwh: chargeKwh(s.from, s.to), open: true });
+            if (s && s.to - s.from >= cfg.chargeMinPct) {
+                return Object.assign({}, s, { kwh: chargeKwh(s.from, s.to), open: Date.now() - s.toT < ASLEEP_MS });
+            }
             return st.lastCharge || null;
         }
 
