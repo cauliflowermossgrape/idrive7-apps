@@ -401,11 +401,14 @@ def build(app_id, language='en', preview_only=False):
     if not preview_only and not all(os.path.isfile(os.path.join(SDK, name)) for name in ('index.js', 'package.json')):
         raise SystemExit('BMW oap-sdk is missing. Extract it from your own head unit with kit/tools/extract_sdk.js, '
                          'or use --preview-only for an offline preview (no installable package).')
-    spec = json.load(open(os.path.join(APPS, app_id, 'app.json'), encoding='utf-8'))
+    adir = os.path.join(APPS, app_id)
+    spec = json.load(open(os.path.join(adir, 'app.json'), encoding='utf-8'))
     spec = localize_spec(spec, language)
     spec.setdefault('id', app_id)
     ver = spec['version']
     stage = os.path.join(DIST, app_id)
+    # The source folder may use display casing; keep the installed identity stable.
+    app_id = spec['id']
     shutil.rmtree(stage, ignore_errors=True)
     src = os.path.join(stage, 'source')
     os.makedirs(os.path.join(src, 'javascript', 'kit'))
@@ -440,7 +443,6 @@ def build(app_id, language='en', preview_only=False):
     json.dump({'rhmiLoadingEnabled': True, 'entryPointLoadingEnabled': True, 'settings': {app_id: spec.get('config', {})}},
               open(os.path.join(src, 'config', 'base.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     # app code
-    adir = os.path.join(APPS, app_id)
     fetch_assets(adir, spec.get('assets', []))
     for f in os.listdir(adir):
         if f.endswith('.js'):

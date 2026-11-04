@@ -11,7 +11,7 @@
 - 한국어 번역 사전과 한글 글꼴, 글꼴 라이선스
 - 공통 번역·빌드·미리보기 도구의 변경 파일
 - Service 한국어 날짜 처리와 AA Cluster Companion 표시 문구 수정
-- 사용자가 제공한 12V Battery 앱 소스 (`apps/battery12v/`)와 한국어 화면·설정 문구
+- 사용자가 제공한 12V Battery 앱 소스 (`apps/Battery12v/`)와 한국어 화면·설정 문구
 - 검사 도구와 한국어 안내서
 
 **원본 프로젝트 전체, BMW `oap-sdk`, 설치용 `.mgu`는 포함하지 않습니다.**
@@ -42,6 +42,9 @@ python kit/tools/build.py --language ko
 
 `dist`에 앱별 `-ko.1.mgu` 파일이 만들어집니다. `ko-kr`과 `ko-KR`도 지원합니다.
 macOS/Linux에서 `python`이 없으면 `python3`를 사용하세요.
+
+이전 패치의 `apps/battery12v/`가 남아 있다면 `apps/Battery12v/`로 교체하세요.
+두 폴더를 동시에 두면 같은 앱이 중복 빌드됩니다.
 
 ## SDK 없이 한국어 화면 확인
 

@@ -11,9 +11,10 @@
   AA Cluster Companion, Doom, 12V Battery의 공통 설정 및 앱 표시 문구 번역.
 - AA Cluster Companion (`aa_cluster_companion`)의 지도 배율, 회전 안내 카드,
   사용자 지정, 변경 적용·재시작 상태와 안내 문구도 한국어로 표시합니다.
-- 사용자가 제공한 12V Battery 1.5.3을 `apps/battery12v/`에 추가했습니다.
-  앱 ID `battery12v`와 진단 설정은 유지하며, Live Data와 겹치던 로그 식별자만
-  미사용 값 `OAA3`으로 구분했습니다. 아이콘은 `iconGlyph: battery`로 기본 생성합니다.
+- 사용자가 제공한 12V Battery 1.5.3을 `apps/Battery12v/`에 추가했습니다.
+  소스 폴더명은 `Battery12v`이며, 설치 앱 ID `battery12v`와 진단 설정을 유지합니다.
+  Live Data와 겹치던 로그 식별자만 미사용 값 `OAA3`으로 구분했습니다.
+  아이콘은 `iconGlyph: battery`로 기본 생성합니다.
 - `kit/runtime/locales/ko.tsv`와 `ko.json`: 한국어 사전 1,773개 항목.
 - Noto Sans CJK KR 기반 한글 글꼴. 번역에 쓰인 모든 글자, KS X 1001의 완성형
   한글 2,350자, 호환 자모, 숫자·단위·기호를 하나의 공용 아틀라스에 포함.
@@ -79,7 +80,7 @@ python kit/tools/make_kit.py --language ko
 ```
 
 AA Cluster Companion의 파일명은 `aa_cluster_companion@0.3.5-ko.1.mgu`입니다.
-12V Battery만 빌드하려면 `python kit/tools/build.py --language ko battery12v`를 실행하세요.
+12V Battery만 빌드하려면 `python kit/tools/build.py --language ko Battery12v`를 실행하세요.
 파일명은 `battery12v@1.5.3-ko.1.mgu`입니다.
 Doom은 첫 빌드에 Freedoom 게임
 데이터를 다운로드하므로 인터넷 연결이 필요합니다. 차량 설치·제거 방법과 요구되는

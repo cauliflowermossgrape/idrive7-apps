@@ -5,8 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const root = path.resolve(__dirname, '../..');
-const spec = JSON.parse(fs.readFileSync(path.join(root, 'apps/battery12v/app.json'), 'utf8'));
-const source = fs.readFileSync(path.join(root, 'apps/battery12v/main.js'), 'utf8').replace(/\r\n/g, '\n');
+const spec = JSON.parse(fs.readFileSync(path.join(root, 'apps/Battery12v/app.json'), 'utf8'));
+const source = fs.readFileSync(path.join(root, 'apps/Battery12v/main.js'), 'utf8').replace(/\r\n/g, '\n');
 const context = { G: { isNum: (v) => typeof v === 'number' && isFinite(v) } };
 vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('const W ='), source.indexOf('\nmgu.run(')) +
