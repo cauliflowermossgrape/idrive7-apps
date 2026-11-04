@@ -8,13 +8,9 @@
 
 - Redline, Service, M Vitals, eDrive, Live Data, G-Force, Warm-Up, Virtual Dyno,
   Brake Test, Drag Timer, Fault Scanner, Engine Config, Transmission Config,
-  AA Cluster Companion, Doom, 12V Battery의 공통 설정 및 앱 표시 문구 번역.
+  AA Cluster Companion, Doom의 공통 설정 및 앱 표시 문구 번역.
 - AA Cluster Companion (`aa_cluster_companion`)의 지도 배율, 회전 안내 카드,
   사용자 지정, 변경 적용·재시작 상태와 안내 문구도 한국어로 표시합니다.
-- 사용자가 제공한 12V Battery 1.5.3을 `apps/Battery12v/`에 추가했습니다.
-  소스 폴더명은 `Battery12v`이며, 설치 앱 ID `battery12v`와 진단 설정을 유지합니다.
-  Live Data와 겹치던 로그 식별자만 미사용 값 `OAA3`으로 구분했습니다.
-  아이콘은 `iconGlyph: battery`로 기본 생성합니다.
 - `kit/runtime/locales/ko.tsv`와 `ko.json`: 한국어 사전 1,773개 항목.
 - Noto Sans CJK KR 기반 한글 글꼴. 번역에 쓰인 모든 글자, KS X 1001의 완성형
   한글 2,350자, 호환 자모, 숫자·단위·기호를 하나의 공용 아틀라스에 포함.
@@ -74,14 +70,12 @@ Python 3와 Node.js 14 이상이 필요합니다. 기존 프로젝트에 이미 
 python kit/tools/make_kit.py --language ko redline service car_vitals edrive warmup gforce
 ```
 
-앱 이름을 생략하면 전체 16개 앱을 한국어로 빌드합니다.
+앱 이름을 생략하면 전체 15개 앱을 한국어로 빌드합니다.
 ```sh
 python kit/tools/make_kit.py --language ko
 ```
 
 AA Cluster Companion의 파일명은 `aa_cluster_companion@0.3.5-ko.1.mgu`입니다.
-12V Battery만 빌드하려면 `python kit/tools/build.py --language ko Battery12v`를 실행하세요.
-파일명은 `battery12v@1.5.3-ko.1.mgu`입니다.
 Doom은 첫 빌드에 Freedoom 게임
 데이터를 다운로드하므로 인터넷 연결이 필요합니다. 차량 설치·제거 방법과 요구되는
 MGU 접근 환경은 원본 [README](README.md)와 [배포 안내](deploy/car/README.txt)를 따릅니다.
@@ -128,7 +122,7 @@ python kit/tools/test_zh.py
 node kit/tools/test_service.js
 ```
 
-한국어 검사에서는 16개 앱의 메뉴, 번역 글자 누락, Service 한국어 날짜·명칭·깨진
+한국어 검사에서는 15개 앱의 메뉴, 번역 글자 누락, Service 한국어 날짜·명칭·깨진
 입력의 대체 처리, 단위 유지, 소프트웨어 그리기와 GPU 명령 생성의 글자 폭을 확인합니다.
 AA Cluster Companion의 지도 배율·카드 선택·적용·재시작은 메모리 데모로 검사하며,
 실제 제어기에 보내는 숫자와 `shown`/`hidden` 값이 번역되지 않는지도 확인합니다.
