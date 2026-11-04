@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import build
-from localize import localize_spec, unicode_resources, normalize_language
+from localize import localize_spec, unicode_resources, normalize_language, effective_language
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 for tag in ('ko', 'ko-kr', 'ko-KR', 'ko_KR', 'KO-KR'):
@@ -20,7 +20,7 @@ for tag in ('en', 'ru', 'zh-CN'):
 # silently leave an older English stage being previewed.
 for tag in ('ko-kr', 'ko-KR'):
     result = subprocess.run([sys.executable, str(ROOT / 'kit/tools/build.py'),
-                             '--language', tag, '--preview-only', 'redline'],
+                             '--language', tag, '--preview-only', 'redline', 'aa_cluster_companion'],
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     staged = ROOT / 'dist/redline/source/javascript/kit'
@@ -28,6 +28,12 @@ for tag in ('ko-kr', 'ko-KR'):
     spec = json.loads((staged / 'app-spec.json').read_text(encoding='utf-8'))
     assert locale['language'] == 'ko' and locale['strings']['SPEED'] == '속도'
     assert spec['version'].endswith('-ko.1') and (staged / 'fonts/korean.json').is_file()
+    aa = ROOT / 'dist/aa_cluster_companion/source/javascript/kit'
+    assert json.loads((aa / 'locale.json').read_text(encoding='utf-8')) == {'language': 'en', 'strings': {}}
+    assert not (aa / 'fonts/korean.json').exists()
+    aa_spec = json.loads((aa / 'app-spec.json').read_text(encoding='utf-8'))
+    aa_original = json.loads((ROOT / 'apps/aa_cluster_companion/app.json').read_text(encoding='utf-8'))
+    assert aa_spec['title'] == aa_original['title'] and aa_spec['version'] == aa_original['version']
 print('PASS: ko-kr / ko-KR CLI aliases produce Korean stages, fonts and canonical package versions')
 words = json.loads((ROOT / 'kit/runtime/locales/ko.json').read_text(encoding='utf-8'))
 atlas = json.loads((ROOT / 'kit/localization/fonts/korean.json').read_text(encoding='utf-8'))['sizes'][0]
@@ -38,10 +44,13 @@ assert all(str(ord(ch)) in atlas['glyphs'] for ch in '엔진오일 브레이크�
 count = 0
 for path in sorted((ROOT / 'apps').glob('*/app.json')):
     original = json.loads(path.read_text(encoding='utf-8'))
+    language = effective_language(original['id'], 'ko')
     spec = localize_spec(original, 'ko')
+    if original['id'] == 'aa_cluster_companion':
+        assert language == 'en' and spec == original, 'AA Cluster Companion must keep its English title, menus, settings and version'
     for key in ('id', 'signals', 'config', 'assets', 'startWidget', 'loggingId'):
         assert spec.get(key) == original.get(key), (path, key)
-    assert spec['version'] == original['version'] + '-ko.1'
+    assert spec['version'] == original['version'] + ('-ko.1' if language == 'ko' else '')
     for a, b in zip(original['settings'], spec['settings']):
         assert a['key'] == b['key'] and a['default'] == b['default']
         assert [o[0] for o in a.get('options', [])] == [o[0] for o in b.get('options', [])]
@@ -52,10 +61,13 @@ for path in sorted((ROOT / 'apps').glob('*/app.json')):
         labels += [setting['label']] + [o[1] for o in setting.get('options', [])]
     # Units, currencies, acronyms and numeric presets deliberately stay unchanged.
     for label in labels:
-        if ' ' in label and re.search('[A-Za-z]{2,}', label) and not re.match(r'^\d', label):
+        if language == 'ko' and ' ' in label and re.search('[A-Za-z]{2,}', label) and not re.match(r'^\d', label):
             assert label in words, (path, 'untranslated menu label', label)
-    _, ui, strings, _ = build.build_ui(copy.deepcopy(spec), 'ko')
-    unicode_resources(ui, strings, 'ko')
+    _, ui, strings, _ = build.build_ui(copy.deepcopy(spec), language)
+    unicode_resources(ui, strings, language)
+    if language == 'en':
+        assert strings[build.sid(original['id'], 'TITLE')] == 'AA Cluster Companion App'
+        assert 'Settings' in strings.values() and not any(re.search('[가-힣]', v) for v in strings.values())
     assert len(strings) <= 1024
     assert len([s for s in strings if s.startswith('SID_CN_DYNAMIC_')]) == 256
     assert 'ko_KR' in build.LANGS
@@ -63,4 +75,4 @@ for path in sorted((ROOT / 'apps').glob('*/app.json')):
 
 subprocess.run(['node', str(ROOT / 'kit/tools/test_ko.js')], cwd=ROOT, check=True,
                env=dict(os.environ, MGU_TEST_PYTHON=sys.executable))
-print('PASS: %d Korean app layouts; %d translations; complete translation glyph coverage; unchanged telemetry and settings' % (count, len(words)))
+print('PASS: %d app layouts (14 Korean + AA Cluster Companion in English); %d translations; complete translation glyph coverage; unchanged telemetry and settings' % (count, len(words)))

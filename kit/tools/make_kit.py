@@ -156,7 +156,7 @@ def md5(p):
 
 def main():
     import argparse
-    from localize import languages, package_version, normalize_language
+    from localize import languages, package_version, normalize_language, effective_language
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--language', type=normalize_language, choices=languages(), default='en',
                         help='UI language; Korean also accepts ko-KR, ko-kr and ko_KR')
@@ -176,7 +176,7 @@ def main():
         r = subprocess.run([sys.executable, os.path.join(ROOT, 'kit', 'tools', 'build.py'), '--language', args.language, app], cwd=ROOT)
         if r.returncode: sys.exit('build of %s failed' % app)
         ver = json.load(open(os.path.join(ROOT, 'apps', app, 'app.json'), encoding='utf-8'))['version']
-        ver = package_version(ver, args.language)
+        ver = package_version(ver, effective_language(app, args.language))
         shutil.copyfile(os.path.join(DIST, '%s@%s.mgu' % (app, ver)), os.path.join(OUT, 'apps', '%s@%s.mgu' % (app, ver)))
     for src, dst in CAR_FILES:
         data = open(os.path.join(DEPLOY, src), 'rb').read().replace(b'\r\n', b'\n')

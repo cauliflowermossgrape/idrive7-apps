@@ -298,6 +298,7 @@ too; the tool lists anything missing.
 **한국어 미리보기:** 먼저 `--language ko`로 빌드하세요. `preview.js`는 빌드된 앱의
 언어를 사용합니다. 기본 빌드를 다시 실행하면 `dist/<id>`가 영문으로 바뀝니다.
 `ko-kr`, `ko-KR`, `ko_KR`도 `ko`와 같은 한국어 빌드 태그로 지원합니다.
+`aa_cluster_companion`은 한국어 빌드에서도 영문 이름·메뉴·화면과 원래 버전을 유지합니다.
 Windows에서는 `python3` 대신 `python`을 사용하세요.
 
 ```sh
