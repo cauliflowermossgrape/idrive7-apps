@@ -122,6 +122,27 @@ python kit/tools/test_zh.py
 node kit/tools/test_service.js
 ```
 
+
+실차 테스트(test on my car)
+<img width="4000" height="2252" alt="20261104_214724" src="https://github.com/user-attachments/assets/1c097e1a-8725-413d-b60f-bea7941bf4b5" />
+<img width="4000" height="2252" alt="20261104_214713" src="https://github.com/user-attachments/assets/deff7beb-24c5-4786-860f-e58318633495" />
+<img width="4000" height="2252" alt="20261104_214703" src="https://github.com/user-attachments/assets/1a7abda3-35b8-4f67-b2ff-5237556235d5" />
+<img width="4000" height="2252" alt="20261104_214654" src="https://github.com/user-attachments/assets/bce7be58-ea11-49c1-9601-847cfc5f9b17" />
+<img width="4000" height="2252" alt="20261104_214644" src="https://github.com/user-attachments/assets/5e4bd362-a13c-4575-a9b9-a0aedc21b624" />
+<img width="4000" height="2252" alt="20261104_214631" src="https://github.com/user-attachments/assets/83f9fa8c-45f3-4e6c-877a-4515bee7da19" />
+<img width="4000" height="2252" alt="20261104_214620" src="https://github.com/user-attachments/assets/bcc01384-1e53-4cc6-83df-3d2ce8430f4c" />
+<img width="4000" height="2252" alt="20261104_214609" src="https://github.com/user-attachments/assets/ef3c166e-68a9-48da-b96f-0b331e9e9060" />
+<img width="4000" height="2252" alt="20261104_214559" src="https://github.com/user-attachments/assets/d9d0252b-8e8d-41b4-8c5d-8d792cbe125f" />
+<img width="4000" height="2252" alt="20261104_214540" src="https://github.com/user-attachments/assets/476994f0-bc2f-4179-befd-38db5509f2a9" />
+<img width="4000" height="2252" alt="20261104_214530" src="https://github.com/user-attachments/assets/2d1b8991-6422-4b29-9080-62c4554f15f1" />
+<img width="4000" height="2252" alt="20261104_214512" src="https://github.com/user-attachments/assets/2d8e07fa-d472-427c-8b5a-36a98b57de75" />
+<img width="4000" height="2252" alt="20261104_214435" src="https://github.com/user-attachments/assets/e1e31b89-829f-4360-88b2-cc3d2dbf080b" />
+<img width="4000" height="2252" alt="20261104_214410" src="https://github.com/user-attachments/assets/78db2b0d-d2d8-45ca-8e1d-724649fd8603" />
+<img width="4000" height="2252" alt="20261104_214401" src="https://github.com/user-attachments/assets/216e2d29-6160-4427-8d1f-37092ea642f5" />
+<img width="4000" height="2252" alt="20261104_221128" src="https://github.com/user-attachments/assets/a4a20777-4ce6-4206-9fac-1cf2a287dd6f" />
+<img width="4000" height="2252" alt="20261104_214734" src="https://github.com/user-attachments/assets/e0b8972a-bc2b-4b31-a901-643d6cfbbbaa" />
+
+
 한국어 검사에서는 15개 앱의 메뉴, 번역 글자 누락, Service 한국어 날짜·명칭·깨진
 입력의 대체 처리, 단위 유지, 소프트웨어 그리기와 GPU 명령 생성의 글자 폭을 확인합니다.
 AA Cluster Companion의 지도 배율·카드 선택·적용·재시작은 메모리 데모로 검사하며,
