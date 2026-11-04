@@ -9,9 +9,26 @@ import sys
 from pathlib import Path
 
 import build
-from localize import localize_spec, unicode_resources
+from localize import localize_spec, unicode_resources, normalize_language
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+for tag in ('ko', 'ko-kr', 'ko-KR', 'ko_KR', 'KO-KR'):
+    assert normalize_language(tag) == 'ko'
+for tag in ('en', 'ru', 'zh-CN'):
+    assert normalize_language(tag) == tag
+# Exercise argparse and the generated runtime, so a rejected regional tag cannot
+# silently leave an older English stage being previewed.
+for tag in ('ko-kr', 'ko-KR'):
+    result = subprocess.run([sys.executable, str(ROOT / 'kit/tools/build.py'),
+                             '--language', tag, '--preview-only', 'redline'],
+                            cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    staged = ROOT / 'dist/redline/source/javascript/kit'
+    locale = json.loads((staged / 'locale.json').read_text(encoding='utf-8'))
+    spec = json.loads((staged / 'app-spec.json').read_text(encoding='utf-8'))
+    assert locale['language'] == 'ko' and locale['strings']['SPEED'] == '속도'
+    assert spec['version'].endswith('-ko.1') and (staged / 'fonts/korean.json').is_file()
+print('PASS: ko-kr / ko-KR CLI aliases produce Korean stages, fonts and canonical package versions')
 words = json.loads((ROOT / 'kit/runtime/locales/ko.json').read_text(encoding='utf-8'))
 atlas = json.loads((ROOT / 'kit/localization/fonts/korean.json').read_text(encoding='utf-8'))['sizes'][0]
 assert atlas['atlasW'] == 1024 and atlas['atlasH'] <= 3072

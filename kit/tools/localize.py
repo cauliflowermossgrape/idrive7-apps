@@ -8,6 +8,11 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 LOCALES = ROOT / 'kit/runtime/locales'
 
 
+def normalize_language(language):
+    """Accept regional Korean CLI tags while keeping one catalog/package identity."""
+    return 'ko' if language.lower().replace('_', '-') in ('ko', 'ko-kr') else language
+
+
 def credit(language):
     """A translation's credit (corner, settings rows, entry comment), shipped only in that language's
     builds: kit/localization/credit.<language>.json. None when the language has no credit file."""
