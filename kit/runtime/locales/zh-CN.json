@@ -1191,5 +1191,8 @@
   "Charging 48 V": "正在给 48 V 充电",
   "Emergency mode": "紧急模式",
   "Crash": "碰撞",
-  "since reset": "重置后"
+  "since reset": "重置后",
+  "Torque gauge max": "扭矩表最大值",
+  "Advanced settings": "高级设置",
+  "Tiles": "磁贴"
 }

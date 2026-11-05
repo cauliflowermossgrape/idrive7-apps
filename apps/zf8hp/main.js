@@ -35,7 +35,7 @@ mgu.run({
         const { ui, settings, log } = ctx;
         const reader = new Reader(ctx);
         // temperatures come from the EGS in °C; shown in the unit picked in Settings (as M Vitals)
-        const fahr = () => settings.get('tempUnit') === 'F';
+        const fahr = () => settings.get('tempUnit') === 'f';
         const tU = () => (fahr() ? '°F' : '°C');
         const T = (c) => (E.finite(c) ? (fahr() ? c * 9 / 5 + 32 : c) : null);
         const tN = (c, digits) => n(T(c), digits);
@@ -51,7 +51,8 @@ mgu.run({
         // row height for count G.table rows from top (rows start under its header) down to 4 over the panel's bottom,
         // their text in their middle (G.table's middle, rowList)
         const tableRow = (top, count) => Math.floor((508 + ex - top) / Math.max(1, count));
-        const demo = () => settings.get('demo') === 'on';
+        // demo data: Always, or Auto while the diagnostic link is not up (no car)
+        const demo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !(reader.diag && reader.diag.available));
         const records = () => demo() ? DEMO.records : reader.records;
         const rec = (d) => records()[d];
         const values = (d) => rec(d) && rec(d).ok ? rec(d).values : [];

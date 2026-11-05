@@ -2,7 +2,7 @@
   "id": "brake_test",
   "title": "Brake Test",
   "description": "100-0 and 200-0 braking distance, peak decel and brake-fade tracking",
-  "version": "1.5.18",
+  "version": "1.5.19",
   "vendor": "custom",
   "loggingId": "OA99",
   "iconGlyph": "brake",
@@ -28,7 +28,7 @@
     }
   ],
   "settings": [
-    {"key": "speedUnit", "label": "Tests", "type": "choice", "default": "kmh",
+    {"key": "speedUnit", "label": "Speed unit", "type": "choice", "default": "kmh",
      "options": [["kmh", "100-0 / 200-0 km/h"], ["mph", "60-0 / 100-0 mph"]]},
     {"key": "trigger", "label": "Counts as hard braking above", "type": "number", "unit": "g", "default": 0.4,
      "steps": [0.2, 0.3, 0.4, 0.5, 0.6]},

@@ -89,6 +89,10 @@ class Settings {
         this.listeners = [];
         for (const s of this.schema) this.values[s.key] = s.default;
         try { Object.assign(this.values, JSON.parse(fs.readFileSync(this.file, 'utf8'))); } catch (e) {}
+        // "aliases": { old value: new value } - a value saved before the setting's values were renamed
+        for (const s of this.schema) {
+            if (s.aliases && Object.prototype.hasOwnProperty.call(s.aliases, this.values[s.key])) this.values[s.key] = s.aliases[this.values[s.key]];
+        }
         // one-time move of saved settings to the new default theme (M Tricolour); later choices are kept
         const th = this.item('theme');
         if (th && this.values._themeV !== 2) {
@@ -116,6 +120,15 @@ class Settings {
     }
     onChange(fn) { this.listeners.push(fn); }
     item(key) { return this.schema.find((s) => s.key === key); }
+    /**
+     * Whether a setting is offered: not "hidden", and its "when" holds - { key: value or [values] }, each other
+     * setting at one of them (e.g. "when": { "diagPage": true }, "when": { "torqueUnit": "kgm" }). Its value
+     * stays as it is while it is not offered.
+     */
+    shown(s) {
+        if (!s || s.hidden) return false;
+        return !s.when || Object.keys(s.when).every((k) => [].concat(s.when[k]).indexOf(this.values[k]) >= 0);
+    }
     /** Human text for the current value of a setting. */
     display(key) {
         const s = this.item(key), v = this.values[key];
@@ -441,6 +454,9 @@ function wireSettings(ctx) {
     const values = (s) => (s.type === 'choice' ? (s.options || []).map((o) => o[0]) : s.type === 'number' ? s.steps || [] : null);
     const refresh = () => Promise.all(schema.map((s) => {
         const comp = 'SET_' + s.key.toUpperCase();
+        if (!ui.comp(comp)) return null;
+        // one another setting offers it ("when"): shown or not as that one is
+        if (s.when) ui.visible(comp, settings.shown(s));
         if (s.type === 'bool') return Promise.all([ui.text(comp, s.label), ui.checked(comp, !!settings.get(s.key))]);
         if (values(s)) return ui.selected(comp, Math.max(0, values(s).indexOf(settings.get(s.key))));
         // other types: two-row buttons in the wide settings state, label above, value below

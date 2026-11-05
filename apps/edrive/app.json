@@ -306,6 +306,12 @@
       ]
     },
     {
+      "key": "diagPage",
+      "label": "Diagnostics pages (UDS replies, scan, raw signals)",
+      "type": "bool",
+      "default": false
+    },
+    {
       "key": "poll",
       "label": "Read charge every",
       "type": "number",
@@ -317,7 +323,10 @@
         15,
         30,
         60
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "sohDays",
@@ -329,27 +338,10 @@
         1,
         7,
         30
-      ]
-    },
-    {
-      "key": "diagPage",
-      "label": "Diagnostics pages (UDS replies, scan, raw signals)",
-      "type": "bool",
-      "default": false
-    },
-    {
-      "key": "gaugeKw",
-      "label": "Power gauge up to",
-      "type": "number",
-      "unit": "kW",
-      "default": 100,
-      "steps": [
-        60,
-        80,
-        100,
-        120,
-        150
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "widgetFps",
@@ -362,7 +354,10 @@
         4,
         8,
         12
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "slowPoll",
@@ -375,7 +370,10 @@
         5,
         10,
         30
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "scanUnit",
@@ -391,6 +389,23 @@
           "120",
           "Climate, heater, A/C (IHKA 0x78)"
         ]
+      ],
+      "when": {
+        "diagPage": true
+      }
+    },
+    {
+      "key": "gaugeKw",
+      "label": "Power gauge up to",
+      "type": "number",
+      "unit": "kW",
+      "default": 100,
+      "steps": [
+        60,
+        80,
+        100,
+        120,
+        150
       ]
     },
     {

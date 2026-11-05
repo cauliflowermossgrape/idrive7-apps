@@ -577,8 +577,8 @@ mgu.run({
         }, 1000);
 
         /* ---------- units ---------- */
-        const T = (c) => (c == null ? null : settings.get('tempUnit') === 'F' ? c * 9 / 5 + 32 : c);
-        const tU = () => (settings.get('tempUnit') === 'F' ? '°F' : '°C');
+        const T = (c) => (c == null ? null : settings.get('tempUnit') === 'f' ? c * 9 / 5 + 32 : c);
+        const tU = () => (settings.get('tempUnit') === 'f' ? '°F' : '°C');
         const Pt = (b) => (b == null ? null : settings.get('pressUnit') === 'psi' ? b * 14.5038 : b);
         const P = (b) => (b == null ? null : settings.get('pressUnit') === 'psi' ? b * 14.5038 : b);
         const V = (k) => (k == null ? null : settings.get('speedUnit') === 'mph' ? k * 0.621371 : k);
@@ -831,7 +831,7 @@ mgu.run({
                 const fk = GROUP[k] && PAIR[GROUP[k]] ? GROUP[k] : k;
                 return usingDemo() || (fuelT[fk] && Date.now() - fuelT[fk] < 15000) ? d[k] : null;
             };
-            const dT = (x) => (G.isNum(x) ? (settings.get('tempUnit') === 'F' ? x * 1.8 : x) : null);
+            const dT = (x) => (G.isNum(x) ? (settings.get('tempUnit') === 'f' ? x * 1.8 : x) : null);
             const iatRise = G.isNum(val('iat')) && G.isNum(d.ambient) ? d.iat - d.ambient : null;
             const off = running ? '' : '  ·  engine off';
             drawTiles(cv, t, [
