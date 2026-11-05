@@ -2,7 +2,7 @@
   "id": "live_adjustments",
   "title": "Engine Config",
   "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
-  "version": "0.7.9",
+  "version": "0.7.10",
   "vendor": "custom",
   "loggingId": "OAA0",
   "iconGlyph": "sliders",
@@ -136,6 +136,7 @@
         ]
       ]
     },
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full", "options": [["full", "Full screen"], ["standard", "Standard"]]},
     {
       "key": "renderer",
       "label": "Renderer",

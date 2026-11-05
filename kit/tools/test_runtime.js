@@ -201,6 +201,48 @@ test('the one-time move to the new default theme: a theme picked on a fresh inst
     assert.strictEqual(new S(schema).get('theme'), 'amber');
 });
 
+test('settings: aliases, "when" and "group" (the drawn settings sheet), "hidden"', async () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'runtime', 'mgu.js'), 'utf8').replace(/\r\n/g, '\n');
+    const cls = src.match(/class Settings[\s\S]*?\n}\n/)[0];
+    const dd = path.join(dir, 'when');
+    fs.mkdirSync(dd);
+    const S = new Function('fs', 'path', 'DATA_DIR', 'log', cls + '\nreturn Settings;')(fs, path, dd, { warn() {}, error() {} });
+    fs.writeFileSync(path.join(dd, 'settings.json'), JSON.stringify({ tempUnit: 'F' }));
+    const schema = [
+        { key: 'tempUnit', label: 'Temperature unit', type: 'choice', default: 'c', options: [['c', 'Celsius'], ['f', 'Fahrenheit']], aliases: { C: 'c', F: 'f' } },
+        { key: 'torqueUnit', label: 'Torque unit', type: 'choice', default: 'nm', options: [['nm', 'Nm'], ['kgm', 'kgm']] },
+        { key: 'maxKgm', label: 'Torque gauge max', type: 'number', default: 100, steps: [50, 100], when: { torqueUnit: 'kgm' } },
+        { key: 'showA', label: 'Tile A', type: 'choice', default: 'auto', options: [['auto', 'Auto'], ['off', 'Hide']], group: 'Tiles' },
+        { key: 'showB', label: 'Tile B', type: 'choice', default: 'auto', options: [['auto', 'Auto'], ['off', 'Hide']], group: 'Tiles' },
+        { key: 'names', label: 'Names', type: 'choice', default: 'en', options: [['en', 'English']], hidden: true },
+        { key: 'advanced', label: 'Advanced settings', type: 'bool', default: false },
+        { key: 'rate', label: 'Display rate', type: 'number', default: 10, steps: [5, 10], when: { advanced: true } },
+    ];
+    const st = new S(schema);
+    assert.strictEqual(st.get('tempUnit'), 'f', 'a value saved as F reads as f');
+    const { listSheet } = require(path.join(__dirname, '..', 'runtime', 'sheet.js'));
+    const sh = listSheet(st, null, {});
+    const labels = () => sh.rows().map((r) => r.label);
+    assert.deepStrictEqual(labels(), ['Temperature unit', 'Torque unit', 'Tiles', 'Advanced settings'], 'kgm-only, grouped, hidden and advanced left out');
+    st.set('torqueUnit', 'kgm');
+    st.set('advanced', true);
+    assert.deepStrictEqual(labels(), ['Temperature unit', 'Torque unit', 'Torque gauge max', 'Tiles', 'Advanced settings', 'Display rate'], 'offered once their "when" holds');
+    // the group: one row that opens its settings; Back returns to it
+    sh.focus = 3; sh.choose();
+    assert.deepStrictEqual([sh.group, labels()], ['Tiles', ['Tile A', 'Tile B']]);
+    sh.focus = 1; sh.choose();
+    assert.strictEqual(sh.open.key, 'showB', 'a grouped setting opens its values');
+    sh.sub = 1; sh.choose();
+    assert.strictEqual(st.get('showB'), 'off');
+    assert.deepStrictEqual([sh.back(), sh.group, sh.focus], [null, null, 3], 'Back: the main list, on the group');
+    assert.strictEqual(sh.back(), 'close');
+    // a switch that hides the setting the focus was on: the focus stays on the list
+    sh.focus = 5; st.set('advanced', false);
+    const r = new Proxy({}, { get: (o, k) => (k === 'extra' ? 0 : () => 40) });
+    sh.draw(r, { bg: '#000', text: '#fff', dim: '#888', sel: '#00f' });
+    assert.strictEqual(sh.focus, labels().length - 1);
+});
+
 test('a new scale keeps the uploads (the renderer keeps them), a new size sends them again', async () => {
     const t = await setup(), g = t.d.gpu;
     try {

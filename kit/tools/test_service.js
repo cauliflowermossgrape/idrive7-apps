@@ -135,7 +135,7 @@ const hasQ = (texts) => texts.some((x) => {
     assert(has(t, 'Engine oil') && has(t, 'Brake fluid'), 'the HMI items stay: ' + t.join(' | '));
     // UDS-only records (unverified for the car) stay off the list since Service 1.4.21; still on Diagnostics
     assert(!has(t, 'Particulate filter (OPF/DPF) [UDS]') && !t.includes('UDS / UNVERIFIED'), 'a DME-only record is not listed: ' + t.join(' | '));
-    s.tab(1);
+    s.tab(2);    // Diagnostics: after Service and Engine
     t = await s.render();
     for (const want of ['KOMBI [0x60] 22 1001: ok', '0x01 Engine oil', 'remaining=27510 km; due=06/2028; status=OK',
         'counter=3; availability=83%; interval=33000 km/24 months', 'CBS read complete - 4 read(s) failed', 'Next (1/']) assert(has(t, want), want + ' in ' + t.join(' | '));

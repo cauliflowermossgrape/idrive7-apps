@@ -35,11 +35,28 @@ const fire = async (pred) => {
 // the kit modules: './kit/x' from kit/runtime, the SDK-bound ones stubbed
 let app = null, diag = null, reader = null, values = {};
 class FakeDiag extends EventEmitter { constructor() { super(); this.available = false; diag = this; } init() {} }
-class FakeReader {
-    constructor() { this.raws = {}; this.pick = {}; reader = this; }
-    static label(c) { return c.did; }
-    key(c) { return c.did; }
-    async value(key) { return values[key] === undefined ? null : values[key]; }
+// the battery unit's values by name; other units (the 48 V battery, the converter, the engine unit's 12 V
+// sensor) answer `replies` by '<ecu>:<DID>' (the data after the DID, hex), through the real reader
+let replies = {};
+const RealReader = require(path.join(KIT, 'dids')).DidReader;
+class FakeReader extends RealReader {
+    constructor() {
+        super({ physical: async (ecu, sid, req) => {
+            const did = ((req[0] << 8) | req[1]).toString(16).toUpperCase().padStart(4, '0'), r = replies[ecu + ':' + did];
+            if (r) return [0x62, req[0], req[1]].concat(r.split(' ').map((x) => parseInt(x, 16)));
+            // the battery unit (0x07) is there while the test gives it a charge value (null: no reading now)
+            if (ecu === 7 && values.soc !== undefined) {
+                return did === 'DDBC' && typeof values.soc === 'number' ? [0x62, req[0], req[1], (values.soc * 10) >> 8, (values.soc * 10) & 0xFF] : [0x7F, sid, 0x31];
+            }
+            return null;
+        } }, { ecu: 7 });
+        reader = this;
+    }
+    async value(key, list) {
+        if (values[key] === undefined && (list || []).some((c) => c.ecu != null && c.ecu !== 7)) return super.value(key, list);
+        if (values[key] === undefined) (list || []).forEach((c) => { this.raws[this.key(c)] = { why: 'no reply', bytes: '' }; });
+        return values[key] === undefined ? null : values[key];
+    }
 }
 const stubs = {
     './kit/mgu': { run(a) { app = a; } },
@@ -60,13 +77,13 @@ function context(dir, set) {
     const defaults = {};
     SPEC.settings.forEach((s) => { defaults[s.key] = s.default; });
     const S = Object.assign(defaults, { demo: 'off' }, set || {});
-    const clicks = {}, texts = [];
+    const clicks = {}, texts = [], watchers = {};
     return {
-        clicks, texts, ui: { onClick: (id, fn) => { clicks[id] = fn; }, text() {}, image: async () => {} },
+        clicks, texts, watchers, ui: { onClick: (id, fn) => { clicks[id] = fn; }, text() {}, image: async () => {} },
         settings: { get: (k) => S[k], onChange() {} },
         log: quiet, spec: SPEC, dataDir: dir,
-        signals: { watch: () => Promise.resolve({}) },
-        onTab() {}, hideButton() {}, onScroll() {}, loop() {},
+        signals: { watch: (iface, ver, handlers) => { Object.assign(watchers, handlers); return Promise.resolve({}); } },
+        onTab() {}, hideButton() {}, onScroll() {}, loop(name, fps, fn) { this.frame = fn; },
         theme: () => themes.theme('m_tricolour'), canvas: (w, h) => {
             const cv = new Canvas(w, h), text = cv.text.bind(cv);
             cv.text = (str, x, y, size, color, opts) => {
@@ -97,6 +114,9 @@ async function boot(dir, vals, set) {
         page: async () => { await ctx.clicks.BTN_PAGE(); await flush(); },
         read: async () => { diag.available = true; diag.emit('available', true); await flush(); },
         readNow: async () => { diag.available = true; ctx.clicks.BTN_READ(); await flush(); },
+        draw: async () => { ctx.texts.length = 0; await ctx.frame(); return ctx.texts.map((x) => x.str); },
+        drive: (kmh) => ctx.watchers.statusCarSpeed2({ speedVehicleCentreOfGravity: kmh / 0.015625 }),
+        signal: (name, v) => ctx.watchers[name](v),
         exit: () => onExit.forEach((f) => f(0)),
     };
 }
@@ -127,8 +147,8 @@ const L0 = () => ({ speed: 0, rpm: 0, rpmT: 0, climate: false, seats: {}, wheel:
 
 const checks = [
     ['1. charge logged once across restarts', async () => {
-        // a charge done while the head unit slept is logged once: the start that logs it also keeps the charge it
-        // read, even when the head unit goes off within 2 min (before the next timed save)
+        // a charge done while the head unit slept stays open until the car drives off, then is logged once: each
+        // start keeps the charge it read, even when the head unit goes off within 2 min (before the next timed save)
         const dir = tmp('charge');
         let b = await boot(dir, { soc: 20, soh: 90, v12: 12.5 });
         await b.read();
@@ -136,26 +156,50 @@ const checks = [
         now += 10 * 3600000;                                     // overnight on the charger
         b = await boot(dir, { soc: 90, soh: 90, v12: 12.5 });
         await b.read();
-        assert.strictEqual(state(dir).log.length, 1, 'the charge is logged');
-        assert.strictEqual(state(dir).lastSoc, 90, 'battery.json keeps the charge that closed the session');
+        assert.deepStrictEqual([state(dir).log, state(dir).session.from, state(dir).session.to], [undefined, 20, 90],
+            'the charge is open until the car drives off');
+        assert.strictEqual(state(dir).lastSoc, 90, 'battery.json keeps the charge read');
         now += 3600000;                                          // switched off a minute later, on again an hour on
         b = await boot(dir, { soc: 90, soh: 90, v12: 12.5 });
         await b.read();
-        assert.strictEqual(state(dir).log.length, 1, 'the same charge is not logged again at the next start');
+        b.drive(30); values.soc = 89.8; now += 30000;
+        await b.read();
+        assert.deepStrictEqual(state(dir).log.map((c) => [c.from, c.to]), [[20, 90]], 'driving off logs the charge once');
         // the diagnostic link back after 10 min while charging, a save (the health read) just before: the charge
-        // logged by the next reading is saved with it, not left to the 2 min timer
-        values.soc = null; now += 10 * 60000;
+        // read by the next reading is saved with it, not left to the 2 min timer
+        b.drive(0); values.soc = null; now += 10 * 60000;
         await b.readNow();                                       // no charge reading, health read and saved
         values.soc = 97; now += 30000;
         await b.read();
-        assert.strictEqual(state(dir).log.length, 2, 'the second charge is logged');
-        assert.strictEqual(state(dir).lastSoc, 97, 'and saved with its reading');
-        // the head unit switched off: the reading the 2 min timer has not saved yet goes with the exit
-        values.soc = 96.5; now += 30000;
+        assert.deepStrictEqual([state(dir).session.from, state(dir).session.to, state(dir).lastSoc], [89.8, 97, 97],
+            'the second charge is saved with its reading');
+        b.drive(30); values.soc = 96.5; now += 30000;
         await b.read();
-        assert.strictEqual(state(dir).lastSoc, 97);
+        assert.strictEqual(state(dir).log.length, 2, 'the second charge is logged');
+        // the head unit switched off: the reading the 2 min timer has not saved yet goes with the exit
+        values.soc = 96.3; now += 30000;
+        await b.read();
+        assert.strictEqual(state(dir).lastSoc, 96.5);
         b.exit();
-        assert.strictEqual(state(dir).lastSoc, 96.5, 'saved on exit');
+        assert.strictEqual(state(dir).lastSoc, 96.3, 'saved on exit');
+    }],
+    ['1c. one charge across the car waking during it', async () => {
+        // plugged in at 7 %, the car wakes now and then while it charges (24 %, 70 %, 100 %): one charge, 7 % to 100 %
+        const dir = tmp('wakes');
+        let b = await boot(dir, { soc: 7, soh: 90, v12: 12.5 });
+        await b.read();
+        for (const soc of [24, 24.6, 70, 100]) {
+            now += soc === 24.6 ? 30000 : 2 * 3600000;           // 24.6: read while still awake
+            if (soc !== 24.6) b = await boot(dir, { soc, soh: 90, v12: 12.5 });
+            values.soc = soc;
+            await b.read();
+        }
+        assert.strictEqual(state(dir).log, undefined, 'nothing logged while parked');
+        now += 3600000;
+        b = await boot(dir, { soc: 100, soh: 90, v12: 12.5 });
+        b.drive(40);
+        await b.read();
+        assert.deepStrictEqual(state(dir).log.map((c) => [c.from, c.to]), [[7, 100]], 'one charge, 7 % to 100 %');
     }],
     ['1b. nothing to save: no file on exit', async () => {
         // demo / no hybrid system: nothing read, so the exit writes nothing (no battery.json on a first run)
@@ -182,6 +226,7 @@ const checks = [
         await b.read();
         now += 8 * 3600000;
         b = await boot(dir, { soc: 80, soh: null, v12: 12.5 });
+        b.drive(30);
         await b.read();
         const c = state(dir).log[0];
         assert(c && typeof c.kwh === 'number', 'logged charge has kWh: ' + JSON.stringify(c));
@@ -239,13 +284,68 @@ const checks = [
     }],
     ['6. English diagnostic status keeps its layout (Russian alone moves and fits the column)', async () => {
         const b = await boot(tmp('status-width'), {}, { diagPage: true });
-        b.reader.raws[SPEC.config.battery.soc[0].did] = { why: 'WWWWWWWWWWWWWWWWWWWWWWWWWW', t: now };
+        b.reader.raws[b.reader.key(SPEC.config.battery.soc[0])] = { why: 'WWWWWWWWWWWWWWWWWWWWWWWWWW', t: now };
         for (let i = 0; i < 3; i++) await b.page();
         b.texts.length = 0;
         await b.page();
         const status = b.texts.find((x) => x.x === 1000 && x.y > 178), read = b.texts.find((x) => x.x === 1290 && x.y > 178);
         assert(status && read, 'diagnostic status and read cells drawn');
         assert.strictEqual(status.str, 'W'.repeat(23) + '…', 'English status cut at 24 characters as before');
+    }],
+    ['8. a 48 V mild hybrid: found by itself, its own page only', async () => {
+        // no high-voltage battery (the battery unit never answers), the 48 V battery and its converter do
+        const dir = tmp('mild');
+        replies = {
+            '2:AA56': '12 84 FF 88 00 30 08 0F C3 50 C2 EC 00 00 3E 5A 12 82 6E 25 2E 00 6A 68 00 00 60 58',
+            '84:DA90': '37 14 B9 28 01 54 FF 97 01 E0 FE 0E 09',
+            '18:5852': '27 88', '18:56F0': '54', '18:59AA': '5C', '18:5854': '59', '18:4604': '01 40',
+        };
+        const b = await boot(dir, { v12: 12.6 }, { demo: 'off' });
+        for (let i = 0; i < 4; i++) { now += 20000; await b.read(); }
+        assert.deepStrictEqual([state(dir).noHybrid, state(dir).mild48], [true, true], JSON.stringify(state(dir)));
+        const t = await b.draw();
+        assert(t.includes('48 V SYSTEM') && !t.includes('RANGE') && !t.includes('CHARGE LOG'), t.join(' | '));
+        ['62', '47.4 V', '-0.57 kW', '96 %', 'CHARGING', 'Charging 12 V', '14.1 V   +34.0 A   +480 W', '47.4 V   -10.5 A   -498 W']
+            .forEach((s) => assert(t.some((x) => x.includes(s)), s + ' in ' + t.join(' | ')));
+        // Details: what the battery reports about its life
+        await b.page();
+        const det = await b.draw();
+        ['412.6 kWh', '5000.0 Ah', '4990.0 Ah', '47.38 V', '11.0 Ah', '10.6 Ah', '10.4 Ah', '11.50 mOhm', '9.25 mOhm', '90 % · 88 %']
+            .forEach((x) => assert(det.includes(x), x + ' in ' + det.join(' | ')));
+        assert(det.includes('DETAILS'), 'the Details tab');
+        // remembered: the next start shows the 48 V page before anything is read
+        const b2 = await boot(dir, {}, { demo: 'off' });
+        assert((await b2.draw()).includes('48 V SYSTEM'));
+        replies = {};
+    }],
+    ['9b. the 12 V charge from the car signal when the battery sensor does not answer', async () => {
+        const dir = tmp('signal');
+        replies = {};
+        const b = await boot(dir, { v12: 12.5 }, { demo: 'off', hybrid: 'no' });
+        b.signal('statusBattery2', { conditionBatteryChargingCondition: 77 });
+        now += 20000; await b.read();
+        const t = await b.draw();
+        assert(t.includes('77 %'), 'the car signal\'s charge: ' + t.join(' | '));
+    }],
+    ['9. no hybrid system: the 12 V battery with the battery sensor\'s values', async () => {
+        const dir = tmp('none');
+        replies = { '18:5852': '27 88', '18:56F0': '54', '18:59AA': '5C', '18:5854': '59', '18:4604': '01 40' };
+        const b = await boot(dir, { v12: 12.5 }, { demo: 'off' });
+        for (let i = 0; i < 7; i++) { now += 20000; await b.read(); }
+        assert.deepStrictEqual([state(dir).noHybrid, state(dir).no48, !!state(dir).mild48], [true, true, false], JSON.stringify(state(dir)));
+        const t = await b.draw();
+        assert(t.includes('12 V BATTERY') && t.includes('CURRENT') && !t.includes('48 V SYSTEM'), t.join(' | '));
+        ['+2.4 A', '84 %', '92 %', '40 A', 'No hybrid system answered.'].forEach((s) => assert(t.includes(s), s + ' in ' + t.join(' | ')));
+        replies = {};
+    }],
+    ['10. a plug-in hybrid stays as it is; the setting picks the system', async () => {
+        const dir = tmp('phev');
+        const b = await boot(dir, { soc: 55, soh: 90, v12: 12.5 }, { demo: 'off' });
+        for (let i = 0; i < 3; i++) { now += 20000; await b.read(); }
+        assert(!state(dir).noHybrid && !state(dir).mild48, JSON.stringify(state(dir)));
+        assert((await b.draw()).includes('RANGE'));
+        assert((await (await boot(dir, {}, { demo: 'off', hybrid: '48v' })).draw()).includes('48 V SYSTEM'));
+        assert((await (await boot(dir, {}, { demo: 'off', hybrid: 'no' })).draw()).includes('ALTERNATOR'));
     }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
@@ -270,6 +370,7 @@ const checks = [
     }
     dirs.forEach((d) => fs.rmSync(d, { recursive: true, force: true }));
     if (failed.length) process.exit(1);
+    console.log('eDrive system checks passed (48 V mild hybrid / none / setting).');
     console.log('eDrive checks passed (charge logged once across restarts / baseline without seat heating / kWh without SOH / use + otherKw saved).');
     process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

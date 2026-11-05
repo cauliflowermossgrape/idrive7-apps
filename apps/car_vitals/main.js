@@ -20,6 +20,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { t: translate } = require('./kit/i18n');
 const Demo = require('./demo');
 const Engine = require('./kit/engine');
 const { GearGuess, selectionOf } = require('./kit/car');
@@ -173,6 +174,26 @@ mgu.run({
             if (awdSeen) return;
             awdSeen = true; log.info('all-wheel drive detected');
             try { fs.writeFileSync(AWD_FILE, JSON.stringify({ seen: true })); } catch (e) { log.warn('awd save: ' + e); }
+        };
+        // the misfire counter's reset: the counts per cylinder when Reset was pressed, kept until the engine unit
+        // starts a new driving cycle (a count lower than its base) - nothing is cleared in the car
+        const MIS_FILE = path.join(ctx.dataDir, 'misfire.json');
+        let misBase = null;
+        try { misBase = JSON.parse(fs.readFileSync(MIS_FILE, 'utf8')) || null; } catch (e) { /* none */ }
+        const saveMisBase = (b) => {
+            misBase = b;
+            try { if (b) fs.writeFileSync(MIS_FILE, JSON.stringify(b)); else fs.unlinkSync(MIS_FILE); } catch (e) { /* none to remove */ }
+        };
+        /** The counts since Reset ({ counts, since } or { counts } this drive), from the engine unit's counts. */
+        const misShown = (counts) => {
+            if (!Array.isArray(counts) || !counts.length || !misBase) return { counts };
+            const b = misBase.counts;
+            if (b.length !== counts.length || counts.some((c, i) => G.isNum(c) && G.isNum(b[i]) && c < b[i])) {
+                log.info('misfire counter: a new driving cycle, the reset is done with');
+                saveMisBase(null);
+                return { counts };
+            }
+            return { counts: counts.map((c, i) => (G.isNum(c) ? c - (b[i] || 0) : c)), since: misBase.t };
         };
         // which groups / sources this car has sent real data for (see MOVE, GROUP)
         const SEEN_FILE = path.join(ctx.dataDir, 'seen.json');
@@ -556,8 +577,8 @@ mgu.run({
         }, 1000);
 
         /* ---------- units ---------- */
-        const T = (c) => (c == null ? null : settings.get('tempUnit') === 'F' ? c * 9 / 5 + 32 : c);
-        const tU = () => (settings.get('tempUnit') === 'F' ? '°F' : '°C');
+        const T = (c) => (c == null ? null : settings.get('tempUnit') === 'f' ? c * 9 / 5 + 32 : c);
+        const tU = () => (settings.get('tempUnit') === 'f' ? '°F' : '°C');
         const Pt = (b) => (b == null ? null : settings.get('pressUnit') === 'psi' ? b * 14.5038 : b);
         const P = (b) => (b == null ? null : settings.get('pressUnit') === 'psi' ? b * 14.5038 : b);
         const V = (k) => (k == null ? null : settings.get('speedUnit') === 'mph' ? k * 0.621371 : k);
@@ -735,14 +756,25 @@ mgu.run({
             ].filter(Boolean));
         }
 
-        /** Misfires this driving cycle: the total big, each cylinder below (from OBD service 06). */
-        function misfireTile(cv, t, x, y, w, h, counts) {
+        /** Misfires this driving cycle, or since Reset: the total big, each cylinder below (from OBD service 06). */
+        function misfireTile(cv, t, x, y, w, h, raw) {
             const p = G.panel(cv, t, x, y, w, h, 'Misfires'), yb = p.y + p.h;       // (a bottom tile's panel goes on down)
+            const { counts, since } = misShown(raw);
             const ok = Array.isArray(counts) && counts.length, big = h > 200 ? 100 : 64;
             const total = ok ? counts.reduce((a, c) => a + (c || 0), 0) : null;
             const col = !ok ? t.dim : total === 0 ? GO : total < 20 ? t.warn : t.crit;
             const tw = cv.text(ok ? String(total) : '--', x + 18, y + 52 + big * 0.78, big, col, { font: 'num' });
-            cv.text(ok ? 'this drive' : '', x + 28 + tw, y + 52 + big * 0.78, 24, t.dim);
+            const at = since ? new Date(since) : null, pad = (n) => (n < 10 ? '0' : '') + n;
+            cv.text(!ok ? '' : at ? translate('since reset') + ' ' + pad(at.getHours()) + ':' + pad(at.getMinutes()) : 'this drive',
+                x + 28 + tw, y + 52 + big * 0.78, 24, t.dim);
+            // Reset: the counts from now on (asks once more: Confirm); only while there are counts to reset
+            if (ok) {
+                G.button(cv, t, x + w - 18 - 132, y + 14, 132, 40, 'Reset', () => {
+                    saveMisBase({ counts: raw.slice(), t: Date.now() });
+                    log.info('misfire counter reset at ' + raw.join(', '));
+                    return render();
+                }, { key: 'misfire', confirm: true });
+            }
             if (!ok) { cv.text(usingDemo() ? 'no data' : fuelWhy('misfire'), x + 18, yb - G.MARGIN, 22, t.dim); return; }
             // per cylinder: a cell each along the bottom, "Cyl n" over its count; with room below the page (the
             // panel stretched) up to 16 higher, nearer the other tiles' graphs and lines
@@ -799,7 +831,7 @@ mgu.run({
                 const fk = GROUP[k] && PAIR[GROUP[k]] ? GROUP[k] : k;
                 return usingDemo() || (fuelT[fk] && Date.now() - fuelT[fk] < 15000) ? d[k] : null;
             };
-            const dT = (x) => (G.isNum(x) ? (settings.get('tempUnit') === 'F' ? x * 1.8 : x) : null);
+            const dT = (x) => (G.isNum(x) ? (settings.get('tempUnit') === 'f' ? x * 1.8 : x) : null);
             const iatRise = G.isNum(val('iat')) && G.isNum(d.ambient) ? d.iat - d.ambient : null;
             const off = running ? '' : '  ·  engine off';
             drawTiles(cv, t, [

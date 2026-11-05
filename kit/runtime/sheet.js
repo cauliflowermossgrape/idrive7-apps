@@ -110,37 +110,51 @@ function values(s) {
 /** opts: { version } (the app's, shown at the settings' top) */
 function listSheet(settings, title, opts) {
     const version = opts && opts.version;
-    const schema = settings.schema.filter((s) => !s.hidden);
+    // the settings offered now (settings.shown: "hidden", "when"); those with one "group" are one row that
+    // opens their own list ({ group, items })
+    const offered = () => (settings.shown ? settings.schema.filter((s) => settings.shown(s)) : settings.schema.filter((s) => !s.hidden));
+    const entries = (group) => {
+        const out = [];
+        offered().forEach((s) => {
+            if (group) { if (s.group === group) out.push(s); return; }
+            if (!s.group) { out.push(s); return; }
+            if (!out.some((e) => e.group === s.group)) out.push({ group: s.group, items: [] });
+        });
+        return out;
+    };
     const sh = {
         title: title || 'Settings',
         focus: 0, open: null, sub: 0,        // open: the setting whose values are listed
+        group: null, gfocus: 0,              // group: the group whose settings are listed (focus kept in gfocus)
         controller: false,                  // the controller was used: show where it is
         rows() {
             if (this.open) {
                 const cur = settings.get(this.open.key);
                 return values(this.open).map((v) => ({ label: v[1], kind: 'radio', on: v[0] === cur }));
             }
-            return schema.map((s) => (s.type === 'bool'
-                ? { label: s.label, kind: 'toggle', on: !!settings.get(s.key) }
-                : { label: s.label, value: settings.display(s.key), kind: values(s) ? 'more' : null }));
+            return entries(this.group).map((s) => (s.group && !s.key ? { label: s.group, kind: 'more' }
+                : s.type === 'bool' ? { label: s.label, kind: 'toggle', on: !!settings.get(s.key) }
+                    : { label: s.label, value: settings.display(s.key), kind: values(s) ? 'more' : null }));
         },
         draw(r, t) {
             r.clear(t.bg);
             const rows = this.rows();
+            // a switch that hid settings below the focus ("when"): the focus stays on the list
+            if (!this.open) this.focus = Math.min(this.focus, rows.length - 1);
             // the header's tab names the sheet; a value list names its setting here
-            if (this.open) r.text(this.open.label, 44, TOP + 40, 32, t.text, { font: 'bold' });
+            if (this.open || this.group) r.text(this.open ? this.open.label : this.group, 44, TOP + 40, 32, t.text, { font: 'bold' });
             else if (version) r.text('Version ' + version, 44, TOP + 38, 24, t.dim);
             const targets = [];
             // Back (a value list) / Done (the settings): top right
             const bw = 150, bx = W - 40 - bw, by = TOP + 8;
             // (the controller reaches it turning up from the first row: place -1)
-            pill(r, t, bx, by, bw, 46, this.open ? 'Back' : 'Done', this.controller && (this.open ? this.sub : this.focus) === -1);
+            pill(r, t, bx, by, bw, 46, this.open || this.group ? 'Back' : 'Done', this.controller && (this.open ? this.sub : this.focus) === -1);
             targets.push({ x: bx - 10, y: by - 6, w: bw + 20, h: 58, act: () => this.back() });
             const rects = list(r, t, this.key(), rows, this.open ? this.sub : this.focus, TOP + 74, this.controller);
             rects.forEach((q) => targets.push(Object.assign(q, { act: () => { if (this.open) this.sub = q.i; else this.focus = q.i; return this.choose(); } })));
             return targets;
         },
-        key() { return this.open ? 'v_' + this.open.key : 'settings'; },
+        key() { return this.open ? 'v_' + this.open.key : this.group ? 'g_' + this.group : 'settings'; },
         /** the controller is on Done / Back: pushed up from here it goes to the header's tabs */
         top() { return (this.open ? this.sub : this.focus) === -1; },
         /** touch: the list moved by dy (px, + = further down the list) while the finger is on it */
@@ -167,8 +181,9 @@ function listSheet(settings, title, opts) {
                 this.open = null;
                 return null;
             }
-            const s = schema[this.focus];
+            const s = entries(this.group)[this.focus];
             if (!s) return null;
+            if (s.group && !s.key) { this.group = s.group; this.gfocus = this.focus; this.focus = 0; return null; }
             if (s.type === 'bool') settings.set(s.key, !settings.get(s.key));
             else if (values(s)) {
                 this.open = s;
@@ -178,6 +193,7 @@ function listSheet(settings, title, opts) {
         },
         back() {
             if (this.open) { this.open = null; return null; }
+            if (this.group) { this.group = null; this.focus = this.gfocus; return null; }
             return 'close';
         },
     };

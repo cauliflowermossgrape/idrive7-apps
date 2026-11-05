@@ -1773,3 +1773,55 @@ Recorded by the car	차량에 저장된 기록
 STATE OF CHARGE, LAST 5	최근 충전 상태 5회
 older	이전
 TIME SPENT PER CHARGE BAND	충전량 구간별 누적 시간
+# eDrive: the 48 V mild hybrid page and the 12 V details
+Plug-in hybrid	플러그인 하이브리드
+48 V mild hybrid	48 V 마일드 하이브리드
+None (12 V only)	없음 (12 V만)
+48 V system	48 V 시스템
+48 V battery	48 V 배터리
+DC/DC converter	DC/DC 컨버터
+12 V details	12 V 상세
+12 V SIDE	12 V 측
+48 V SIDE	48 V 측
+VOLTAGE	전압
+HEALTH	상태
+ALTERNATOR	발전기
+CURRENT · CHARGE	전류 · 충전
+No hybrid system answered.	하이브리드 시스템이 응답하지 않았습니다.
+Hybrid car? Settings > Hybrid system	하이브리드 차량: 설정 > 하이브리드 시스템
+no current reading	전류 값 없음
+Standby	대기
+Error	오류
+Precharge	프리차지
+Charging 12 V	12 V 충전 중
+Charging 48 V	48 V 충전 중
+Emergency mode	비상 모드
+Crash	충돌
+since reset	초기화 후
+Torque gauge max	토크 게이지 최대값
+Advanced settings	고급 설정
+Tiles	타일
+Over its life	전체 수명 동안
+Capacity and resistance	용량 및 저항
+ENERGY THROUGHPUT	에너지 처리량
+CHARGED IN TOTAL	총 충전량
+DISCHARGED IN TOTAL	총 방전량
+PACK VOLTAGE	팩 전압
+NOMINAL CAPACITY	정격 용량
+MEASURED CAPACITY	측정 용량
+CURRENT CAPACITY	현재 용량
+RESISTANCE NOW	현재 저항
+RESISTANCE WHEN NEW	신품 저항
+CHARGE · HEALTH ESTIMATE QUALITY	충전 · 상태 추정 품질
+Spark plugs and engine	점화 플러그 및 엔진
+LIFE BY ENGINE HOURS	엔진 시간 기준 수명
+LIFE BY FUEL USED	연료 사용 기준 수명
+ENGINE HOURS ON IT	사용 엔진 시간
+DISTANCE ON IT	사용 거리
+SPARK PLUGS: LEFT	점화 플러그: 남은 거리
+SPARK PLUGS: DRIVEN	점화 플러그: 주행 거리
+ENGINE HOURS	엔진 시간
+SOOT	그을음
+LOAD (ADAPTED)	적재량 (적응)
+ASH (ADAPTED)	재 (적응)
+Reading the engine unit...	엔진 제어 장치를 읽는 중...

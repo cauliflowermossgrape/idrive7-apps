@@ -52,6 +52,8 @@ jobs:
       - run: node kit/tools/test_brake_test.js
       - run: node kit/tools/test_gforce.js
       - run: node kit/tools/test_service.js
+      - run: node kit/tools/test_service_engine.js
+      - run: node kit/tools/test_car_vitals.js
       - run: node kit/tools/test_zh.js
       - run: cd kit/tools && python3 test_zh.py
       - run: python3 kit/tools/test_import_diagnostic_ru.py

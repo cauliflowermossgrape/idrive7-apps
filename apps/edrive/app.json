@@ -1,8 +1,8 @@
 {
   "id": "edrive",
   "title": "eDrive",
-  "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, 12 V battery voltage and a home-screen widget",
-  "version": "2.7.6",
+  "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, 12 V battery voltage and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
+  "version": "2.7.8",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -24,7 +24,8 @@
       "highVoltageStorageInfoToExternal": "s"
     },
     "de.bmw.infotainment.vehicle.CDS": {
-      "statusEngineSpeed2": "rs"
+      "statusEngineSpeed2": "rs",
+      "statusBattery2": "rs"
     },
     "de.bmw.infotainment.climate.climatemaster.ClimateMaster": {
       "statusClimateSystemOn": "rs",
@@ -197,11 +198,15 @@
         ],
         [
           "yes",
-          "Yes"
+          "Plug-in hybrid"
+        ],
+        [
+          "48v",
+          "48 V mild hybrid"
         ],
         [
           "no",
-          "No (12 V only)"
+          "None (12 V only)"
         ]
       ]
     },
@@ -302,6 +307,12 @@
       ]
     },
     {
+      "key": "diagPage",
+      "label": "Diagnostics pages (UDS replies, scan, raw signals)",
+      "type": "bool",
+      "default": false
+    },
+    {
       "key": "poll",
       "label": "Read charge every",
       "type": "number",
@@ -313,7 +324,10 @@
         15,
         30,
         60
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "sohDays",
@@ -325,27 +339,10 @@
         1,
         7,
         30
-      ]
-    },
-    {
-      "key": "diagPage",
-      "label": "Diagnostics pages (UDS replies, scan, raw signals)",
-      "type": "bool",
-      "default": false
-    },
-    {
-      "key": "gaugeKw",
-      "label": "Power gauge up to",
-      "type": "number",
-      "unit": "kW",
-      "default": 100,
-      "steps": [
-        60,
-        80,
-        100,
-        120,
-        150
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "widgetFps",
@@ -358,7 +355,10 @@
         4,
         8,
         12
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "slowPoll",
@@ -371,7 +371,10 @@
         5,
         10,
         30
-      ]
+      ],
+      "when": {
+        "diagPage": true
+      }
     },
     {
       "key": "scanUnit",
@@ -387,6 +390,23 @@
           "120",
           "Climate, heater, A/C (IHKA 0x78)"
         ]
+      ],
+      "when": {
+        "diagPage": true
+      }
+    },
+    {
+      "key": "gaugeKw",
+      "label": "Power gauge up to",
+      "type": "number",
+      "unit": "kW",
+      "default": 100,
+      "steps": [
+        60,
+        80,
+        100,
+        120,
+        150
       ]
     },
     {
@@ -754,7 +774,226 @@
             }
           }
         ]
-      }
+      },
+      "b48": [
+        {
+          "ecu": 2,
+          "did": "AA56",
+          "timeoutMs": 1500,
+          "fields": {
+            "v": {
+              "bytes": 2,
+              "factor": 0.01,
+              "min": 30,
+              "max": 60
+            },
+            "a": {
+              "at": 2,
+              "bytes": 2,
+              "factor": 0.1,
+              "signed": true,
+              "min": -1000,
+              "max": 1000
+            },
+            "temp": {
+              "at": 4,
+              "bytes": 2,
+              "factor": 0.5,
+              "signed": true,
+              "min": -40,
+              "max": 100
+            },
+            "soc": {
+              "at": 14,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "soh": {
+              "at": 26,
+              "bytes": 1,
+              "min": 40,
+              "max": 110
+            },
+            "kwh": {
+              "at": 6,
+              "bytes": 2,
+              "factor": 0.2
+            },
+            "ahIn": {
+              "at": 8,
+              "bytes": 2,
+              "factor": 0.1
+            },
+            "ahOut": {
+              "at": 10,
+              "bytes": 2,
+              "factor": 0.1
+            },
+            "socQ": {
+              "at": 15,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "pack": {
+              "at": 16,
+              "bytes": 2,
+              "factor": 0.01,
+              "min": 30,
+              "max": 60
+            },
+            "capNom": {
+              "at": 18,
+              "bytes": 1,
+              "factor": 0.1,
+              "min": 1
+            },
+            "rNew": {
+              "at": 19,
+              "bytes": 1,
+              "factor": 0.25,
+              "min": 0.25
+            },
+            "rNow": {
+              "at": 20,
+              "bytes": 1,
+              "factor": 0.25,
+              "min": 0.25
+            },
+            "capMeas": {
+              "at": 22,
+              "bytes": 1,
+              "factor": 0.1,
+              "min": 1
+            },
+            "capNow": {
+              "at": 23,
+              "bytes": 1,
+              "factor": 0.1,
+              "min": 1
+            },
+            "sohQ": {
+              "at": 27,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            }
+          },
+          "note": "48 V battery BATT48 (MESSWERTE_BATT48): terminal voltage first, current negative = charging; layout from Live Data's builtin/BATT48.json, not yet confirmed on a car"
+        }
+      ],
+      "dc48": [
+        {
+          "ecu": 84,
+          "did": "DA90",
+          "timeoutMs": 1500,
+          "fields": {
+            "v12": {
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 5,
+              "max": 18
+            },
+            "v48": {
+              "at": 2,
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 20,
+              "max": 60
+            },
+            "a12": {
+              "at": 4,
+              "bytes": 2,
+              "factor": 0.1,
+              "signed": true,
+              "min": -500,
+              "max": 500
+            },
+            "a48": {
+              "at": 6,
+              "bytes": 2,
+              "factor": 0.1,
+              "signed": true,
+              "min": -200,
+              "max": 200
+            },
+            "w12": {
+              "at": 8,
+              "bytes": 2,
+              "signed": true,
+              "min": -6000,
+              "max": 6000
+            },
+            "w48": {
+              "at": 10,
+              "bytes": 2,
+              "signed": true,
+              "min": -6000,
+              "max": 6000
+            },
+            "mode": {
+              "at": 12,
+              "bytes": 1
+            }
+          },
+          "note": "48 V / 12 V converter PCU48 (STATUS_PCU48_BETRIEBSZUSTAND); layout from Live Data's builtin/PCU48.json, not yet confirmed on a car"
+        }
+      ],
+      "i12": [
+        {
+          "ecu": 18,
+          "did": "5852",
+          "bytes": 2,
+          "factor": 0.02,
+          "offset": -200,
+          "min": -200,
+          "max": 200,
+          "note": "12 V battery current from the battery sensor (IBS), negative = discharging"
+        }
+      ],
+      "soc12": [
+        {
+          "ecu": 18,
+          "did": "56F0",
+          "bytes": 1,
+          "signed": true,
+          "min": 1,
+          "max": 100
+        }
+      ],
+      "soh12": [
+        {
+          "ecu": 18,
+          "did": "59AA",
+          "bytes": 1,
+          "signed": true,
+          "min": 1,
+          "max": 100
+        }
+      ],
+      "t12": [
+        {
+          "ecu": 18,
+          "did": "5854",
+          "bytes": 1,
+          "factor": 0.75,
+          "offset": -48,
+          "min": -40,
+          "max": 90
+        }
+      ],
+      "alt12": [
+        {
+          "ecu": 18,
+          "did": "4604",
+          "bytes": 2,
+          "factor": 0.125,
+          "signed": true,
+          "min": -50,
+          "max": 400
+        }
+      ]
     },
     "scaling": {
       "batteryTemp": {

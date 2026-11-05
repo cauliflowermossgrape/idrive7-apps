@@ -2,7 +2,7 @@
   "id": "live_data",
   "title": "Live Data",
   "description": "Read-only live values from the car and its control units, a trip computer with fuel cost, and gauge screens of your own, one of them as the home-screen widget",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "vendor": "custom",
   "loggingId": "OA9D",
   "iconGlyph": "gauge",
@@ -162,27 +162,6 @@
       ]
     },
     {
-      "key": "names",
-      "label": "Names",
-      "type": "choice",
-      "default": "en",
-      "options": [
-        [
-          "en",
-          "English"
-        ],
-        [
-          "de",
-          "German (BMW)"
-        ],
-        [
-          "id",
-          "BMW identifiers"
-        ]
-      ],
-      "hidden": true
-    },
-    {
       "key": "autoScan",
       "label": "Scan units when opened",
       "type": "bool",
@@ -251,7 +230,8 @@
         4,
         8,
         12
-      ]
+      ],
+      "when": {"advanced": true}
     },
     {
       "key": "trips",
@@ -321,6 +301,7 @@
       "type": "bool",
       "default": false
     },
+    {"key": "advanced", "label": "Advanced settings", "type": "bool", "default": false},
     {
       "key": "theme",
       "label": "Colour theme",
