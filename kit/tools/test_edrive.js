@@ -35,11 +35,28 @@ const fire = async (pred) => {
 // the kit modules: './kit/x' from kit/runtime, the SDK-bound ones stubbed
 let app = null, diag = null, reader = null, values = {};
 class FakeDiag extends EventEmitter { constructor() { super(); this.available = false; diag = this; } init() {} }
-class FakeReader {
-    constructor() { this.raws = {}; this.pick = {}; reader = this; }
-    static label(c) { return c.did; }
-    key(c) { return c.did; }
-    async value(key) { return values[key] === undefined ? null : values[key]; }
+// the battery unit's values by name; other units (the 48 V battery, the converter, the engine unit's 12 V
+// sensor) answer `replies` by '<ecu>:<DID>' (the data after the DID, hex), through the real reader
+let replies = {};
+const RealReader = require(path.join(KIT, 'dids')).DidReader;
+class FakeReader extends RealReader {
+    constructor() {
+        super({ physical: async (ecu, sid, req) => {
+            const did = ((req[0] << 8) | req[1]).toString(16).toUpperCase().padStart(4, '0'), r = replies[ecu + ':' + did];
+            if (r) return [0x62, req[0], req[1]].concat(r.split(' ').map((x) => parseInt(x, 16)));
+            // the battery unit (0x07) is there while the test gives it a charge value (null: no reading now)
+            if (ecu === 7 && values.soc !== undefined) {
+                return did === 'DDBC' && typeof values.soc === 'number' ? [0x62, req[0], req[1], (values.soc * 10) >> 8, (values.soc * 10) & 0xFF] : [0x7F, sid, 0x31];
+            }
+            return null;
+        } }, { ecu: 7 });
+        reader = this;
+    }
+    async value(key, list) {
+        if (values[key] === undefined && (list || []).some((c) => c.ecu != null && c.ecu !== 7)) return super.value(key, list);
+        if (values[key] === undefined) (list || []).forEach((c) => { this.raws[this.key(c)] = { why: 'no reply', bytes: '' }; });
+        return values[key] === undefined ? null : values[key];
+    }
 }
 const stubs = {
     './kit/mgu': { run(a) { app = a; } },
@@ -66,7 +83,7 @@ function context(dir, set) {
         settings: { get: (k) => S[k], onChange() {} },
         log: quiet, spec: SPEC, dataDir: dir,
         signals: { watch: (iface, ver, handlers) => { Object.assign(watchers, handlers); return Promise.resolve({}); } },
-        onTab() {}, hideButton() {}, onScroll() {}, loop() {},
+        onTab() {}, hideButton() {}, onScroll() {}, loop(name, fps, fn) { this.frame = fn; },
         theme: () => themes.theme('m_tricolour'), canvas: (w, h) => {
             const cv = new Canvas(w, h), text = cv.text.bind(cv);
             cv.text = (str, x, y, size, color, opts) => {
@@ -97,6 +114,7 @@ async function boot(dir, vals, set) {
         page: async () => { await ctx.clicks.BTN_PAGE(); await flush(); },
         read: async () => { diag.available = true; diag.emit('available', true); await flush(); },
         readNow: async () => { diag.available = true; ctx.clicks.BTN_READ(); await flush(); },
+        draw: async () => { ctx.texts.length = 0; await ctx.frame(); return ctx.texts.map((x) => x.str); },
         drive: (kmh) => ctx.watchers.statusCarSpeed2({ speedVehicleCentreOfGravity: kmh / 0.015625 }),
         exit: () => onExit.forEach((f) => f(0)),
     };
@@ -265,13 +283,53 @@ const checks = [
     }],
     ['6. English diagnostic status keeps its layout (Russian alone moves and fits the column)', async () => {
         const b = await boot(tmp('status-width'), {}, { diagPage: true });
-        b.reader.raws[SPEC.config.battery.soc[0].did] = { why: 'WWWWWWWWWWWWWWWWWWWWWWWWWW', t: now };
+        b.reader.raws[b.reader.key(SPEC.config.battery.soc[0])] = { why: 'WWWWWWWWWWWWWWWWWWWWWWWWWW', t: now };
         for (let i = 0; i < 3; i++) await b.page();
         b.texts.length = 0;
         await b.page();
         const status = b.texts.find((x) => x.x === 1000 && x.y > 178), read = b.texts.find((x) => x.x === 1290 && x.y > 178);
         assert(status && read, 'diagnostic status and read cells drawn');
         assert.strictEqual(status.str, 'W'.repeat(23) + '…', 'English status cut at 24 characters as before');
+    }],
+    ['8. a 48 V mild hybrid: found by itself, its own page only', async () => {
+        // no high-voltage battery (the battery unit never answers), the 48 V battery and its converter do
+        const dir = tmp('mild');
+        replies = {
+            '2:AA56': '12 84 FF 88 00 30 00 00 00 00 00 00 00 00 3E 5A 00 00 00 00 00 00 00 00 00 00 60 5A',
+            '84:DA90': '37 14 B9 28 01 54 FF 97 01 E0 FE 0E 09',
+            '18:5852': '27 88', '18:56F0': '54', '18:59AA': '5C', '18:5854': '59', '18:4604': '01 40',
+        };
+        const b = await boot(dir, { v12: 12.6 }, { demo: 'off' });
+        for (let i = 0; i < 4; i++) { now += 20000; await b.read(); }
+        assert.deepStrictEqual([state(dir).noHybrid, state(dir).mild48], [true, true], JSON.stringify(state(dir)));
+        const t = await b.draw();
+        assert(t.includes('48 V SYSTEM') && !t.includes('RANGE') && !t.includes('CHARGE LOG'), t.join(' | '));
+        ['62', '47.4 V', '-0.57 kW', '96 %', 'CHARGING', 'Charging 12 V', '14.1 V   +34.0 A   +480 W', '47.4 V   -10.5 A   -498 W']
+            .forEach((s) => assert(t.some((x) => x.includes(s)), s + ' in ' + t.join(' | ')));
+        // remembered: the next start shows the 48 V page before anything is read
+        const b2 = await boot(dir, {}, { demo: 'off' });
+        assert((await b2.draw()).includes('48 V SYSTEM'));
+        replies = {};
+    }],
+    ['9. no hybrid system: the 12 V battery with the battery sensor\'s values', async () => {
+        const dir = tmp('none');
+        replies = { '18:5852': '27 88', '18:56F0': '54', '18:59AA': '5C', '18:5854': '59', '18:4604': '01 40' };
+        const b = await boot(dir, { v12: 12.5 }, { demo: 'off' });
+        for (let i = 0; i < 7; i++) { now += 20000; await b.read(); }
+        assert.deepStrictEqual([state(dir).noHybrid, state(dir).no48, !!state(dir).mild48], [true, true, false], JSON.stringify(state(dir)));
+        const t = await b.draw();
+        assert(t.includes('12 V BATTERY') && t.includes('CURRENT') && !t.includes('48 V SYSTEM'), t.join(' | '));
+        ['+2.4 A', '84 %', '92 %', '40 A', 'No hybrid system answered.'].forEach((s) => assert(t.includes(s), s + ' in ' + t.join(' | ')));
+        replies = {};
+    }],
+    ['10. a plug-in hybrid stays as it is; the setting picks the system', async () => {
+        const dir = tmp('phev');
+        const b = await boot(dir, { soc: 55, soh: 90, v12: 12.5 }, { demo: 'off' });
+        for (let i = 0; i < 3; i++) { now += 20000; await b.read(); }
+        assert(!state(dir).noHybrid && !state(dir).mild48, JSON.stringify(state(dir)));
+        assert((await b.draw()).includes('RANGE'));
+        assert((await (await boot(dir, {}, { demo: 'off', hybrid: '48v' })).draw()).includes('48 V SYSTEM'));
+        assert((await (await boot(dir, {}, { demo: 'off', hybrid: 'no' })).draw()).includes('ALTERNATOR'));
     }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
@@ -296,6 +354,7 @@ const checks = [
     }
     dirs.forEach((d) => fs.rmSync(d, { recursive: true, force: true }));
     if (failed.length) process.exit(1);
+    console.log('eDrive system checks passed (48 V mild hybrid / none / setting).');
     console.log('eDrive checks passed (charge logged once across restarts / baseline without seat heating / kWh without SOH / use + otherKw saved).');
     process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

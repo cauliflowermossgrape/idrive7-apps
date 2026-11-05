@@ -1171,3 +1171,30 @@ up	升挡
 down	降挡
 skip	跳挡降挡
 m ago	分钟前
+Boost gauge max	增压表最大值
+# eDrive: the 48 V mild hybrid page and the 12 V details
+Plug-in hybrid	插电混动
+48 V mild hybrid	48 V 轻混
+None (12 V only)	无（仅 12 V 电池）
+48 V system	48 V 系统
+48 V battery	48 V 电池
+DC/DC converter	DC/DC 转换器
+12 V details	12 V 详情
+12 V SIDE	12 V 侧
+48 V SIDE	48 V 侧
+SUPPLYING	供电中
+VOLTAGE	电压
+HEALTH	健康度
+CURRENT	电流
+ALTERNATOR	发电机
+CURRENT · CHARGE	电流 · 充电
+No hybrid system answered.	没有混动系统应答。
+Hybrid car? Settings > Hybrid system	混动车型？设置 > 混动系统
+no current reading	无电流读数
+Standby	待机
+Error	错误
+Precharge	预充电
+Charging 12 V	正在给 12 V 充电
+Charging 48 V	正在给 48 V 充电
+Emergency mode	紧急模式
+Crash	碰撞
