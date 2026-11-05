@@ -1801,3 +1801,15 @@ since reset	초기화 후
 Torque gauge max	토크 게이지 최대값
 Advanced settings	고급 설정
 Tiles	타일
+Over its life	전체 수명 동안
+Capacity and resistance	용량 및 저항
+ENERGY THROUGHPUT	에너지 처리량
+CHARGED IN TOTAL	총 충전량
+DISCHARGED IN TOTAL	총 방전량
+PACK VOLTAGE	팩 전압
+NOMINAL CAPACITY	정격 용량
+MEASURED CAPACITY	측정 용량
+CURRENT CAPACITY	현재 용량
+RESISTANCE NOW	현재 저항
+RESISTANCE WHEN NEW	신품 저항
+CHARGE · HEALTH ESTIMATE QUALITY	충전 · 상태 추정 품질

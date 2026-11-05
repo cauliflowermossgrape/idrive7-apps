@@ -1194,5 +1194,17 @@
   "since reset": "重置后",
   "Torque gauge max": "扭矩表最大值",
   "Advanced settings": "高级设置",
-  "Tiles": "磁贴"
+  "Tiles": "磁贴",
+  "Over its life": "使用寿命内",
+  "Capacity and resistance": "容量和内阻",
+  "ENERGY THROUGHPUT": "能量吞吐量",
+  "CHARGED IN TOTAL": "累计充入",
+  "DISCHARGED IN TOTAL": "累计放出",
+  "PACK VOLTAGE": "电池组电压",
+  "NOMINAL CAPACITY": "额定容量",
+  "MEASURED CAPACITY": "测得容量",
+  "CURRENT CAPACITY": "当前容量",
+  "RESISTANCE NOW": "当前内阻",
+  "RESISTANCE WHEN NEW": "新电池内阻",
+  "CHARGE · HEALTH ESTIMATE QUALITY": "电量 · 健康度估算质量"
 }

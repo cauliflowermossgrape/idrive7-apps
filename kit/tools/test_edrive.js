@@ -116,6 +116,7 @@ async function boot(dir, vals, set) {
         readNow: async () => { diag.available = true; ctx.clicks.BTN_READ(); await flush(); },
         draw: async () => { ctx.texts.length = 0; await ctx.frame(); return ctx.texts.map((x) => x.str); },
         drive: (kmh) => ctx.watchers.statusCarSpeed2({ speedVehicleCentreOfGravity: kmh / 0.015625 }),
+        signal: (name, v) => ctx.watchers[name](v),
         exit: () => onExit.forEach((f) => f(0)),
     };
 }
@@ -295,7 +296,7 @@ const checks = [
         // no high-voltage battery (the battery unit never answers), the 48 V battery and its converter do
         const dir = tmp('mild');
         replies = {
-            '2:AA56': '12 84 FF 88 00 30 00 00 00 00 00 00 00 00 3E 5A 00 00 00 00 00 00 00 00 00 00 60 5A',
+            '2:AA56': '12 84 FF 88 00 30 08 0F C3 50 C2 EC 00 00 3E 5A 12 82 6E 25 2E 00 6A 68 00 00 60 58',
             '84:DA90': '37 14 B9 28 01 54 FF 97 01 E0 FE 0E 09',
             '18:5852': '27 88', '18:56F0': '54', '18:59AA': '5C', '18:5854': '59', '18:4604': '01 40',
         };
@@ -306,10 +307,25 @@ const checks = [
         assert(t.includes('48 V SYSTEM') && !t.includes('RANGE') && !t.includes('CHARGE LOG'), t.join(' | '));
         ['62', '47.4 V', '-0.57 kW', '96 %', 'CHARGING', 'Charging 12 V', '14.1 V   +34.0 A   +480 W', '47.4 V   -10.5 A   -498 W']
             .forEach((s) => assert(t.some((x) => x.includes(s)), s + ' in ' + t.join(' | ')));
+        // Details: what the battery reports about its life
+        await b.page();
+        const det = await b.draw();
+        ['412.6 kWh', '5000.0 Ah', '4990.0 Ah', '47.38 V', '11.0 Ah', '10.6 Ah', '10.4 Ah', '11.50 mΩ', '9.25 mΩ', '90 % · 88 %']
+            .forEach((x) => assert(det.includes(x), x + ' in ' + det.join(' | ')));
+        assert(det.includes('DETAILS'), 'the Details tab');
         // remembered: the next start shows the 48 V page before anything is read
         const b2 = await boot(dir, {}, { demo: 'off' });
         assert((await b2.draw()).includes('48 V SYSTEM'));
         replies = {};
+    }],
+    ['9b. the 12 V charge from the car signal when the battery sensor does not answer', async () => {
+        const dir = tmp('signal');
+        replies = {};
+        const b = await boot(dir, { v12: 12.5 }, { demo: 'off', hybrid: 'no' });
+        b.signal('statusBattery2', { conditionBatteryChargingCondition: 77 });
+        now += 20000; await b.read();
+        const t = await b.draw();
+        assert(t.includes('77 %'), 'the car signal\'s charge: ' + t.join(' | '));
     }],
     ['9. no hybrid system: the 12 V battery with the battery sensor\'s values', async () => {
         const dir = tmp('none');

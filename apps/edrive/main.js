@@ -57,7 +57,7 @@ const GO = '#2fd27a';
 // the live pages (battery; the battery unit and scan in the Diagnostic page) are live.js's
 const PAGES_HYBRID = ['main', 'energy', 'battery', 'log', 'diag'];
 const PAGES_12V = ['main', 'diag'];
-const PAGES_48V = ['main', 'diag'];
+const PAGES_48V = ['main', 'b48info', 'diag'];
 // what the Diagnostic page lists per system (config.battery keys)
 const VALUES_12V = ['i12', 'soc12', 'soh12', 't12', 'alt12'];
 const VALUES_48V = ['b48', 'dc48'];
@@ -108,7 +108,8 @@ class Demo {
             pace: 55 + 25 * Math.sin(s / 20), seats: { DR: 2, PS: s % 30 < 15 ? 1 : 0 }, wheel: true, blower: 4,
             batt: { avg: 18, min: 17, max: 20 },
             charge: { from: 28, to: 97, toT: this.t0 - 3 * 3600000, kwh: 7.6 },
-            b48: { v: 47.4 + Math.sin(s / 6), a: -18 * Math.sin(s / 6), temp: 24, soc: 62 + 6 * Math.sin(s / 30), soh: 96 },
+            b48: { v: 47.4 + Math.sin(s / 6), a: -18 * Math.sin(s / 6), temp: 24, soc: 62 + 6 * Math.sin(s / 30), soh: 96,
+                kwh: 412.6, ahIn: 9112.4, ahOut: 9087.9, socQ: 92, pack: 47.38, capNom: 11.0, rNew: 9.25, rNow: 11.5, capMeas: 10.6, capNow: 10.4, sohQ: 88 },
             dc: { mode: 9, v12: 14.1, v48: 47.4, a12: 34 + 4 * Math.sin(s / 4), a48: -10.5, w12: 480, w48: -498 },
             x12: { i12: 2.4 + Math.sin(s / 5), soc12: 84, soh12: 92, t12: 19, alt12: 38 },
         };
@@ -160,7 +161,7 @@ mgu.run({
         const live = { soc: null, socT: 0, soh: G.isNum(st.soh) ? st.soh : null, sohT: st.sohT || 0, v12: null, v12T: 0, ambient: null, speed: null, rpm: null, rpmT: 0,
             climate: null, ac: null, seats: {}, wheel: null, blower: null, blowerTop: 8, pd: null, batt: null, hvV: null,
             pace: null, lastMove: 0, raw: {}, standSince: 0, acRaw: null, acKw: null, lscV: null, lscVT: 0,
-            b48: null, b48T: 0, dc: null, dcT: 0, x12: {}, x12T: {} };
+            b48: null, b48T: 0, dc: null, dcT: 0, x12: {}, x12T: {}, bat12: null, bat12T: 0 };
 
         /* ---------- electric driving: what the car really does per % ----------
          * seg = distance since the last charge reading, and whether the engine ran meanwhile.
@@ -317,6 +318,12 @@ mgu.run({
         }, log).then((s) => log.info('speed ' + (s.error ? 'error: ' + s.error : 'subscribed')));
         ctx.signals.watch('de.bmw.infotainment.vehicle.CDS', '1', {
             statusEngineSpeed2: (v) => { const r = sc('rpm', v.actualValueRPMEngineCrankshaft); if (r !== null && r >= 0 && r < 12000) onRpm(r); },
+            // the 12 V battery's charge as the car sends it (no request to any unit): the one shown when the engine unit's
+            // battery sensor does not answer
+            statusBattery2: (v) => {
+                const c = v && v.conditionBatteryChargingCondition;
+                if (G.isNum(c) && c >= 0 && c <= 100) { live.bat12 = c; live.bat12T = Date.now(); }
+            },
         }, log).then((s) => log.info('rpm ' + (s.error ? 'error: ' + s.error : 'subscribed')));
         ctx.signals.watch('de.bmw.infotainment.climate.climatemaster.ClimateMaster', '1', {
             // both are lists, one entry per zone
@@ -628,7 +635,8 @@ mgu.run({
                 engine: G.isNum(live.rpm) && live.rpm > 400 && now - live.rpmT < 5000, speed: live.speed,
                 blower: live.blower, blowerTop: live.blowerTop, batt: live.batt,
                 b48: live.b48T && now - live.b48T < maxAge ? live.b48 : null, dc: live.dcT && now - live.dcT < maxAge ? live.dc : null,
-                x12: Object.keys(live.x12).reduce((o, k) => Object.assign(o, now - live.x12T[k] < maxAge ? { [k]: live.x12[k] } : {}), {}),
+                x12: Object.keys(live.x12).reduce((o, k) => Object.assign(o, now - live.x12T[k] < maxAge ? { [k]: live.x12[k] } : {}),
+                    live.bat12T && now - live.bat12T < 120000 ? { signal: live.bat12 } : {}),
             };
         }
         /** Range of a full battery at tC: { lo, hi, mid } in km (no temperature: 10 °C assumed). */
@@ -736,7 +744,7 @@ mgu.run({
 
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t, d) {
-            const names = Object.assign({ main: ({ phev: 'Range', mhev: '48 V system', none: '12 V battery' })[kind()], energy: 'Energy', log: 'Charge log', diag: 'Diagnostic', signals: 'Signals' }, lv.NAMES);
+            const names = Object.assign({ main: ({ phev: 'Range', mhev: '48 V system', none: '12 V battery' })[kind()], b48info: 'Details', energy: 'Energy', log: 'Charge log', diag: 'Diagnostic', signals: 'Signals' }, lv.NAMES);
             G.frame(cv, t, pages().map((p) => names[p]), page, [d.demo && { text: 'DEMO' }]);
         }
 
@@ -781,7 +789,7 @@ mgu.run({
             const ex = G.panel(cv, t, 1088, 44, 488, 468, '12 V details').h - 468;
             const rows = [
                 ['CURRENT', signed(x.i12, 1, 'A')],
-                ['CHARGE', num(x.soc12, 0, '%')],
+                ['CHARGE', num(G.isNum(x.soc12) ? x.soc12 : x.signal, 0, '%')],
                 ['HEALTH', num(x.soh12, 0, '%'), G.isNum(x.soh12) && x.soh12 < 60 ? t.warn : null],
                 ['TEMPERATURE', G.isNum(x.t12) ? G.fmt(T(x.t12), 0) + ' ' + tU() : '--'],
                 ['ALTERNATOR', num(x.alt12, 0, 'A')],
@@ -791,6 +799,21 @@ mgu.run({
             cv.fillRect(1112, 412 + Math.round(ex / 2), 440, 1, t.panelEdge);
             ['No hybrid system answered.', 'Hybrid car? Settings > Hybrid system'].forEach((l, i) =>
                 cv.text(l, 1112, 452 + Math.round(ex / 2) + i * 32, 20, i ? t.dim : t.text));
+        }
+
+        /** 48 V mild hybrids, Details: what the 48 V battery reports about itself over its life. */
+        function render48Info(cv, t, d) {
+            const b = d.b48 || {};
+            const ex = G.panel(cv, t, 24, 44, 760, 468, 'Over its life').h - 468, ey = Math.round(ex / 6);
+            [['ENERGY THROUGHPUT', num(b.kwh, 1, 'kWh')], ['CHARGED IN TOTAL', num(b.ahIn, 1, 'Ah')],
+                ['DISCHARGED IN TOTAL', num(b.ahOut, 1, 'Ah')], ['PACK VOLTAGE', num(b.pack, 2, 'V')]]
+                .forEach((r, i) => row(cv, t, 48, 712, 130 + i * (84 + ey), r[0], r[1]));
+            G.panel(cv, t, 808, 44, 768, 468, 'Capacity and resistance');
+            const worn = G.isNum(b.rNow) && G.isNum(b.rNew) && b.rNow > b.rNew * 1.5 ? t.warn : null;
+            [['NOMINAL CAPACITY', num(b.capNom, 1, 'Ah')], ['MEASURED CAPACITY', num(b.capMeas, 1, 'Ah')],
+                ['CURRENT CAPACITY', num(b.capNow, 1, 'Ah')], ['RESISTANCE NOW', num(b.rNow, 2, 'mΩ'), worn],
+                ['RESISTANCE WHEN NEW', num(b.rNew, 2, 'mΩ')], ['CHARGE · HEALTH ESTIMATE QUALITY', (G.isNum(b.socQ) ? G.fmt(b.socQ, 0) + ' %' : '--') + ' · ' + (G.isNum(b.sohQ) ? G.fmt(b.sohQ, 0) + ' %' : '--')]]
+                .forEach((r, i) => row(cv, t, 832, 720, 120 + i * (64 + ey), r[0], r[1], r[2]));
         }
 
         /** 48 V mild hybrids: the 48 V battery, the converter between it and the 12 V side, the 12 V battery. */
@@ -825,7 +848,7 @@ mgu.run({
             const [state, col] = v12State(t, d.v12);
             cv.text(state, 1552, 360, 22, col, { font: 'bold', align: 'right' });
             const x = d.x12 || {};
-            row(cv, t, 792, 760, 470 + ex2, 'CURRENT · CHARGE', signed(x.i12, 1, 'A') + '   ' + num(x.soc12, 0, '%'));
+            row(cv, t, 792, 760, 470 + ex2, 'CURRENT · CHARGE', signed(x.i12, 1, 'A') + '   ' + num(G.isNum(x.soc12) ? x.soc12 : x.signal, 0, '%'));
         }
 
         function renderMain(cv, t, d) {
@@ -1191,6 +1214,7 @@ mgu.run({
             else if (pg[page] === 'energy') renderEnergy(cv, t, d);
             else if (pg[page] === 'log') renderLog(cv, t, d);
             else if (kind() === 'phev') renderMain(cv, t, d);
+            else if (pg[page] === 'b48info') render48Info(cv, t, d);
             else if (kind() === 'mhev') render48(cv, t, d);
             else render12V(cv, t, d);
             header(cv, t, d);

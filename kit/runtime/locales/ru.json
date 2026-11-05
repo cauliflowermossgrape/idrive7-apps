@@ -1713,5 +1713,17 @@
   "since reset": "после сброса",
   "Torque gauge max": "Максимум шкалы момента",
   "Advanced settings": "Дополнительные настройки",
-  "Tiles": "Плитки"
+  "Tiles": "Плитки",
+  "Over its life": "За весь срок службы",
+  "Capacity and resistance": "Ёмкость и сопротивление",
+  "ENERGY THROUGHPUT": "ПРОПУЩЕННАЯ ЭНЕРГИЯ",
+  "CHARGED IN TOTAL": "ВСЕГО ЗАРЯЖЕНО",
+  "DISCHARGED IN TOTAL": "ВСЕГО РАЗРЯЖЕНО",
+  "PACK VOLTAGE": "НАПРЯЖЕНИЕ БЛОКА",
+  "NOMINAL CAPACITY": "НОМИНАЛЬНАЯ ЁМКОСТЬ",
+  "MEASURED CAPACITY": "ИЗМЕРЕННАЯ ЁМКОСТЬ",
+  "CURRENT CAPACITY": "ТЕКУЩАЯ ЁМКОСТЬ",
+  "RESISTANCE NOW": "СОПРОТИВЛЕНИЕ СЕЙЧАС",
+  "RESISTANCE WHEN NEW": "СОПРОТИВЛЕНИЕ НОВОЙ",
+  "CHARGE · HEALTH ESTIMATE QUALITY": "ТОЧНОСТЬ ОЦЕНКИ ЗАРЯДА · СОСТОЯНИЯ"
 }

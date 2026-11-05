@@ -24,7 +24,8 @@
       "highVoltageStorageInfoToExternal": "s"
     },
     "de.bmw.infotainment.vehicle.CDS": {
-      "statusEngineSpeed2": "rs"
+      "statusEngineSpeed2": "rs",
+      "statusBattery2": "rs"
     },
     "de.bmw.infotainment.climate.climatemaster.ClimateMaster": {
       "statusClimateSystemOn": "rs",
@@ -813,6 +814,70 @@
               "bytes": 1,
               "min": 40,
               "max": 110
+            },
+            "kwh": {
+              "at": 6,
+              "bytes": 2,
+              "factor": 0.2
+            },
+            "ahIn": {
+              "at": 8,
+              "bytes": 2,
+              "factor": 0.1
+            },
+            "ahOut": {
+              "at": 10,
+              "bytes": 2,
+              "factor": 0.1
+            },
+            "socQ": {
+              "at": 15,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "pack": {
+              "at": 16,
+              "bytes": 2,
+              "factor": 0.01,
+              "min": 30,
+              "max": 60
+            },
+            "capNom": {
+              "at": 18,
+              "bytes": 1,
+              "factor": 0.1,
+              "min": 1
+            },
+            "rNew": {
+              "at": 19,
+              "bytes": 1,
+              "factor": 0.25,
+              "min": 0.25
+            },
+            "rNow": {
+              "at": 20,
+              "bytes": 1,
+              "factor": 0.25,
+              "min": 0.25
+            },
+            "capMeas": {
+              "at": 22,
+              "bytes": 1,
+              "factor": 0.1,
+              "min": 1
+            },
+            "capNow": {
+              "at": 23,
+              "bytes": 1,
+              "factor": 0.1,
+              "min": 1
+            },
+            "sohQ": {
+              "at": 27,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
             }
           },
           "note": "48 V battery BATT48 (MESSWERTE_BATT48): terminal voltage first, current negative = charging; layout from Live Data's builtin/BATT48.json, not yet confirmed on a car"
