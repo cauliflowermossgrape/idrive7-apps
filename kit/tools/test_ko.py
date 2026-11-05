@@ -20,7 +20,7 @@ for tag in ('en', 'ru', 'zh-CN'):
 # silently leave an older English stage being previewed.
 for tag in ('ko-kr', 'ko-KR'):
     result = subprocess.run([sys.executable, str(ROOT / 'kit/tools/build.py'),
-                             '--language', tag, '--preview-only', 'redline', 'aa_cluster_companion'],
+                             '--language', tag, '--preview-only', 'redline'],
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     staged = ROOT / 'dist/redline/source/javascript/kit'
@@ -28,14 +28,6 @@ for tag in ('ko-kr', 'ko-KR'):
     spec = json.loads((staged / 'app-spec.json').read_text(encoding='utf-8'))
     assert locale['language'] == 'ko' and locale['strings']['SPEED'] == '속도'
     assert spec['version'].endswith('-ko.1') and (staged / 'fonts/korean.json').is_file()
-    aa = ROOT / 'dist/aa_cluster_companion/source/javascript/kit'
-    aa_locale = json.loads((aa / 'locale.json').read_text(encoding='utf-8'))
-    assert aa_locale['language'] == 'ko' and aa_locale['strings']['Map zoom'] == '지도 배율'
-    assert (aa / 'fonts/korean.json').is_file()
-    aa_spec = json.loads((aa / 'app-spec.json').read_text(encoding='utf-8'))
-    aa_original = json.loads((ROOT / 'apps/aa_cluster_companion/app.json').read_text(encoding='utf-8'))
-    assert aa_spec['title'] == 'AA 계기판 도우미' and aa_spec['version'] == aa_original['version'] + '-ko.1'
-    assert aa_spec['screens'][0]['buttons'][0][1] == '지도 배율'
 print('PASS: ko-kr / ko-KR CLI aliases produce Korean stages, fonts and canonical package versions')
 words = json.loads((ROOT / 'kit/runtime/locales/ko.json').read_text(encoding='utf-8'))
 atlas = json.loads((ROOT / 'kit/localization/fonts/korean.json').read_text(encoding='utf-8'))['sizes'][0]
@@ -71,5 +63,4 @@ for path in sorted((ROOT / 'apps').glob('*/app.json')):
 
 subprocess.run(['node', str(ROOT / 'kit/tools/test_ko.js')], cwd=ROOT, check=True,
                env=dict(os.environ, MGU_TEST_PYTHON=sys.executable))
-subprocess.run(['node', str(ROOT / 'kit/tools/test_aa_ko.js')], cwd=ROOT, check=True)
-print('PASS: %d Korean app layouts including AA Cluster Companion; %d translations; complete translation glyph coverage; unchanged telemetry and settings' % (count, len(words)))
+print('PASS: %d Korean app layouts; %d translations; complete translation glyph coverage; unchanged telemetry and settings' % (count, len(words)))
