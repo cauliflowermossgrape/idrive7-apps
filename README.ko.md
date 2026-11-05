@@ -17,9 +17,7 @@ Translation by：jaimeen shim
 
 - Redline, Service, M Vitals, eDrive, Live Data, G-Force, Warm-Up, Virtual Dyno,
   Brake Test, Drag Timer, Fault Scanner, Engine Config, Transmission Config,
-  AA Cluster Companion, Doom의 공통 설정 및 앱 표시 문구 번역.
-- AA Cluster Companion (`aa_cluster_companion`)의 지도 배율, 회전 안내 카드,
-  사용자 지정, 변경 적용·재시작 상태와 안내 문구도 한국어로 표시합니다.
+  Doom의 공통 설정 및 앱 표시 문구 번역.
 - `kit/runtime/locales/ko.tsv`와 `ko.json`: 한국어 사전 1,774개 항목.
 - Noto Sans CJK KR 기반 한글 글꼴. 번역에 쓰인 모든 글자, KS X 1001의 완성형
   한글 2,350자, 호환 자모, 숫자·단위·기호를 하나의 공용 아틀라스에 포함.
@@ -79,12 +77,11 @@ Python 3와 Node.js 14 이상이 필요합니다. 기존 프로젝트에 이미 
 python kit/tools/make_kit.py --language ko redline service car_vitals edrive warmup gforce
 ```
 
-앱 이름을 생략하면 전체 15개 앱을 한국어로 빌드합니다.
+앱 이름을 생략하면 전체 14개 앱을 한국어로 빌드합니다.
 ```sh
 python kit/tools/make_kit.py --language ko
 ```
 
-AA Cluster Companion의 파일명은 `aa_cluster_companion@0.3.5-ko.1.mgu`입니다.
 Doom은 첫 빌드에 Freedoom 게임
 데이터를 다운로드하므로 인터넷 연결이 필요합니다. 차량 설치·제거 방법과 요구되는
 MGU 접근 환경은 원본 [README](README.md)와 [배포 안내](deploy/car/README.txt)를 따릅니다.
@@ -105,7 +102,6 @@ powershell.exe -ExecutionPolicy bypass -File push-to-car.ps1 install -key "key" 
 **한국어 미리보기:** 먼저 `--language ko`로 빌드하세요. `preview.js`는 빌드된 앱의
 언어를 사용합니다. 기본 빌드를 다시 실행하면 `dist/<id>`가 영문으로 바뀝니다.
 `ko-kr`, `ko-KR`, `ko_KR`도 `ko`와 같은 한국어 빌드 태그로 지원합니다.
-`aa_cluster_companion`도 한국어 빌드에 포함됩니다 (지도 배율·회전 안내 카드·적용·재시작 안내).
 Windows에서는 `python3` 대신 `python`을 사용하세요.
 
 ```sh
