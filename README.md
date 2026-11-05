@@ -111,7 +111,7 @@ More in [How apps draw](#44-how-apps-draw-remote-hmi-rhmi) and [`kit/renderd`](k
 <td><img src="docs/screens/redline.png" alt="Redline"><br><b>Redline</b>: G20-style rev bar, big gear, shift scoring</td>
 </tr>
 <tr>
-<td><img src="docs/screens/service.png" alt="Service"><br><b>Service</b>: service requirements, next service, details per item</td>
+<td><img src="docs/screens/service.png" alt="Service"><br><b>Service</b>: service requirements, next service, details per item; an Engine page with oil life, spark plugs, engine hours and the particulate filter</td>
 <td><img src="docs/screens/doom.png" alt="Doom"><br><b>Doom</b>: Freedoom in full resolution across the whole screen, on the iDrive controller, saves itself</td>
 </tr>
 <tr>

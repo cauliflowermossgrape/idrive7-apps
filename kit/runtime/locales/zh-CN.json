@@ -1206,5 +1206,18 @@
   "CURRENT CAPACITY": "当前容量",
   "RESISTANCE NOW": "当前内阻",
   "RESISTANCE WHEN NEW": "新电池内阻",
-  "CHARGE · HEALTH ESTIMATE QUALITY": "电量 · 健康度估算质量"
+  "CHARGE · HEALTH ESTIMATE QUALITY": "电量 · 健康度估算质量",
+  "Spark plugs and engine": "火花塞和发动机",
+  "Particulate filter": "颗粒过滤器",
+  "LIFE BY ENGINE HOURS": "按发动机小时的寿命",
+  "LIFE BY FUEL USED": "按燃油消耗的寿命",
+  "ENGINE HOURS ON IT": "已用发动机小时",
+  "DISTANCE ON IT": "已行驶里程",
+  "SPARK PLUGS: LEFT": "火花塞：剩余",
+  "SPARK PLUGS: DRIVEN": "火花塞：已行驶",
+  "ENGINE HOURS": "发动机小时",
+  "SOOT": "碳烟",
+  "LOAD (ADAPTED)": "负载（自适应）",
+  "ASH (ADAPTED)": "灰分（自适应）",
+  "Reading the engine unit...": "正在读取发动机控制单元..."
 }

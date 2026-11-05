@@ -1811,5 +1811,17 @@
   "CURRENT CAPACITY": "현재 용량",
   "RESISTANCE NOW": "현재 저항",
   "RESISTANCE WHEN NEW": "신품 저항",
-  "CHARGE · HEALTH ESTIMATE QUALITY": "충전 · 상태 추정 품질"
+  "CHARGE · HEALTH ESTIMATE QUALITY": "충전 · 상태 추정 품질",
+  "Spark plugs and engine": "점화 플러그 및 엔진",
+  "LIFE BY ENGINE HOURS": "엔진 시간 기준 수명",
+  "LIFE BY FUEL USED": "연료 사용 기준 수명",
+  "ENGINE HOURS ON IT": "사용 엔진 시간",
+  "DISTANCE ON IT": "사용 거리",
+  "SPARK PLUGS: LEFT": "점화 플러그: 남은 거리",
+  "SPARK PLUGS: DRIVEN": "점화 플러그: 주행 거리",
+  "ENGINE HOURS": "엔진 시간",
+  "SOOT": "그을음",
+  "LOAD (ADAPTED)": "적재량 (적응)",
+  "ASH (ADAPTED)": "재 (적응)",
+  "Reading the engine unit...": "엔진 제어 장치를 읽는 중..."
 }

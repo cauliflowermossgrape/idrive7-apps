@@ -310,7 +310,7 @@ const checks = [
         // Details: what the battery reports about its life
         await b.page();
         const det = await b.draw();
-        ['412.6 kWh', '5000.0 Ah', '4990.0 Ah', '47.38 V', '11.0 Ah', '10.6 Ah', '10.4 Ah', '11.50 mΩ', '9.25 mΩ', '90 % · 88 %']
+        ['412.6 kWh', '5000.0 Ah', '4990.0 Ah', '47.38 V', '11.0 Ah', '10.6 Ah', '10.4 Ah', '11.50 mOhm', '9.25 mOhm', '90 % · 88 %']
             .forEach((x) => assert(det.includes(x), x + ' in ' + det.join(' | ')));
         assert(det.includes('DETAILS'), 'the Details tab');
         // remembered: the next start shows the 48 V page before anything is read

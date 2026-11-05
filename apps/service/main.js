@@ -28,6 +28,9 @@
  * Enable "Diagnostics page" in Settings for paginated replies; "Read CBS" refreshes on demand.
  * Otherwise CBS is read at startup and 60 s after the last scan; explicit demo mode disables reads.
  * "CBS details" cycles through the extra card fields without crowding the native three-tile layout.
+ * Engine (a page of its own): what the engine unit (DME 0x12, the B58 / B48 / B38 petrol engines) says about its
+ * oil, spark plugs, hours and particulate filter, read with 0x22 as Live Data reads them (ENGINE below), on that
+ * page at most once a minute; an engine unit that has none of them shows "--".
  * HMI Polish letters use ASCII equivalents because the upstream font atlases lack Polish glyphs.
  * Raw diagnostic JSON preserves Unicode as escaped code units rather than unreadable glyphs.
  */
@@ -35,6 +38,7 @@ const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { Diag, hex, NRC, replyTo } = require('./kit/diag');
+const { DidReader } = require('./kit/dids');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
 const { t: translate, getLanguage, plural } = require('./kit/i18n');
@@ -92,6 +96,25 @@ const CBS_SOURCES = [
     { address: 0x29, name: 'DSC', dids: [0x1001] },
 ];
 const CBS_REFRESH_MS = 60000;
+// the engine unit's wear values (DME8FF_R: B58 / B48 / B38), as Live Data reads them (apps/live_data/useful.js
+// "Oil", "Wear and service"; layouts from its builtin DME8FF_R catalog); kit/dids.js candidates, first that answers
+const ENGINE_REFRESH_MS = 60000;
+const ENGINE = {
+    oilHours: [{ did: '411A', bytes: 2, at: 0, factor: 1 / 512, min: 0, max: 120 }],          // oil life left by engine hours, %
+    oilFuel: [{ did: '411A', bytes: 2, at: 2, factor: 1 / 512, min: 0, max: 120 }],           // by fuel used, %
+    oilEngineH: [{ did: '411A', bytes: 4, at: 4, factor: 1 / 3600, min: 0, max: 100000 }],    // engine hours on this oil (s)
+    oilKm: [{ did: '4404', bytes: 2, factor: 10, min: 0, max: 655350 }],                       // distance on this oil
+    plugsLeft: [{ did: '4163', bytes: 2, at: 4, factor: 100, signed: true, min: 1, max: 300000 },
+        { did: '5489', bytes: 2, factor: 100, signed: true, min: 1, max: 300000 }],           // spark plugs: distance left (0 = none)
+    plugsDriven: [{ did: '4163', bytes: 4, at: 6, min: 0, max: 2000000 }],                     // spark plugs: distance driven
+    engineHours: [{ did: '583D', bytes: 2, factor: 0.1, min: 0, max: 7000 }],                  // engine operating hours (6 min steps)
+    soot: [{ did: '5444', bytes: 2, factor: 0.01, signed: true, min: 0, max: 200 },
+        { did: '5774', bytes: 2, factor: 0.001, signed: true, min: 0, max: 30 }],             // particulate filter soot, g
+    opfLoad: [{ did: '558C', bytes: 2, factor: 0.001, signed: true, min: 0, max: 30 }],        // its adapted total load
+    opfAsh: [{ did: '558B', bytes: 2, factor: 0.001, signed: true, min: 0, max: 30 }],         // its adapted ash
+};
+const ENGINE_DEMO = { oilHours: 64, oilFuel: 58, oilEngineH: 142, oilKm: 7830, plugsLeft: 41200, plugsDriven: 18800,
+    engineHours: 1384, soot: 6.4, opfLoad: 0.312, opfAsh: 0.041 };
 const CBS_RECORD_SIZE = 12;
 const CBS_TECHNICAL_IDS = [0xE0, 0xE1, 0xFF];
 const bytesText = (a) => Array.from(a, (b) => hex(b)).join(' ');
@@ -489,8 +512,26 @@ mgu.run({
             return true;
         }
 
+        /* ---------- the engine unit's wear values (Engine page) ---------- */
+        const engine = { values: {}, at: null, busy: false, error: '' };
+        let engineReader = null;
+        async function readEngine(force) {
+            if (engine.busy || useDemo() || (!force && engine.at && Date.now() - engine.at < ENGINE_REFRESH_MS)) return;
+            engine.busy = true; changed();
+            try {
+                const d = await link();
+                engineReader = engineReader || new DidReader(d, { ecu: 0x12 });
+                for (const k of Object.keys(ENGINE)) engine.values[k] = await engineReader.value(k, ENGINE[k]);
+                engine.error = Object.keys(ENGINE).some((k) => engine.values[k] !== null) ? '' : 'the engine unit has none of these values';
+            } catch (e) {
+                engine.error = String(e.message || e);
+            }
+            engine.at = Date.now(); engine.busy = false; changed();
+        }
+
         /* ---------- drawing ---------- */
-        const pages = () => (settings.get('diagPage') ? ['Service', 'Diagnostics'] : ['Service']);
+        const pages = () => ['Service', 'Engine'].concat(settings.get('diagPage') ? ['Diagnostics'] : []);
+        const pageName = () => pages()[page];
         const COL = (t, c) => [t.dim, t.crit, t.warn, GO, t.warn][c] || t.dim;
         const LBL = ['', 'DUE NOW', 'DUE SOON', 'OK', 'DUE SOON'];
 
@@ -548,6 +589,33 @@ mgu.run({
                     cv.text(it.native ? LBL[it.colour] : 'UDS / UNVERIFIED', 1425, y + 31, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
                 }
             });
+        }
+
+        /** The engine unit's oil, spark plugs, hours and particulate filter. */
+        function drawEngine(cv, t) {
+            const v = useDemo() ? ENGINE_DEMO : engine.values;
+            const num = (x, dec, unit) => (G.isNum(x) ? G.fmt(x, dec) + (unit ? ' ' + unit : '') : '--');
+            const km = (x) => (G.isNum(x) ? Math.round(x).toLocaleString('en-US').replace(/,/g, ' ') + ' km' : '--');
+            const row = (x, w, y, label, value, col) => {
+                cv.text(label, x, y, 22, t.dim, { font: 'bold', spacing: 1.2 });
+                cv.text(value, x + w, y, 28, col || (value === '--' ? t.dim : t.text), { font: 'bold', align: 'right' });
+            };
+            const life = (p) => (!G.isNum(p) ? null : p < 10 ? t.crit : p < 25 ? t.warn : null);
+            const ex = G.pageBottom(cv) - G.BOTTOM, step = 70 + Math.round(ex / 4);
+            G.panel(cv, t, 24, 44, 500, 468, 'Oil');
+            [['LIFE BY ENGINE HOURS', num(v.oilHours, 0, '%'), life(v.oilHours)], ['LIFE BY FUEL USED', num(v.oilFuel, 0, '%'), life(v.oilFuel)],
+                ['ENGINE HOURS ON IT', num(v.oilEngineH, 0, 'h')], ['DISTANCE ON IT', km(v.oilKm)]]
+                .forEach((r, i) => row(48, 452, 136 + i * step, r[0], r[1], r[2]));
+            G.panel(cv, t, 544, 44, 500, 468, 'Spark plugs and engine');
+            [['SPARK PLUGS: LEFT', km(v.plugsLeft), G.isNum(v.plugsLeft) && v.plugsLeft < 5000 ? t.warn : null],
+                ['SPARK PLUGS: DRIVEN', km(v.plugsDriven)], ['ENGINE HOURS', num(v.engineHours, 0, 'h')]]
+                .forEach((r, i) => row(568, 452, 136 + i * step, r[0], r[1], r[2]));
+            G.panel(cv, t, 1064, 44, 512, 468, 'Particulate filter');
+            [['SOOT', num(v.soot, 1, 'g')], ['LOAD (ADAPTED)', num(v.opfLoad, 3)], ['ASH (ADAPTED)', num(v.opfAsh, 3)]]
+                .forEach((r, i) => row(1088, 464, 136 + i * step, r[0], r[1]));
+            const note = useDemo() ? '' : engine.busy ? 'Reading the engine unit...' : engine.error ? 'Engine unit: ' + engine.error
+                : engine.at ? 'From the engine unit (B58 / B48 / B38), read ' + new Date(engine.at).toTimeString().slice(0, 5) : 'Not read yet';
+            cv.text(fit(cv, note, 20, 1500), 48, 496 + ex, 20, engine.error ? t.warn : t.dim);
         }
 
         function drawDiag(cv, t) {
@@ -627,7 +695,8 @@ mgu.run({
             const its = items();
             sel = Math.min(sel, Math.max(0, its.length - 1));
             page = Math.min(page, pages().length - 1);
-            if (page === 0) drawMain(cv, t, its); else drawDiag(cv, t);
+            if (pageName() === 'Engine') readEngine(false);
+            if (pageName() === 'Service') drawMain(cv, t, its); else if (pageName() === 'Engine') drawEngine(cv, t); else drawDiag(cv, t);
             G.frame(cv, t, pages(), page, [useDemo() && { text: 'DEMO' }]);
             await ui.image('MAIN_GFX', cv);
         }
@@ -637,20 +706,22 @@ mgu.run({
             const n = items().length;
             reset = reset && reset.busy ? reset : null;         // any other button disarms a reset
             hint = null; msg = '';
-            if (page > 0) {
+            if (pageName() === 'Diagnostics') {
                 if (diagPage + 1 < diagPageCount) diagPage++;
                 else { page = 0; sel = 0; diagPage = 0; }
-            } else if (n && sel + 1 < n) sel++;
-            else if (pages().length > 1) page = 1; else sel = 0;
+            } else if (pageName() === 'Engine') page = (page + 1) % pages().length;
+            else if (n && sel + 1 < n) sel++;
+            else page = 1;
             changed();
         });
         ui.onClick('BTN_DETAILS', () => {
-            if (page > 0) { refreshCbs(); return; }
-            if (page === 0 && openCard(sel)) return;
+            if (pageName() === 'Diagnostics') { refreshCbs(); return; }
+            if (pageName() === 'Engine') { readEngine(true); return; }
+            if (openCard(sel)) return;
             reset = reset && reset.busy ? reset : null; msg = ''; details();
         });
         ui.onClick('BTN_RESET', () => {
-            if (page > 0) { showMsg('Diagnostics is read-only'); return; }
+            if (pageName() !== 'Service') { showMsg(pageName() + ' is read-only'); return; }
             resetPress();
         });
         // where the kit runs the screen the rows open their cards (with Reset): none of these in its bar

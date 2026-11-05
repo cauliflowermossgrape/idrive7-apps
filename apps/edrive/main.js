@@ -807,13 +807,13 @@ mgu.run({
             const ex = G.panel(cv, t, 24, 44, 760, 468, 'Over its life').h - 468, ey = Math.round(ex / 6);
             [['ENERGY THROUGHPUT', num(b.kwh, 1, 'kWh')], ['CHARGED IN TOTAL', num(b.ahIn, 1, 'Ah')],
                 ['DISCHARGED IN TOTAL', num(b.ahOut, 1, 'Ah')], ['PACK VOLTAGE', num(b.pack, 2, 'V')]]
-                .forEach((r, i) => row(cv, t, 48, 712, 130 + i * (84 + ey), r[0], r[1]));
+                .forEach((r, i) => row(cv, t, 48, 712, 136 + i * (80 + ey), r[0], r[1]));
             G.panel(cv, t, 808, 44, 768, 468, 'Capacity and resistance');
             const worn = G.isNum(b.rNow) && G.isNum(b.rNew) && b.rNow > b.rNew * 1.5 ? t.warn : null;
             [['NOMINAL CAPACITY', num(b.capNom, 1, 'Ah')], ['MEASURED CAPACITY', num(b.capMeas, 1, 'Ah')],
-                ['CURRENT CAPACITY', num(b.capNow, 1, 'Ah')], ['RESISTANCE NOW', num(b.rNow, 2, 'mΩ'), worn],
-                ['RESISTANCE WHEN NEW', num(b.rNew, 2, 'mΩ')], ['CHARGE · HEALTH ESTIMATE QUALITY', (G.isNum(b.socQ) ? G.fmt(b.socQ, 0) + ' %' : '--') + ' · ' + (G.isNum(b.sohQ) ? G.fmt(b.sohQ, 0) + ' %' : '--')]]
-                .forEach((r, i) => row(cv, t, 832, 720, 120 + i * (64 + ey), r[0], r[1], r[2]));
+                ['CURRENT CAPACITY', num(b.capNow, 1, 'Ah')], ['RESISTANCE NOW', num(b.rNow, 2, 'mOhm'), worn],
+                ['RESISTANCE WHEN NEW', num(b.rNew, 2, 'mOhm')], ['CHARGE · HEALTH ESTIMATE QUALITY', (G.isNum(b.socQ) ? G.fmt(b.socQ, 0) + ' %' : '--') + ' · ' + (G.isNum(b.sohQ) ? G.fmt(b.sohQ, 0) + ' %' : '--')]]
+                .forEach((r, i) => row(cv, t, 832, 720, 136 + i * (62 + ey), r[0], r[1], r[2]));
         }
 
         /** 48 V mild hybrids: the 48 V battery, the converter between it and the 12 V side, the 12 V battery. */
