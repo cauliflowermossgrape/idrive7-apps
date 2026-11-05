@@ -65,6 +65,11 @@ const SIGNALS = {
     condition: ['de.bmw.infrastructure.VehicleCondition', 'VehicleCondition'],
 };
 
+/* No engine runs below this. A hybrid's engine stopping leaves its last value of the run-down as
+ * the signal (160 rpm seen with the engine off), so anything lower reads as stopped. */
+const ENGINE_STOPPED_RPM = 400;
+const engineRpm = (v) => (typeof v === 'number' && v < ENGINE_STOPPED_RPM ? 0 : v);
+
 /**
  * Learns the gearbox from rpm/speed ratios (one cluster per gear) so a gear
  * can be shown even when the car doesn't publish statusGearboxDrive.
@@ -106,7 +111,7 @@ class Car {
         };
         const watches = {};
         const add = (iface, field, fn) => { (watches[iface] = watches[iface] || {})[field] = fn; };
-        if (groups.includes('rpm')) add('de.bmw.infotainment.vehicle.CDS', 'statusEngineSpeed2', (v) => put('rpm', sc('rpm', v.actualValueRPMEngineCrankshaft), true));
+        if (groups.includes('rpm')) add('de.bmw.infotainment.vehicle.CDS', 'statusEngineSpeed2', (v) => put('rpm', engineRpm(sc('rpm', v.actualValueRPMEngineCrankshaft)), true));
         if (groups.includes('temps')) add('de.bmw.infotainment.vehicle.CDS', 'statusEngineTemperature', (v) => { put('coolant', sc('temp', v.temperatureEngineDrive)); put('oil', sc('temp', v.temperatureEngineOilDrive)); });
         if (groups.includes('speed')) add('de.bmw.infotainment.vehicle.Vehicle2', 'statusCarSpeed2', (v) => put('speed', sc('speed', v.speedVehicleCentreOfGravity), true));
         if (groups.includes('accel')) {

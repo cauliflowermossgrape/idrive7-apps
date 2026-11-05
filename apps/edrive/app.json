@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, 12 V battery voltage and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.7.8",
+  "version": "2.7.9",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -60,13 +60,14 @@
     "name": "eDrive",
     "layout": "LT_Table_OnlineApps_DriveRecorderWidget",
     "image": "BackgroundImage1",
+    "scale": 2,
     "size": [
       384,
       256
     ],
     "safe": [
       0.09,
-      0.1
+      0.17
     ],
     "cells": {
       "ErrorInfo": [
@@ -115,6 +116,7 @@
   "settings": [
     {
       "key": "range20",
+      "when": { "hybrid": ["auto", "yes"] },
       "label": "Electric range when full, 20 °C",
       "type": "number",
       "unit": "km",
@@ -136,6 +138,7 @@
     },
     {
       "key": "reserve",
+      "when": { "hybrid": ["auto", "yes"] },
       "label": "Engine starts at",
       "type": "choice",
       "default": "auto",
@@ -212,6 +215,7 @@
     },
     {
       "key": "designKwh",
+      "when": { "hybrid": ["auto", "yes"] },
       "label": "Battery size when new (gross)",
       "type": "number",
       "unit": "kWh",
@@ -232,6 +236,7 @@
     },
     {
       "key": "price",
+      "when": { "hybrid": ["auto", "yes"] },
       "label": "Electricity price",
       "type": "number",
       "unit": "EUR/kWh",
