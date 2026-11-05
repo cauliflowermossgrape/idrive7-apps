@@ -79,6 +79,7 @@ in-test: build/$(OUT)/mgu-render
 	build/$(OUT)/test_gate
 	$(CC) $(CFLAGS) -o build/$(OUT)/test_client_read test/test_client_read.c $(filter-out src/main.c,$(SRC)) $(GEN_C) $(LIBS)
 	build/$(OUT)/test_client_read
+	node test/test_gate_apps.js
 	node test/test_client_place.js
 	node test/test_client_reconnect.js
 	sh test/test_hmi.sh
