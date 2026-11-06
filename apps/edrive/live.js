@@ -13,7 +13,7 @@
  *            from the pack (that minus the on-board baseline, learned with the climate off), or
  *            the climate unit's own figures
  *
- *   Home-screen widget (app.json startWidget): power, state, V / A, charge, cells and this drive
+ *   Home-screen widget (app.json startWidget): power, state, range left, charge, cells and this drive
  *
  * The battery values come from the battery unit (SME) with UDS ReadDataByIdentifier over eDrive's
  * diagnostic link (sh.diag, sh.reader; one request at a time through sh.exclusive); identifiers
@@ -27,7 +27,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { Canvas, withAlpha } = require('./kit/canvas');
+const { ScaledCanvas, withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { hex } = require('./kit/diag');
 const { t: translate, plural } = require('./kit/i18n');
@@ -830,7 +830,7 @@ module.exports = function live(ctx, sh) {
 
     /* ---------- home-screen widget ----------
      * Drawn into the layout's image cell (app.json startWidget). Big widget: power, state, bar,
-     * V / A, charge, cell temperature and this drive; small one: power, state, charge and the bar.
+     * range left, charge, cell temperature and this drive; small one: power, state, charge and the bar.
      * The layout draws its own title ("eDrive") above the image, so the image leaves room for it. */
     const wcan = {};
     function widgetBar(cv, t, x, y, w, h, kw, lim) {
@@ -876,21 +876,21 @@ module.exports = function live(ctx, sh) {
     }
     /* Big widget picture. The HMI fills the widget with it and crops a fixed share of every edge
      * (about 5 % on the car, whatever the picture's size), so everything stays inside app.json
-     * startWidget.safe (share of width / height kept clear on each side). The layout's title is
+     * startWidget.safe (share of width / height kept clear on each side; it also fades the top, so
+     * that share is the larger) and draws startWidget.scale times the pixels. The layout's title is
      * set empty (startWidget.cells), so the picture has the whole widget. */
     function renderWidget(inst) {
         if (inst) widgetCells(inst);
         const sw0 = ctx.spec.startWidget || {};
         const [w, h] = sw0.size || [384, 256], [sx, sy] = sw0.safe || [0.09, 0.1];
-        const key = w + 'x' + h;
-        const cv = (wcan[key] = wcan[key] || new Canvas(w, h)).clear([0, 0, 0, 0]);
+        const key = w + 'x' + h, scale = sw0.scale || 1;
+        const cv = (wcan[key] = wcan[key] || new ScaledCanvas(w, h, scale)).clear([0, 0, 0, 0]);
         const t = ctx.theme(), d = data(), pw = power(d, t), lim = limitsKw(d);
         const scol = pw.what === 'REGEN' || pw.what === 'CHARGING' ? GO : pw.kw === null ? t.dim : t.text;
         const x0 = Math.round(w * sx), x1 = w - x0, y0 = Math.round(h * sy), y1 = h - y0, iw = x1 - x0;
-        // top row: state left, V / A right
+        // top row: state left, electric range left right
         cv.text(pw.what, x0, y0 + 18, 18, scol, { font: 'bold', spacing: 1.5 });
-        cv.text((G.isNum(d.v) ? G.fmt(d.v, 0) + ' V' : '-- V') + (G.isNum(d.a) ? '   ' + G.fmt(-d.a * (cfg.powerSign < 0 ? 1 : -1), 0) + ' A' : ''),
-            x1, y0 + 18, 16, t.dim, { align: 'right' });
+        cv.text(sh.rangeText ? sh.rangeText(d.soc) : '', x1, y0 + 18, 18, t.text, { font: 'bold', align: 'right' });
         if (d.engine || d.demo) cv.text(d.engine ? 'ENGINE ON' : 'DEMO', (x0 + x1) / 2, y0 + 18, 13, t.warn, { font: 'bold', spacing: 1, align: 'center' });
         // power and charge
         const ky = y0 + 92;
@@ -908,7 +908,7 @@ module.exports = function live(ctx, sh) {
         colm(x0, 'CELLS', ct ? fmtT(ct.avg) : '--', ct ? tempColor(t, ct.avg) : t.dim);
         colm((x0 + x1) / 2, 'THIS DRIVE', G.fmt(tp.out - tp.regen, 2) + ' kWh', t.text, 'center');
         colm(x1, 'REGEN', G.fmt(tp.regen, 2) + ' kWh', GO, 'right');
-        return cv;
+        return cv.canvas;
     }
     if (ctx.widget) {
         ctx.widget.loop(() => settings.get('widgetFps') || 8, renderWidget);

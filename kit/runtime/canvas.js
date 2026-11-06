@@ -505,4 +505,43 @@ function crc32(buf) {
     return c ^ -1;
 }
 
-module.exports = { Canvas, rgba, mix, ramp, withAlpha, RAD };
+/**
+ * A Canvas of k times the pixels, drawn on in the coordinates of w x h: for a picture the HMI scales
+ * up (the home-screen widget), so it stays sharp. Push .canvas.
+ */
+class ScaledCanvas {
+    constructor(w, h, k) { this.w = w; this.h = h; this.k = k; this.canvas = new Canvas(Math.round(w * k), Math.round(h * k)); }
+    _pts(pts) { return pts.map((p) => [p[0] * this.k, p[1] * this.k]); }
+    clear(c) { this.canvas.clear(c); return this; }
+    fillRect(x, y, w, h, c) { const k = this.k; this.canvas.fillRect(x * k, y * k, w * k, h * k, c); return this; }
+    gradientRect(x, y, w, h, stops) { const k = this.k; this.canvas.gradientRect(x * k, y * k, w * k, h * k, stops); return this; }
+    roundRect(x, y, w, h, r, c) { const k = this.k; this.canvas.roundRect(x * k, y * k, w * k, h * k, r * k, c); return this; }
+    strokeRoundRect(x, y, w, h, r, width, c) { const k = this.k; this.canvas.strokeRoundRect(x * k, y * k, w * k, h * k, r * k, width * k, c); return this; }
+    card(x, y, w, h, r, stops) { const k = this.k; this.canvas.card(x * k, y * k, w * k, h * k, r * k, stops); return this; }
+    rampRect(x, y, w, h, r, stops, spanX, spanW) {
+        const k = this.k;
+        this.canvas.rampRect(x * k, y * k, w * k, h * k, r * k, stops, spanX === undefined ? spanX : spanX * k, spanW === undefined ? spanW : spanW * k);
+        return this;
+    }
+    circle(cx, cy, r, c) { return this.arc(cx, cy, 0, r, 0, 360, c); }
+    arc(cx, cy, r0, r1, a0, a1, c, opts) { const k = this.k; this.canvas.arc(cx * k, cy * k, r0 * k, r1 * k, a0, a1, c, opts); return this; }
+    line(xa, ya, xb, yb, width, c) { const k = this.k; this.canvas.line(xa * k, ya * k, xb * k, yb * k, width * k, c); return this; }
+    convex(pts, c) { this.canvas.convex(this._pts(pts), c); return this; }
+    quad(pts, c) { return this.convex(pts, c); }
+    triangle(pts, c) { return this.convex(pts, c); }
+    polyline(pts, width, c) { this.canvas.polyline(this._pts(pts), width * this.k, c); return this; }
+    fillUnder(pts, baseY, c) { this.canvas.fillUnder(this._pts(pts), baseY * this.k, c); return this; }
+    drawImage(src, sw, sh, x, y, w, h) { const k = this.k; this.canvas.drawImage(src, sw, sh, x * k, y * k, w * k, h * k); return this; }
+    blit(src, x, y) { return this.drawImage(src.d, src.w, src.h, x, y, src.w, src.h); }
+    text(str, x, y, size, c, opts) {
+        const k = this.k, o = opts && opts.spacing ? Object.assign({}, opts, { spacing: opts.spacing * k }) : opts;
+        return this.canvas.text(str, x * k, y * k, size * k, c, o) / k;
+    }
+    textWidth(str, size, opts) {
+        const k = this.k, o = opts && opts.spacing ? Object.assign({}, opts, { spacing: opts.spacing * k }) : opts;
+        return this.canvas.textWidth(str, size * k, o) / k;
+    }
+    _blit(f, gx, gy, gw, gh, dx, dy, scale, c) { const k = this.k; this.canvas._blit(f, gx, gy, gw, gh, dx * k, dy * k, scale * k, c); }
+}
+
+module.exports = { Canvas, ScaledCanvas, rgba, mix, ramp, withAlpha, RAD };

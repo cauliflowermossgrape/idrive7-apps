@@ -1,5 +1,9 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.11
+
+- Foreground gate: a uuid that an earlier install's left-behind folder still claims goes to the install the app manager has registered (its registry, `oap_12201/data/apps`). Such an app drew in the HMI's own picture on every open, whichever the Renderer setting.
+
 ## idrive7-apps mgu-renderd 2.1.10
 
 - Touch: the divert rule goes to nft in a file (`/tmp/mgu-render-nft-*`), and a load counts only when the table is then there. The nft of MainApp 6.5.5 cars cannot read a script from `-`: the rule never went in while the log said `touch: diverted`, and touches never reached the apps.

@@ -48,7 +48,7 @@ const fs = require('fs');
 const path = require('path');
 const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
-const { Canvas, withAlpha } = require('./kit/canvas');
+const { ScaledCanvas, withAlpha } = require('./kit/canvas');
 const { Recorder, play } = require('./kit/record');
 const { fitText } = require('./kit/text-layout');
 const { ReadOnlyDiag, MAX_DIDS } = require('./kit/readonly-diag');
@@ -1431,7 +1431,7 @@ mgu.run({
             widgetCells(inst, sc);
             if (!inst.big) return null;
             const sw = ctx.spec.startWidget || {}, [w, h] = sw.size || [384, 256], key = w + 'x' + h;
-            const rec = (wrec[key] || (wrec[key] = new Recorder(w, h))).reset(), t = ctx.theme();
+            const scale = sw.scale || 1, rec = (wrec[key] || (wrec[key] = new Recorder(w, h, { textScale: scale }))).reset(), t = ctx.theme();
             const box = SCR.widgetBox(w, h, sw.safe, settings.get('widgetFit'));      // clear of the edges the HMI crops and fades
             if (sc) SCR.draw(rec, t, G, SCR.layout(sc.layout), slotsOf(sc).map(slotData), box, true, -1, fit);
             else {
@@ -1439,9 +1439,9 @@ mgu.run({
                 rec.text('Live Data', cx, cy - 6, 30, t.text, { align: 'center', font: 'bold' });
                 rec.text(fit(rec, screens.length ? 'No Gauges ' + settings.get('widget') + ' (Settings)' : 'Make a screen in the app first', 16, box.w), cx, cy + 24, 16, t.text, { align: 'center' });
             }
-            const cv = (wcan[key] || (wcan[key] = new Canvas(w, h))).clear([0, 0, 0, 0]);
+            const cv = (wcan[key] || (wcan[key] = new ScaledCanvas(w, h, scale))).clear([0, 0, 0, 0]);
             play(rec.words(), cv);
-            return cv;
+            return cv.canvas;
         }
         if (ctx.widget) {
             ctx.widget.loop(() => settings.get('widgetFps') || 8, renderWidget);

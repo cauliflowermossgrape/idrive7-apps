@@ -715,7 +715,13 @@ mgu.run({
             return Math.max(0, (model.auxRate(live.ambient, k, live.climate).rate - model.auxRate(live.ambient, k, false).rate) * k);
         };
         // (the scan runs while the Diagnostic page, which shows it, is up)
-        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]) });
+        // the home-screen widget's range, as the Range page's figure; a plug-in hybrid's only
+        const rangeText = (soc) => {
+            if (kind() !== 'phev') return '';
+            const km = G.isNum(soc) ? estimate(soc, live.ambient, null, paceNow(), comfortKw()).mid : null;
+            return (G.isNum(km) ? Math.round(D(km)) : '--') + ' ' + dU();
+        };
+        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]) });
         const isLive = (p) => lv.PAGES.indexOf(p) >= 0;
         // the first bar button: "Read now", on the live pages their own action (this drive's totals, the scan)
         let actionText = 'Read now';
