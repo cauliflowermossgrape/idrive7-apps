@@ -26,7 +26,8 @@ try { ClusterRender = require('./cluster_render_client').ClusterRender; } catch 
 
 const SCENE_W = 800, SCENE_H = 480;
 // the tach image and where it sits at 100 %: centred in the visible area, clear of BMW's speed
-const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 150;
+const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
+const TEMP_X = 150;                                             // temperatures start here (image x)
 const FPS = 10;
 const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a', BLUE = '#2a7dff', COLD = '#3d8bff';
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
@@ -101,10 +102,12 @@ function drawHud(cv, f) {
     const shiftNow = drawTach(cv, tx, 2, tw, 50, { rpm: d.rpm, shift: f.shift, redline: f.redline, max: f.max, red: f.red, lights: o.lights, style: o.style, dim: o.dim });
     if (o.gear) cv.text(gearText(d), 30, 78, 72, shiftNow && f.red ? RED : WHITE, { align: 'center', font: 'gear' });
     if (o.temps) {
-        const col = tw / 3, y = 70;
-        drawTemp(cv, tx + col * 0.5, y, 'OIL', d.oil, { cold: 60, warm: o.warmOil, hot: 130 });
-        drawTemp(cv, tx + col * 1.5, y, 'WATER', d.coolant, { cold: 60, hot: 112 });
-        drawTemp(cv, tx + col * 2.5, y, 'GEARBOX', f.gearbox, { cold: 50, hot: 120 });
+        // right of TEMP_X only: BMW draws its driver-assistance graphic (lanes, steering wheel,
+        // ACC distance) under the left of the bar, above its speed (G21, 2026-11-07)
+        const col = (IW - TEMP_X) / 3, y = 66;
+        drawTemp(cv, TEMP_X + col * 0.5, y, 'OIL', d.oil, { cold: 60, warm: o.warmOil, hot: 130 });
+        drawTemp(cv, TEMP_X + col * 1.5, y, 'WATER', d.coolant, { cold: 60, hot: 112 });
+        drawTemp(cv, TEMP_X + col * 2.5, y, 'GEARBOX', f.gearbox, { cold: 50, hot: 120 });
     }
 }
 
