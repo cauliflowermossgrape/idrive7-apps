@@ -134,7 +134,7 @@ mgu.run({
             if (!(rpm > 2500)) return;
             const sp = shiftPoint(car.data().oil, from);
             lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: verdict(rpm, sp.rpm, sp.cold) };
-            if (hud && learning()) hud.upshift(rpm);
+            if (hud && learning() && !car.data().demo) hud.upshift(rpm);         // never learn from the demo drive
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
             log.info('shift ' + from + '->' + to + ' @' + lastShift.rpm + ' ' + lastShift.verdict);
