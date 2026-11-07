@@ -1,8 +1,7 @@
 name: App tests
 
 # The kit runtime and the apps' synthetic checks (no SDK, renderer or car needed). Live Adjustments and
-# ZF 8HP have theirs in experimental-apps.yml; the renderer's are in renderd.yml. (test_diagnostic_zh.js needs a
-# built dtc_scanner, and a build needs BMW's SDK, which is not in git: it runs only where the SDK is.)
+# ZF 8HP have theirs in experimental-apps.yml; the renderer's are in renderd.yml.
 on:
   pull_request:
     paths:
@@ -68,5 +67,7 @@ jobs:
       - run: python3 kit/tools/build.py --language zh-CN --preview-only dtc_scanner
       - run: node kit/tools/test_zh.js dist/service/source/javascript/kit
       - run: node kit/tools/test_zh.js dist/dtc_scanner/source/javascript/kit
+      # test_zh.js only covers the UI catalog: the fault texts in diagnostic_i18n.pack are checked here.
+      - run: node kit/tools/test_diagnostic_zh.js dist/dtc_scanner/source/javascript
       - run: cd kit/tools && python3 test_zh.py
       - run: python3 kit/tools/test_import_diagnostic_ru.py
