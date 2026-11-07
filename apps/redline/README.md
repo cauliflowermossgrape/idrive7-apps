@@ -95,24 +95,42 @@ normal and red is hot. A reading with no data is left out.
 
 ### HUD settings (shown while the HUD is on)
 
-Two rows in Settings. **HUD style** has what you'll switch between, Layout and Colours first;
-**HUD position and size** has what you set once. Every change shows on the HUD at once.
+Three rows in Settings. Every change shows on the HUD at once. The **HUD looks** tab picks the
+layout and colours by picture.
 
-| Setting | Values | Notes |
-|---|---|---|
-| Size | 70–130 % | Scales about the top centre |
-| Position left / right, up / down | px | Moves the layer only, so the change shows at once |
-| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade | |
-| Colours | Colour / Night amber / Ice white | |
-| Shows | tach, gear and temperatures / tach and gear / tach and temperatures / tach only | |
-| Temperatures | only when cold or hot / always | |
-| Boost | on / off | |
-| Shift grade after each upshift | Burst / Simple / Off | |
-| Shake on the limiter | on / off (off) | Each shake step resends the whole picture |
-| Peak marker | on / off | |
-| Shift lights | GT3 (outside in, flash) / left to right / off | |
-| Frame rate | 10 / 20 / 30 fps (20) | See [Performance](#performance) |
-| Unlit segments | dim / hidden | |
+**HUD style:** how it looks.
+
+| Setting | Values |
+|---|---|
+| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade |
+| Colours | Colour / Night amber / Ice white (not for VFD, which has its own) |
+| Shift lights | GT3 (outside in, flash) / left to right / off |
+| Shift grade after each upshift | Burst / Simple / Off |
+| Peak marker | on / off |
+| Shake on the limiter | on / off (off: each shake step resends the whole picture) |
+| Unlit segments | dim / hidden |
+
+**HUD readouts:** what it shows, each on its own switch.
+
+| Setting | Values |
+|---|---|
+| Gear | on / off |
+| Boost | on / off |
+| Boost unit | bar / psi / kPa |
+| Oil, Water, Gearbox temperature | on / off each |
+| Cold-engine shift limit | on / off (the LIMIT readout while the cold guard holds the shift point down) |
+| Temperatures | only when cold or hot / always |
+| Temperature unit | °C / °F (the cold and hot colours go by °C either way) |
+
+At most four readouts fit the row; past that the last one gives way.
+
+**HUD position and size:** set once.
+
+| Setting | Values |
+|---|---|
+| Size | 70–130 %, scaled about the top centre |
+| Position left / right, up / down | px; moves the layer only |
+| Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
 ### What it does with BMW's content
 

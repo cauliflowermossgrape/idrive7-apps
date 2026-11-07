@@ -60,21 +60,27 @@ const GREEN = '#2fd27a', YELLOW = '#ffc21a', BLUE = '#2a7dff';
 const N_LEDS = 12, LED_RANGE = 2000;
 
 /**
- * Settings merged in 1.18: "Gear on HUD" + "Temperatures on HUD" -> "Shows" (hudContent), "Shift
- * lights on HUD" + its style -> "Shift lights" (hudLightStyle with 'off'). A choice made before is
- * carried over once; the old keys are then dropped from settings.json.
+ * HUD settings renamed or split, carried over once (the old keys are then dropped from settings.json):
+ *   1.18: "Gear on HUD" + "Temperatures on HUD" -> "Shows" (hudContent); "Shift lights on HUD" + its
+ *         style -> "Shift lights" (hudLightStyle with 'off');
+ *   1.23: "Shows" -> a switch each for the gear and every temperature and the cold limit.
  */
 function migrateSettings(settings, log) {
     try {
         const v = settings.values || {};
-        if (!('hudGear' in v) && !('hudTemps' in v) && !('hudLights' in v)) return;
-        const gear = v.hudGear !== 'off', temps = v.hudTemps !== false;
-        const content = gear && temps ? 'all' : gear ? 'gear' : temps ? 'temps' : 'tach';
-        const style = v.hudLights === false ? 'off' : v.hudLightStyle === 'bar' ? 'bar' : 'gt3';
-        delete v.hudGear; delete v.hudTemps; delete v.hudLights;
-        settings.set('hudContent', content);
-        settings.set('hudLightStyle', style);
-        log.info('settings: HUD settings from 1.17 carried over (shows ' + content + ', lights ' + style + ')');
+        if ('hudGear' in v || 'hudTemps' in v || 'hudLights' in v) {
+            const gear = v.hudGear !== 'off', temps = v.hudTemps !== false;
+            v.hudContent = gear && temps ? 'all' : gear ? 'gear' : temps ? 'temps' : 'tach';
+            settings.set('hudLightStyle', v.hudLights === false ? 'off' : v.hudLightStyle === 'bar' ? 'bar' : 'gt3');
+            delete v.hudGear; delete v.hudTemps; delete v.hudLights;
+        }
+        if ('hudContent' in v) {
+            const c = v.hudContent, gear = c !== 'temps' && c !== 'tach', temps = c !== 'gear' && c !== 'tach';
+            delete v.hudContent;
+            ['hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowLimit'].forEach((k) => { v[k] = temps; });
+            settings.set('hudShowGear', gear);
+            log.info('settings: HUD "Shows ' + c + '" carried over to the readout switches');
+        }
     } catch (e) { log.warn('settings migration: ' + e); }
 }
 

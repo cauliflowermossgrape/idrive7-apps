@@ -21,8 +21,9 @@
  *   - Never throws: an uncaught error exits the app, MainApp's CorruptAppsHandler wipes an
  *     app's data on its first crash and uninstalls it on the second.
  *
- * Settings: hud (off | on | test); group "HUD settings": hudSize, hudX, hudY, hudContent (all | gear |
- * temps | tach), hudLightStyle (gt3 | bar | off), hudUnlit; hudLead (also the screen's lights).
+ * Settings: hud (off | on | test); groups "HUD style" (layout, colours, lights, grade, peak, shake,
+ * unlit), "HUD readouts" (gear, boost, each temperature, the cold limit, smart temperatures, units),
+ * "HUD position and size"; hudLead (also the screen's lights). README.md lists them.
  */
 const fs = require('fs');
 const path = require('path');
@@ -322,20 +323,24 @@ function start(ctx, src) {
      * Temperatures "smart": only one that is cold, warming (oil under "Oil warm at") or hot. Four at most.
      */
     const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
+    // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
+    const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
     function readouts(d, gb, sp, o) {
         const items = [];
         if (o.boost && src.boost) {
-            const b = src.boost();
-            if (isNum(b)) items.push({ label: 'BOOST', value: Math.max(0, b).toFixed(1), tone: 'text' });
+            const b = src.boost(), u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
+            if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });
         }
-        if (o.temps && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
-        if (o.temps) TEMPS.forEach((t) => {
+        if (o.limit && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
+        TEMPS.forEach((t) => {
+            if (!o[t[1]]) return;
             const v = t[1] === 'gearbox' ? gb : d[t[1]];
             if (!isNum(v)) return;
             const lim = t[2];
+            // the bands are in °C whatever is shown
             const tone = v < lim.cold ? 'cold' : lim.warmOil && v < o.warmOil ? 'warm' : v > lim.hot ? 'hot' : 'text';
             if (o.smartTemps && tone === 'text') return;
-            items.push({ label: t[0], value: Math.round(v) + '°', tone: tone });
+            items.push({ label: t[0], value: Math.round(o.fahrenheit ? v * 9 / 5 + 32 : v) + '°', tone: tone });
         });
         // four fit the row legibly: on a cold start (boost, limit, oil, water, gearbox) the gearbox,
         // the last to matter, gives way
@@ -378,14 +383,17 @@ function start(ctx, src) {
 
     /** The drawing options from the settings. */
     function optsNow() {
-        const lights = settings.get('hudLightStyle') || 'gt3', content = settings.get('hudContent') || 'all';
+        const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
         const layout = settings.get('hudStyle');
         return {
             style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
             palette: settings.get('hudPalette') || 'colour',
-            gear: content === 'all' || content === 'gear', temps: content === 'all' || content === 'temps',
+            // readouts, each on its own switch
+            gear: on('hudShowGear'), boost: on('hudBoost'), limit: on('hudShowLimit'),
+            oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
             smartTemps: settings.get('hudTempsMode') !== 'always',
-            boost: settings.get('hudBoost') !== false, peak: settings.get('hudPeak') !== false,
+            boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
+            peak: on('hudPeak'),
             chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
             shake: settings.get('hudShake') === true,
             lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
