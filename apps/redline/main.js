@@ -6,14 +6,36 @@
  * gear below it, digital speed, angular frame lines. At the shift point the lights,
  * gear and a SHIFT prompt turn red (setting "flash": they blink and the screen flashes).
  *
- *   - shift-light bar that fills over the last 2000 rpm, all red at the shift point
+ *   - 12 shift lights that count into the shift and strobe for it (the shift cue, below)
  *   - huge gear number (from the gearbox, or learned from rpm/speed ratios)
  *   - every upshift is scored against your shift point (EARLY / SPOT ON / LATE / LIMITER)
  *   - cold-engine rev guard: until the oil is warm the shift point is pulled down
  *     and climbs with the oil temperature
  *
- * Pages: tach / shift log / learned (what it learned from this car, with resets). The tach's peak marker drops back after "Peak hold" seconds;
- * BTN_RESET clears it and the session stats.
+ * Pages: tach / shift log / learned (what it learned from this car, with resets). The tach's
+ * peak marker drops back after "Peak hold" seconds; BTN_RESET clears it and the session stats.
+ *
+ * Experimental parts (README.md in this folder has the whole story):
+ *   hud.js       the head-up display through cluster-render, and the shift cue the HUD and this
+ *                screen's lights share (count-in over ~1 s of climb, flash early by the reaction
+ *                time, ended by the upshift or a lift; everything flashes on the limiter)
+ *   limiter.js   learns the real rev limit from the rpm plateau on the limiter
+ *   shiftmap.js  learns the full-load torque curve and the gear ratios, and from them the best
+ *                upshift rpm for each gear
+ *   gearbox.js   gearbox oil temperature for the HUD (EGS over read-only UDS, or BasicDataSet)
+ *   cluster_render_client.js  vendored unchanged from robertnisipeanu/idrive-apps (MPL-2.0)
+ *
+ * The limits, first that has one:
+ *   redline     the "Redline" setting > the learned limiter > the engine profile
+ *   shift point the per-gear learned point (held 150 under the redline) > redline - "Shift point
+ *               before redline"; then "Minimum shift point" as a floor; then the cold guard,
+ *               which can lower it below the floor while the oil is cold
+ *
+ * Rules for this code (the head unit): Node 8 (no ?. ?? object spread, flat, fromEntries); never
+ * let an error escape a timer, signal or render (an app that exits gets its data wiped by MainApp,
+ * twice: uninstalled); the tach and Learned pages draw on the kit's Recorder (record.js), whose
+ * methods differ from canvas.js (no convex/triangle: use quad), the HUD on a Canvas; nothing is
+ * learned from the demo drive.
  */
 const mgu = require('./kit/mgu');
 const { withAlpha, ramp } = require('./kit/canvas');

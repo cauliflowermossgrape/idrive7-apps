@@ -1,5 +1,8 @@
 'use strict';
 /**
+ * Part of Redline's experimental features; README.md in this folder has the whole picture
+ * (settings, learning, files, logs, rules for this code).
+ *
  * Gearbox oil temperature for Redline's HUD, from whichever source answers:
  *   1. the gearbox unit (EGS, 0x18) over UDS 22, read-only: ZF 8HP _GETRIEBEOELTEMPERATUR (6000,
  *      deg C + 40, read on a G22), then DA12 (deg C + 48, unconfirmed); every 5 s while wanted;

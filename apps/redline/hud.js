@@ -1,5 +1,8 @@
 'use strict';
 /**
+ * Part of Redline's experimental features; README.md in this folder has the whole picture
+ * (settings, learning, files, logs, rules for this code).
+ *
  * Redline on the head-up display, through cluster-render (robertnisipeanu/idrive-apps,
  * native/cluster-render): one image layer on its 'hud' target, an 800x480 scene the KOMBI
  * lays over BMW's own HUD content (speed, limit sign, guidance stay in their own slots).

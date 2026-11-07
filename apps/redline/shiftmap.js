@@ -1,5 +1,8 @@
 'use strict';
 /**
+ * Part of Redline's experimental features; README.md in this folder has the whole picture
+ * (settings, learning, files, logs, rules for this code).
+ *
  * Learns the best upshift rpm per gear from the engine's own torque curve and the gearbox
  * ratios, so the shift light fits this car (a tune that moves the torque curve moves it too).
  *

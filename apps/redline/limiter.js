@@ -1,5 +1,8 @@
 'use strict';
 /**
+ * Part of Redline's experimental features; README.md in this folder has the whole picture
+ * (settings, learning, files, logs, rules for this code).
+ *
  * Learns the engine's real rev limit from the rpm plateau it makes on the limiter, so the
  * redline (and the shift point from it) fits the car, a tuned one with a raised limiter too.
  *
