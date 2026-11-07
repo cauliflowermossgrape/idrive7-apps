@@ -60,6 +60,7 @@ jobs:
       - run: node kit/tools/test_service.js
       - run: node kit/tools/test_service_engine.js
       - run: node kit/tools/test_car_vitals.js
+      - run: node kit/tools/test_redline_hud.js
       - run: node kit/tools/test_zh.js
       # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
       # that (--preview-only needs no SDK). dtc_scanner has its own run because it ships diagnostic-zh-CN.json as its atlas.
