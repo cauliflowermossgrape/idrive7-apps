@@ -58,9 +58,15 @@ cars with a HUD, but nobody has checked yet.
 
 **Palettes** (*Colours*): Colour (green / yellow / red), Night amber, Ice white.
 
+**Choosing a look:** the **HUD looks** tab shows each layout as the HUD will draw it, in your
+current colours and light style. Tap one to use it, and pick the colours with the buttons
+underneath. The one in use is outlined. The HUD changes at once. *HUD style → Layout* in Settings
+does the same in text.
+
 **Effects:**
 
-- **Shift grade:** *Burst* (the default) pops the word in (PERFECT SHIFT for a spot-on shift), grows
+- **Shift grade:** *Burst* (the default) pops the word in (PERFECT SHIFT for a spot-on shift, then
+  EARLY, LATE, LIMITER or COLD REV), grows
   a ring from it and fades it out. *Simple* shows the plain word; *Off* shows nothing.
 - **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
   the bar, lights and gear flash red.

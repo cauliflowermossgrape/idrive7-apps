@@ -12,7 +12,8 @@
  *   - cold-engine rev guard: until the oil is warm the shift point is pulled down
  *     and climbs with the oil temperature
  *
- * Pages: tach / shift log / learned (what it learned from this car, with resets). The tach's
+ * Pages: tach / shift log / learned (what it learned from this car, with resets) / HUD looks (each
+ * HUD layout as the HUD draws it: tap one to use it). The tach's
  * peak marker drops back after "Peak hold" seconds; BTN_RESET clears it and the session stats.
  *
  * Experimental parts (README.md in this folder has the whole story):
@@ -45,6 +46,7 @@ const { plural } = require('./kit/i18n');
 const Car = require('./kit/car');
 const Engine = require('./kit/engine');
 const Hud = require('./hud');
+const HudDraw = require('./hud-draw');
 const GearboxTemp = require('./gearbox');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
@@ -179,7 +181,9 @@ mgu.run({
             }
             return n;
         }
-        const verdict = (rpm, target, cold) => (rpm >= redline() - 60 ? 'LIMITER' : rpm < target - 250 ? 'EARLY' : rpm > target + 200 ? (cold ? 'COLD REV' : 'LATE') : 'SPOT ON');
+        // LIMITER: on the cut itself (25 rpm): shift points sit 150 under the redline, so the old 60 caught
+        // shifts on the point
+        const verdict = (rpm, target, cold) => (rpm >= redline() - 25 ? 'LIMITER' : rpm < target - 250 ? 'EARLY' : rpm > target + 200 ? (cold ? 'COLD REV' : 'LATE') : 'SPOT ON');
         const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff' };
 
         function recordShift(t, from, to) {
@@ -440,6 +444,46 @@ mgu.run({
         }
 
         /* ---------- Learned page: what Redline has learned from this car, each with a reset ---------- */
+        /* ---------- HUD looks page: each layout as the HUD draws it; tap one to use it ---------- */
+        const LOOKS = [['standard', 'Standard'], ['minimal', 'Minimal'], ['wings', 'Split wings'],
+            ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade']];
+        const PALS = [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']];
+        /** A sample HUD picture of a layout (counting in, 3rd gear, boost and a warming oil readout). */
+        function lookFrame(style, pal) {
+            const lights = settings.get('hudLightStyle') || 'gt3';
+            return {
+                d: { rpm: 5000, gear: 3, stage: 'D' }, shift: 5550, redline: 6550, max: 8000, blink: true, down: 0, peak: 6100, chip: null,
+                cue: { from: 4050, at: 5550, shift: false, limiter: false },
+                readouts: [{ label: 'BOOST', value: '1.2', tone: 'text' }, { label: 'OIL', value: '74°', tone: 'warm' }],
+                opts: { style: style, palette: pal, gear: true, lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') !== 'hidden', lightStyle: settings.get('lights') },
+            };
+        }
+        /** The sample picture as a cached layer (drawn once per look and palette; the HUD's own drawing code). */
+        function lookLayer(style, pal) {
+            const key = ['hudlook', style, pal, settings.get('hudLightStyle'), settings.get('hudUnlit'), settings.get('lights')].join('|');
+            return G.layer(key, HudDraw.IW, HudDraw.IH, (r) => { r.fillRect(0, 0, HudDraw.IW, HudDraw.IH, '#000000'); HudDraw.drawLayer(r, lookFrame(style, pal)); });
+        }
+        function drawLooks(cv, t) {
+            const cur = settings.get('hudStyle') || 'standard', pal = settings.get('hudPalette') || 'colour';
+            const on = settings.get('hud') === 'on' || settings.get('hud') === 'test';
+            cv.text(on ? 'Tap a look to use it on the HUD' : 'Show on HUD is off: tap a look to choose it, then turn it on in Settings', 40, 74, 22, on ? t.dim : t.warn, { font: 'bold' });
+            LOOKS.forEach((l, i) => {
+                const x = 40 + (i % 3) * 512, y = 88 + Math.floor(i / 3) * 176, w = 496, h = 168, sel = l[0] === cur;
+                cv.roundRect(x, y, w, h, 12, withAlpha('#ffffff', 0.05));
+                if (sel) cv.strokeRoundRect(x, y, w, h, 12, 3, t.accent);
+                cv.blit(lookLayer(l[0], l[0] === 'vfd' ? 'vfd' : pal), x + (w - HudDraw.IW) / 2, y + 8);
+                cv.text(l[1] + (sel ? '  ·  in use' : ''), x + 16, y + h - 10, 20, sel ? t.text : t.dim, { font: 'bold' });
+                cv.target(x, y, w, h, () => { settings.set('hudStyle', l[0]); return render(); }, 'look_' + l[0]);
+            });
+            // the palettes (not for VFD, which has its own)
+            const py = 452;
+            cv.text('COLOURS', 40, py + 28, 18, t.dim, { font: 'bold', spacing: 1 });
+            PALS.forEach((p, i) => {
+                G.button(cv, t, 160 + i * 230, py, 210, 40, p[1], () => { settings.set('hudPalette', p[0]); return render(); },
+                    { key: 'pal_' + p[0], primary: p[0] === pal, busy: cur === 'vfd' });
+            });
+        }
+
         let learnedView = null;
         function drawLearned(cv, t) {
             // torque curve (full load), from the car's torque signal
@@ -494,20 +538,20 @@ mgu.run({
 
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t, d) {
-            G.frame(cv, t, ['Tach', 'Shift log', 'Learned'], page, [d.demo && { text: 'DEMO' }]);
+            G.frame(cv, t, ['Tach', 'Shift log', 'Learned', 'HUD looks'], page, [d.demo && { text: 'DEMO' }]);
         }
 
         async function render() {
             const t = ctx.theme(), d = car.data(), now = Date.now();
             let cv;
             cv = ctx.canvas(W, H).clear(t.bg);
-            if (page === 0) drawTach(cv, t, d, now); else if (page === 1) drawLog(cv, t); else drawLearned(cv, t);
+            if (page === 0) drawTach(cv, t, d, now); else if (page === 1) drawLog(cv, t); else if (page === 2) drawLearned(cv, t); else drawLooks(cv, t);
             header(cv, t, d);
             await ui.image('MAIN_GFX', cv);
         }
 
         /* ---------- buttons ---------- */
-        const PAGES = 3;
+        const PAGES = 4;
         const flip = () => { page = (page + 1) % PAGES; return render(); };
         const flipBack = () => { page = (page + PAGES - 1) % PAGES; return render(); };
         ui.onClick('BTN_PAGE', flip);
