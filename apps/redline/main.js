@@ -24,6 +24,7 @@ const Engine = require('./kit/engine');
 const Hud = require('./hud');
 const GearboxTemp = require('./gearbox');
 const Limiter = require('./limiter');
+const ShiftMap = require('./shiftmap');
 
 const W = 1600, H = 520;
 // rev bar (G20 style): left to right, slanted segments; top edge shifted right by 'slant'
@@ -40,7 +41,7 @@ mgu.run({
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
         // gearbox oil temperature for the HUD (EGS over UDS, or BasicDataSet); polled only while the HUD is on
         const gearbox = new GearboxTemp(ctx);
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers()));
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'torque'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers()));
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
@@ -56,16 +57,28 @@ mgu.run({
             return typeof s === 'number' && s > 0 ? s : Math.ceil((baseRedline() + 800) / 1000) * 1000;
         };
         const redline = () => Math.min(baseRedline(), maxRpm());
-        limiter.onChange(() => car.setRedline(redline()));
         settings.onChange((key, v) => { if (key === 'learnRedline' && v === false) limiter.forget(); });
         log.info('redline ' + redline() + ' (' + redlineSource() + ')');
-        // never below 2500: shifts under that are not scored
-        const normalShift = () => Math.max(2500, redline() - settings.get('shiftBefore'));
-        car.setRedline(redline());
-        engine.onChange(() => car.setRedline(redline()));
-        /** shift point right now (lowered while the oil is cold). */
-        function shiftPoint(oil) {
-            const n = normalShift();
+        /* Shift point: per gear from the engine's own torque curve and the gear ratios (shiftmap.js,
+         * setting "shiftMode" = learned) once it knows that gear, held 100 under the redline so the
+         * shift never meets the limiter; else (and with "fixed") the redline minus "shiftBefore".
+         * Never below 2500: shifts under that are not scored. */
+        const shiftMap = new ShiftMap({ dataDir: ctx.dataDir, log });
+        shiftMap.setRedline(redline());
+        const learnedShift = (gear) => {
+            if (settings.get('shiftMode') === 'fixed' || !G.isNum(gear) || gear < 1) return null;
+            const r = shiftMap.shiftFor(gear);
+            return G.isNum(r) ? Math.min(r, redline() - 100) : null;
+        };
+        const normalShift = (gear) => Math.max(2500, learnedShift(gear) || redline() - settings.get('shiftBefore'));
+        const shiftSource = (gear) => (learnedShift(gear) ? 'learned' : 'fixed');
+        const limitsChanged = () => { car.setRedline(redline()); shiftMap.setRedline(redline()); };
+        limitsChanged();
+        engine.onChange(limitsChanged);
+        limiter.onChange(limitsChanged);
+        /** shift point right now for that gear (lowered while the oil is cold). */
+        function shiftPoint(oil, gear) {
+            const n = normalShift(gear);
             if (!settings.get('coldGuard') || !G.isNum(oil)) return { rpm: n, cold: false };
             const warm = settings.get('warmOil'), cold = Math.min(engine.value('coldLimit', { diesel: 3000, petrol: 4500 }), n);
             if (oil >= warm) return { rpm: n, cold: false };
@@ -79,7 +92,7 @@ mgu.run({
         let peakRpm = 0, peakRpmT = 0, sessionRpm = 0, peakSpeed = 0, limiterHits = 0;
         let shifts = [];                    // { at, from, to, rpm, target, verdict }
         const recent = [];                  // [t, rpm, speed] last ~1 s
-        let lastGear = null, onLimiter = false, lastShift = null;
+        let lastGear = null, onLimiter = false, lastShift = null, hud = null;
         const verdict = (rpm, target, cold) => (rpm >= redline() - 60 ? 'LIMITER' : rpm < target - 250 ? 'EARLY' : rpm > target + 200 ? (cold ? 'COLD REV' : 'LATE') : 'SPOT ON');
         const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff' };
 
@@ -87,8 +100,9 @@ mgu.run({
             const win = recent.filter((r) => t - r[0] < 600);
             const rpm = Math.max.apply(null, win.map((r) => r[1]));
             if (!(rpm > 2500)) return;
-            const sp = shiftPoint(car.data().oil);
+            const sp = shiftPoint(car.data().oil, from);
             lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: verdict(rpm, sp.rpm, sp.cold) };
+            if (hud) hud.upshift(rpm);
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
             log.info('shift ' + from + '->' + to + ' @' + lastShift.rpm + ' ' + lastShift.verdict);
@@ -107,6 +121,7 @@ mgu.run({
             onLimiter = lim;
             // learn the real limit (live data only, warm oil): plateaus from 1000 below the profile's redline
             if (!car.data().demo) {
+                shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: d.torque });
                 const pr = profileRedline();
                 limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
             }
@@ -202,7 +217,7 @@ mgu.run({
         let blink = false;
 
         function drawTach(cv, t, d, now) {
-            const sp = shiftPoint(d.oil);
+            const sp = shiftPoint(d.oil, d.gear);
             background(cv, t, sp);
             const rpm = d.rpm;
             const shiftNow = G.isNum(rpm) && rpm >= sp.rpm;
@@ -268,10 +283,14 @@ mgu.run({
                 cv.text(sp.cold ? 'COLD  ·  LIMIT ' + sp.rpm : 'OIL COLD  ·  GO EASY', 190, 418, 22, t.cold, { align: 'center', font: 'bold', spacing: 0.5 });
             }
             cv.text('PEAK ' + (peakRpm ? Math.round(peakRpm) : '--') + '  ·  LIMITER ' + limiterHits + 'x', 40, 476, 22, t.dim, { font: 'bold', spacing: 0.5 });
+            // what the head-up display is doing (only while it is switched on)
+            const hs = hud ? hud.status() : '';
+            if (hs) cv.text(hs.toUpperCase(), W - 40, 476, 20, /off|not/i.test(hs) ? t.warn : t.dim, { align: 'right', font: 'bold', spacing: 0.5 });
 
             // ---- right: shift point + last shift
             const rx = W - 40;
-            cv.text('SHIFT AT', rx, 156, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
+            const perGear = shiftSource(d.gear) === 'learned';
+            cv.text(perGear ? 'SHIFT AT  ·  GEAR ' + d.gear : 'SHIFT AT', rx, 156, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
             cv.text(String(sp.rpm), rx, 222, 64, sp.cold ? t.cold : t.text, { align: 'right', font: 'num' });
             cv.text('REDLINE ' + redline() + '  ·  ' + redlineSource().toUpperCase(), rx, 262, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
             cv.fillRect(W - 340, 298, 300, 1, withAlpha(t.tick, 0.6));
@@ -354,7 +373,7 @@ mgu.run({
         // every screen refresh (60 fps) with the GPU renderer; 15 fps in software (PNG frames)
         ctx.loop('MAIN', 15, render);
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
-        Hud.start(ctx, { data: () => car.data(), shiftPoint, redline, maxRpm, gearbox });
+        hud = Hud.start(ctx, { data: () => car.data(), shiftPoint, redline, maxRpm, gearbox });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });

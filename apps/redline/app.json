@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -10,6 +10,10 @@
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
       "statusEngineTemperature": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "engine torque, for the per-gear shift points",
+      "statusActualValueTorque2": "rs"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs",
@@ -54,6 +58,8 @@
     {"key": "learnRedline", "label": "Learn redline from the limiter", "type": "bool", "default": true},
     {"key": "rpmScale", "label": "Rev scale up to", "type": "number", "unit": "rpm", "default": 0, "labels": {"0": "Auto"},
      "steps": [0, 5000, 6000, 7000, 8000, 9000, 10000]},
+    {"key": "shiftMode", "label": "Shift point", "type": "choice", "default": "learned",
+     "options": [["learned", "Per gear, learned from the engine"], ["fixed", "Redline minus the setting below"]]},
     {"key": "shiftBefore", "label": "Shift point before redline", "type": "number", "unit": "rpm", "default": 300,
      "steps": [0, 100, 200, 300, 500, 800, 1000]},
     {"key": "lights", "label": "Shift light style", "type": "choice", "default": "m",
@@ -82,8 +88,8 @@
     {"key": "hudLights", "label": "Shift lights on HUD", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}},
     {"key": "hudLightStyle", "label": "HUD shift light style", "type": "choice", "default": "gt3", "when": {"hud": ["on", "test"], "hudLights": true},
      "options": [["gt3", "GT3 (outside in, flash)"], ["bar", "Left to right"]]},
-    {"key": "hudLead", "label": "HUD shift light early by (reaction time)", "type": "number", "unit": "ms", "default": 200, "when": {"hud": ["on", "test"], "hudLights": true},
-     "steps": [0, 100, 150, 200, 250, 300, 400]},
+    {"key": "hudLead", "label": "HUD shift light early by (reaction time)", "type": "number", "unit": "ms", "default": -1, "labels": {"-1": "Auto (learns from your shifts)"}, "when": {"hud": ["on", "test"], "hudLights": true},
+     "steps": [-1, 0, 100, 150, 200, 250, 300, 400]},
     {"key": "hudUnlit", "label": "Unlit segments on HUD", "type": "choice", "default": "dim", "when": {"hud": ["on", "test"]},
      "options": [["dim", "Dim"], ["hidden", "Hidden"]]},
     {"key": "advanced", "label": "Advanced settings", "type": "bool", "default": false},

@@ -20,6 +20,8 @@
  *
  * Settings: hud (off | on | test), hudSize, hudX, hudY, hudGear, hudTemps, hudLights, hudUnlit.
  */
+const fs = require('fs');
+const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
 let ClusterRender = null;
 try { ClusterRender = require('./cluster_render_client').ClusterRender; } catch (e) { /* logged at start */ }
@@ -74,16 +76,18 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
 /**
  * The HUD tach in the box (x, y, w, h). s = { rpm, cue (shiftCue()), shift, redline, max,
  * blink (flash phase on), lights (bool), gt3 (bool), style ('m' | 'f1' | 'mono'), accent, dim }.
- * Shift lights over the top fifth: they count into the shift and flash for it. The slanted bar
- * under them runs on to the redline; on the limiter everything flashes red.
+ * Round shift lights along the top: they count into the shift and flash for it. Under them a
+ * thin yellow mark at the shift point and a red one at the redline, then the slanted bar, which
+ * runs on to the redline; on the limiter everything flashes red.
  */
 function drawTach(cv, x, y, w, h, s) {
-    const ledH = s.lights ? Math.round(h * 0.2) : 0, barY = y + (s.lights ? ledH + Math.round(h * 0.15) : 0), barH = y + h - barY;
+    const ledD = s.lights ? 14 : 0, markH = 6, barY = y + ledD + (s.lights ? 4 : 0) + markH + 2, barH = y + h - barY;
     const rpm = s.rpm, cue = s.cue, flash = cue.shift || cue.limiter;
     const flashCol = cue.limiter ? RED : s.style === 'f1' ? BLUE : RED;
     const count = isNum(rpm) ? clamp((rpm - cue.from) / (cue.at - cue.from), 0, 1) : 0;
     if (s.lights) {
-        const n = 12, gap = 6, lw = (w - gap * (n - 1)) / n;
+        const n = 12, pitch = w / n, rad = Math.min(ledD / 2, pitch * 0.36), cy = y + ledD / 2;
+        const dot = (i, c) => cv.circle(x + pitch * (i + 0.5), cy, rad, c);
         // GT3: pairs from both ends inwards (k = 0 outermost), outer green, then yellow, inner red;
         // left to right: the screen's sequence
         const pos = (i) => (s.gt3 ? Math.min(i, n - 1 - i) : i);
@@ -98,8 +102,8 @@ function drawTach(cv, x, y, w, h, s) {
         const lit = Math.ceil(count * (steps - 1));
         for (let i = 0; i < n; i++) {
             const c = flash ? (s.blink ? flashCol : null) : pos(i) < lit ? col(i) : null;
-            if (c) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, c);
-            else if (s.dim) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, withAlpha(flash ? flashCol : col(i), 0.16));
+            if (c) dot(i, c);
+            else if (s.dim) dot(i, withAlpha(flash ? flashCol : col(i), 0.16));
         }
     }
     const slant = Math.round(barH * 0.32), X = (r) => x + clamp(r / s.max, 0, 1) * (w - slant);
@@ -107,6 +111,10 @@ function drawTach(cv, x, y, w, h, s) {
         const xa = X(a) + 2, xb = X(b) - 2;
         if (xb > xa) cv.quad([[xa + slant, barY], [xb + slant, barY], [xb, barY + barH], [xa, barY + barH]], c);
     };
+    // marks over the bar's top edge (like the screen's): yellow at the shift point, red at the redline
+    const mark = (r, c) => cv.fillRect(Math.round(X(r) + slant) - 1, barY - markH - 2, 3, markH, c);
+    if (isNum(s.shift) && s.shift < s.redline) mark(s.shift, YELLOW);
+    mark(s.redline, RED);
     if (s.dim) for (let r = 0; r < s.redline; r += 500) seg(r, Math.min(s.redline, r + 500), withAlpha(WHITE, 0.12));
     for (let r = s.redline; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), withAlpha(RED, 0.4));
     if (isNum(rpm) && rpm > 50) {
@@ -139,7 +147,7 @@ function drawHud(cv, f) {
     cv.clear();
     const tx = o.gear ? 70 : 0, tw = IW - tx;
     const cue = f.cue || shiftCue({}, d.rpm, 0, f.shift, f.redline, 0);
-    drawTach(cv, tx, 2, tw, 50, { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
+    drawTach(cv, tx, 2, tw, 56, { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
     // the gear turns red only on the limiter; the shift itself is the lights' job
     if (o.gear) cv.text(gearText(d), 30, 78, 72, cue.limiter && f.blink ? RED : WHITE, { align: 'center', font: 'gear' });
     if (o.temps) {
@@ -207,13 +215,24 @@ function packRect(d, w, r) {
 }
 
 /**
- * Start the HUD output. src = { data() (car.data()), shiftPoint(oil) -> { rpm }, redline(),
- * maxRpm(), gearbox (a GearboxTemp, optional) }. Returns { stop }.
+ * Start the HUD output. src = { data() (car.data()), shiftPoint(oil, gear) -> { rpm }, redline(),
+ * maxRpm(), gearbox (a GearboxTemp, optional) }.
+ * Returns { stop, status() (a line for the screen, '' while off), upshift(rpm) (each upshift's
+ * rpm: calibrates the reaction time), lead() (ms in use) }.
  */
 function start(ctx, src) {
     const settings = ctx.settings, log = ctx.log;
     let cr = null, layer = 0, shown = '', lastTarget = '', timer = null, blink = false;
+    let target = null;                                           // { state, holder, disabled } of 'hud'
     const cueState = {};
+    /*
+     * Reaction time, learned ("HUD shift light early by" on Auto): each upshift after a flash
+     * says how late it came: (shift rpm - shift point) / climb rate. The lead moves 30 % of the
+     * way to the lead that would have hit it, within 0..600 ms; kept in data/hudlead.json.
+     */
+    const leadFile = path.join(ctx.dataDir || '.', 'hudlead.json');
+    let learnedLead = 200, leadShifts = 0, flashInfo = null;
+    try { const j = JSON.parse(fs.readFileSync(leadFile, 'utf8')); if (isNum(j.ms)) { learnedLead = j.ms; leadShifts = j.n || 0; } } catch (e) { /* none yet */ }
     let cur = null, prev = null, first = true, lastErr = 0;
 
     const safe = (name, fn) => function () {
@@ -223,6 +242,7 @@ function start(ctx, src) {
     };
     const mode = () => settings.get('hud') || 'off';
     const num = (k, dflt) => { const v = Number(settings.get(k)); return isFinite(v) ? v : dflt; };
+    const leadMs = () => { const v = num('hudLead', -1); return v < 0 ? learnedLead : v; };
 
     /** Where the tach image shows in the scene, from the size and position settings. */
     function rect() {
@@ -242,6 +262,7 @@ function start(ctx, src) {
             if (name !== 'hud') return;
             const s = disabled ? 'disabled by the mapping guard (as root: cluster-render guard-reset)'
                 : state + (holder ? ' behind ' + holder : '') + (reason ? ' (' + reason + ')' : '');
+            target = { state: state, holder: holder, disabled: disabled };
             if (s !== lastTarget) { lastTarget = s; log.info('hud: target ' + s); }
         }));
         cr.on('layer', safe('layer', (ref, state, reason) => {
@@ -259,7 +280,7 @@ function start(ctx, src) {
     const disconnect = safe('disconnect', () => {
         dropLayer();
         if (cr) { cr.removeAllListeners(); cr.close(); cr = null; log.info('hud: off'); }
-        lastTarget = '';
+        lastTarget = ''; target = null;
     });
 
     const showTestPattern = safe('test', () => {
@@ -279,10 +300,12 @@ function start(ctx, src) {
 
     /** What drawHud needs, now. */
     function frameData() {
-        const d = src.data(), sp = src.shiftPoint(d.oil), redline = src.redline();
+        const d = src.data(), sp = src.shiftPoint(d.oil, d.gear), redline = src.redline();
         const gt3 = settings.get('hudLightStyle') !== 'bar';
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
-        const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, num('hudLead', 200));
+        const was = cueState.on, lead = leadMs();
+        const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead);
+        if (cue.shift && !was) flashInfo = { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead };
         blink = cue.shift || cue.limiter ? !blink : true;
         return {
             d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
@@ -340,7 +363,37 @@ function start(ctx, src) {
     const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
     settings.onChange(safe('setting', (key) => { if (HUD_KEYS.indexOf(key) >= 0) apply(); else first = true; }));
     apply();
-    return { stop: disconnect };
+
+    /** An upshift at rpm (its peak): if it followed a flash on a climb, learn the reaction time. */
+    const upshift = safe('upshift', (rpm) => {
+        const f = flashInfo;
+        flashInfo = null;
+        if (!f || !isNum(rpm) || Date.now() - f.t > 2000 || f.rate < 300) return;
+        const lateMs = (rpm - f.target) / f.rate * 1000;
+        const ideal = clamp(f.lead + lateMs, 0, 600);
+        learnedLead = Math.round(clamp(learnedLead + (ideal - learnedLead) * 0.3, 0, 600) / 10) * 10;
+        leadShifts++;
+        log.info('hud: shift at ' + Math.round(rpm) + ' for ' + f.target + ' (' + (lateMs >= 0 ? Math.round(lateMs) + ' ms late' : Math.round(-lateMs) + ' ms early') +
+            '), reaction lead now ' + learnedLead + ' ms after ' + leadShifts + ' shifts');
+        try { fs.writeFileSync(leadFile, JSON.stringify({ ms: learnedLead, n: leadShifts })); } catch (e) { /* read-only */ }
+    });
+
+    /** One line for Redline's screen: what the HUD is doing. */
+    function status() {
+        const m = mode();
+        if (m === 'off') return '';
+        if (!cr || !cr.ready) return 'HUD: cluster-render not running';
+        if (target && target.disabled) return 'HUD: off after display errors';
+        if (m === 'test') return 'HUD: test pattern';
+        const st = target ? target.state : '';
+        if (st === 'shown') return 'HUD: on';
+        if (st === 'parked' || st === 'waiting') return 'HUD: giving way to BMW';
+        if (st === 'unavailable') return 'HUD: not available';
+        return 'HUD: starting';
+    }
+
+    // frame: one frame's data without drawing (for tests)
+    return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, frame: frameData };
 }
 
 module.exports = { start, shiftCue, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
