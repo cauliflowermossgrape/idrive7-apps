@@ -52,31 +52,44 @@ function gearText(d) {
 
 /**
  * Shift cue: when the shift lights start counting and when they flash, from how fast the revs
- * climb. st = state kept between frames ({}); returns { from, at, shift, limiter, rate }:
+ * climb. st = state kept between frames ({}); returns { from, at, shift, limiter, rate, fallSince }:
  *   at     = the rpm the lights flash at: the shift point minus what the revs climb in the
  *            driver's reaction time (leadMs), at most 800 rpm early;
- *   from   = where the count starts: ~1 s of climb before 'at' (800..2000 rpm; 1500 while the
- *            revs aren't climbing), so the count-in takes about as long in every gear;
- *   shift  = flashing now; latched until the revs fall 800 below 'at' (the upshift), so a
- *            wobble in the climb rate or a dip of the revs doesn't make it flicker;
- *   limiter= at the redline (within 100): everything flashes.
+ *   from   = where the count starts: ~1 s of climb before 'at' (800..2000 rpm), so the count-in
+ *            takes about as long in every gear. The span and the lead are taken while the revs
+ *            climb and kept when they stop (a lift, a steady hold), so the lights then follow the
+ *            revs down one step at a time instead of jumping; back to 1500 / no lead once the
+ *            count is empty. Never climbed: 1500 and no lead;
+ *   shift  = flashing now. Held at the point it fired at, so a noisy climb rate doesn't make it
+ *            flicker; it ends when the revs fall 800 below that point (the upshift) or have
+ *            been falling for 300 ms (a lift; a traction dip is shorter);
+ *   limiter= at the redline (within 100): everything flashes;
+ *   fallSince = since when the revs have been falling (ms), or null.
  * Rate: smoothed rpm per second from successive frames, rises only (a lift or a shift resets it).
  */
 function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
-    if (!isNum(rpm)) { st.rate = 0; st.on = false; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0 }; }
+    if (!isNum(rpm)) { st.rate = 0; st.on = false; st.fall = null; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0, fallSince: null }; }
+    let rising = false;
     if (isNum(st.rpm) && tMs > st.t) {
         const r = (rpm - st.rpm) * 1000 / (tMs - st.t);
+        rising = r > 300;
         st.rate = r <= 0 ? (r < -500 ? 0 : (st.rate || 0) * 0.7) : (st.rate ? st.rate * 0.5 + r * 0.5 : r);
+        // falling: more than 150 rpm/s down, frame after frame
+        if (r < -150) { if (st.fall == null) st.fall = st.t; } else st.fall = null;
     }
     st.rpm = rpm; st.t = tMs;
     const rate = st.rate || 0, climbing = rate > 300;
-    const at = shift - (climbing ? Math.min(800, rate * leadMs / 1000) : 0);
-    const from = at - (climbing ? clamp(rate * 1.0, 800, 2000) : 1500);
-    // latch: the flash point is held from the moment it fires; it ends only when the revs fall
-    // 800 below that point (an upshift drops ~30 %; a traction dip less), not when the live point moves with a noisy climb rate
-    if (!st.on && rpm >= at) { st.on = true; st.at = at; }
-    else if (st.on && rpm < st.at - 800) st.on = false;
-    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 100, rate: rate };
+    // span and lead from frames where the revs really rose: the smoothed rate decays over a hold
+    // or a lift, and following it would shrink the count while the rpm stands still
+    if (climbing && rising) { st.span = clamp(rate * 1.0, 800, 2000); st.lead = Math.min(800, rate * leadMs / 1000); }
+    const at = shift - (st.lead || 0);
+    const from = at - (st.span || 1500);
+    if (!climbing && rpm <= from) { st.span = 0; st.lead = 0; }          // count empty: back to the plain span
+    // latch: the flash point is held from the moment it fires
+    const lifted = st.fall != null && tMs - st.fall >= 300;
+    if (!st.on && rpm >= at && !lifted) { st.on = true; st.at = at; }
+    else if (st.on && (rpm < st.at - 800 || lifted)) st.on = false;
+    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 100, rate: rate, fallSince: st.fall == null ? null : st.fall };
 }
 
 /**
@@ -314,8 +327,11 @@ function start(ctx, src) {
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
             const seen = settings.get('hudLights') !== false && target && target.state === 'shown';
-            flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead } : null;
+            flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead, fall: null } : null;
         }
+        // first moment the revs fell after the flash: a real upshift reports its new gear within
+        // ~0.7 s of that; later, the driver lifted first and the shift says nothing about reaction
+        if (flashInfo && flashInfo.fall === null && cue.fallSince !== null) flashInfo.fall = cue.fallSince;
         blink = cue.shift || cue.limiter ? !blink : true;
         return {
             d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
@@ -379,6 +395,7 @@ function start(ctx, src) {
         const f = flashInfo;
         flashInfo = null;
         if (!f || !isNum(rpm) || Date.now() - f.t > 2000 || f.rate < 300) return;
+        if (f.fall !== null && Date.now() - f.fall > 700) { log.info('hud: shift after a lift, not used for the reaction time'); return; }
         const lateMs = (rpm - f.target) / f.rate * 1000;
         const ideal = clamp(f.lead + lateMs, 0, 600);
         const before = learnedLead;
