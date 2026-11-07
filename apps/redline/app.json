@@ -54,6 +54,8 @@
      "options": [["kmh", "km/h"], ["mph", "mph"]]},
     {"key": "peakHold", "label": "Peak hold (0 = until reset)", "type": "number", "unit": "s", "default": 15,
      "steps": [0, 5, 10, 15, 30, 60]},
+    {"key": "hud", "label": "Show on HUD", "type": "choice", "default": "off",
+     "options": [["off", "Off"], ["test", "Test pattern"]]},
     {"key": "advanced", "label": "Advanced settings", "type": "bool", "default": false},
     {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
      "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},

@@ -21,6 +21,7 @@ const G = require('./kit/gauges');
 const { plural } = require('./kit/i18n');
 const Car = require('./kit/car');
 const Engine = require('./kit/engine');
+const Hud = require('./hud');
 
 const W = 1600, H = 520;
 // rev bar (G20 style): left to right, slanted segments; top edge shifted right by 'slant'
@@ -328,6 +329,8 @@ mgu.run({
         ctx.hideButton('BTN_RESET');
         // every screen refresh (60 fps) with the GPU renderer; 15 fps in software (PNG frames)
         ctx.loop('MAIN', 15, render);
+        // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
+        Hud.start(ctx);
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });
