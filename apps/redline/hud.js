@@ -61,13 +61,14 @@ function gearText(d) {
  *            revs down one step at a time instead of jumping; back to 1500 / no lead once the
  *            count is empty. Never climbed: 1500 and no lead;
  *   shift  = flashing now. Held at the point it fired at, so a noisy climb rate doesn't make it
- *            flicker; it ends when the revs fall 800 below that point (the upshift) or have
- *            been falling for 300 ms (a lift; a traction dip is shorter);
+ *            flicker; it ends on a gear change (the upshift), when the revs fall 12 % under the
+ *            highest they reached while flashing (an upshift without a gear signal) or have been
+ *            falling for 300 ms (a lift; a traction dip is shorter);
  *   limiter= at the redline (within 100): everything flashes;
  *   fallSince = since when the revs have been falling (ms), or null.
  * Rate: smoothed rpm per second from successive frames, rises only (a lift or a shift resets it).
  */
-function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
+function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear) {
     if (!isNum(rpm)) { st.rate = 0; st.on = false; st.fall = null; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0, fallSince: null }; }
     let rising = false;
     // the same reading again (a frame drawn between two rpm samples) is no news: the rate is only
@@ -91,8 +92,19 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
     if (!climbing && rpm <= from) { st.span = 0; st.lead = 0; }          // count empty: back to the plain span
     // latch: the flash point is held from the moment it fires
     const lifted = st.fall != null && tMs - st.fall >= 300;
-    if (!st.on && rpm >= at && !lifted) { st.on = true; st.at = at; }
-    else if (st.on && (rpm < st.at - 800 || lifted)) st.on = false;
+    // a new gear (the upshift itself) ends the flash and starts the next gear's count afresh: in the
+    // upper gears an upshift drops the revs only ~20 %, then they climb again at once, so neither
+    // the drop nor a lift would end it
+    const changed = typeof gear === 'number' && typeof st.gear === 'number' && gear !== st.gear;
+    if (typeof gear === 'number') st.gear = gear;
+    if (changed) { st.on = false; st.span = 0; st.lead = 0; }
+    // without a gear signal: the revs 12 % under the highest they reached while flashing (an upshift
+    // drops 18 % or more on an 8-speed, from wherever it was made; a traction dip less)
+    if (!st.on && rpm >= at && !lifted && !changed) { st.on = true; st.at = at; st.peak = rpm; }
+    else if (st.on) {
+        st.peak = Math.max(st.peak || rpm, rpm);
+        if (rpm < st.peak * 0.88 || lifted) st.on = false;
+    }
     return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 100, rate: rate, fallSince: st.fall == null ? null : st.fall };
 }
 
@@ -344,7 +356,7 @@ function start(ctx, src) {
         const gt3 = settings.get('hudLightStyle') !== 'bar';
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
-        const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead);
+        const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead, d.gear);
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
             const seen = settings.get('hudLights') !== false && target && target.state === 'shown';

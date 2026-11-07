@@ -146,7 +146,7 @@ mgu.run({
             while (recent.length && t - recent[0][0] > 1200) recent.shift();
             // the screen's shift cue, the same as the HUD's (count-in by climb rate, early flash,
             // lift handling), updated on each sample so a fast screen doesn't see repeated readings
-            screenCue = Hud.shiftCue(cueState, d.rpm, t, shiftPoint(d.oil, d.gear).rpm, redline(), hud ? hud.lead() : 200);
+            screenCue = Hud.shiftCue(cueState, d.rpm, t, shiftPoint(d.oil, d.gear).rpm, redline(), hud ? hud.lead() : 200, d.gear);
             // slowing (for the downshift cue): braking, down at least 6 km/h per second (~0.17 g) over
             // the last 0.5 s; coasting off the throttle stays under it
             const back = recent.find((r) => t - r[0] <= 500);
