@@ -39,6 +39,7 @@ const SCENE_W = 800, SCENE_H = 480;
 const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
 // frames a second: setting "hudFps" (10 / 20 / 30); the layer is made for the most, the timer paces it
 const FPS_MAX = 30, FPS_DEFAULT = 20;
+const READOUT_MS = 250;      // the readouts row is refreshed at most this often
 // the flash's on / off rhythm in ms (5 Hz), from the clock, so it looks the same at any frame rate
 const BLINK_MS = 100;
 // the redline shake: offsets (px) stepped every 100 ms while on the limiter. Each step moves the whole
@@ -111,12 +112,13 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
     if (changed) { st.on = false; st.span = 0; st.lead = 0; }
     // without a gear signal: the revs 12 % under the highest they reached while flashing (an upshift
     // drops 18 % or more on an 8-speed, from wherever it was made; a traction dip less)
-    if (!st.on && r >= at && !lifted && !changed) { st.on = true; st.at = at; st.peak = r; }
+    // the drop and the limiter go by the real rpm: the drawn one runs ahead along the climb
+    if (!st.on && r >= at && !lifted && !changed) { st.on = true; st.at = at; st.peak = rpm; }
     else if (st.on) {
-        st.peak = Math.max(st.peak || r, r);
-        if (r < st.peak * 0.88 || lifted) st.on = false;
+        st.peak = Math.max(st.peak || rpm, rpm);
+        if (rpm < st.peak * 0.88 || lifted) st.on = false;
     }
-    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: r >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
+    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
 }
 
 const numOf = (settings, k, d) => { const v = Number(settings.get(k)); return isFinite(v) ? v : d; };
@@ -424,7 +426,7 @@ function start(ctx, src) {
         const o = optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
-        const show = dm ? d.rpm : smooth(d.rpm, now, src.maxRpm());
+        const show = dm ? d.rpm : smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
         const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, show);
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
@@ -456,20 +458,35 @@ function start(ctx, src) {
      * down), then oil, water, gearbox and outside (readoutsFor).
      * Temperatures "smart": only one that is cold, warming (oil under "Oil warm at") or hot. Four at most.
      */
-    function readouts(d, gb, sp, o) { return readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o, src.extras ? src.extras() : null); }
+    const ro = { t: 0, v: [], o: null };
+    function readouts(d, gb, sp, o) {
+        // at most 4 times a second: power, torque and g change with every sample, and a row of
+        // numbers changing faster than that can't be read anyway (an options change shows at once)
+        const now = Date.now();
+        const ok = JSON.stringify(o);
+        if (ok !== ro.o || now - ro.t >= READOUT_MS || now < ro.t) {
+            ro.v = readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o, src.extras ? src.extras() : null);
+            ro.t = now; ro.o = ok;
+        }
+        return ro.v;
+    }
 
     /*
      * The car sends rpm 10-20 times a second; the HUD draws up to 30. Between two samples the bar is
      * moved on along the last climb (or fall), for at most 1.2 sample intervals and 150 ms, so it
      * moves smoothly instead of in steps; a new sample replaces the estimate. A gap over 300 ms is
-     * no climb. Also measured: how often samples come (logged once, then every 10 minutes).
+     * no climb, nor is a jump faster than 8000 rpm/s (a glitch, not a climb); after the window the
+     * real reading is drawn (revs held on the point must not run on into the limiter), and the
+     * estimate never goes past the redline. Also measured: how often samples come (logged once, then every 10 minutes).
      */
     const sm = { r: null, t: 0, rate: 0, dt: 0, n: 0, logged: 0 };
     function smooth(rpm, now, max) {
+        // max: the redline (the estimate stops there; the real reading may be above it)
         if (!isNum(rpm)) { sm.r = null; return rpm; }
         if (rpm !== sm.r || now - sm.t >= 500) {
             const dt = now - sm.t;
             sm.rate = sm.r !== null && dt > 15 && dt < 300 ? (rpm - sm.r) * 1000 / dt : 0;
+            if (Math.abs(sm.rate) > 8000) sm.rate = 0;
             if (sm.r !== null && dt > 15 && dt < 300) { sm.dt = sm.dt ? sm.dt * 0.95 + dt * 0.05 : dt; sm.n++; }
             sm.r = rpm; sm.t = now;
             if (sm.n >= 200 && now - sm.logged > 600000) {
@@ -478,9 +495,10 @@ function start(ctx, src) {
             }
             return rpm;
         }
-        if (Math.abs(sm.rate) < 200) return rpm;
-        const ahead = Math.min(now - sm.t, sm.dt ? sm.dt * 1.2 : 100, 150);
-        return clamp(Math.round(rpm + sm.rate * ahead / 1000), 0, max || 9000);
+        const win = Math.min(sm.dt ? sm.dt * 1.2 : 100, 150);
+        if (Math.abs(sm.rate) < 200 || now - sm.t > win) return rpm;
+        const est = clamp(Math.round(rpm + sm.rate * (now - sm.t) / 1000), 0, Math.max(rpm, max || 9000));
+        return sm.rate > 0 ? Math.max(rpm, Math.min(est, max || 9000)) : est;
     }
     const fps = () => { const v = num('hudFps', FPS_DEFAULT); return v >= 30 ? 30 : v >= 20 ? 20 : 10; };
 
@@ -517,7 +535,8 @@ function start(ctx, src) {
             if (src.gearbox) src.gearbox.stop();
             return;
         }
-        if (src.gearbox) src.gearbox.start();
+        // the gearbox unit is asked only while its readout is on
+        if (src.gearbox) { if (optsNow().gearbox) src.gearbox.start(); else src.gearbox.stop(); }
         const f = frameData();
         // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
         const key = frameKey(f);
@@ -573,7 +592,7 @@ function start(ctx, src) {
     const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
     settings.onChange(safe('setting', (key) => {
         if (key === 'hudFps' && timer) { clearInterval(timer); timer = setInterval(tick, Math.round(1000 / fps())); log.info('hud: ' + fps() + ' fps'); return; }
-        if (HUD_KEYS.indexOf(key) < 0) { first = true; return; }
+        if (HUD_KEYS.indexOf(key) < 0 && shown !== 'test') { first = true; return; }
         if (shown === 'test' && key !== 'hud') shown = '';         // redraw the pattern with the tach moved
         apply();
     }));

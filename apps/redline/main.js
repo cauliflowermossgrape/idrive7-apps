@@ -511,7 +511,7 @@ mgu.run({
         /** A small still of a layout for its tile (cached per look and the settings that change it). */
         function lookLayer(style) {
             const o = Hud.optsFrom(settings);
-            const key = ['hudlook2', style, o.palette, o.lights, o.gt3, o.dim, o.lightStyle, o.gear, o.peak].join('|');
+            const key = ['hudlook2', style, o.palette, o.lights, o.gt3, o.dim, o.lightStyle, o.gear, o.peak, o.bar, o.rpm].join('|');
             return G.layer(key, HudDraw.IW / 2, HudDraw.IH / 2, (r) => {
                 r.fillRect(0, 0, HudDraw.IW / 2, HudDraw.IH / 2, '#000000');
                 HudDraw.drawLayer(HudDraw.scaled(r, 0.5, 0, 0), {
