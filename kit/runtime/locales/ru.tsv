@@ -1751,3 +1751,73 @@ SOOT	САЖА
 LOAD (ADAPTED)	ЗАГРУЗКА (АДАПТ.)
 ASH (ADAPTED)	ЗОЛА (АДАПТ.)
 Reading the engine unit...	Чтение блока двигателя...
+# eDrive 12 V battery (battery12.js)
+orig.	ориг.
+collecting...	сбор данных...
+the car's signal	сигнал автомобиля
+Confirm	Подтвердить
+EARLIER	РАНЕЕ
+low	низкое
+resting	покой
+VOLTAGE, LAST 2 MIN	НАПРЯЖЕНИЕ, ПОСЛЕДНИЕ 2 МИН
+voltage says: alternator charging	по напряжению: генератор заряжает
+CAPACITY	ЁМКОСТЬ
+STATE OF CHARGE  (%, FROM THE DME)	УРОВЕНЬ ЗАРЯДА  (%, ОТ DME)
+STATE OF CHARGE, LAST 5	УРОВЕНЬ ЗАРЯДА, ПОСЛЕДНИЕ 5
+older	раньше
+TIME SPENT PER CHARGE BAND	ВРЕМЯ ПО ДИАПАЗОНАМ ЗАРЯДА
+GOOD	ХОРОШО
+engine off, car awake: well charged	двигатель выключен, автомобиль не спит: хорошо заряжена
+no voltage readings yet	показаний напряжения пока нет
+lowish - a longer drive helps	низковато - поможет долгая поездка
+engine off, car awake: about half charged or more	двигатель выключен, автомобиль не спит: заряжена наполовину или больше
+low - use a battery charger	низкий - используйте зарядное устройство
+LOW	НИЗКИЙ
+engine off, car awake: low - drive or charge soon	двигатель выключен, автомобиль не спит: низкий - скоро поездка или зарядка
+VERY LOW	ОЧЕНЬ НИЗКИЙ
+engine off, car awake: charge the battery	двигатель выключен, автомобиль не спит: зарядите аккумулятор
+alternator resting, battery feeds the car (normal)	генератор отдыхает, аккумулятор питает автомобиль (норма)
+into the battery	в аккумулятор
+the alternator charges the battery	генератор заряжает аккумулятор
+out of the battery	из аккумулятора
+DISCHARGING	РАЗРЯД
+engine off: the battery feeds the car	двигатель выключен: аккумулятор питает автомобиль
+RESTING	ПОКОЙ
+little current	малый ток
+hardly any current	тока почти нет
+resting, but low: charge or drive soon	в покое, но низкий: скоро зарядка или поездка
+well charged	хорошо заряжена
+strong charge after a start or a deep drain	сильный заряд после пуска или глубокого разряда
+waiting for the engine unit	ожидание блока двигателя
+not available	недоступно
+PAUSED	ПАУЗА
+parked: reads stopped so the car can sleep	стоянка: чтение остановлено, автомобиль может уснуть
+slowing down: braking energy charges the battery	замедление: энергия торможения заряжает аккумулятор
+charge low: charged all the time until it recovers	заряд низкий: заряжается постоянно до восстановления
+State of charge	Уровень заряда
+Last hour	Последний час
+Recorded by the car	Записано автомобилем
+CURRENT  (A, + = INTO THE BATTERY)	ТОК  (A, + = В АККУМУЛЯТОР)
+HEALTH (SOH)	СОСТОЯНИЕ (SOH)
+# Engine Config: Exhaust Flap - Drive mode, hold, the Close rpm guard (auto.js)
+Drive mode	Режим движения
+Hold Open / Close	Удержание Открыть / Закрыть
+On · sent again every 15 s	Вкл · повтор каждые 15 с
+Off · the car takes over after ~20 s	Выкл · через ~20 с управляет автомобиль
+Close: hand back above	Закрыто: вернуть автомобилю выше
+Never (not recommended)	Никогда (не рекомендуется)
+RPM signal lost · OEM requested · select CLOSE again	Нет сигнала оборотов · включён штатный режим · выберите Закрыть снова
+RPM signal lost · Close paused · the car has the flap	Нет сигнала оборотов · закрытие на паузе · заслонкой управляет автомобиль
+Close paused above {rpm} rpm · the car has the flap	Закрытие на паузе выше {rpm} об/мин · заслонкой управляет автомобиль
+Waiting for the driving mode	Ожидание режима движения
+holding	удержание
+Sport	Спорт
+Sport+	Спорт+
+Sport Individual	Спорт индивидуальный
+Comfort	Комфорт
+Comfort+	Комфорт+
+Comfort Individual	Комфорт индивидуальный
+Eco Pro	Эко Про
+Eco Pro+	Эко Про+
+Eco Pro Individual	Эко Про индивидуальный
+Adaptive	Адаптивный
