@@ -58,10 +58,17 @@ cars with a HUD, but nobody has checked yet.
 
 **Palettes** (*Colours*): Colour (green / yellow / red), Night amber, Ice white.
 
-**Choosing a look:** the **HUD looks** tab shows each layout as the HUD will draw it, in your
-current colours and light style. Tap one to use it, and pick the colours with the buttons
-underneath. The one in use is outlined. The HUD changes at once. *HUD style → Layout* in Settings
-does the same in text.
+**Choosing a look: the HUD looks tab.**
+
+- **Live preview:** on the left, your HUD as set up at twice its size, playing a scripted drive.
+  It counts in, flashes, shifts (graded spot on, early or late in turn), hits the limiter, then
+  brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
+  current settings, so every change shows in it at once.
+- **Picking:** on the right, the six layouts; tap one to use it. Under them, a row of buttons each
+  for colours, shift lights, the shift grade, the peak marker and the shake.
+- **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
+  you're parked. Nothing is learned from it.
+- **Readouts:** gear, boost, temperatures and units are in *Settings → HUD readouts*.
 
 **Effects:**
 
@@ -211,6 +218,15 @@ cold.
 To fill the curve, do a few full-throttle pulls, some from low rpm (kickdowns in 2nd–4th), up to
 the redline. Until a gear is known, its shift point is *redline − Shift point before redline*.
 **Shift point → Redline minus the setting below** turns the per-gear points off.
+
+### Gearbox mode (D / S / M)
+
+Redline reads the programme the cluster shows by the gear (MDrive, as Car Vitals does). In **D**
+or **S** the gearbox picks the shift moment, so those shifts don't teach the reaction time, don't
+get a grade on the HUD, and the downshift arrows (*while slowing down*) stay off. In **M**,
+including paddling from D, everything works. If the car never sends the programme, nothing is held
+back. The HUD can show the mode as a small letter by the gear (*HUD readouts → Gearbox mode*). The
+log lists the raw values (`gearbox programme: …`), so the detection can be checked on a new car.
 
 ### Reaction time
 

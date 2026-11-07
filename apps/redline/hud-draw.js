@@ -217,7 +217,8 @@ function drawChip(cv, x0, x1, y, chip, P) {
     const a = chip.age || 0;
     const size = a < 150 ? 34 - 8 * (a / 150) : 26, alpha = a > 1200 ? clamp(1 - (a - 1200) / 300, 0, 1) : 1;
     if (a < 500) {
-        const rr = 30 + 36 * (a / 500);                 // round the word, not across the bar
+        // round the word, inside the image (the screen's 2x preview doesn't clip)
+        const rr = Math.min(30 + 36 * (a / 500), IH - (y + 26) - 2);
         cv.arc(cx, y + 26, rr - 2, rr, 0, 360, withAlpha(c, 0.8 * (1 - a / 500)));
     }
     if (alpha > 0) cv.text(VERDICT_TEXT[chip.verdict] || chip.verdict, cx, y + 36, size, withAlpha(c, alpha), { align: 'center', font: 'bold', spacing: 1.5 });
@@ -237,6 +238,11 @@ function lightsRow(x, y, w, d) {
  */
 function drawLayer(cv, f, layer) {
     const o = f.opts, d = f.d, P = palette(o.style === 'vfd' ? 'vfd' : o.palette), cue = f.cue;
+    // the gearbox mode (D / S / M) as a small letter by the gear
+    if (layer !== 'bg' && f.mode && o.gear) {
+        const at = o.style === 'wings' ? [IW / 2 + 34, 24] : o.style === 'digital' || o.style === 'vfd' ? [58, 22] : [56, 24];
+        cv.text(f.mode, at[0], at[1], 18, withAlpha(P.text, 0.85), { font: 'bold' });
+    }
     const s = { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, dim: o.dim, style: o.lightStyle, P: P, layer: layer, peak: f.peak };
     const gearCol = cue.limiter && f.blink ? P.limit : P.text;
     const fg = layer !== 'bg';
@@ -331,4 +337,21 @@ function drawHud(cv, f) {
 }
 let shakeBuf = null;
 
-module.exports = { drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };
+/**
+ * A drawing surface that scales by k and moves by (ox, oy) on the way to r: the HUD's drawing at
+ * another size on the screen (the software renderer doesn't do the Recorder's xf transform).
+ */
+function scaled(r, k, ox, oy) {
+    const X = (x) => ox + x * k, Y = (y) => oy + y * k, P = (pts) => pts.map((p) => [X(p[0]), Y(p[1])]);
+    return {
+        circle: (cx, cy, rad, c) => r.circle(X(cx), Y(cy), rad * k, c),
+        arc: (cx, cy, r0, r1, a0, a1, c) => r.arc(X(cx), Y(cy), r0 * k, r1 * k, a0, a1, c),
+        fillRect: (x, y, w, h, c) => r.fillRect(X(x), Y(y), w * k, h * k, c),
+        quad: (pts, c) => r.quad(P(pts), c),
+        polyline: (pts, w, c) => r.polyline(P(pts), w * k, c),
+        line: (xa, ya, xb, yb, w, c) => r.line(X(xa), Y(ya), X(xb), Y(yb), w * k, c),
+        text: (s, x, y, size, c, o) => r.text(s, X(x), Y(y), size * k, c, o && o.spacing ? Object.assign({}, o, { spacing: o.spacing * k }) : o),
+    };
+}
+
+module.exports = { scaled, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };

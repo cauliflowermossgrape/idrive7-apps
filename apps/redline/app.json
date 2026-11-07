@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.23.0",
+  "version": "1.24.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -23,6 +23,10 @@
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
       "DataPowerTrain2": "s"
+    },
+    "de.bmw.infotainment.misc.MDrive": {
+      "_optional": "the gearbox programme (D / S / M): shift grades and learning only from shifts made by hand",
+      "dataDisplayGearbox": "s"
     },
     "de.bmw.infrastructure.analytics.BasicDataSet": {
       "_optional": "gearbox oil temperature on the HUD when the gearbox unit doesn't answer",
@@ -99,6 +103,7 @@
     {"key": "hudUnlit", "label": "Unlit segments", "type": "choice", "default": "dim", "when": {"hud": ["on", "test"]}, "group": "HUD style",
      "options": [["dim", "Dim"], ["hidden", "Hidden"]]},
     {"key": "hudShowGear", "label": "Gear", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
+    {"key": "hudShowMode", "label": "Gearbox mode (D / S / M) by the gear", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudBoost", "label": "Boost", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudBoostUnit", "label": "Boost unit", "type": "choice", "default": "bar", "when": {"hud": ["on", "test"]}, "group": "HUD readouts",
      "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]]},

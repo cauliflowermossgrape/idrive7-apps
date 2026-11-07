@@ -119,6 +119,83 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
     return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: r >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
 }
 
+const numOf = (settings, k, d) => { const v = Number(settings.get(k)); return isFinite(v) ? v : d; };
+
+/** The HUD's drawing options from the settings (also used by the HUD looks page). */
+function optsFrom(settings) {
+    const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
+    const layout = settings.get('hudStyle');
+    return {
+        style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
+        palette: settings.get('hudPalette') || 'colour',
+        // readouts, each on its own switch
+        gear: on('hudShowGear'), boost: on('hudBoost'), limit: on('hudShowLimit'),
+        oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
+        smartTemps: settings.get('hudTempsMode') !== 'always',
+        boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
+        peak: on('hudPeak'),
+        chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
+        shake: settings.get('hudShake') === true,
+        lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
+        lightStyle: settings.get('lights'), warmOil: numOf(settings, 'warmOil', 80),
+        mode: on('hudShowMode'),
+    };
+}
+
+const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
+// boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
+const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
+/** The readouts row for o (optsFrom): d (oil, coolant), gearbox temperature, boost (bar), sp ({ rpm, cold }). */
+function readoutsFor(d, gb, boost, sp, o) {
+    const items = [];
+    if (o.boost) {
+        const b = boost, u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
+        if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });
+    }
+    if (o.limit && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
+    TEMPS.forEach((t) => {
+        if (!o[t[1]]) return;
+        const v = t[1] === 'gearbox' ? gb : d[t[1]];
+        if (!isNum(v)) return;
+        const lim = t[2];
+        // the bands are in °C whatever is shown
+        const tone = v < lim.cold ? 'cold' : lim.warmOil && v < o.warmOil ? 'warm' : v > lim.hot ? 'hot' : 'text';
+        if (o.smartTemps && tone === 'text') return;
+        items.push({ label: t[0], value: Math.round(o.fahrenheit ? v * 9 / 5 + 32 : v) + '°', tone: tone });
+    });
+    // four fit the row legibly: on a cold start (boost, limit, oil, water, gearbox) the gearbox,
+    // the last to matter, gives way
+    while (items.length > 4) items.pop();
+    return items;
+}
+
+/*
+ * A scripted 10 s drive for previews (the HUD looks page and "Play on HUD"): 3rd gear counting in
+ * and flashing, an upshift (graded spot on, early or late in turn, by the loop), 4th onto the
+ * limiter, braking with the downshift cue counting up, two downshifts, then cruising.
+ * Returns what the HUD needs at t ms into it.
+ */
+const DEMO_MS = 10000;
+function demoAt(tMs) {
+    const loop = Math.floor(tMs / DEMO_MS), t = (tMs % DEMO_MS) / 1000;
+    const lerp = (a, b, f) => a + (b - a) * clamp(f, 0, 1);
+    const grades = ['SPOT ON', 'EARLY', 'LATE'], g = grades[loop % 3];
+    const upAt = g === 'EARLY' ? 4800 : g === 'LATE' ? 6150 : 5650;       // the 3rd-gear shift rpm
+    const climb3 = 3800, rate3 = 1000, tUp = (upAt - climb3) / rate3;
+    let r = { rpm: 0, gear: 3, stage: 'D', shift: 5550, down: 0, chip: null, oil: 98, coolant: 92, gearbox: 81, boost: 0, mode: 'M', peak: 0 };
+    if (t < tUp) { r.rpm = climb3 + rate3 * t; r.boost = lerp(0.4, 1.3, t / tUp); }
+    else if (t < 4.8) {
+        r.gear = 4; r.shift = 5750; r.chip = { verdict: g, at: tUp * 1000 };
+        r.rpm = Math.min(6540, upAt * 0.79 + 800 * (t - tUp)); r.boost = 1.3; r.peak = upAt;
+    } else if (t < 5.6) { r.gear = 4; r.shift = 5750; r.rpm = 6500 + (Math.floor(t * 20) % 2) * 40; r.boost = 1.3; r.peak = 6540; }
+    else if (t < 7.6) {
+        r.gear = 4; r.shift = 5750; r.rpm = lerp(6400, 2700, (t - 5.6) / 2); r.down = Math.min(3, Math.floor((t - 5.6) / 0.55)); r.peak = 6540;
+    } else if (t < 8.6) { r.gear = t < 8.1 ? 3 : 2; r.shift = r.gear === 3 ? 5550 : 6400; r.rpm = r.gear === 3 ? 3500 : 4400; r.down = r.gear === 3 ? 2 : 1; }
+    else { r.gear = 2; r.shift = 6400; r.rpm = lerp(4400, 3000, (t - 8.6) / 1.4); r.boost = 0.2; }
+    r.chipAge = r.chip ? tMs % DEMO_MS - r.chip.at : 0;
+    return r;
+}
+
 /** 800x480 test pattern: border, rulers every 40 px with labels, inset frames at 40/80/120, the tach at its place. */
 function drawTestPattern(cv) {
     cv.clear();
@@ -289,64 +366,50 @@ function start(ctx, src) {
 
     /** What drawHud needs, now. */
     function frameData() {
-        const d = src.data(), sp = src.shiftPoint(d.oil, d.gear), redline = src.redline();
-        if (!!d.demo !== lastDemo) { lastDemo = !!d.demo; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
+        let now = Date.now();
+        // the demo stops by itself once the car moves (it replaces the real lights on the glass)
+        if (now < demoUntil && src.data().speed > 5) { demoUntil = 0; log.info('hud: demo stopped, the car moved'); }
+        const playing = now < demoUntil, dm = playing ? demoAt(now - demoStart) : null;
+        // "Play on HUD": the scripted drive instead of the car, for a few seconds (nothing is learned)
+        const d = dm ? { rpm: dm.rpm, gear: dm.gear, stage: dm.stage, oil: dm.oil, coolant: dm.coolant, demo: true } : src.data();
+        const sp = dm ? { rpm: dm.shift, cold: false } : src.shiftPoint(d.oil, d.gear), redline = dm ? 6550 : src.redline();
+        const demoKey = dm ? 'play' : !!d.demo;
+        if (demoKey !== lastDemo) { lastDemo = demoKey; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
         const o = optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
-        const was = cueState.on, lead = leadMs(), now = Date.now();
-        const show = smooth(d.rpm, now, src.maxRpm());
+        const was = cueState.on, lead = leadMs();
+        const show = dm ? d.rpm : smooth(d.rpm, now, src.maxRpm());
         const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, show);
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
-            const seen = lights && target && target.state === 'shown';
+            const seen = lights && target && target.state === 'shown' && !dm;
             flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead, fall: null } : null;
         }
         // first moment the revs fell after the flash: a real upshift reports its new gear within
         // ~0.7 s of that; later, the driver lifted first and the shift says nothing about reaction
         if (flashInfo && flashInfo.fall === null && cue.fallSince !== null) flashInfo.fall = cue.fallSince;
         blink = cue.shift || cue.limiter ? Math.floor(now / BLINK_MS) % 2 === 0 : true;
-        const gb = src.gearbox ? src.gearbox.value() : null;
+        const gb = dm ? dm.gearbox : src.gearbox ? src.gearbox.value() : null;
+        const mode = dm ? dm.mode : src.mode ? src.mode() : null;
         return {
-            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
-            down: src.downshift ? src.downshift() : 0,
-            peak: o.peak && src.peak ? src.peak() : 0,
-            chip: chipNow(o, now),
+            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: dm ? 8000 : src.maxRpm(), blink: blink, cue: cue,
+            down: dm ? dm.down : src.downshift ? src.downshift() : 0,
+            peak: o.peak ? (dm ? dm.peak : src.peak ? src.peak() : 0) : 0,
+            chip: dm ? (dm.chip && o.chip !== 'off' && dm.chipAge < 1500 ? { verdict: dm.chip.verdict, age: dm.chipAge, burst: o.chip === 'burst' } : null) : chipNow(o, now),
             shake: o.shake && cue.limiter ? SHAKE[Math.floor(now / 100) % SHAKE.length] : null,
-            readouts: readouts(d, gb, sp, o),
+            readouts: dm ? readoutsFor(d, gb, dm.boost, sp, o) : readouts(d, gb, sp, o),
+            mode: o.mode && (mode === 'M' || mode === 'S' || mode === 'D') ? mode : null,
             opts: o,
         };
     }
+    let demoStart = 0, demoUntil = 0;
 
     /*
      * The readouts row, left to right: boost (once the car has sent a moving value), the cold-engine
      * shift limit (while the cold guard holds the shift point down), then oil, water and gearbox.
      * Temperatures "smart": only one that is cold, warming (oil under "Oil warm at") or hot. Four at most.
      */
-    const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
-    // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
-    const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
-    function readouts(d, gb, sp, o) {
-        const items = [];
-        if (o.boost && src.boost) {
-            const b = src.boost(), u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
-            if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });
-        }
-        if (o.limit && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
-        TEMPS.forEach((t) => {
-            if (!o[t[1]]) return;
-            const v = t[1] === 'gearbox' ? gb : d[t[1]];
-            if (!isNum(v)) return;
-            const lim = t[2];
-            // the bands are in °C whatever is shown
-            const tone = v < lim.cold ? 'cold' : lim.warmOil && v < o.warmOil ? 'warm' : v > lim.hot ? 'hot' : 'text';
-            if (o.smartTemps && tone === 'text') return;
-            items.push({ label: t[0], value: Math.round(o.fahrenheit ? v * 9 / 5 + 32 : v) + '°', tone: tone });
-        });
-        // four fit the row legibly: on a cold start (boost, limit, oil, water, gearbox) the gearbox,
-        // the last to matter, gives way
-        while (items.length > 4) items.pop();
-        return items;
-    }
+    function readouts(d, gb, sp, o) { return readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o); }
 
     /*
      * The car sends rpm 10-20 times a second; the HUD draws up to 30. Between two samples the bar is
@@ -382,24 +445,7 @@ function start(ctx, src) {
     }
 
     /** The drawing options from the settings. */
-    function optsNow() {
-        const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
-        const layout = settings.get('hudStyle');
-        return {
-            style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
-            palette: settings.get('hudPalette') || 'colour',
-            // readouts, each on its own switch
-            gear: on('hudShowGear'), boost: on('hudBoost'), limit: on('hudShowLimit'),
-            oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
-            smartTemps: settings.get('hudTempsMode') !== 'always',
-            boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
-            peak: on('hudPeak'),
-            chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
-            shake: settings.get('hudShake') === true,
-            lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
-            lightStyle: settings.get('lights'), warmOil: num('warmOil', 80),
-        };
-    }
+    function optsNow() { return optsFrom(settings); }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
@@ -451,7 +497,7 @@ function start(ctx, src) {
         const age = f.chip && f.chip.burst ? (f.chip.age < 500 || f.chip.age > 1200 ? Math.floor(f.chip.age / 40) : 'h') : '';
         return [isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
             Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25),
-            f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '',
+            f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
             o.style, o.palette, o.gear, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
     }
@@ -492,6 +538,9 @@ function start(ctx, src) {
         flashInfo = null;
         if (!f || !isNum(rpm) || Date.now() - f.t > 2000 || f.rate < 300) return;
         if (f.fall !== null && Date.now() - f.fall > 700) { log.info('hud: shift after a lift, not used for the reaction time'); return; }
+        // in D or S the gearbox picks the moment: only shifts made by hand (M) say anything about you
+        const m = src.mode ? src.mode() : null;
+        if (m === 'D' || m === 'S') return;
         const lateMs = (rpm - f.target) / f.rate * 1000;
         const ideal = clamp(f.lead + lateMs, 0, 600);
         const before = learnedLead;
@@ -527,7 +576,12 @@ function start(ctx, src) {
         log.info('hud: reaction time reset');
     }
 
-    return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData };
+    /** "Play on HUD": the scripted drive (demoAt) on the HUD for ms (two loops by default). */
+    const play = safe('play', (ms) => { demoStart = Date.now(); demoUntil = demoStart + (ms || 2 * DEMO_MS); first = true; log.info('hud: playing the demo'); });
+    const stopPlay = () => { demoUntil = 0; first = true; };
+
+    return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
+        play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, readoutsFor, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
