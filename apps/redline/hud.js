@@ -373,6 +373,7 @@ function start(ctx, src) {
         if (isNum(j.ms)) { learnedLead = clamp(Math.round(j.ms), 0, 600); leadShifts = isNum(j.n) && j.n > 0 ? Math.floor(j.n) : 0; }
     } catch (e) { /* none yet */ }
     let cur = null, prev = null, first = true, lastErr = 0;
+    let hiddenLogged = false;     // the HUD is hidden by the driving mode (logged once each way)
 
     const safe = (name, fn) => function () {
         try { return fn.apply(null, arguments); } catch (e) {
@@ -414,7 +415,7 @@ function start(ctx, src) {
 
     const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); };
 
-    const dropLayer = safe('drop', () => { stopTimer(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; });
+    const dropLayer = safe('drop', () => { stopTimer(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
 
     const disconnect = safe('disconnect', () => {
         dropLayer();
@@ -555,14 +556,18 @@ function start(ctx, src) {
      * for the target once the layer has content, so idle / acquiring must draw.
      */
     const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
-    let hiddenLogged = false;
     const tick = safe('tick', () => {
         if (!cr || !cr.ready) return;
         // Comfort / Eco Pro on "Hide": the image is dropped (BMW's own HUD shows), the timer keeps
         // running to bring it back when the mode changes
         if (shown === 'tach') {
             if (calm(Date.now() < demoUntil) === 'hide') {
-                if (layer) { cr.drop(layer); layer = 0; }
+                if (layer) {
+                    cr.drop(layer); layer = 0;
+                    // the old layer's target state isn't the new one's: forget it (keeping a guard
+                    // stop), so a layer made again isn't held back waiting for a target event
+                    if (target) target = { state: '', holder: '', disabled: target.disabled };
+                }
                 if (src.gearbox) src.gearbox.stop();
                 if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
@@ -579,7 +584,9 @@ function start(ctx, src) {
             return;
         }
         // the gearbox unit is asked only while its readout is on
-        if (src.gearbox) { if (optsNow().gearbox) src.gearbox.start(); else src.gearbox.stop(); }
+        // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
+        const oNow = calm(Date.now() < demoUntil) === 'lights' ? calmOpts(optsNow()) : optsNow();
+        if (src.gearbox) { if (oNow.gearbox) src.gearbox.start(); else src.gearbox.stop(); }
         const f = frameData();
         // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
         const key = frameKey(f);
@@ -623,10 +630,11 @@ function start(ctx, src) {
         const r = rect();
         if (shown === 'tach') { if (layer) cr.set(layer, r); return; }
         dropLayer();
-        makeLayer();
-        if (!layer) return;
+        // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
+        const hidden = calm(Date.now() < demoUntil) === 'hide';
+        if (!hidden) { makeLayer(); if (!layer) return; }
         shown = 'tach';
-        if (src.gearbox) src.gearbox.start();
+        // (the gearbox unit is started by the tick, only while its readout shows)
         timer = setInterval(tick, Math.round(1000 / fps()));
         log.info('hud: tach on at ' + r.x + ',' + r.y + ' ' + r.w + 'x' + r.h);
     });

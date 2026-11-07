@@ -1,8 +1,9 @@
 # Redline
 
 A full-screen rev display in the style of the G20 Live Cockpit (Sport). It shows a wide slanted
-rev bar, digital rpm, a big gear, speed, oil and water temperatures, and 12 shift lights. Every
-upshift is scored against your shift point. A cold-engine guard holds the shift point down until
+rev bar, digital rpm, a big gear, speed, oil and water temperatures, and 12 shift lights. Upshifts
+made by hand near your shift point are scored against it; everyday shifts well below it show as
+CRUISE and the gearbox's own shifts (D / S) as AUTO, left out of the score. A cold-engine guard holds the shift point down until
 the oil is warm. The main README's app table describes the screen itself.
 
 This file is mostly about the **experimental** parts added on top. Each one is marked
