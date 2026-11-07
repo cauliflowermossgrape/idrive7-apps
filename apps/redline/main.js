@@ -104,6 +104,12 @@ mgu.run({
         const gearMode = { v: null, seen: [] };
         /** 'M' (shifting by hand), 'S', 'D', or null when the car hasn't said (then nothing is held back). */
         const modeNow = () => (gearMode.v && !car.data().demo ? gearMode.v : null);
+        // the HUD's extra readouts, as Live Data scales them: accelerator pedal (%), g sideways and
+        // forward, outside temperature (°C); each { v, t }, used while under 2 s old (outside: 10 min)
+        const extra = { pedal: { v: null, t: 0 }, gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
+        const keep = (e, v) => { e.v = v; e.t = Date.now(); };
+        const fresh = (e, ms) => (e.v !== null && Date.now() - e.t < ms ? e.v : null);
+        const G0 = 9.80665;
         const torqueWatch = { 'de.bmw.infotainment.drivingexcitement.FES': {
             statusActualValueTorque2: (v) => {
                 const raw = v && v.actualValueTorqueCrankshaft;
@@ -115,6 +121,16 @@ mgu.run({
                 if (boost.first === null) boost.first = raw; else if (raw !== boost.first) boost.moved = true;
                 boost.v = raw * 0.01; boost.t = Date.now();
             },
+        },
+        'de.bmw.powertrain.AcceleratorPedal': {
+            AngleAcceleratorPedal: (v) => { const raw = v && v.actualValueAngleAcceleratorPedal; if (typeof raw === 'number') { const p = raw * 0.025; if (p >= -2 && p <= 102) keep(extra.pedal, p); } },
+        },
+        'de.bmw.infotainment.vehicle.CDS2': {
+            statusLateralAccelerationMassCenter: (v) => { const raw = v && v.lateralAccelerationCentreOfGravity; if (typeof raw === 'number' && raw !== 65535) keep(extra.gLat, (raw * 0.002 - 65) / G0); },
+            statusLongitudinalAccelerationMassCenter: (v) => { const raw = v && v.longitudinalAccelerationCentreOfGravity; if (typeof raw === 'number' && raw !== 65535) keep(extra.gLong, (raw * 0.002 - 65) / G0); },
+        },
+        'de.bmw.infrastructure.EnvironmentalInformation': {
+            ExteriorTemperature: (v) => { const raw = v && v.temperatureExterior; if (typeof raw === 'number' && raw !== 255) keep(extra.outside, raw * 0.5 - 40); },
         },
         // the gearbox programme the cluster shows by the gear (S / M, else D), as Car Vitals reads it
         'de.bmw.infotainment.misc.MDrive': {
@@ -476,7 +492,7 @@ mgu.run({
          * peak and shake, each a row of buttons. "Play on HUD" runs the same drive on the glass. */
         const LOOKS = [['standard', 'Standard'], ['minimal', 'Minimal'], ['wings', 'Split wings'],
             ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade']];
-        const studio = { cue: {}, t0: Date.now(), panel: 'items' };
+        const studio = { cue: {}, t0: Date.now(), panel: 'readouts' };
         /** The preview's frame at now: what frameData would give the HUD for the scripted drive. */
         function studioFrame(now) {
             const o = Hud.optsFrom(settings), t = now - studio.t0, dm = Hud.demoAt(t);
@@ -488,7 +504,7 @@ mgu.run({
                 peak: o.peak ? dm.peak : 0,
                 chip: dm.chip && o.chip !== 'off' && dm.chipAge < 1500 ? { verdict: dm.chip.verdict, age: dm.chipAge, burst: o.chip === 'burst' } : null,
                 shake: o.shake && cue.limiter ? [[2, 1], [-2, -1], [1, -1], [-1, 1]][Math.floor(now / 100) % 4] : null,
-                readouts: Hud.readoutsFor(d, dm.gearbox, dm.boost, { rpm: dm.shift, cold: false }, o),
+                readouts: Hud.readoutsFor(d, dm.gearbox, dm.boost, { rpm: dm.shift, cold: false }, o, dm),
                 mode: o.mode ? dm.mode : null, opts: o,
             };
         }
@@ -543,7 +559,7 @@ mgu.run({
             // the editor under the preview: tabs, then that panel's buttons
             // category tabs: text with an underline on a divider (like the page tabs), not pills, so they
             // read as categories and the pills below as the things you change
-            const panels = [['look', 'LOOK'], ['items', 'ITEMS'], ['effects', 'EFFECTS'], ['place', 'PLACE']];
+            const panels = [['look', 'LOOK'], ['gauge', 'GAUGE'], ['readouts', 'READOUTS'], ['effects', 'EFFECTS'], ['place', 'PLACE']];
             cv.fillRect(24, 398, 1552, 1, withAlpha(t.tick, 0.6));
             let tx = 40;
             panels.forEach((pn) => {
@@ -553,26 +569,37 @@ mgu.run({
                 cv.target(tx - 16, 356, w + 32, 46, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 56;
             });
-            cv.text(STUDIO_HINT[studio.panel], 1576, 388, 16, t.dim, { align: 'right' });
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.throttle, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
+            const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
+            cv.text(over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show (temperatures only when cold or hot)' : STUDIO_HINT[studio.panel], 1576, 388, 16, over ? t.warn : t.dim, { align: 'right' });
             if (studio.panel === 'look') {
                 choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
-                choiceRow(cv, t, 462, 'LIGHTS', 'hudLightStyle', o.lights ? (o.gt3 ? 'gt3' : 'bar') : 'off', [['gt3', 'GT3 (outside in)'], ['bar', 'Left to right']], !o.lights);
                 // temperatures only while cold, warming or hot (invisible at operating temperature), or always
-                choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']], false, 720);
-            } else if (studio.panel === 'items') {
-                // what's on the HUD: the gauge's parts, then the readouts; tap to add or remove
+                choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']]);
+            } else if (studio.panel === 'gauge') {
+                // the gauge's parts; tap to add or remove
                 switches(cv, t, 414, 'GAUGE', [
                     ['Rev bar', o.bar, () => settings.set('hudShowBar', !o.bar)],
                     ['Shift lights', o.lights, () => settings.set('hudLightStyle', o.lights ? 'off' : 'gt3')],
                     ['Gear', o.gear, () => settings.set('hudShowGear', !o.gear)],
                     ['Gear mode (D/S/M)', o.mode, () => settings.set('hudShowMode', !o.mode)],
                 ]);
-                switches(cv, t, 462, 'READOUTS', [
+                choiceRow(cv, t, 462, 'LIGHTS', 'hudLightStyle', o.lights ? (o.gt3 ? 'gt3' : 'bar') : 'off', [['gt3', 'GT3 (outside in)'], ['bar', 'Left to right']], !o.lights);
+            } else if (studio.panel === 'readouts') {
+                // the numbers under the bar, in this order; up to four show
+                switches(cv, t, 414, 'ENGINE', [
                     ['RPM readout', o.rpm, () => settings.set('hudShowRpm', !o.rpm)],
                     ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
+                    ['Torque', o.torque, () => settings.set('hudShowTorque', !o.torque)],
+                    ['Power', o.power, () => settings.set('hudShowPower', !o.power)],
+                    ['Throttle', o.throttle, () => settings.set('hudShowThrottle', !o.throttle)],
+                    ['G-force', o.g, () => settings.set('hudShowG', !o.g)],
+                ]);
+                switches(cv, t, 462, 'TEMPS', [
                     ['Oil temp', o.oil, () => settings.set('hudShowOil', !o.oil)],
                     ['Water temp', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
                     ['Gearbox temp', o.gearbox, () => settings.set('hudShowGearbox', !o.gearbox)],
+                    ['Outside temp', o.outside, () => settings.set('hudShowOutside', !o.outside)],
                     ['Cold-engine limit', o.limit, () => settings.set('hudShowLimit', !o.limit)],
                 ]);
             } else if (studio.panel === 'effects') {
@@ -595,7 +622,8 @@ mgu.run({
         }
         const STUDIO_HINT = {
             look: 'Layouts: tap one above; temperatures show only cold, warming or hot unless Always',
-            items: 'Tap to add or remove what shows; units: Settings > HUD readouts',
+            gauge: 'Tap to add or remove; turn everything else off for just the lights',
+            readouts: 'Up to four show, in this order; a cold or hot one keeps its place. Units: Settings',
             effects: 'Grade after an upshift, downshift arrows, peak line, limiter shake',
             place: 'Moves the HUD on the glass at once',
         };
@@ -731,6 +759,12 @@ mgu.run({
             chip: () => (lastShift && lastShift.mode !== 'D' && lastShift.mode !== 'S' && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             mode: modeNow,
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
+            // torque, pedal, g, outside for the extra readouts (none from the demo data)
+            extras: () => (car.data().demo ? null : {
+                torque: Date.now() - torque.t < 2000 ? torque.v : null,
+                pedal: fresh(extra.pedal, 2000), gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
+                outside: fresh(extra.outside, 600000),
+            }),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },

@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.27.0",
+  "version": "1.28.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -23,6 +23,19 @@
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
       "DataPowerTrain2": "s"
+    },
+    "de.bmw.powertrain.AcceleratorPedal": {
+      "_optional": "throttle on the HUD",
+      "AngleAcceleratorPedal": "s"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "_optional": "g-force on the HUD",
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "outside temperature on the HUD",
+      "ExteriorTemperature": "s"
     },
     "de.bmw.infotainment.misc.MDrive": {
       "_optional": "the gearbox programme (D / S / M): shift grades and learning only from shifts made by hand",
@@ -109,9 +122,18 @@
     {"key": "hudBoost", "label": "Boost", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudBoostUnit", "label": "Boost unit", "type": "choice", "default": "bar", "when": {"hud": ["on", "test"]}, "group": "HUD readouts",
      "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]]},
+    {"key": "hudShowTorque", "label": "Torque", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
+    {"key": "hudShowPower", "label": "Power (from torque and rpm)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
+    {"key": "hudShowThrottle", "label": "Throttle (accelerator pedal)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
+    {"key": "hudShowG", "label": "G-force (sideways and braking / accelerating together)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
+    {"key": "hudTorqueUnit", "label": "Torque unit", "type": "choice", "default": "nm", "when": {"hud": ["on", "test"]}, "group": "HUD readouts",
+     "options": [["nm", "Nm"], ["lbft", "lb-ft"]]},
+    {"key": "hudPowerUnit", "label": "Power unit", "type": "choice", "default": "hp", "when": {"hud": ["on", "test"]}, "group": "HUD readouts",
+     "options": [["hp", "hp"], ["ps", "PS"], ["kw", "kW"]]},
     {"key": "hudShowOil", "label": "Oil temp", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudShowWater", "label": "Water temp", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudShowGearbox", "label": "Gearbox temp", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
+    {"key": "hudShowOutside", "label": "Outside temp (blue at 3 °C and below)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudShowLimit", "label": "Cold-engine shift limit", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudTempsMode", "label": "Temperatures", "type": "choice", "default": "smart", "when": {"hud": ["on", "test"]}, "group": "HUD readouts",
      "options": [["smart", "Only when cold or hot"], ["always", "Always"]]},

@@ -65,14 +65,16 @@ cars with a HUD, but nobody has checked yet.
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
 - **Picking:** on the right, the six layouts; tap one to use it.
-- **Editing:** under the preview, four tabs, each showing its changes in the preview at once:
-  - **Look:** colours, shift light style (GT3, filling from the outside in, or left to right),
-    and temperatures hidden at operating temperature (only blue, yellow or red ones show) or
-    always shown.
-  - **Items:** on / off switches (a lit green dot means on) in two groups. *Gauge*: Rev bar (the
-    main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M). *Readouts*: RPM readout, Boost,
-    Oil temp, Water temp, Gearbox temp, Cold-engine limit. Every item can be turned off, so the
-    HUD can be, say, the VFD shift lights alone.
+- **Editing:** under the preview, five tabs, each showing its changes in the preview at once.
+  Switches show a lit green dot when on.
+  - **Look:** colours, and temperatures hidden at operating temperature (only blue, yellow or red
+    ones show) or always shown.
+  - **Gauge:** Rev bar (the main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M), and the
+    shift light style (GT3, filling from the outside in, or left to right). Every part can be
+    turned off, so the HUD can be, say, the VFD shift lights alone.
+  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, Throttle, G-force. *Temps*: Oil,
+    Water, Gearbox, Outside, and the cold-engine limit. Up to four show, in this order; when more
+    are on, the last plain ones give way, so a cold or hot reading keeps its place.
   - **Effects:** the shift grade (Burst / Simple / Off), downshift arrows (When braking /
     Always / Off), the peak marker and the limiter shake.
 - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Reset puts
@@ -93,6 +95,12 @@ cars with a HUD, but nobody has checked yet.
 **The readouts row** (standard layout), left to right:
 
 - **RPM:** the engine speed as a number (7-segment digits in the digital and VFD layouts).
+- **Torque** (Nm or lb-ft) from the engine's own torque signal, and **power** (hp, PS or kW)
+  worked out from torque and rpm. Both off by default.
+- **Throttle:** the accelerator pedal, in %. Off by default.
+- **G-force:** sideways and forward / braking together, from the car's acceleration sensor. Off
+  by default.
+- **Outside temperature:** blue at 3 °C and below, where ice is possible. Off by default.
 - **Boost:** in bar, from the iDrive sport display. It shows only once the car has sent a value
   that moves; some cars send a constant.
 - **LIMIT:** the cold-engine shift point, while the cold guard holds it down.

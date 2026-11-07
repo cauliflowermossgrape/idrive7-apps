@@ -131,6 +131,12 @@ function optsFrom(settings) {
         // readouts, each on its own switch
         gear: on('hudShowGear'), rpm: on('hudShowRpm'), bar: on('hudShowBar'), boost: on('hudBoost'), limit: on('hudShowLimit'),
         oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
+        // the extra readouts are off unless switched on
+        torque: settings.get('hudShowTorque') === true, power: settings.get('hudShowPower') === true,
+        throttle: settings.get('hudShowThrottle') === true, g: settings.get('hudShowG') === true,
+        outside: settings.get('hudShowOutside') === true,
+        torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
+        powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
         peak: on('hudPeak'),
@@ -145,15 +151,42 @@ function optsFrom(settings) {
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
 // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
 const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
-/** The readouts row for o (optsFrom): d (oil, coolant), gearbox temperature, boost (bar), sp ({ rpm, cold }). */
-function readoutsFor(d, gb, boost, sp, o) {
+// torque from Nm, power from kW: [factor, label]
+const TORQUE_UNITS = { nm: [1, 'TORQUE'], lbft: [0.737562, 'LB-FT'] };
+const POWER_UNITS = { hp: [1.34102, 'HP'], kw: [1, 'KW'], ps: [1.35962, 'PS'] };
+const MAX_READOUTS = 4;
+const roundTo = (v, step) => Math.round(v / step) * step;
+/**
+ * The readouts row for o (optsFrom): d (rpm, oil, coolant), gearbox temperature, boost (bar), sp
+ * ({ rpm, cold }), x (the extras: torque Nm, pedal %, gLat / gLong g, outside °C; any may be null).
+ * In the order of the switches; at most four. When more are on, the last plain ones give way first:
+ * a cold, warming or hot temperature (and the cold limit) keeps its place.
+ * Fast values are rounded (torque to 5, throttle to 5 %, g to 0.05) so the row doesn't flicker.
+ */
+function readoutsFor(d, gb, boost, sp, o, x) {
     const items = [];
+    x = x || {};
     // the rpm as a number: the 7-segment layouts have their own digits, the others a readout (to 50,
     // so it doesn't flicker)
     if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push({ label: 'RPM', value: String(Math.max(0, Math.round(d.rpm / 50) * 50)), tone: 'text' });
     if (o.boost) {
         const b = boost, u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
         if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });
+    }
+    if (o.torque && isNum(x.torque)) {
+        const u = TORQUE_UNITS[o.torqueUnit] || TORQUE_UNITS.nm;
+        items.push({ label: u[1], value: String(roundTo(Math.max(0, x.torque) * u[0], 5)), tone: 'text' });
+    }
+    // power from torque x rpm (kW = Nm x rpm / 9549)
+    if (o.power && isNum(x.torque) && isNum(d.rpm)) {
+        const u = POWER_UNITS[o.powerUnit] || POWER_UNITS.hp;
+        items.push({ label: u[1], value: String(Math.round(Math.max(0, x.torque) * Math.max(0, d.rpm) / 9549 * u[0])), tone: 'text' });
+    }
+    if (o.throttle && isNum(x.pedal)) items.push({ label: 'THROTTLE', value: roundTo(clamp(x.pedal, 0, 100), 5) + '%', tone: 'text' });
+    // combined g (sideways and forward / braking together)
+    if (o.g && (isNum(x.gLat) || isNum(x.gLong))) {
+        const g = Math.sqrt(Math.pow(x.gLat || 0, 2) + Math.pow(x.gLong || 0, 2));
+        items.push({ label: 'G', value: roundTo(g, 0.05).toFixed(2), tone: 'text' });
     }
     if (o.limit && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
     TEMPS.forEach((t) => {
@@ -166,9 +199,15 @@ function readoutsFor(d, gb, boost, sp, o) {
         if (o.smartTemps && tone === 'text') return;
         items.push({ label: t[0], value: Math.round(o.fahrenheit ? v * 9 / 5 + 32 : v) + '°', tone: tone });
     });
-    // four fit the row legibly: on a cold start (boost, limit, oil, water, gearbox) the gearbox,
-    // the last to matter, gives way
-    while (items.length > 4) items.pop();
+    // outside: blue at 3 °C and below (ice is possible)
+    if (o.outside && isNum(x.outside)) items.push({ label: 'OUTSIDE', value: Math.round(o.fahrenheit ? x.outside * 9 / 5 + 32 : x.outside) + '°', tone: x.outside <= 3 ? 'cold' : 'text' });
+    // four fit the row legibly: the last plain readout gives way first, so a warning keeps its place
+    // (on a cold start with boost, limit, oil, water and gearbox on, the gearbox goes)
+    while (items.length > MAX_READOUTS) {
+        let i = items.length - 1;
+        while (i >= 0 && items[i].tone !== 'text') i--;
+        items.splice(i >= 0 ? i : items.length - 1, 1);
+    }
     return items;
 }
 
@@ -196,6 +235,10 @@ function demoAt(tMs) {
     } else if (t < 8.6) { r.gear = t < 8.1 ? 3 : 2; r.shift = r.gear === 3 ? 5550 : 6400; r.rpm = r.gear === 3 ? 3500 : 4400; r.down = r.gear === 3 ? 2 : 1; }
     else { r.gear = 2; r.shift = 6400; r.rpm = lerp(4400, 3000, (t - 8.6) / 1.4); r.boost = 0.2; }
     r.chipAge = r.chip ? tMs % DEMO_MS - r.chip.at : 0;
+    // the extras: full throttle while climbing, off while braking
+    const pull = r.down || t >= 8.6 ? 0 : t >= 7.6 ? 0.3 : 1;
+    r.pedal = pull * 100; r.torque = pull ? 180 + 220 * clamp(r.boost / 1.3, 0, 1) : 0;
+    r.gLong = r.down ? -0.85 : pull * 0.45; r.gLat = 0.1; r.outside = 14;
     return r;
 }
 
@@ -400,7 +443,7 @@ function start(ctx, src) {
             peak: o.peak ? (dm ? dm.peak : src.peak ? src.peak() : 0) : 0,
             chip: dm ? (dm.chip && o.chip !== 'off' && dm.chipAge < 1500 ? { verdict: dm.chip.verdict, age: dm.chipAge, burst: o.chip === 'burst' } : null) : chipNow(o, now),
             shake: o.shake && cue.limiter ? SHAKE[Math.floor(now / 100) % SHAKE.length] : null,
-            readouts: dm ? readoutsFor(d, gb, dm.boost, sp, o) : readouts(d, gb, sp, o),
+            readouts: dm ? readoutsFor(d, gb, dm.boost, sp, o, dm) : readouts(d, gb, sp, o),
             mode: o.mode && (mode === 'M' || mode === 'S' || mode === 'D') ? mode : null,
             opts: o,
         };
@@ -408,11 +451,12 @@ function start(ctx, src) {
     let demoStart = 0, demoUntil = 0;
 
     /*
-     * The readouts row, left to right: boost (once the car has sent a moving value), the cold-engine
-     * shift limit (while the cold guard holds the shift point down), then oil, water and gearbox.
+     * The readouts row, left to right: rpm, boost (once the car has sent a moving value), torque,
+     * power, throttle, g, the cold-engine shift limit (while the cold guard holds the shift point
+     * down), then oil, water, gearbox and outside (readoutsFor).
      * Temperatures "smart": only one that is cold, warming (oil under "Oil warm at") or hot. Four at most.
      */
-    function readouts(d, gb, sp, o) { return readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o); }
+    function readouts(d, gb, sp, o) { return readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o, src.extras ? src.extras() : null); }
 
     /*
      * The car sends rpm 10-20 times a second; the HUD draws up to 30. Between two samples the bar is
@@ -587,4 +631,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, readoutsFor, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, readoutsFor, MAX_READOUTS, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
