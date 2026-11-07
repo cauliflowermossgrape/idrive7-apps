@@ -618,11 +618,13 @@ function start(ctx, src) {
         if (learnedLead !== before) writeAtomic(leadFile, JSON.stringify({ ms: learnedLead, n: leadShifts }), log);
     });
 
+    // cluster-render is a separate install: the MGU Store's Cluster renderer
+    const NOT_RUNNING = 'HUD: cluster-render not running · install Cluster renderer from the MGU Store';
     /** One line for Redline's screen: what the HUD is doing. */
     function status() {
         const m = mode();
         if (m === 'off') return '';
-        if (!cr || !cr.ready) return 'HUD: cluster-render not running';
+        if (!cr || !cr.ready) return NOT_RUNNING;
         if (target && target.disabled) return 'HUD: off after display errors';
         if (m === 'test') return 'HUD: test pattern';
         const st = target ? target.state : '';

@@ -539,8 +539,10 @@ mgu.run({
             cv.roundRect(24, 48, 816, 276, 12, '#000000');
             HudDraw.drawLayer(HudDraw.scaled(cv, 2, px + sh[0] * 2, py + sh[1] * 2), f);
             const playing = hud && hud.playing();
-            cv.text(on ? (playing ? 'Playing on the HUD...' : 'Your HUD as set up: change it below') : 'Show on HUD is off (Settings): the preview still shows your setup',
-                40, 344, 18, on ? t.dim : t.warn, { font: 'bold' });
+            // switched on but cluster-render isn't there: say where to get it
+            const missing = on && hud && /not running/.test(hud.status());
+            cv.text(missing ? 'The HUD needs cluster-render: install Cluster renderer from the MGU Store' : on ? (playing ? 'Playing on the HUD...' : 'Your HUD as set up: change it below') : 'Show on HUD is off (Settings): the preview still shows your setup',
+                40, 344, 18, on && !missing ? t.dim : t.warn, { font: 'bold' });
             // only while the HUD shows and the car stands still (it replaces the real lights on the glass)
             const still = !(car.data().speed > 3);
             if (hud && (playing || (hud.status() === 'HUD: on' && still))) {
