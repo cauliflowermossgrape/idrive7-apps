@@ -557,6 +557,8 @@ mgu.run({
             if (studio.panel === 'look') {
                 choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
                 choiceRow(cv, t, 462, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
+                // temperatures only while cold, warming or hot (invisible at operating temperature), or always
+                choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']], false, 720);
             } else if (studio.panel === 'items') {
                 // tap to add, tap again to remove: filled = on the HUD
                 chips(cv, t, 414, [
@@ -589,7 +591,7 @@ mgu.run({
             }
         }
         const STUDIO_HINT = {
-            look: 'Layouts: tap one above', items: 'Tap to add or remove (filled = on the HUD); units: Settings > HUD readouts',
+            look: 'Layouts: tap one above; temperatures show only cold, warming or hot unless Always', items: 'Tap to add or remove (filled = on the HUD); units: Settings > HUD readouts',
             place: 'Moves the HUD on the glass at once',
         };
         /** Toggle chips at y: [label, on, flip, disabled]; filled when on. */

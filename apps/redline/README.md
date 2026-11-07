@@ -66,7 +66,8 @@ cars with a HUD, but nobody has checked yet.
   current settings, so every change shows in it at once.
 - **Picking:** on the right, the six layouts; tap one to use it.
 - **Editing:** under the preview, three tabs, each showing its changes in the preview at once:
-  - **Look:** colours, grade style.
+  - **Look:** colours, grade style, and temperatures hidden at operating temperature (only blue,
+    yellow or red ones show) or always shown.
   - **Items:** a chip for everything the HUD can show (gear, D / S / M, rpm, boost, oil, water,
     gearbox, cold limit, shift lights, GT3 style, shift grade, peak marker, downshift arrows,
     limiter shake). Tap to add or remove; filled means on.
