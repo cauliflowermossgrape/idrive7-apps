@@ -54,6 +54,9 @@ mgu.run({
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
          * (limiter.js, setting "learnRedline"), the engine profile. The scale's top follows it. */
         const limiter = new Limiter({ dataDir: ctx.dataDir, log });
+        // setting "learn": off freezes all learning (redline, torque curve and ratios, reaction time);
+        // what was learned is kept and still used
+        const learning = () => settings.get('learn') !== false;
         const manualRedline = () => { const v = settings.get('redline'); return typeof v === 'number' && v > 0 ? v : 0; };
         const learned = () => (settings.get('learnRedline') !== false ? limiter.value() : null);
         const profileRedline = () => Engine.PROFILES[engine.profile()].redline;
@@ -77,7 +80,8 @@ mgu.run({
             const r = shiftMap.shiftFor(gear);
             return G.isNum(r) ? Math.min(r, redline() - 100) : null;
         };
-        const normalShift = (gear) => Math.max(2500, learnedShift(gear) || redline() - settings.get('shiftBefore'));
+        const minShift = () => { const v = settings.get('minShift'); return typeof v === 'number' && v > 0 ? Math.min(v, redline() - 100) : 0; };
+        const normalShift = (gear) => Math.max(2500, minShift(), learnedShift(gear) || redline() - settings.get('shiftBefore'));
         const shiftSource = (gear) => (learnedShift(gear) ? 'learned' : 'fixed');
         const limitsChanged = () => { car.setRedline(redline()); shiftMap.setRedline(redline()); };
         limitsChanged();
@@ -130,7 +134,7 @@ mgu.run({
             if (!(rpm > 2500)) return;
             const sp = shiftPoint(car.data().oil, from);
             lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: verdict(rpm, sp.rpm, sp.cold) };
-            if (hud) hud.upshift(rpm);
+            if (hud && learning()) hud.upshift(rpm);
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
             log.info('shift ' + from + '->' + to + ' @' + lastShift.rpm + ' ' + lastShift.verdict);
@@ -157,9 +161,9 @@ mgu.run({
             // learn the real limit (live data only, warm oil): plateaus from 1000 below the profile's redline
             if (!car.data().demo) {
                 const tq = Date.now() - torque.t < 300 ? torque.v : null;
-                shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq });
+                if (learning()) shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq });
                 const pr = profileRedline();
-                if (settings.get('learnRedline') !== false) limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
+                if (learning() && settings.get('learnRedline') !== false) limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
             }
 
             // upshift: gear number goes up, or (no gear signal) rpm falls >18 % within 0.4 s while still moving
@@ -323,16 +327,11 @@ mgu.run({
                 cv.text(sp.cold ? 'COLD  ·  LIMIT ' + sp.rpm : 'OIL COLD  ·  GO EASY', 190, 418, 22, t.cold, { align: 'center', font: 'bold', spacing: 0.5 });
             }
             cv.text('PEAK ' + (peakRpm ? Math.round(peakRpm) : '--') + '  ·  LIMITER ' + limiterHits + 'x', 40, 476, 22, t.dim, { font: 'bold', spacing: 0.5 });
-            // what the head-up display is doing (only while it is switched on)
-            const hs = hud ? hud.status() : '';
-            if (hs) cv.text(hs.toUpperCase(), W - 40, 476, 20, /off|not/i.test(hs) ? t.warn : t.dim, { align: 'right', font: 'bold', spacing: 0.5 });
 
             // ---- right: shift point + last shift
             const rx = W - 40;
-            const perGear = shiftSource(d.gear) === 'learned';
-            cv.text(perGear ? 'SHIFT AT  ·  GEAR ' + d.gear : 'SHIFT AT', rx, 156, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
+            cv.text('SHIFT AT', rx, 156, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
             cv.text(String(sp.rpm), rx, 222, 64, sp.cold ? t.cold : t.text, { align: 'right', font: 'num' });
-            cv.text('REDLINE ' + redline() + '  ·  ' + redlineSource().toUpperCase(), rx, 262, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
             cv.fillRect(W - 340, 298, 300, 1, withAlpha(t.tick, 0.6));
             cv.text('LAST SHIFT', rx, 334, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
             if (lastShift) {
@@ -409,7 +408,8 @@ mgu.run({
                 y += 32;
                 const k = shiftMap.ratio(g), pr = shiftMap.ratioProgress(g), at = table[g];
                 cv.text(g + ' > ' + (g + 1), 836, y, 22, t.text, { font: 'bold' });
-                cv.text(G.isNum(at) ? String(Math.min(at, redline() - 100)) : '--', 1080, y, 24, G.isNum(at) ? t.text : t.dim, { align: 'right', font: 'num' });
+                // the point in use: learned, held under the redline and over the minimum (warm oil)
+                cv.text(G.isNum(at) ? String(normalShift(g)) : '--', 1080, y, 24, G.isNum(at) ? t.text : t.dim, { align: 'right', font: 'num' });
                 cv.text(k ? k.toFixed(1) : pr.n ? 'learning ' + pr.n + '/' + pr.of : '--', 1300, y, k ? 22 : 18, k ? t.text : t.dim, { align: 'right', font: k ? 'num' : 'bold' });
             }
             // no shift point yet though ratios are known: the curve has to reach the redline
@@ -426,6 +426,10 @@ mgu.run({
             cv.text(lead ? lead.ms + ' ms early  ·  ' + (lead.auto ? 'learned from ' + lead.shifts + ' shifts' : 'set by hand') : '--', 990, y, 20, t.text, { font: 'bold' });
             if (resetArmed()) cv.text('Press Reset learned again to forget it all', 836, y + 34, 18, t.warn, { font: 'bold' });
             G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { if (hud) hud.resetLead(); return render(); }, { key: 'resetLead', confirm: true, color: t.warn });
+            // what the head-up display is doing (while it is switched on), and frozen learning
+            const hs = hud ? hud.status() : '';
+            const notes = [hs, learning() ? '' : 'Learning off: these values are kept, nothing new is learned'].filter(Boolean);
+            notes.forEach((n, i) => cv.text(n, 836, 492 - (notes.length - 1 - i) * 24, 18, /off|not/i.test(n) ? t.warn : t.dim, { font: 'bold' }));
         }
 
         /** G20-style frame: tab bar with the page names along the top. */
