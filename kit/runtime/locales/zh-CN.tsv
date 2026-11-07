@@ -3,7 +3,7 @@ M Vitals	M 车辆仪表
 Redline	换挡转速
 Virtual Dyno	虚拟马力机
 Brake Test	制动测试
-Drag Timer	弹射模式
+Drag Timer	加速计时
 G-Force	G 值仪表
 Warm-Up	暖机助手
 Fault Scanner	故障检测
@@ -100,7 +100,7 @@ Cold rev limit	冷机转速上限
 Rev scale up to	转速刻度上限
 Cold-engine rev guard	冷机转速保护
 Oil warm at	机油暖机温度
-Shift point before redline	换挡提示距红线转速
+Shift point before redline	换挡提示点（红线前）
 Blink and flash at shift point	换挡点闪烁提示
 Shift light style	换挡灯样式
 M (green-yellow-red)	M 样式（绿黄红）
@@ -299,7 +299,7 @@ SHIFT AT	换挡转速
 SHIFT	换挡
 EARLY	过早
 LATE	过晚
-SPOT ON	恰好
+SPOT ON	精准
 LIMITER	转速限制
 COLD	冷机
 COLD REV	冷机转速
@@ -324,7 +324,7 @@ SPEED RANGE	车速范围
 Peak	峰值
 estimate at the crank	估算曲轴功率
 waiting for a pull	等待加速测试
-keep it pinned...	保持油门…
+keep it pinned...	保持全油门…
 pull too short	测试过程过短
 Full throttle in 3rd gear from ~2000 rpm to the limiter, on a flat road	在平坦封闭道路以三挡从约 2000 转全油门加速至转速上限
 Brake test	制动测试
@@ -350,7 +350,7 @@ Brake hard from above	从高于目标车速开始全力制动
 Brake released - stop not counted	制动提前松开，本次不计入
 stop	制动
 vs best	对比最佳
-Drag timer	弹射模式
+Drag timer	加速计时
 Speed trace	车速曲线
 Splits	分段成绩
 Best times	最佳成绩
@@ -373,8 +373,8 @@ Now	当前
 Session peaks	本次峰值
 Hardest launch	最强起步
 Hardest stop	最强制动
-Left-hander	左转
-Right-hander	右转
+Left-hander	左弯
+Right-hander	右弯
 Top speed	最高车速
 Combined	合成 G 值
 COMBINED	合成
@@ -391,7 +391,7 @@ Warm-up	暖机助手
 ENGINE OFF	发动机关闭
 NOT WARMING	未升温
 electric driving	纯电行驶
-drive to warm up	行驶以升温
+drive to warm up	行驶暖机
 NO OIL TEMP	无机油温度
 OIL HOT - EASE OFF	机油过热，请降低负荷
 COOLED - OK TO SWITCH OFF	已冷却，可以熄火
@@ -401,7 +401,7 @@ SAFE REV LIMIT	建议转速上限
 COOL-DOWN LEFT	冷却剩余时间
 OIL READY IN	机油暖机剩余
 COOLANT READY IN	冷却液暖机剩余
-Oil ready in ~	机油预计暖机约
+Oil ready in ~	机油预计还需约
 Engine off - oil not warming	发动机关闭，机油未升温
 Oil not warming	机油未升温
 Oil warm	机油已热
@@ -409,7 +409,7 @@ keep it gentle	保持温和驾驶
 paused - stay under	已暂停，请保持低于
 Real electric range	实际纯电续航
 Range	续航
-Energy	能耗
+Energy	能量
 Charge log	充电记录
 Diagnostics	诊断
 Signals	信号
@@ -492,14 +492,14 @@ available	可用
 n/a	不可用
 Control units	控制单元
 Faults	故障
-Check Control	车辆检查信息
-Check Control messages	车辆检查消息
+Check Control	检查控制信息
+Check Control messages	检查控制信息
 Control units that answered	已响应的控制单元
 Active now	当前存在
 INFO MEMORY	信息存储器
 INFO:	信息：
 No faults stored	无已存储故障
-No active Check Control messages	当前无车辆检查消息
+No active Check Control messages	当前无检查控制信息
 No control unit answered	无控制单元响应
 No control unit answered - ignition on?	无控制单元响应，请检查点火状态
 No answer	无响应
@@ -1110,7 +1110,7 @@ This map family has no such shift	此图组中没有该换挡项
 Three elements transmit each forward ratio.	每个前进挡由三个元件传递动力。
 Time eval.	时间评估
 Total recorded	累计记录
-Transmission oil	变速箱油温
+Transmission oil	变速箱油
 Turbine / input	涡轮／输入轴
 Understanding the data	数据说明
 Unexpected length:	数据长度异常：
@@ -1201,7 +1201,7 @@ Crash	碰撞
 since reset	重置后
 Torque gauge max	扭矩表最大值
 Advanced settings	高级设置
-Tiles	磁贴
+Tiles	卡片
 Over its life	使用寿命内
 Capacity and resistance	容量和内阻
 ENERGY THROUGHPUT	能量吞吐量
@@ -1216,15 +1216,15 @@ RESISTANCE WHEN NEW	新电池内阻
 CHARGE · HEALTH ESTIMATE QUALITY	电量 · 健康度估算质量
 Spark plugs and engine	火花塞和发动机
 Particulate filter	颗粒过滤器
-LIFE BY ENGINE HOURS	按发动机小时的寿命
-LIFE BY FUEL USED	按燃油消耗的寿命
-ENGINE HOURS ON IT	已用发动机小时
-DISTANCE ON IT	已行驶里程
-SPARK PLUGS: LEFT	火花塞：剩余
-SPARK PLUGS: DRIVEN	火花塞：已行驶
-ENGINE HOURS	发动机小时
+LIFE BY ENGINE HOURS	按运行小时估算寿命
+LIFE BY FUEL USED	按燃油消耗估算寿命
+ENGINE HOURS ON IT	换油后运行时间
+DISTANCE ON IT	换油后里程
+SPARK PLUGS: LEFT	火花塞剩余里程
+SPARK PLUGS: DRIVEN	火花塞已用里程
+ENGINE HOURS	发动机运行时间
 SOOT	碳烟
-LOAD (ADAPTED)	负载（自适应）
+LOAD (ADAPTED)	碳载量（自适应）
 ASH (ADAPTED)	灰分（自适应）
 Reading the engine unit...	正在读取发动机控制单元...
 # Service: the CBS read states and the Engine page.
