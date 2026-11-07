@@ -18,7 +18,8 @@
  *   - Never throws: an uncaught error exits the app, MainApp's CorruptAppsHandler wipes an
  *     app's data on its first crash and uninstalls it on the second.
  *
- * Settings: hud (off | on | test), hudSize, hudX, hudY, hudGear, hudTemps, hudLights, hudUnlit.
+ * Settings: hud (off | on | test); group "HUD settings": hudSize, hudX, hudY, hudContent (all | gear |
+ * temps | tach), hudLightStyle (gt3 | bar | off), hudUnlit; hudLead (also the screen's lights).
  */
 const fs = require('fs');
 const path = require('path');
@@ -353,13 +354,14 @@ function start(ctx, src) {
     /** What drawHud needs, now. */
     function frameData() {
         const d = src.data(), sp = src.shiftPoint(d.oil, d.gear), redline = src.redline();
-        const gt3 = settings.get('hudLightStyle') !== 'bar';
+        const style = settings.get('hudLightStyle') || 'gt3', gt3 = style === 'gt3', lights = style !== 'off';
+        const content = settings.get('hudContent') || 'all';
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead, d.gear);
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
-            const seen = settings.get('hudLights') !== false && target && target.state === 'shown';
+            const seen = lights && target && target.state === 'shown';
             flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead, fall: null } : null;
         }
         // first moment the revs fell after the flash: a real upshift reports its new gear within
@@ -371,8 +373,8 @@ function start(ctx, src) {
             down: src.downshift ? src.downshift() : 0,
             gearbox: src.gearbox ? src.gearbox.value() : null,
             opts: {
-                gear: settings.get('hudGear') !== 'off', temps: settings.get('hudTemps') !== false,
-                lights: settings.get('hudLights') !== false, gt3: gt3, dim: settings.get('hudUnlit') === 'dim',
+                gear: content === 'all' || content === 'gear', temps: content === 'all' || content === 'temps',
+                lights: lights, gt3: gt3, dim: settings.get('hudUnlit') === 'dim',
                 style: settings.get('lights'), warmOil: num('warmOil', 80),
             },
         };
