@@ -1576,5 +1576,10 @@
   "48 V converter: PCU48_2": "48 V 转换器：PCU48_2",
   "page": "页",
   "values read": "项已读取",
-  "with a value": "项有数值"
+  "with a value": "项有数值",
+  "xDrive on brings it back": "打开 xDrive 可恢复",
+  "back after an ignition cycle": "点火关闭再打开后恢复",
+  "Press again to switch xDrive back on": "再按一次重新打开 xDrive",
+  "xDrive is back · the transfer case reports it on": "xDrive 已恢复 · 分动箱报告已开启",
+  "Cleared; back at once (still present):": "已清除，但立即再次出现（故障仍存在）："
 }
