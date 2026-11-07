@@ -23,7 +23,8 @@
  * a G VIP (0x39, VIP_G05 / VIP_G30N) take the VIP path instead: VIP job STEUERN_LMV_FUNKTION_QDM,
  *   write : 2E DB 2F 00   -> 6E DB 2F         (xDrive off, VIP)
  *   read  : 22 DB 44      -> 62 DB 44 01 | 00 (STATUS_LMV_FUNKTION_QDM, logged only)
- * sent with the engine running / the car READY, stationary in P. Issue #52: the G05 xDrive45e has
+ * sent with the engine running / the car READY, stationary in P; on an ICE G05 (VIP 0F2520) with the
+ * engine OFF and the ignition on instead (VIP_ENGINE_OFF: running, it answers NRC 33). Issue #52: the G05 xDrive45e has
  * IB_G05 (0F2500) at 0x29 - it took 2E DB E1 00 with the ignition on but nothing changed, and
  * DBE1 read 0 even in stock AWD - so it goes the VIP way. DB44 read 0 in both modes on the G22, so
  * on this path the mode is not derived from it: the front-axle torque shows the effect.
@@ -87,6 +88,11 @@ const DBE1_UNITS = {                    // units at 0x29 that take the DBE1 writ
 };
 const OTHER_UNITS = { '0F2500': 'IB_G05', '0F29F0': 'IB_I20', '0F2E70': 'IB_G70' };
 const VIP_UNITS = { '0F2520': 'VIP_G05', '0F2530': 'VIP_G05', '0F2860': 'VIP_G30N' };
+// VIPs that take the job with the engine stopped and the ignition on (as the DSC's DBE1), and answer NRC 33 while
+// it runs: 0F2520 on an ICE G05 (diesel X5, IB_G05 0F2500, LMV 0F2180), measured: engine running 7F 2E 33 every
+// time; engine off, ignition on (state 7), P, stationary: accepted, xDrive to RWD, front-axle torque ~0, back
+// after an ignition cycle
+const VIP_ENGINE_OFF = ['0F2520'];
 const LMV_VARIANTS = {                  // G-series transfer cases by SGBD index
     '0F2180': 'LMV-G ATC13',
     '0F29E0': 'LMV-G ATC13_2',
@@ -398,6 +404,18 @@ class XDriveControl {
     /** The conditions the DSC wants, as far as the head unit can see them. ok: true / false / null (cannot tell). */
     checks() {
         const d = this._live();
+        if (this.vipEngineOff()) {
+            // VIP 0F2520 (ICE G05): the job is taken with the engine off, the ignition on, in P, stationary;
+            // the engine running gets NRC 33. The DSC path's engine-off checks.
+            return [
+                { label: 'Live car data', ok: !d.demo },
+                { label: 'Ignition on', ok: d.demo ? false : d.condition === IGNITION || this.driveReady() === true },
+                { label: 'Engine off', ok: d.demo ? false : d.condition === IGNITION ? true : d.rpm === null ? false : d.rpm < ENGINE_OFF_RPM },
+                { label: 'Stationary', ok: d.demo ? false : d.speed === null ? false : d.speed < 0.5 },
+                { label: 'Selector in P', ok: d.demo ? false : d.stage === 'P' ? true : d.stage ? false : null },
+                { label: 'Parking brake on', ok: null },
+            ];
+        }
         if (this.path === 'vip') {
             // the VIP job is sent with the engine running / the car READY, stationary in P
             return [
@@ -425,6 +443,8 @@ class XDriveControl {
         ]);
     }
 
+    /** The VIP takes the job with the engine off and the ignition on (VIP_ENGINE_OFF: the ICE G05's 0F2520). */
+    vipEngineOff() { return this.path === 'vip' && VIP_ENGINE_OFF.indexOf(this.vipIndex) >= 0; }
     /** The DSC variant was measured to take the DBE1 write with the engine running (G01, 0F2850). */
     engineMayRun() { return this.path === 'dsc' && !!this.index && ENGINE_RUNNING_OK.indexOf(this.index) >= 0; }
     /** The DSC variant was measured to bring xDrive back on 2E DB E1 01: the "xDrive on" button is offered. */
@@ -501,6 +521,7 @@ class XDriveControl {
                 this._diagnostic('command_accepted', { command: what, physicalEffect: verified ? 'verified_by_lmv' : 'not_verified' });
                 this.note = on ? (verified ? 'xDrive is back · the transfer case reports it on' : 'Accepted by the DSC')
                         + ' · DTC ' + DTC_LMV_OFF + ' stays stored in the DSC as a historic entry'
+                    : vip && this.vipEngineOff() ? 'Accepted by the VIP · start the engine without switching the ignition off'
                     : vip ? 'Accepted by the VIP · drive without switching off and watch the front-axle torque'
                     : verified ? 'xDrive off · the transfer case reports it · drive without switching the ignition off'
                     : this.engineRunning() ? 'Accepted by the DSC · drive without switching the ignition off'
@@ -513,7 +534,9 @@ class XDriveControl {
             } else if (r && r[0] === 0x7F) {
                 this._diagnostic('command_not_accepted', { command: what, reason: 'ecu_negative_response' });
                 // a VIP that wants a security unlock (G05 xDrive45e, issue #52): this app does no security access
-                this.note = name + ' refused: ' + (vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
+                // VIP 0F2520 (ICE G05): NRC 33 means the engine runs - it takes the job with the engine off
+                this.note = name + ' refused: ' + (vip && r[2] === 0x33 && this.vipEngineOff() ? 'the engine is running · switch it off, keep the ignition on, then try again'
+                    : vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
                     : NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
                 this.noteType = 'warn';
             } else {
