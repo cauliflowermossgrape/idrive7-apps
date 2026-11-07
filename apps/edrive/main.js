@@ -51,15 +51,16 @@ const { DidReader } = require('./kit/dids');
 const { t: translate, plural } = require('./kit/i18n');
 const { RangeModel } = require('./range');
 const startLive = require('./live');
+const startBattery12 = require('./battery12');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
-// the live pages (battery; the battery unit and scan in the Diagnostic page) are live.js's
+// the live pages (battery; the battery unit and scan in the Diagnostic page) are live.js's, the 12 V ones battery12.js's
 const PAGES_HYBRID = ['main', 'energy', 'battery', 'log', 'diag'];
-const PAGES_12V = ['main', 'diag'];
+const PAGES_12V = ['main', 'hist12', 'diag'];
 const PAGES_48V = ['main', 'b48info', 'diag'];
 // what the Diagnostic page lists per system (config.battery keys)
-const VALUES_12V = ['i12', 'soc12', 'soh12', 't12', 'alt12'];
+const VALUES_12V = ['i12', 'soc40', 'soc12', 'cap12', 'soh12', 't12', 'alt12'];
 const VALUES_48V = ['b48', 'dc48'];
 // the 48 V / 12 V converter's operating mode (PCU48 STAT_BETRIEBSMODUS)
 const DC_MODES = { 3: 'Standby', 5: 'Error', 6: 'Precharge', 8: 'Standby', 9: 'Charging 12 V', 10: 'Charging 48 V',
@@ -80,7 +81,6 @@ const LOG_MAX = 200;             // charges kept in the log
 const LOSS = 1.1;                // grid energy per kWh stored (charger + battery losses, estimate)
 const KM_MI = 0.621371;
 const VALUES = ['soc', 'soh', 'v12'];
-const V12_HIST = 120;            // 12 V samples kept (one per 30 s = 1 h)
 const RESERVE = 8;               // engine-start charge (%) until two engine starts have been seen
 // Low battery: the car holds the charge at about 5-11 % and drives as a hybrid - electric only up to
 // 62 km/h with light throttle (~18 %), the engine above; lifting off / braking recharge it. Engine starts
@@ -313,6 +313,7 @@ mgu.run({
                 if (G.isNum(live.speed) && live.speed > 1) live.standSince = 0;
                 else if (G.isNum(live.speed) && !live.standSince) live.standSince = Date.now();
                 onSpeed(live.speed);
+                b12.onSpeed(live.speed);
             },
             highVoltageStorageInfoToExternal: (v) => rawSeen('HV energy', v),
         }, log).then((s) => log.info('speed ' + (s.error ? 'error: ' + s.error : 'subscribed')));
@@ -399,6 +400,9 @@ mgu.run({
             pump();
         });
         const readValue = (key) => exclusive(() => reader.value(key, cfg[key]));
+        // without a hybrid system: the 12 V battery's pages, its reads (the voltage for every car) - battery12.js
+        const b12 = startBattery12(ctx, { diag, reader, exclusive, live, st, save, usingDemo, kind: () => kind(),
+            ambient: () => live.ambient, poll: (f) => poll(f), render: () => render() });
 
         /* ---------- last charge ----------
          * A charge = the charge level rising by >= chargeMinPct while the car stands still
@@ -555,39 +559,18 @@ mgu.run({
                 st.no48 = true; save(); log.info('no 48 V battery: 12 V only');
             }
         }
-        /** The 12 V battery sensor's values and the alternator's current (engine unit). */
-        async function read12() {
-            for (const k of VALUES_12V) {
-                if (!due(k)) continue;
-                const v = counted(k, await readValue(k));
-                if (v !== null) { live.x12[k] = v; live.x12T[k] = Date.now(); }
-            }
-        }
         const diagHint = (s) => (settings.get('diagPage') ? s + ' - see Diagnostics page' : s);
 
-        // 12 V history (one sample per 30 s)
-        const v12hist = [];
-        const sample12 = () => {
-            const v = usingDemo() ? demo.sample().v12 : (live.v12T && Date.now() - live.v12T < 120000 ? live.v12 : null);
-            v12hist.push(v); if (v12hist.length > V12_HIST) v12hist.shift();
-        };
-        setTimeout(sample12, 8000);
-        setInterval(sample12, 30000);
-
         let busy = false, pollTimer = null;
-        let v12Fail = 0, v12Try = 0, sohFailT = 0, last48Try = 0;
+        let sohFailT = 0, last48Try = 0;
         async function poll(forceSoh) {
             if (busy) return;
             busy = true;
             try {
-                if (diag.available) {
-                    // 12 V: every poll; after 3 failures in a row only every 5 minutes
-                    let v12 = null;
-                    if (v12Fail < 3 || forceSoh || Date.now() - v12Try > 300000) {
-                        v12Try = Date.now();
-                        v12 = await readValue('v12');
-                        if (v12 !== null) { live.v12 = v12; live.v12T = Date.now(); v12Fail = 0; } else v12Fail++;
-                    }
+                // no hybrid system: parked (not driven, the page not used lately) nothing is read, so the car can sleep
+                if (diag.available && (kind() !== 'none' || b12.allowed(forceSoh))) {
+                    // 12 V: every poll, from the source that answered last (after 3 failures in a row only every 5 minutes)
+                    const v12 = await b12.readVolt(forceSoh);
                     // without a hybrid system only re-check the battery unit every 5 minutes
                     const noHy = st.noHybrid && settings.get('hybrid') !== 'yes';
                     if (!noHy || forceSoh || Date.now() - lastSocTry > 300000) {
@@ -611,14 +594,15 @@ mgu.run({
                         last48Try = Date.now();
                         await read48(v12 !== null);
                     }
-                    if (kind() !== 'phev') await read12();
+                    if (kind() !== 'phev') await b12.readValues(forceSoh);
                 }
             } catch (e) { log.warn('poll: ' + e); }
             busy = false;
         }
         function schedule() {
             clearTimeout(pollTimer);
-            pollTimer = setTimeout(() => poll(false).then(schedule), settings.get('poll') * 1000);
+            // the 12 V pages up and in use: every 2 s (what the battery does, the voltage's last minutes)
+            pollTimer = setTimeout(() => poll(false).then(schedule), b12.fast() ? 2000 : settings.get('poll') * 1000);
         }
         diag.on('available', (a) => { if (a) poll(false); });
         poll(false).then(schedule);
@@ -729,7 +713,7 @@ mgu.run({
             const p = pages()[page], txt = (isLive(p) && lv.actionLabel(p)) || 'Read now';
             if (txt !== actionText) { actionText = txt; ui.text('BTN_READ', txt); }
         };
-        const turn = (n) => { page = n; actionLabel(); return render(); };
+        const turn = (n) => { page = n; b12.touched(); actionLabel(); return render(); };
         ui.onClick('BTN_PAGE', () => turn((page + 1) % pages().length));
         ui.onClick('BTN_PREV', () => { const n = pages().length; return turn((page + n - 1) % n); });
         ctx.onTab((i) => turn(i));
@@ -750,7 +734,7 @@ mgu.run({
 
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t, d) {
-            const names = Object.assign({ main: ({ phev: 'Range', mhev: '48 V system', none: '12 V battery' })[kind()], b48info: 'Details', energy: 'Energy', log: 'Charge log', diag: 'Diagnostic', signals: 'Signals' }, lv.NAMES);
+            const names = Object.assign({ main: ({ phev: 'Range', mhev: '48 V system', none: '12 V battery' })[kind()], b48info: 'Details', energy: 'Energy', log: 'Charge log', diag: 'Diagnostic', signals: 'Signals' }, lv.NAMES, b12.NAMES);
             G.frame(cv, t, pages().map((p) => names[p]), page, [d.demo && { text: 'DEMO' }]);
         }
 
@@ -781,31 +765,6 @@ mgu.run({
         }
         const num = (v, dec, unit) => (G.isNum(v) ? G.fmt(v, dec) + (unit ? ' ' + unit : '') : '--');
         const signed = (v, dec, unit) => (G.isNum(v) ? (v > 0 ? '+' : '') + G.fmt(v, dec) + (unit ? ' ' + unit : '') : '--');
-
-        /** Cars without a hybrid system: the 12 V battery, with what the engine unit's battery sensor gives. */
-        function render12V(cv, t, d) {
-            const v = d.v12, x = d.x12 || {};
-            const [state, col] = v12State(t, v);
-            G.stat(cv, t, 24, 44, 1040, 468, {
-                label: '12 V battery', value: v, unit: 'V', decimals: 2, size: 150, history: v12hist,
-                zones: [{ from: 0, to: 12.2, color: 'crit' }, { from: 12.2, to: 12.4, color: 'warn' }],
-                sub: 'last hour  ·  healthy at rest: 12.4-12.8 V',
-            });
-            cv.text(state, 1040, 114, 24, col, { font: 'bold', spacing: 1, align: 'right' });
-            const ex = G.panel(cv, t, 1088, 44, 488, 468, '12 V details').h - 468;
-            const rows = [
-                ['CURRENT', signed(x.i12, 1, 'A')],
-                ['CHARGE', num(G.isNum(x.soc12) ? x.soc12 : x.signal, 0, '%')],
-                ['HEALTH', num(x.soh12, 0, '%'), G.isNum(x.soh12) && x.soh12 < 60 ? t.warn : null],
-                ['TEMPERATURE', G.isNum(x.t12) ? G.fmt(T(x.t12), 0) + ' ' + tU() : '--'],
-                ['ALTERNATOR', num(x.alt12, 0, 'A')],
-                ['OUTSIDE', G.isNum(d.ambient) ? G.fmt(T(d.ambient), 1) + ' ' + tU() : '--'],
-            ];
-            rows.forEach((r, i) => row(cv, t, 1112, 440, 132 + i * 46, r[0], r[1], r[2]));
-            cv.fillRect(1112, 412 + Math.round(ex / 2), 440, 1, t.panelEdge);
-            ['No hybrid system answered.', 'Hybrid car? Settings > Hybrid system'].forEach((l, i) =>
-                cv.text(l, 1112, 452 + Math.round(ex / 2) + i * 32, 20, i ? t.dim : t.text));
-        }
 
         /** 48 V mild hybrids, Details: what the 48 V battery reports about itself over its life. */
         function render48Info(cv, t, d) {
@@ -1222,7 +1181,7 @@ mgu.run({
             else if (kind() === 'phev') renderMain(cv, t, d);
             else if (pg[page] === 'b48info') render48Info(cv, t, d);
             else if (kind() === 'mhev') render48(cv, t, d);
-            else render12V(cv, t, d);
+            else d = Object.assign({}, d, b12.draw(pg[page] === 'hist12' ? 'hist12' : 'main', cv, t));
             header(cv, t, d);
             return ui.image('MAIN_GFX', cv);
         }
