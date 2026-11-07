@@ -1,0 +1,22 @@
+<!-- accent: #8a8f96 -->
+<rect x="4" y="4" width="132" height="132" rx="27" fill="#262626"/>
+<g transform="translate(4 4) scale(0.23784) translate(-187 -38)" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+  <!-- housing: open at the bottom -->
+  <path d="M333 356 C335 316 362 281 410 263 L556 238 C580 236 592 250 594 270 L598 296" stroke-width="12"/>
+  <!-- lower edge from the housing to the left tip -->
+  <path d="M334 350 L402 376" stroke-width="8.5"/>
+  <!-- pipe edges going back into the housing -->
+  <path d="M427 268 L462 303" stroke-width="9.5"/>
+  <path d="M541 248 L581 289" stroke-width="9.5"/>
+  <!-- pipe bodies (upper left of each tip) -->
+  <path d="M360 304 L392 290 L408 314 L376 338 Z" fill="#ffffff" stroke-width="2"/>
+  <path d="M478 266 L506 252 L522 278 L492 300 Z" fill="#ffffff" stroke-width="2"/>
+  <!-- tip: bezel ring, inner wall (crescent, lower right), bore -->
+  <circle cx="430" cy="340" r="38" fill="#ffffff" stroke="none"/>
+  <circle cx="423" cy="334" r="31" fill="#262626" stroke="none"/>
+  <circle cx="430" cy="340" r="50" stroke-width="14"/>
+  <!-- tip: bezel ring, inner wall (crescent, lower right), bore -->
+  <circle cx="550" cy="324" r="38" fill="#ffffff" stroke="none"/>
+  <circle cx="543" cy="318" r="31" fill="#262626" stroke="none"/>
+  <circle cx="550" cy="324" r="48" stroke-width="14"/>
+</g>

@@ -1823,5 +1823,18 @@
   "SOOT": "그을음",
   "LOAD (ADAPTED)": "적재량 (적응)",
   "ASH (ADAPTED)": "재 (적응)",
-  "Reading the engine unit...": "엔진 제어 장치를 읽는 중..."
+  "Reading the engine unit...": "엔진 제어 장치를 읽는 중...",
+  "Exhaust Remote": "배기 리모트",
+  "Drive mode": "주행 모드",
+  "Hold Open / Close": "열림/닫힘 유지",
+  "On · sent again every 15 s": "켜짐 · 15초마다 다시 전송",
+  "Off · the car takes over after ~20 s": "꺼짐 · 약 20초 후 차량이 제어",
+  "Close: hand back above": "닫힘 해제 회전수",
+  "Never (not recommended)": "사용 안 함 (권장하지 않음)",
+  "Made by": "제작자",
+  "HEALTH (SOH)": "배터리 수명 (SOH)",
+  "orig.": "원래",
+  "collecting...": "수집 중...",
+  "RESET": "초기화",
+  "CONFIRM": "확인"
 }
