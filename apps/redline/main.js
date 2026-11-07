@@ -13,7 +13,7 @@
  *     and climbs with the oil temperature
  *
  * Pages: tach / shift log / learned (what it learned from this car, with resets) / HUD looks (a live
- * preview of the HUD as set up, layouts to tap, an editor: look, items on / off, place;
+ * preview of the HUD as set up, layouts to tap, an editor: look, items on / off, effects, place;
  * Play on HUD). The tach's
  * peak marker drops back after "Peak hold" seconds; BTN_RESET clears it and the session stats.
  *
@@ -543,7 +543,7 @@ mgu.run({
             // the editor under the preview: tabs, then that panel's buttons
             // category tabs: text with an underline on a divider (like the page tabs), not pills, so they
             // read as categories and the pills below as the things you change
-            const panels = [['look', 'LOOK'], ['items', 'ITEMS'], ['place', 'PLACE']];
+            const panels = [['look', 'LOOK'], ['items', 'ITEMS'], ['effects', 'EFFECTS'], ['place', 'PLACE']];
             cv.fillRect(24, 398, 1552, 1, withAlpha(t.tick, 0.6));
             let tx = 40;
             panels.forEach((pn) => {
@@ -556,28 +556,31 @@ mgu.run({
             cv.text(STUDIO_HINT[studio.panel], 1576, 388, 16, t.dim, { align: 'right' });
             if (studio.panel === 'look') {
                 choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
-                choiceRow(cv, t, 462, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
+                choiceRow(cv, t, 462, 'LIGHTS', 'hudLightStyle', o.lights ? (o.gt3 ? 'gt3' : 'bar') : 'off', [['gt3', 'GT3 (outside in)'], ['bar', 'Left to right']], !o.lights);
                 // temperatures only while cold, warming or hot (invisible at operating temperature), or always
                 choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']], false, 720);
             } else if (studio.panel === 'items') {
-                // tap to add, tap again to remove: filled = on the HUD
-                chips(cv, t, 414, [
-                    ['Gear', o.gear, () => settings.set('hudShowGear', !o.gear)],
-                    ['D / S / M', o.mode, () => settings.set('hudShowMode', !o.mode)],
-                    ['RPM', o.rpm, () => settings.set('hudShowRpm', !o.rpm)],
-                    ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
-                    ['Oil', o.oil, () => settings.set('hudShowOil', !o.oil)],
-                    ['Water', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
-                    ['Gearbox', o.gearbox, () => settings.set('hudShowGearbox', !o.gearbox)],
-                    ['Cold limit', o.limit, () => settings.set('hudShowLimit', !o.limit)],
-                ]);
-                const down = settings.get('downCue') !== 'off';
-                chips(cv, t, 462, [
+                // what's on the HUD: the gauge's parts, then the readouts; tap to add or remove
+                switches(cv, t, 414, 'GAUGE', [
+                    ['Rev bar', o.bar, () => settings.set('hudShowBar', !o.bar)],
                     ['Shift lights', o.lights, () => settings.set('hudLightStyle', o.lights ? 'off' : 'gt3')],
-                    ['GT3 style', o.lights && o.gt3, () => settings.set('hudLightStyle', o.gt3 ? 'bar' : 'gt3'), !o.lights],
-                    ['Shift grade', o.chip !== 'off', () => settings.set('hudChip', o.chip === 'off' ? 'burst' : 'off')],
+                    ['Gear', o.gear, () => settings.set('hudShowGear', !o.gear)],
+                    ['Gear mode (D/S/M)', o.mode, () => settings.set('hudShowMode', !o.mode)],
+                ]);
+                switches(cv, t, 462, 'READOUTS', [
+                    ['RPM readout', o.rpm, () => settings.set('hudShowRpm', !o.rpm)],
+                    ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
+                    ['Oil temp', o.oil, () => settings.set('hudShowOil', !o.oil)],
+                    ['Water temp', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
+                    ['Gearbox temp', o.gearbox, () => settings.set('hudShowGearbox', !o.gearbox)],
+                    ['Cold-engine limit', o.limit, () => settings.set('hudShowLimit', !o.limit)],
+                ]);
+            } else if (studio.panel === 'effects') {
+                // what happens on the HUD around a shift: the grade, the peak line, the arrows, the shake
+                choiceRow(cv, t, 414, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
+                choiceRow(cv, t, 414, 'ARROWS', 'downCue', settings.get('downCue') || 'slowing', [['slowing', 'When braking'], ['always', 'Always'], ['off', 'Off']], false, 720);
+                switches(cv, t, 462, 'MORE', [
                     ['Peak marker', o.peak, () => settings.set('hudPeak', !o.peak)],
-                    ['Downshift arrows', down, () => settings.set('downCue', down ? 'off' : 'slowing')],
                     ['Limiter shake', o.shake, () => settings.set('hudShake', !o.shake)],
                 ]);
             } else {
@@ -591,15 +594,29 @@ mgu.run({
             }
         }
         const STUDIO_HINT = {
-            look: 'Layouts: tap one above; temperatures show only cold, warming or hot unless Always', items: 'Tap to add or remove (filled = on the HUD); units: Settings > HUD readouts',
+            look: 'Layouts: tap one above; temperatures show only cold, warming or hot unless Always',
+            items: 'Tap to add or remove what shows; units: Settings > HUD readouts',
+            effects: 'Grade after an upshift, downshift arrows, peak line, limiter shake',
             place: 'Moves the HUD on the glass at once',
         };
-        /** Toggle chips at y: [label, on, flip, disabled]; filled when on. */
-        function chips(cv, t, y, list) {
-            let x = 40;
+        /**
+         * On / off switches at y, after a section label: [label, on, flip]. Drawn as switches, not like
+         * the choice buttons: a green LED dot lit when on (an empty ring when off), the chip tinted and
+         * outlined bright when on, dim when off, so on / off reads at a glance.
+         */
+        const SWITCH_ON = '#2ee66b';
+        function switches(cv, t, y, label, list) {
+            cv.text(label, 40, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+            let x = 200;
             list.forEach((c, i) => {
-                const w = G.button(cv, t, x, y, 0, 40, c[0], () => { c[2](); return render(); }, { key: 'studio_chip_' + y + '_' + i, primary: !!c[1], busy: !!c[3] });
-                x += (w || 160) + 10;
+                const on = !!c[1], txt = c[0], w = cv.textWidth(txt, 18, { font: 'bold' }) + 64, h = 40;
+                if (on) cv.roundRect(x, y, w, h, h / 2, withAlpha(t.accent, 0.16));
+                cv.strokeRoundRect(x, y, w, h, h / 2, 2, on ? t.accent : withAlpha('#ffffff', 0.3));
+                // the dot is a little LED: lit green when on, an empty ring when off
+                if (on) { cv.circle(x + 22, y + h / 2, 11, withAlpha(SWITCH_ON, 0.25)); cv.circle(x + 22, y + h / 2, 7, SWITCH_ON); } else cv.arc(x + 22, y + h / 2, 5.5, 7.5, 0, 360, withAlpha('#ffffff', 0.45));
+                cv.text(txt, x + 40, y + 27, 18, on ? t.text : t.dim, { font: 'bold' });
+                cv.target(x, y, w, h, () => { c[2](); return render(); }, 'studio_sw_' + y + '_' + i);
+                x += w + 12;
             });
         }
         /** Buttons that step a number setting through its "steps" (−1 / +1), with the value between. */

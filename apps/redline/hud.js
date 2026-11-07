@@ -129,7 +129,7 @@ function optsFrom(settings) {
         style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
         palette: settings.get('hudPalette') || 'colour',
         // readouts, each on its own switch
-        gear: on('hudShowGear'), rpm: on('hudShowRpm'), boost: on('hudBoost'), limit: on('hudShowLimit'),
+        gear: on('hudShowGear'), rpm: on('hudShowRpm'), bar: on('hudShowBar'), boost: on('hudBoost'), limit: on('hudShowLimit'),
         oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
@@ -502,7 +502,7 @@ function start(ctx, src) {
             Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25),
             f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
-            o.style, o.palette, o.gear, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
+            o.style, o.palette, o.gear, o.bar, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
     }
 
     const showTach = safe('tach', () => {

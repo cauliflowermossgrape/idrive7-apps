@@ -256,7 +256,7 @@ function drawLayer(cv, f, layer) {
             for (let i = 0; i < n; i++) pts.push([x0 + pitch * (i + 0.5), 8]);
             drawLights(cv, pts, pts.map((p, i) => (o.gt3 ? Math.min(i, 11 - i) : i)), o.gt3 ? 6 : 12, 6, Object.assign({}, s, { shape: 'rect', ghost: o.style === 'vfd' }));
         }
-        drawGraph(cv, 76, 18, IW - 76, 36, s, o.style === 'vfd');
+        if (o.bar !== false) drawGraph(cv, 76, 18, IW - 76, 36, s, o.style === 'vfd');
         if (o.gear) seg7(cv, gearText(d).slice(0, 1), 4, 10, 50, 86, 9, gearCol, ghost, false, layer);
         if (fg) drawDown(cv, 29, 106, f.down || 0, 1, P.arrow);
         const rpmTxt = isNum(d.rpm) && d.rpm < 9995 ? String(Math.max(0, Math.round(d.rpm / 10) * 10)).padStart(4, ' ') : '----';
@@ -273,7 +273,7 @@ function drawLayer(cv, f, layer) {
             for (let i = 0; i < 6; i++) { pts.push([IW - 14 - i * 26, 30]); pos.push(i); }
             drawLights(cv, pts, pos, 6, d0 / 2, s);
         }
-        drawBar(cv, 0, 84, IW, 40, s);
+        if (o.bar !== false) drawBar(cv, 0, 84, IW, 40, s);
         if (fg) {
             if (o.gear) cv.text(gearText(d), IW / 2, 70, 72, gearCol, { align: 'center', font: 'gear' });
             drawDown(cv, IW / 2 + 52, 34, f.down || 0, 1, P.arrow);
@@ -305,14 +305,14 @@ function drawLayer(cv, f, layer) {
         const r = lightsRow(tx, 2, tw, 14);
         drawLights(cv, r.pts, r.pts.map((p, i) => (o.gt3 ? Math.min(i, 11 - i) : i)), o.gt3 ? 6 : 12, r.rad, s);
     }
-    drawBar(cv, tx, o.lights ? 20 : 2, tw, o.lights ? 38 : 56, s);
+    if (o.bar !== false) drawBar(cv, tx, o.lights ? 20 : 2, tw, o.lights ? 38 : 56, s);
     if (f.chip) { if (fg) drawChip(cv, TEMP_X, IW, 66, f.chip, P); } else drawReadouts(cv, TEMP_X, IW, 66, f.readouts || [], P, layer);
 }
 
 /** The key of the static ('bg') layer: what it depends on. */
 function bgKey(f) {
     const o = f.opts, c = f.cue;
-    return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.lights, o.gt3, o.dim, o.lightStyle, f.redline, f.max, c.shift || c.limiter, c.limiter,
+    return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, f.redline, f.max, c.shift || c.limiter, c.limiter,
         f.chip ? 'chip' : (f.readouts || []).map((r) => r.label).join(',')].join('|');
 }
 

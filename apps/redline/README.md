@@ -65,13 +65,17 @@ cars with a HUD, but nobody has checked yet.
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
 - **Picking:** on the right, the six layouts; tap one to use it.
-- **Editing:** under the preview, three tabs, each showing its changes in the preview at once:
-  - **Look:** colours, grade style, and temperatures hidden at operating temperature (only blue,
-    yellow or red ones show) or always shown.
-  - **Items:** a chip for everything the HUD can show (gear, D / S / M, rpm, boost, oil, water,
-    gearbox, cold limit, shift lights, GT3 style, shift grade, peak marker, downshift arrows,
-    limiter shake). Tap to add or remove; filled means on.
-  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Reset puts
+- **Editing:** under the preview, four tabs, each showing its changes in the preview at once:
+  - **Look:** colours, shift light style (GT3, filling from the outside in, or left to right),
+    and temperatures hidden at operating temperature (only blue, yellow or red ones show) or
+    always shown.
+  - **Items:** on / off switches (a lit green dot means on) in two groups. *Gauge*: Rev bar (the
+    main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M). *Readouts*: RPM readout, Boost,
+    Oil temp, Water temp, Gearbox temp, Cold-engine limit. Every item can be turned off, so the
+    HUD can be, say, the VFD shift lights alone.
+  - **Effects:** the shift grade (Burst / Simple / Off), downshift arrows (When braking /
+    Always / Off), the peak marker and the limiter shake.
+- **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
   you're parked. Nothing is learned from it.
@@ -88,6 +92,7 @@ cars with a HUD, but nobody has checked yet.
 
 **The readouts row** (standard layout), left to right:
 
+- **RPM:** the engine speed as a number (7-segment digits in the digital and VFD layouts).
 - **Boost:** in bar, from the iDrive sport display. It shows only once the car has sent a value
   that moves; some cars send a constant.
 - **LIMIT:** the cold-engine shift point, while the cold guard holds it down.
