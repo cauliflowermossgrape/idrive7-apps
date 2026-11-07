@@ -31,7 +31,10 @@ const SCENE_W = 800, SCENE_H = 480;
 // the tach image and where it sits at 100 %: centred in the visible area, clear of BMW's speed
 const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
 const TEMP_X = 150;                                             // temperatures start here (image x)
-const FPS = 10;
+// frames a second: setting "hudFps" (10 / 20 / 30); the layer is made for the most, the timer paces it
+const FPS_MAX = 30, FPS_DEFAULT = 20;
+// the flash's on / off rhythm in ms (5 Hz), from the clock, so it looks the same at any frame rate
+const BLINK_MS = 100;
 const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a', BLUE = '#2a7dff', COLD = '#3d8bff';
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -70,9 +73,11 @@ function gearText(d) {
  *   limiter= on the limiter (within 40 of the redline): everything flashes; shift points are
  *            held 150 under it, so a shift on the point never looks like the limiter;
  *   fallSince = since when the revs have been falling (ms), or null.
- * Rate: smoothed rpm per second from successive frames, rises only (a lift or a shift resets it).
+ * Rate: smoothed rpm per second from successive samples, rises only (a lift or a shift resets it).
+ * rpmShow (optional): the rpm drawn, between samples moved on along the climb (the HUD smooths it);
+ * the count, the flash and the limiter go by it, the climb rate only by the real samples (rpm).
  */
-function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear) {
+function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
     if (!isNum(rpm)) { st.rate = 0; st.on = false; st.fall = null; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0, fallSince: null }; }
     let rising = false;
     // the same reading again (a frame drawn between two rpm samples) is no news: the rate is only
@@ -93,7 +98,8 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear) {
     if (climbing && rising) { st.span = clamp(rate * 1.0, 800, 2000); st.lead = Math.min(800, rate * leadMs / 1000); }
     const at = shift - (st.lead || 0);
     const from = at - (st.span || 1500);
-    if (!climbing && rpm <= from) { st.span = 0; st.lead = 0; }          // count empty: back to the plain span
+    const r = isNum(rpmShow) ? rpmShow : rpm;
+    if (!climbing && r <= from) { st.span = 0; st.lead = 0; }          // count empty: back to the plain span
     // latch: the flash point is held from the moment it fires
     const lifted = st.fall != null && tMs - st.fall >= 300;
     // a new gear (the upshift itself) ends the flash and starts the next gear's count afresh: in the
@@ -104,12 +110,12 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear) {
     if (changed) { st.on = false; st.span = 0; st.lead = 0; }
     // without a gear signal: the revs 12 % under the highest they reached while flashing (an upshift
     // drops 18 % or more on an 8-speed, from wherever it was made; a traction dip less)
-    if (!st.on && rpm >= at && !lifted && !changed) { st.on = true; st.at = at; st.peak = rpm; }
+    if (!st.on && r >= at && !lifted && !changed) { st.on = true; st.at = at; st.peak = r; }
     else if (st.on) {
-        st.peak = Math.max(st.peak || rpm, rpm);
-        if (rpm < st.peak * 0.88 || lifted) st.on = false;
+        st.peak = Math.max(st.peak || r, r);
+        if (r < st.peak * 0.88 || lifted) st.on = false;
     }
-    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
+    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: r >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
 }
 
 /**
@@ -408,8 +414,9 @@ function start(ctx, src) {
         if (!!d.demo !== lastDemo) { lastDemo = !!d.demo; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
         const o = optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
-        const was = cueState.on, lead = leadMs();
-        const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead, d.gear);
+        const was = cueState.on, lead = leadMs(), now = Date.now();
+        const show = smooth(d.rpm, now, src.maxRpm());
+        const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, show);
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
             const seen = lights && target && target.state === 'shown';
@@ -418,14 +425,40 @@ function start(ctx, src) {
         // first moment the revs fell after the flash: a real upshift reports its new gear within
         // ~0.7 s of that; later, the driver lifted first and the shift says nothing about reaction
         if (flashInfo && flashInfo.fall === null && cue.fallSince !== null) flashInfo.fall = cue.fallSince;
-        blink = cue.shift || cue.limiter ? !blink : true;
+        blink = cue.shift || cue.limiter ? Math.floor(now / BLINK_MS) % 2 === 0 : true;
         return {
-            d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
+            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
             down: src.downshift ? src.downshift() : 0,
             gearbox: src.gearbox ? src.gearbox.value() : null,
             opts: o,
         };
     }
+
+    /*
+     * The car sends rpm 10-20 times a second; the HUD draws up to 30. Between two samples the bar is
+     * moved on along the last climb (or fall), for at most 1.2 sample intervals and 150 ms, so it
+     * moves smoothly instead of in steps; a new sample replaces the estimate. A gap over 300 ms is
+     * no climb. Also measured: how often samples come (logged once, then every 10 minutes).
+     */
+    const sm = { r: null, t: 0, rate: 0, dt: 0, n: 0, logged: 0 };
+    function smooth(rpm, now, max) {
+        if (!isNum(rpm)) { sm.r = null; return rpm; }
+        if (rpm !== sm.r || now - sm.t >= 500) {
+            const dt = now - sm.t;
+            sm.rate = sm.r !== null && dt > 15 && dt < 300 ? (rpm - sm.r) * 1000 / dt : 0;
+            if (sm.r !== null && dt > 15 && dt < 300) { sm.dt = sm.dt ? sm.dt * 0.95 + dt * 0.05 : dt; sm.n++; }
+            sm.r = rpm; sm.t = now;
+            if (sm.n >= 200 && now - sm.logged > 600000) {
+                sm.logged = now;
+                log.info('hud: rpm samples every ' + Math.round(sm.dt) + ' ms (' + Math.round(1000 / sm.dt) + ' a second), drawn at ' + fps() + ' fps');
+            }
+            return rpm;
+        }
+        if (Math.abs(sm.rate) < 200) return rpm;
+        const ahead = Math.min(now - sm.t, sm.dt ? sm.dt * 1.2 : 100, 150);
+        return clamp(Math.round(rpm + sm.rate * ahead / 1000), 0, max || 9000);
+    }
+    const fps = () => { const v = num('hudFps', FPS_DEFAULT); return v >= 30 ? 30 : v >= 20 ? 20 : 10; };
 
     /** The drawing options from the settings. */
     function optsNow() {
@@ -489,12 +522,12 @@ function start(ctx, src) {
         const r = rect();
         if (shown === 'tach') { cr.set(layer, r); return; }
         dropLayer();
-        layer = cr.image({ target: 'hud', klass: 'overlay', x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS, sampling: 'bilinear' });
+        layer = cr.image({ target: 'hud', klass: 'overlay', x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
         if (!layer) { log.warn('hud: tach layer refused by the client'); return; }
         cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true;
         shown = 'tach';
         if (src.gearbox) src.gearbox.start();
-        timer = setInterval(tick, Math.round(1000 / FPS));
+        timer = setInterval(tick, Math.round(1000 / fps()));
         log.info('hud: tach on at ' + r.x + ',' + r.y + ' ' + r.w + 'x' + r.h);
     });
 
@@ -508,6 +541,7 @@ function start(ctx, src) {
 
     const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
     settings.onChange(safe('setting', (key) => {
+        if (key === 'hudFps' && timer) { clearInterval(timer); timer = setInterval(tick, Math.round(1000 / fps())); log.info('hud: ' + fps() + ' fps'); return; }
         if (HUD_KEYS.indexOf(key) < 0) { first = true; return; }
         if (shown === 'test' && key !== 'hud') shown = '';         // redraw the pattern with the tach moved
         apply();
