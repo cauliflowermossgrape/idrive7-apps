@@ -72,7 +72,7 @@ cars with a HUD, but nobody has checked yet.
   - **Gauge:** Rev bar (the main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M), and the
     shift light style (GT3, filling from the outside in, or left to right). Every part can be
     turned off, so the HUD can be, say, the VFD shift lights alone.
-  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, Throttle, G-force. *Temps*: Oil,
+  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, G-force. *Temps*: Oil,
     Water, Gearbox, Outside, and the cold-engine limit. Up to four show, in this order; when more
     are on, the last plain ones give way, so a cold or hot reading keeps its place.
   - **Effects:** the shift grade (Burst / Simple / Off), downshift arrows (When braking /
@@ -109,7 +109,8 @@ a car that doesn't send the mode count as Sport, so the HUD never disappears for
 - **RPM:** the engine speed as a number (7-segment digits in the digital and VFD layouts).
 - **Torque** (Nm or lb-ft) from the engine's own torque signal, and **power** (hp, PS or kW)
   worked out from torque and rpm. Both off by default.
-- **Throttle:** the accelerator pedal, in %. Off by default.
+- **Throttle** is left out for now: the accelerator pedal signal's scaling isn't confirmed (on a
+  G21 it read 60-96 % at a light touch). It comes back once checked against the engine unit.
 - **G-force:** sideways and forward / braking together, from the car's acceleration sensor. Off
   by default.
 - **Outside temperature:** blue at 3 °C and below, where ice is possible. Off by default.

@@ -105,9 +105,10 @@ mgu.run({
         const driveMode = { v: null, seen: [] };
         /** 'M' (shifting by hand), 'S', 'D', or null when the car hasn't said (then nothing is held back). */
         const modeNow = () => (gearMode.v && !car.data().demo ? gearMode.v : null);
-        // the HUD's extra readouts, as Live Data scales them: accelerator pedal (%), g sideways and
-        // forward, outside temperature (°C); each { v, t }, used while under 2 s old (outside: 10 min)
-        const extra = { pedal: { v: null, t: 0 }, gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
+        // the HUD's extra readouts, as Live Data scales them: g sideways and forward, outside
+        // temperature (°C); each { v, t }, used while under 2 s old (outside: 10 min). (The accelerator
+        // pedal is left out until its scaling is checked: Live Data's guess read 60-96 % at a light touch.)
+        const extra = { gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
         const keep = (e, v) => { e.v = v; e.t = Date.now(); };
         const fresh = (e, ms) => (e.v !== null && Date.now() - e.t < ms ? e.v : null);
         const G0 = 9.80665;
@@ -128,9 +129,6 @@ mgu.run({
                 if (boost.first === null) boost.first = raw; else if (raw !== boost.first) boost.moved = true;
                 boost.v = raw * 0.01; boost.t = Date.now();
             },
-        },
-        'de.bmw.powertrain.AcceleratorPedal': {
-            AngleAcceleratorPedal: (v) => { const raw = v && v.actualValueAngleAcceleratorPedal; if (typeof raw === 'number') { const p = raw * 0.025; if (p >= -2 && p <= 102) keep(extra.pedal, p); } },
         },
         'de.bmw.infotainment.vehicle.CDS2': {
             statusLateralAccelerationMassCenter: (v) => { const raw = v && v.lateralAccelerationCentreOfGravity; if (typeof raw === 'number' && raw !== 65535) keep(extra.gLat, (raw * 0.002 - 65) / G0); },
@@ -231,14 +229,21 @@ mgu.run({
         // LIMITER: on the cut itself (25 rpm): shift points sit 150 under the redline, so the old 60 caught
         // shifts on the point
         const verdict = (rpm, target, cold) => (rpm >= redline() - 25 ? 'LIMITER' : rpm < target - 250 ? 'EARLY' : rpm > target + 200 ? (cold ? 'COLD REV' : 'LATE') : 'SPOT ON');
-        const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff' };
+        // only shifts aimed at the shift point are graded: the revs within GRADE_FROM of it (where the
+        // shift lights count in) and shifted by hand; the rest are logged as CRUISE (an everyday shift
+        // well below the point) or AUTO (the gearbox shifted, in D or S) and left out of the accuracy
+        const GRADE_FROM = 1500;
+        const gradeOf = (rpm, sp, mode) => (mode === 'D' || mode === 'S' ? 'AUTO' : rpm < sp.rpm - GRADE_FROM ? 'CRUISE' : verdict(rpm, sp.rpm, sp.cold));
+        const graded = (s) => s.verdict !== 'CRUISE' && s.verdict !== 'AUTO';
+        const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff', CRUISE: '#8a8f98', AUTO: '#8a8f98' };
 
         function recordShift(t, from, to) {
             const win = recent.filter((r) => t - r[0] < 600);
             const rpm = Math.max.apply(null, win.map((r) => r[1]));
             if (!(rpm > 2500)) return;
             const sp = shiftPoint(car.data().oil, from);
-            lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: verdict(rpm, sp.rpm, sp.cold), mode: modeNow() };
+            const gm = modeNow();
+            lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: gradeOf(rpm, sp, gm), mode: gm };
             if (hud && learning() && !car.data().demo) hud.upshift(rpm);         // never learn from the demo drive
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
@@ -469,11 +474,12 @@ mgu.run({
 
             const ap = G.panel(cv, t, 808, 44, 768, 468, 'Shift accuracy');
             const pitch = 46 + (ap.y + ap.h - G.BOTTOM) / 4;          // the bars spread over a taller panel
-            const n = shifts.length;
-            const cnt = (v) => shifts.filter((s) => s.verdict === v).length;
+            // accuracy from the graded shifts only (CRUISE / AUTO are in the log, not in the score)
+            const aimed = shifts.filter(graded), n = aimed.length;
+            const cnt = (v) => aimed.filter((s) => s.verdict === v).length;
             const spot = cnt('SPOT ON');
             cv.text(n ? Math.round(spot / n * 100) + '%' : '--', 832, 199, 96, n ? GREEN : t.dim, { font: 'num' });
-            cv.text('SPOT ON  (' + n + ' ' + plural(n, 'shifts', 'shifts') + ')', 836, 235, 22, t.dim, { font: 'bold', spacing: 1 });
+            cv.text('SPOT ON  (' + n + ' graded)', 836, 235, 22, t.dim, { font: 'bold', spacing: 1 });
             ['EARLY', 'SPOT ON', 'LATE', 'COLD REV', 'LIMITER'].forEach((v, i) => {
                 const y = 276 + Math.round(i * pitch), c = cnt(v), f = n ? c / n : 0;
                 cv.text(v, 836, y + 22, 22, VCOL[v], { font: 'bold', spacing: 1 });
@@ -483,7 +489,7 @@ mgu.run({
             });
             // scatter: shift rpm vs target
             if (n) {
-                const ys = shifts.slice(0, 30).map((s) => s.rpm - s.target);
+                const ys = aimed.slice(0, 30).map((s) => s.rpm - s.target);
                 const avg = ys.reduce((a, b) => a + b, 0) / ys.length;
                 cv.text('AVG ' + (avg >= 0 ? '+' : '') + Math.round(avg) + ' rpm vs shift point', 1240, 199, 24, t.text, { align: 'center', font: 'bold' });
                 cv.text('PEAK ' + Math.round(sessionRpm) + ' RPM  ·  ' + G.fmt(mph() ? peakSpeed / MPH : peakSpeed, 0) + (mph() ? ' MPH' : ' KM/H'), 1240, 235, 22, t.dim, { align: 'center', font: 'bold', spacing: 0.5 });
@@ -578,7 +584,7 @@ mgu.run({
                 cv.target(tx - 16, 356, w + 32, 46, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 56;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.throttle, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             cv.text(over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show (temperatures only when cold or hot)' : STUDIO_HINT[studio.panel], 1576, 388, 16, over ? t.warn : t.dim, { align: 'right' });
             if (studio.panel === 'look') {
@@ -603,7 +609,6 @@ mgu.run({
                     ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
                     ['Torque', o.torque, () => settings.set('hudShowTorque', !o.torque)],
                     ['Power', o.power, () => settings.set('hudShowPower', !o.power)],
-                    ['Throttle', o.throttle, () => settings.set('hudShowThrottle', !o.throttle)],
                     ['G-force', o.g, () => settings.set('hudShowG', !o.g)],
                 ]);
                 switches(cv, t, 462, 'TEMPS', [
@@ -706,7 +711,11 @@ mgu.run({
             cv.fillRect(836, y - 30, 712, 1, withAlpha(t.tick, 0.6));
             cv.text('REDLINE', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
             cv.text(redline() + ' rpm  ·  ' + redlineSource(), 990, y, 20, t.text, { font: 'bold' });
-            if (!lim && !manualRedline() && settings.get('learnRedline') !== false) cv.text('learns after two hits of the limiter, oil warm', 990, y + 20, 15, t.dim);
+            if (!lim && !manualRedline() && settings.get('learnRedline') !== false) {
+                const p = limiter.waiting();
+                cv.text(p ? '1 of 2 limiter hits seen (' + p + ' rpm): one more, held half a second, oil warm'
+                    : 'learns after two hits of the limiter, each held half a second, oil warm', 990, y + 20, 15, p ? t.text : t.dim);
+            }
             G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { limiter.forget(); return render(); }, { key: 'resetRedline', confirm: true, color: t.warn });
             y += 46;
             cv.text('REACTION', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
@@ -767,7 +776,7 @@ mgu.run({
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
-            chip: () => (lastShift && lastShift.mode !== 'D' && lastShift.mode !== 'S' && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
+            chip: () => (lastShift && graded(lastShift) && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             mode: modeNow,
             // 'sport', 'comfort', 'eco' or null (unknown, Adaptive, the demo data): the HUD shows as set up
             driveMode: () => (car.data().demo ? null : driveMode.v),
@@ -775,7 +784,7 @@ mgu.run({
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
             extras: () => (car.data().demo ? null : {
                 torque: Date.now() - torque.t < 2000 ? torque.v : null,
-                pedal: fresh(extra.pedal, 2000), gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
+                gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),
             }),
         });

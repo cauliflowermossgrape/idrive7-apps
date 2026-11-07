@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -24,10 +24,6 @@
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
       "DataPowerTrain2": "s"
-    },
-    "de.bmw.powertrain.AcceleratorPedal": {
-      "_optional": "throttle on the HUD",
-      "AngleAcceleratorPedal": "s"
     },
     "de.bmw.infotainment.vehicle.CDS2": {
       "_optional": "g-force on the HUD",
@@ -127,7 +123,6 @@
      "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]]},
     {"key": "hudShowTorque", "label": "Torque", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudShowPower", "label": "Power (from torque and rpm)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
-    {"key": "hudShowThrottle", "label": "Throttle (accelerator pedal)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudShowG", "label": "G-force (sideways and braking / accelerating together)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD readouts"},
     {"key": "hudTorqueUnit", "label": "Torque unit", "type": "choice", "default": "nm", "when": {"hud": ["on", "test"]}, "group": "HUD readouts",
      "options": [["nm", "Nm"], ["lbft", "lb-ft"]]},

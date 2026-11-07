@@ -135,7 +135,8 @@ function optsFrom(settings) {
         oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
         // the extra readouts are off unless switched on
         torque: settings.get('hudShowTorque') === true, power: settings.get('hudShowPower') === true,
-        throttle: settings.get('hudShowThrottle') === true, g: settings.get('hudShowG') === true,
+        // throttle: off until the accelerator pedal's scaling is checked on a car (readoutsFor keeps it)
+        throttle: false, g: settings.get('hudShowG') === true,
         outside: settings.get('hudShowOutside') === true,
         torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
