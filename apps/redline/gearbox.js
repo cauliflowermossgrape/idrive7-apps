@@ -62,6 +62,7 @@ class GearboxTemp {
         if (this.busy || !this.rd) return;
         if (this.egsFails >= 3 && Date.now() - this.egsT < FAIL_RETRY_MS) return;    // EGS silent: try again each minute
         this.busy = true;
+        if (this.egsFails >= 3 && this.link && this.link.wake) this.link.wake(0x18);   // retried each minute: may have been asleep
         Promise.resolve().then(() => this.rd.value('egs', EGS)).then((v) => {
             this.egsT = Date.now();
             if (v === null) {

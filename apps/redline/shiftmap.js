@@ -49,11 +49,12 @@ class ShiftMap {
         try {
             const j = JSON.parse(fs.readFileSync(this.file, 'utf8'));
             if (Array.isArray(j.bins)) j.bins.forEach((b, i) => {
-                if (i < NBINS && Array.isArray(b)) this.bins[i] = b.filter((p) => Array.isArray(p) && num(p[0]) && num(p[1])).slice(0, TOPK);
+                if (i < NBINS && Array.isArray(b)) this.bins[i] = b.filter((p) => Array.isArray(p) && num(p[0]) && num(p[1]) && p[1] > 0 && p[1] < 2000)
+                    .sort((x, y) => y[1] - x[1]).slice(0, TOPK);
             });
             if (j.ratios && typeof j.ratios === 'object') Object.keys(j.ratios).forEach((g) => {
                 const a = j.ratios[g];
-                if (Array.isArray(a)) { const r = this._ratio(+g); r.buf = a.filter(num).slice(-RATIO_N); this._median(r); }
+                if (Array.isArray(a) && +g >= 1 && +g <= MAX_GEAR) { const r = this._ratio(+g); r.buf = a.filter((k) => num(k) && k > 0 && k < 1000).slice(-RATIO_N); this._median(r); }
             });
             this._compute(true);
         } catch (e) { /* none yet */ }
@@ -203,7 +204,9 @@ class ShiftMap {
             changed = true;
             if (!quiet) this.log.info('shiftmap: ' + g + '>' + (g + 1) + ' at ' + (v === null ? 'unknown' : v) + (old !== null ? ' (was ' + old + ')' : ''));
         }
-        if (changed && !quiet) { this._save(); this._emit(); }
+        // a moved point is saved at most once a minute while learning (flash wear); the 5-minute
+        // dirty save and the next change catch up
+        if (changed && !quiet) { this.dirty = true; if (!(this.lastCalc - this.lastSave < 60000)) { this.lastSave = this.lastCalc; this._save(); } this._emit(); }
     }
 
     _save() {

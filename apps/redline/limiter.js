@@ -32,7 +32,7 @@ class Limiter {
         this.win = []; this.hist = []; this.peak = null; this.listeners = [];
         try {
             const j = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-            if (typeof j.rpm === 'number' && j.rpm > 0) { this.saved = j.rpm; this.at = j.at || 0; }
+            if (typeof j.rpm === 'number' && j.rpm >= 2500 && j.rpm <= 12000) { this.saved = Math.round(j.rpm / 50) * 50; this.at = j.at || 0; }
         } catch (e) { /* none yet */ }
     }
 
@@ -40,6 +40,7 @@ class Limiter {
     onChange(fn) { this.listeners.push(fn); }
 
     forget() {
+        this.pending = null; this.peak = null; this.win.length = 0;   // a half-learned plateau goes too
         if (this.saved === null) return;
         this.saved = null;
         try { fs.unlinkSync(this.file); } catch (e) { /* gone */ }

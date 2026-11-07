@@ -34,9 +34,29 @@ const MPH = 1.609344;
 const GREEN = '#2fd27a', YELLOW = '#ffc21a', BLUE = '#2a7dff';
 const N_LEDS = 12, LED_RANGE = 2000;
 
+/**
+ * Settings merged in 1.18: "Gear on HUD" + "Temperatures on HUD" -> "Shows" (hudContent), "Shift
+ * lights on HUD" + its style -> "Shift lights" (hudLightStyle with 'off'). A choice made before is
+ * carried over once; the old keys are then dropped from settings.json.
+ */
+function migrateSettings(settings, log) {
+    try {
+        const v = settings.values || {};
+        if (!('hudGear' in v) && !('hudTemps' in v) && !('hudLights' in v)) return;
+        const gear = v.hudGear !== 'off', temps = v.hudTemps !== false;
+        const content = gear && temps ? 'all' : gear ? 'gear' : temps ? 'temps' : 'tach';
+        const style = v.hudLights === false ? 'off' : v.hudLightStyle === 'bar' ? 'bar' : 'gt3';
+        delete v.hudGear; delete v.hudTemps; delete v.hudLights;
+        settings.set('hudContent', content);
+        settings.set('hudLightStyle', style);
+        log.info('settings: HUD settings from 1.17 carried over (shows ' + content + ', lights ' + style + ')');
+    } catch (e) { log.warn('settings migration: ' + e); }
+}
+
 mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
+        migrateSettings(settings, log);
         // engine profile (diesel / petrol): rev scale top and the Auto redline / cold limit
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
         // gearbox oil temperature for the HUD (EGS over UDS, or BasicDataSet); polled only while the HUD is on
@@ -70,7 +90,7 @@ mgu.run({
         settings.onChange((key, v) => { if (key === 'learnRedline' && v === false) limiter.forget(); });
         log.info('redline ' + redline() + ' (' + redlineSource() + ')');
         /* Shift point: per gear from the engine's own torque curve and the gear ratios (shiftmap.js,
-         * setting "shiftMode" = learned) once it knows that gear, held 100 under the redline so the
+         * setting "shiftMode" = learned) once it knows that gear, held 150 under the redline so the
          * shift never meets the limiter; else (and with "fixed") the redline minus "shiftBefore".
          * Never below 2500: shifts under that are not scored. */
         const shiftMap = new ShiftMap({ dataDir: ctx.dataDir, log });
@@ -78,9 +98,9 @@ mgu.run({
         const learnedShift = (gear) => {
             if (settings.get('shiftMode') === 'fixed' || !G.isNum(gear) || gear < 1) return null;
             const r = shiftMap.shiftFor(gear);
-            return G.isNum(r) ? Math.min(r, redline() - 100) : null;
+            return G.isNum(r) ? Math.min(r, redline() - 150) : null;     // clear of the limiter flash (redline - 40)
         };
-        const minShift = () => { const v = settings.get('minShift'); return typeof v === 'number' && v > 0 ? Math.min(v, redline() - 100) : 0; };
+        const minShift = () => { const v = settings.get('minShift'); return typeof v === 'number' && v > 0 ? Math.min(v, redline() - 150) : 0; };
         const normalShift = (gear) => Math.max(2500, minShift(), learnedShift(gear) || redline() - settings.get('shiftBefore'));
         const shiftSource = (gear) => (learnedShift(gear) ? 'learned' : 'fixed');
         const limitsChanged = () => { car.setRedline(redline()); shiftMap.setRedline(redline()); };
@@ -105,7 +125,7 @@ mgu.run({
         const recent = [];                  // [t, rpm, speed] last ~1 s
         let lastGear = null, onLimiter = false, lastShift = null, hud = null;
         const cueState = {};
-        let screenCue = null, slowingUntil = 0;
+        let screenCue = null, slowingUntil = 0, lastRpmVal = null, lastRpmChange = 0;
 
         /*
          * Downshift cue: how many gears (0..3) you can drop now without the revs passing that gear's
@@ -163,7 +183,9 @@ mgu.run({
                 const tq = Date.now() - torque.t < 300 ? torque.v : null;
                 if (learning()) shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq });
                 const pr = profileRedline();
-                if (learning() && settings.get('learnRedline') !== false) limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
+                if (d.rpm !== lastRpmVal) { lastRpmVal = d.rpm; lastRpmChange = Date.now(); }
+                const rpmFresh = Date.now() - lastRpmChange < 300;
+                if (rpmFresh && learning() && settings.get('learnRedline') !== false) limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
             }
 
             // upshift: gear number goes up, or (no gear signal) rpm falls >18 % within 0.4 s while still moving
@@ -384,11 +406,14 @@ mgu.run({
         }
 
         /* ---------- Learned page: what Redline has learned from this car, each with a reset ---------- */
+        let learnedView = null;
         function drawLearned(cv, t) {
             // torque curve (full load), from the car's torque signal
             const cp = G.panel(cv, t, 24, 44, 760, 468, 'Torque curve (full load)');
-            G.button(cv, t, 784 - 20 - 150, 56, 150, 40, 'Reset', () => { shiftMap.forget(); return render(); }, { key: 'resetMap', confirm: true, color: t.warn });
-            const pts = shiftMap.curve(), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
+            G.button(cv, t, 784 - 20 - 150, 56, 150, 40, 'Reset', () => { shiftMap.forget(); learnedView = null; return render(); }, { key: 'resetMap', confirm: true, color: t.warn });
+            // the learned data changes every few seconds at most: read it once a second, not per frame
+            if (!learnedView || Date.now() - learnedView.t > 1000) learnedView = { t: Date.now(), pts: shiftMap.curve(), table: shiftMap.table() };
+            const pts = learnedView.pts.filter((p) => p[0] >= 1000 && p[0] <= maxRpm()), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
             G.chart(cv, t, 44, 116, 720, Math.max(200, cp.y + cp.h - 136), {
                 xMin: 1000, xMax: maxRpm(), xStep: 1000, xFmt: (v) => String(v / 1000), xUnit: 'x1000 rpm',
                 yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: 'Nm', padTop: 22,
@@ -398,8 +423,8 @@ mgu.run({
 
             // shift points and gear ratios, the redline and the reaction time
             G.panel(cv, t, 808, 44, 768, 468, 'Shift points');
-            G.button(cv, t, 1576 - 20 - 170, 56, 170, 40, 'Reset all', () => { shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead(); return render(); }, { key: 'resetAll', confirm: true, color: t.warn });
-            const table = shiftMap.table();
+            G.button(cv, t, 1576 - 20 - 170, 56, 170, 40, 'Reset all', () => { shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead(); learnedView = null; return render(); }, { key: 'resetAll', confirm: true, color: t.warn });
+            const table = learnedView.table;
             let y = 130;
             cv.text('GEAR', 836, y, 18, t.dim, { font: 'bold', spacing: 1 });
             cv.text('SHIFT AT', 1080, y, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
@@ -424,12 +449,13 @@ mgu.run({
             y += 46;
             cv.text('REACTION', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
             cv.text(lead ? lead.ms + ' ms early  ·  ' + (lead.auto ? 'learned from ' + lead.shifts + ' shifts' : 'set by hand') : '--', 990, y, 20, t.text, { font: 'bold' });
-            if (resetArmed()) cv.text('Press Reset learned again to forget it all', 836, y + 34, 18, t.warn, { font: 'bold' });
+
             G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { if (hud) hud.resetLead(); return render(); }, { key: 'resetLead', confirm: true, color: t.warn });
             // what the head-up display is doing (while it is switched on), and frozen learning
             const hs = hud ? hud.status() : '';
-            const notes = [hs, learning() ? '' : 'Learning off: these values are kept, nothing new is learned'].filter(Boolean);
-            notes.forEach((n, i) => cv.text(n, 836, 492 - (notes.length - 1 - i) * 24, 18, /off|not/i.test(n) ? t.warn : t.dim, { font: 'bold' }));
+            // one line under the rows: a pressed bar reset, the HUD, frozen learning
+            const notes = [resetArmed() ? 'Press Reset learned again to forget it all' : '', hs, learning() ? '' : 'Learning off: values kept'].filter(Boolean);
+            if (notes.length) cv.text(notes.join('   ·   '), 836, Math.min(500, y + 32), 16, notes.some((n) => /off|not|again/i.test(n)) ? t.warn : t.dim, { font: 'bold' });
         }
 
         /** G20-style frame: tab bar with the page names along the top. */
@@ -465,7 +491,7 @@ mgu.run({
         const resetArmed = () => Date.now() - resetLearnAt < 5000;
         ui.onClick('BTN_RESET_LEARNED', () => {
             if (!resetArmed()) { resetLearnAt = Date.now(); page = 2; return render(); }
-            resetLearnAt = 0; shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead();
+            resetLearnAt = 0; shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead(); learnedView = null;
             log.info('learned data reset from the bar button');
             return render();
         });

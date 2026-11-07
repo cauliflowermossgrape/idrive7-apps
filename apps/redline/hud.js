@@ -35,6 +35,8 @@ const FPS = 10;
 const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a', BLUE = '#2a7dff', COLD = '#3d8bff';
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+// colours used every frame, made once
+const DIM_TRACK = withAlpha(WHITE, 0.12), RED_ZONE = withAlpha(RED, 0.4), RED_OFF = withAlpha(RED, 0.35), LABEL = withAlpha(WHITE, 0.75);
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 
 /** Write a small file whole or not at all (temp file, then rename): a power cut mid-write can't corrupt it. */
@@ -65,7 +67,8 @@ function gearText(d) {
  *            flicker; it ends on a gear change (the upshift), when the revs fall 12 % under the
  *            highest they reached while flashing (an upshift without a gear signal) or have been
  *            falling for 300 ms (a lift; a traction dip is shorter);
- *   limiter= at the redline (within 100): everything flashes;
+ *   limiter= on the limiter (within 40 of the redline): everything flashes; shift points are
+ *            held 150 under it, so a shift on the point never looks like the limiter;
  *   fallSince = since when the revs have been falling (ms), or null.
  * Rate: smoothed rpm per second from successive frames, rises only (a lift or a shift resets it).
  */
@@ -106,7 +109,7 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear) {
         st.peak = Math.max(st.peak || rpm, rpm);
         if (rpm < st.peak * 0.88 || lifted) st.on = false;
     }
-    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 100, rate: rate, fallSince: st.fall == null ? null : st.fall };
+    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
 }
 
 /**
@@ -115,8 +118,11 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear) {
  * Round shift lights along the top: they count into the shift and flash for it. Under them a
  * thin yellow mark at the shift point and a red one at the redline, then the slanted bar, which
  * runs on to the redline; on the limiter everything flashes red.
+ * s.layer: 'bg' draws only what stays put (unlit dots, the dim track, the red zone: cached by
+ * drawHud), 'fg' only what moves (lit dots and segments, the marks); neither: both.
  */
 function drawTach(cv, x, y, w, h, s) {
+    const bg = s.layer !== 'fg', fg = s.layer !== 'bg';
     const ledD = s.lights ? 14 : 0, markH = 6, barY = y + ledD + (s.lights ? 4 : 0) + markH + 2, barH = y + h - barY;
     const rpm = s.rpm, cue = s.cue, flash = cue.shift || cue.limiter;
     const flashCol = cue.limiter ? RED : s.style === 'f1' ? BLUE : RED;
@@ -138,8 +144,8 @@ function drawTach(cv, x, y, w, h, s) {
         const lit = Math.ceil(count * (steps - 1));
         for (let i = 0; i < n; i++) {
             const c = flash ? (s.blink ? flashCol : null) : pos(i) < lit ? col(i) : null;
-            if (c) dot(i, c);
-            else if (s.dim) dot(i, withAlpha(flash ? flashCol : col(i), 0.16));
+            if (bg && s.dim) dot(i, withAlpha(flash ? flashCol : col(i), 0.16));
+            if (fg && c) dot(i, c);
         }
     }
     const slant = Math.round(barH * 0.32), X = (r) => x + clamp(r / s.max, 0, 1) * (w - slant);
@@ -149,16 +155,16 @@ function drawTach(cv, x, y, w, h, s) {
     };
     // marks over the bar's top edge (like the screen's): yellow at the shift point, red at the redline
     const mark = (r, c) => cv.fillRect(Math.round(X(r) + slant) - 1, barY - markH - 2, 3, markH, c);
-    if (isNum(s.shift) && s.shift < s.redline) mark(s.shift, YELLOW);
-    mark(s.redline, RED);
-    if (s.dim) for (let r = 0; r < s.redline; r += 500) seg(r, Math.min(s.redline, r + 500), withAlpha(WHITE, 0.12));
-    for (let r = s.redline; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), withAlpha(RED, 0.4));
-    if (isNum(rpm) && rpm > 50) {
+    if (fg && isNum(s.shift) && s.shift < s.redline) mark(s.shift, YELLOW);
+    if (fg) mark(s.redline, RED);
+    if (bg && s.dim) for (let r = 0; r < s.redline; r += 500) seg(r, Math.min(s.redline, r + 500), DIM_TRACK);
+    if (bg) for (let r = s.redline; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), RED_ZONE);
+    if (fg && isNum(rpm) && rpm > 50) {
         // green below the shift point, amber past it, red into the redline; all red flashing on the limiter
         const top = Math.min(rpm, s.max);
         for (let r = 0; r < top; r += 500) {
             const mid = r + 250;
-            const c = cue.limiter ? (s.blink ? RED : withAlpha(RED, 0.35)) : mid >= s.redline ? RED : mid >= s.shift ? YELLOW : GREEN;
+            const c = cue.limiter ? (s.blink ? RED : RED_OFF) : mid >= s.redline ? RED : mid >= s.shift ? YELLOW : GREEN;
             seg(r, Math.min(top, r + 500), c);
         }
     }
@@ -179,12 +185,12 @@ function drawDown(cv, cx, y, n, k) {
     }
 }
 
-/** One temperature: label over the value, coloured cold / warm-up / normal / hot. */
-function drawTemp(cv, cx, y, label, v, limits) {
+/** One temperature: label (layer 'bg'/both) over the value (layer 'fg'/both), coloured cold / warm-up / normal / hot. */
+function drawTemp(cv, cx, y, label, v, limits, layer) {
     const col = !isNum(v) ? null : v < limits.cold ? COLD : limits.warm && v < limits.warm ? YELLOW : v > limits.hot ? RED : WHITE;
     if (!col) return;
-    cv.text(label, cx, y + 12, 12, withAlpha(WHITE, 0.75), { align: 'center', font: 'bold', spacing: 1.2 });
-    cv.text(Math.round(v) + '°', cx, y + 40, 26, col, { align: 'center', font: 'bold' });
+    if (layer !== 'fg') cv.text(label, cx, y + 12, 12, LABEL, { align: 'center', font: 'bold', spacing: 1.2 });
+    if (layer !== 'bg') cv.text(Math.round(v) + '°', cx, y + 40, 26, col, { align: 'center', font: 'bold' });
 }
 
 /**
@@ -192,25 +198,40 @@ function drawTemp(cv, cx, y, label, v, limits) {
  * (shiftCue(); without one: no climb, count over the last 1500 rpm), opts }
  * opts = { gear, temps, lights, gt3, dim, style, warmOil }.
  */
+const bgCache = { key: '', cv: null };
 function drawHud(cv, f) {
     const o = f.opts, d = f.d;
-    cv.clear();
     const tx = o.gear ? 70 : 0, tw = IW - tx;
     const cue = f.cue || shiftCue({}, d.rpm, 0, f.shift, f.redline, 0);
-    drawTach(cv, tx, 2, tw, 56, { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
+    const t = { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim };
+    const temps = o.temps ? [isNum(d.oil), isNum(d.coolant), isNum(f.gearbox)] : [];
+    // what stays put (unlit dots, dim track, red zone, temperature labels) is drawn once per layout
+    // and copied in; while flashing the unlit dots take the flash colour, so that is part of the key
+    const key = [tx, o.lights, o.gt3, o.style, o.dim, f.redline, f.max, cue.shift || cue.limiter, cue.limiter, temps.join()].join('|');
+    if (bgCache.key !== key || !bgCache.cv) {
+        const b = new Canvas(IW, IH);
+        drawTach(b, tx, 2, tw, 56, Object.assign({}, t, { layer: 'bg' }));
+        if (o.temps) drawTemps(b, d, f, o, 'bg');
+        bgCache.key = key; bgCache.cv = b;
+    }
+    if (cv.d && cv.d.length === bgCache.cv.d.length) cv.d.set(bgCache.cv.d); else { cv.clear(); cv.blit(bgCache.cv, 0, 0); }
+    t.layer = 'fg';
+    drawTach(cv, tx, 2, tw, 56, t);
     // the gear turns red only on the limiter; the shift itself is the lights' job
     if (o.gear) {
         cv.text(gearText(d), 30, 78, 72, cue.limiter && f.blink ? RED : WHITE, { align: 'center', font: 'gear' });
         drawDown(cv, 30, 90, f.down || 0, 1);
     }
-    if (o.temps) {
-        // right of TEMP_X only: BMW draws its driver-assistance graphic (lanes, steering wheel,
-        // ACC distance) under the left of the bar, above its speed (G21, 2026-11-07)
-        const col = (IW - TEMP_X) / 3, y = 66;
-        drawTemp(cv, TEMP_X + col * 0.5, y, 'OIL', d.oil, { cold: 60, warm: o.warmOil, hot: 130 });
-        drawTemp(cv, TEMP_X + col * 1.5, y, 'WATER', d.coolant, { cold: 60, hot: 112 });
-        drawTemp(cv, TEMP_X + col * 2.5, y, 'GEARBOX', f.gearbox, { cold: 50, hot: 120 });
-    }
+    if (o.temps) drawTemps(cv, d, f, o, 'fg');
+}
+
+/** The three temperatures, right of TEMP_X only: BMW draws its driver-assistance graphic (lanes,
+ * steering wheel, ACC distance) under the left of the bar, above its speed (G21, 2026-11-07). */
+function drawTemps(cv, d, f, o, layer) {
+    const col = (IW - TEMP_X) / 3, y = 66;
+    drawTemp(cv, TEMP_X + col * 0.5, y, 'OIL', d.oil, { cold: 60, warm: o.warmOil, hot: 130 }, layer);
+    drawTemp(cv, TEMP_X + col * 1.5, y, 'WATER', d.coolant, { cold: 60, hot: 112 }, layer);
+    drawTemp(cv, TEMP_X + col * 2.5, y, 'GEARBOX', f.gearbox, { cold: 50, hot: 120 }, layer);
 }
 
 /** 800x480 test pattern: border, rulers every 40 px with labels, inset frames at 40/80/120, the tach at its place. */
@@ -260,10 +281,34 @@ function changedBox(a, b, w, h) {
     return y1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
-/** The rows of rect r of a w-wide RGBA image, packed tight (what cr.pixels takes). */
-function packRect(d, w, r) {
-    const out = Buffer.alloc(r.w * r.h * 4), src = asBuffer(d);
-    for (let y = 0; y < r.h; y++) src.copy(out, y * r.w * 4, ((r.y + y) * w + r.x) * 4, ((r.y + y) * w + r.x + r.w) * 4);
+/**
+ * The rows of rects rs of a w-wide RGBA image, packed tight one after another (what cr.pixels
+ * takes), in a buffer reused between frames: cr.pixels copies it before returning.
+ */
+let packBuf = null;
+function packRect(d, w, r) { return packRects(d, w, [r]); }
+function packRects(d, w, rs) {
+    let n = 0;
+    rs.forEach((r) => { n += r.w * r.h * 4; });
+    if (!packBuf || packBuf.length < n) packBuf = Buffer.alloc(Math.max(n, IW * IH * 4));
+    const src = asBuffer(d);
+    let off = 0;
+    rs.forEach((r) => {
+        for (let y = 0; y < r.h; y++) { src.copy(packBuf, off, ((r.y + y) * w + r.x) * 4, ((r.y + y) * w + r.x + r.w) * 4); off += r.w * 4; }
+    });
+    return packBuf.slice(0, n);
+}
+
+/** The changed boxes of a and b per horizontal band (lights, bar, text): a flash or a count at
+ * both ends plus the bar's end make three small boxes, not one that spans them all. */
+const BANDS = [[0, 20], [20, 60], [60, IH]];
+function changedBoxes(a, b, w) {
+    const out = [];
+    BANDS.forEach((band) => {
+        const y0 = band[0], h = band[1] - band[0];
+        const r = changedBox(a.subarray(y0 * w * 4, (y0 + h) * w * 4), b.subarray(y0 * w * 4, (y0 + h) * w * 4), w, h);
+        if (r) { r.y += y0; out.push(r); }
+    });
     return out;
 }
 
@@ -278,6 +323,7 @@ function start(ctx, src) {
     let cr = null, layer = 0, shown = '', lastTarget = '', timer = null, blink = false;
     let target = null;                                           // { state, holder, disabled } of 'hud'
     const cueState = {};
+    let lastDemo = null;
     /*
      * Reaction time, learned ("HUD shift light early by" on Auto): each upshift after a flash
      * says how late it came: (shift rpm - shift point) / climb rate. The lead moves 30 % of the
@@ -285,7 +331,10 @@ function start(ctx, src) {
      */
     const leadFile = path.join(ctx.dataDir || '.', 'hudlead.json');
     let learnedLead = 200, leadShifts = 0, flashInfo = null;
-    try { const j = JSON.parse(fs.readFileSync(leadFile, 'utf8')); if (isNum(j.ms)) { learnedLead = j.ms; leadShifts = j.n || 0; } } catch (e) { /* none yet */ }
+    try {
+        const j = JSON.parse(fs.readFileSync(leadFile, 'utf8'));
+        if (isNum(j.ms)) { learnedLead = clamp(Math.round(j.ms), 0, 600); leadShifts = isNum(j.n) && j.n > 0 ? Math.floor(j.n) : 0; }
+    } catch (e) { /* none yet */ }
     let cur = null, prev = null, first = true, lastErr = 0;
 
     const safe = (name, fn) => function () {
@@ -343,9 +392,11 @@ function start(ctx, src) {
         if (!layer) { log.warn('hud: test layer refused by the client'); return; }
         const cv = new Canvas(SCENE_W, SCENE_H);
         drawTestPattern(cv);
-        const t = new Canvas(IW, IH);
+        const t = new Canvas(IW, IH), r = rect();
         drawHud(t, sample());
-        cv.blit(t, BASE_X, BASE_Y);
+        // where the size and position settings put the tach (scaled as the layer would be)
+        if (r.w === IW && r.h === IH) cv.blit(t, r.x, r.y);
+        else { const s = new Canvas(r.w, r.h); s.drawImage(t.d, IW, IH, 0, 0, r.w, r.h); cv.blit(s, r.x, r.y); }
         if (!cr.pixels(layer, null, asBuffer(cv.d))) log.warn('hud: test pattern pixels refused');
         shown = 'test';
         log.info('hud: test pattern up');
@@ -354,8 +405,8 @@ function start(ctx, src) {
     /** What drawHud needs, now. */
     function frameData() {
         const d = src.data(), sp = src.shiftPoint(d.oil, d.gear), redline = src.redline();
-        const style = settings.get('hudLightStyle') || 'gt3', gt3 = style === 'gt3', lights = style !== 'off';
-        const content = settings.get('hudContent') || 'all';
+        if (!!d.demo !== lastDemo) { lastDemo = !!d.demo; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
+        const o = optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead, d.gear);
@@ -372,34 +423,67 @@ function start(ctx, src) {
             d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
             down: src.downshift ? src.downshift() : 0,
             gearbox: src.gearbox ? src.gearbox.value() : null,
-            opts: {
-                gear: content === 'all' || content === 'gear', temps: content === 'all' || content === 'temps',
-                lights: lights, gt3: gt3, dim: settings.get('hudUnlit') === 'dim',
-                style: settings.get('lights'), warmOil: num('warmOil', 80),
-            },
+            opts: o,
+        };
+    }
+
+    /** The drawing options from the settings. */
+    function optsNow() {
+        const style = settings.get('hudLightStyle') || 'gt3', content = settings.get('hudContent') || 'all';
+        return {
+            gear: content === 'all' || content === 'gear', temps: content === 'all' || content === 'temps',
+            lights: style !== 'off', gt3: style === 'gt3', dim: settings.get('hudUnlit') === 'dim',
+            style: settings.get('lights'), warmOil: num('warmOil', 80),
         };
     }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
-        const f = frameData();
-        f.d = { rpm: 6300, gear: 3, stage: 'D', oil: 96, coolant: 97 };
-        f.shift = 6700; f.redline = 7000; f.max = 8000; f.gearbox = 74; f.blink = true; f.cue = null;
-        return f;
+        return { d: { rpm: 6300, gear: 3, stage: 'D', oil: 96, coolant: 97 }, shift: 6700, redline: 7000, max: 8000,
+            gearbox: 74, blink: true, cue: null, down: 0, opts: optsNow() };
     }
 
+    let lastKey = '';
+    /**
+     * Not drawn while the HUD can't show it: parked behind BMW's content, waiting to retry,
+     * unavailable or disabled by the guard. Drawn in every other state: cluster-render only asks
+     * for the target once the layer has content, so idle / acquiring must draw.
+     */
+    const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
     const tick = safe('tick', () => {
         if (!cr || !layer || !cr.ready) return;
-        drawHud(cur, frameData());
+        // nothing to draw while the HUD isn't showing (behind BMW's content, disabled, unavailable):
+        // the first frame after it is sent whole. No target event yet: draw (it may never come).
+        if (paused()) {
+            first = true; lastKey = '';
+            if (src.gearbox) src.gearbox.stop();
+            return;
+        }
+        if (src.gearbox) src.gearbox.start();
+        const f = frameData();
+        // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
+        const key = frameKey(f);
+        if (!first && key === lastKey) return;
+        lastKey = key;
+        drawHud(cur, f);
         if (first) {
             if (cr.pixels(layer, null, asBuffer(cur.d))) first = false;
         } else {
-            const r = changedBox(cur.d, prev.d, IW, IH);
-            if (!r) return;
-            cr.pixels(layer, [r], packRect(cur.d, IW, r));
+            const rs = changedBoxes(cur.d, prev.d, IW);
+            if (!rs.length) return;
+            cr.pixels(layer, rs, packRects(cur.d, IW, rs));
         }
         const t = prev; prev = cur; cur = t;
     });
+
+    /** Everything drawHud's picture depends on, rounded to what shows (25 rpm ~ a pixel of bar). */
+    function frameKey(f) {
+        const d = f.d, c = f.cue, o = f.opts;
+        const t = (v) => (isNum(v) ? Math.round(v) : '-');
+        return [isNum(d.rpm) ? Math.round(d.rpm / 25) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
+            Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, t(d.oil), t(d.coolant), t(f.gearbox),
+            o.gear, o.temps, o.lights, o.gt3, o.dim, o.style, o.warmOil].join('|');
+    }
 
     const showTach = safe('tach', () => {
         const r = rect();
@@ -423,7 +507,11 @@ function start(ctx, src) {
     });
 
     const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
-    settings.onChange(safe('setting', (key) => { if (HUD_KEYS.indexOf(key) >= 0) apply(); else first = true; }));
+    settings.onChange(safe('setting', (key) => {
+        if (HUD_KEYS.indexOf(key) < 0) { first = true; return; }
+        if (shown === 'test' && key !== 'hud') shown = '';         // redraw the pattern with the tach moved
+        apply();
+    }));
     apply();
 
     /** An upshift at rpm (its peak): if it followed a flash on a climb, learn the reaction time. */
@@ -470,4 +558,4 @@ function start(ctx, src) {
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData };
 }
 
-module.exports = { start, shiftCue, drawDown, writeAtomic, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
+module.exports = { start, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
