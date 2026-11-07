@@ -724,7 +724,7 @@ mgu.run({
         const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]) });
         const isLive = (p) => lv.PAGES.indexOf(p) >= 0;
 
-        /* ---------- for other apps (Cluster functions' HUD): the power now and the range, once a second ----------
+        /* ---------- for other apps (Cluster functions' HUD): the power now and the range, four times a second ----------
          * SHARED, a file anyone may read (an app cannot read another's data folder): { t, kw (+ the battery gives power,
          * - it takes it; null while not read), soc, rangeKm (the range at this charge, as the Range page has it) }.
          * Nothing while the demo runs. */
@@ -740,8 +740,8 @@ mgu.run({
                 fs.writeFileSync(SHARED + '.tmp', JSON.stringify(out), { mode: 0o644 });
                 fs.chmodSync(SHARED + '.tmp', 0o644);
                 fs.renameSync(SHARED + '.tmp', SHARED);
-            } catch (e) { /* the next second tries again */ }
-        }, 1000);
+            } catch (e) { /* the next write tries again */ }
+        }, 250);
         // the first bar button: "Read now", on the live pages their own action (this drive's totals, the scan)
         let actionText = 'Read now';
         const actionLabel = () => {

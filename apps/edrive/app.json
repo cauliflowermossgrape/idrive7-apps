@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, 12 V battery voltage and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.7.10",
+  "version": "2.7.11",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
