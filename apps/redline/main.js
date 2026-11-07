@@ -22,6 +22,7 @@ const { plural } = require('./kit/i18n');
 const Car = require('./kit/car');
 const Engine = require('./kit/engine');
 const Hud = require('./hud');
+const GearboxTemp = require('./gearbox');
 
 const W = 1600, H = 520;
 // rev bar (G20 style): left to right, slanted segments; top edge shifted right by 'slant'
@@ -36,7 +37,9 @@ mgu.run({
         const { ui, settings, log } = ctx;
         // engine profile (diesel / petrol): rev scale top and the Auto redline / cold limit
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], { [Engine.SIGNAL[0]]: engine.handlers() });
+        // gearbox oil temperature for the HUD (EGS over UDS, or BasicDataSet); polled only while the HUD is on
+        const gearbox = new GearboxTemp(ctx);
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers()));
 
         /* ---------- derived limits ---------- */
         const redline = () => engine.redline();
@@ -330,7 +333,7 @@ mgu.run({
         // every screen refresh (60 fps) with the GPU renderer; 15 fps in software (PNG frames)
         ctx.loop('MAIN', 15, render);
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
-        Hud.start(ctx);
+        Hud.start(ctx, { data: () => car.data(), shiftPoint, redline, maxRpm, gearbox });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });

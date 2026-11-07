@@ -18,6 +18,19 @@
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
       "DataPowerTrain2": "s"
+    },
+    "de.bmw.infrastructure.analytics.BasicDataSet": {
+      "_optional": "gearbox oil temperature on the HUD when the gearbox unit doesn't answer",
+      "basicDataSet": "s"
+    },
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "_instances": "SystemFunctionsInternalTasuInst1",
+      "_methods": [
+        "sendTasuRequest"
+      ],
+      "_broadcasts": [
+        "sendTasuResponse"
+      ]
     }
   },
   "screens": [
@@ -55,7 +68,19 @@
     {"key": "peakHold", "label": "Peak hold (0 = until reset)", "type": "number", "unit": "s", "default": 15,
      "steps": [0, 5, 10, 15, 30, 60]},
     {"key": "hud", "label": "Show on HUD", "type": "choice", "default": "off",
-     "options": [["off", "Off"], ["test", "Test pattern"]]},
+     "options": [["off", "Off"], ["on", "On"], ["test", "Test pattern"]]},
+    {"key": "hudSize", "label": "HUD size", "type": "number", "unit": "%", "default": 100, "when": {"hud": ["on", "test"]},
+     "steps": [70, 80, 90, 100, 110, 120, 130]},
+    {"key": "hudX", "label": "HUD position left / right", "type": "number", "unit": "px", "default": 0, "labels": {"0": "Centre"}, "when": {"hud": ["on", "test"]},
+     "steps": [-120, -100, -80, -60, -40, -20, 0, 20, 40, 60, 80, 100, 120]},
+    {"key": "hudY", "label": "HUD position up / down", "type": "number", "unit": "px", "default": 0, "labels": {"0": "Default"}, "when": {"hud": ["on", "test"]},
+     "steps": [-40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60]},
+    {"key": "hudGear", "label": "Gear on HUD", "type": "choice", "default": "left", "when": {"hud": ["on", "test"]},
+     "options": [["left", "Left"], ["off", "Off"]]},
+    {"key": "hudTemps", "label": "Temperatures on HUD", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}},
+    {"key": "hudLights", "label": "Shift lights on HUD", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}},
+    {"key": "hudUnlit", "label": "Unlit segments on HUD", "type": "choice", "default": "dim", "when": {"hud": ["on", "test"]},
+     "options": [["dim", "Dim"], ["hidden", "Hidden"]]},
     {"key": "advanced", "label": "Advanced settings", "type": "bool", "default": false},
     {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
      "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
