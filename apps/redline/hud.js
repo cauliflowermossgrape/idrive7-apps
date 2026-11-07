@@ -129,7 +129,7 @@ function optsFrom(settings) {
         style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
         palette: settings.get('hudPalette') || 'colour',
         // readouts, each on its own switch
-        gear: on('hudShowGear'), boost: on('hudBoost'), limit: on('hudShowLimit'),
+        gear: on('hudShowGear'), rpm: on('hudShowRpm'), boost: on('hudBoost'), limit: on('hudShowLimit'),
         oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
@@ -148,6 +148,9 @@ const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa:
 /** The readouts row for o (optsFrom): d (oil, coolant), gearbox temperature, boost (bar), sp ({ rpm, cold }). */
 function readoutsFor(d, gb, boost, sp, o) {
     const items = [];
+    // the rpm as a number: the 7-segment layouts have their own digits, the others a readout (to 50,
+    // so it doesn't flicker)
+    if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push({ label: 'RPM', value: String(Math.max(0, Math.round(d.rpm / 50) * 50)), tone: 'text' });
     if (o.boost) {
         const b = boost, u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
         if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });

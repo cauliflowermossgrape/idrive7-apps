@@ -260,7 +260,7 @@ function drawLayer(cv, f, layer) {
         if (o.gear) seg7(cv, gearText(d).slice(0, 1), 4, 10, 50, 86, 9, gearCol, ghost, false, layer);
         if (fg) drawDown(cv, 29, 106, f.down || 0, 1, P.arrow);
         const rpmTxt = isNum(d.rpm) && d.rpm < 9995 ? String(Math.max(0, Math.round(d.rpm / 10) * 10)).padStart(4, ' ') : '----';
-        seg7text(cv, rpmTxt, 76, 64, 16, 30, 4, 5, P.text, ghost, false, layer);
+        if (o.rpm !== false) seg7text(cv, rpmTxt, 76, 64, 16, 30, 4, 5, P.text, ghost, false, layer);
         if (f.chip) { if (fg) drawChip(cv, 166, IW, 62, f.chip, P); } else drawReadouts(cv, 166, IW, 62, f.readouts || [], P, layer);
         return;
     }
@@ -312,7 +312,7 @@ function drawLayer(cv, f, layer) {
 /** The key of the static ('bg') layer: what it depends on. */
 function bgKey(f) {
     const o = f.opts, c = f.cue;
-    return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.lights, o.gt3, o.dim, o.lightStyle, f.redline, f.max, c.shift || c.limiter, c.limiter,
+    return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.lights, o.gt3, o.dim, o.lightStyle, f.redline, f.max, c.shift || c.limiter, c.limiter,
         f.chip ? 'chip' : (f.readouts || []).map((r) => r.label).join(',')].join('|');
 }
 

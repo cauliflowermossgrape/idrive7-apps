@@ -67,7 +67,7 @@ cars with a HUD, but nobody has checked yet.
 - **Picking:** on the right, the six layouts; tap one to use it.
 - **Editing:** under the preview, three tabs, each showing its changes in the preview at once:
   - **Look:** colours, grade style.
-  - **Items:** a chip for everything the HUD can show (gear, D / S / M, boost, oil, water,
+  - **Items:** a chip for everything the HUD can show (gear, D / S / M, rpm, boost, oil, water,
     gearbox, cold limit, shift lights, GT3 style, shift grade, peak marker, downshift arrows,
     limiter shake). Tap to add or remove; filled means on.
   - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Reset puts
@@ -129,6 +129,7 @@ layout and colours by picture.
 | Setting | Values |
 |---|---|
 | Gear | on / off |
+| RPM | on / off: a number in the readouts row (to 50 rpm); the 7-segment digits in the digital and VFD layouts |
 | Boost | on / off |
 | Boost unit | bar / psi / kPa |
 | Oil, Water, Gearbox temperature | on / off each |

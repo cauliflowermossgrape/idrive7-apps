@@ -562,6 +562,7 @@ mgu.run({
                 chips(cv, t, 414, [
                     ['Gear', o.gear, () => settings.set('hudShowGear', !o.gear)],
                     ['D / S / M', o.mode, () => settings.set('hudShowMode', !o.mode)],
+                    ['RPM', o.rpm, () => settings.set('hudShowRpm', !o.rpm)],
                     ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
                     ['Oil', o.oil, () => settings.set('hudShowOil', !o.oil)],
                     ['Water', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
