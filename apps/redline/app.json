@@ -79,6 +79,8 @@
      "options": [["left", "Left"], ["off", "Off"]]},
     {"key": "hudTemps", "label": "Temperatures on HUD", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}},
     {"key": "hudLights", "label": "Shift lights on HUD", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}},
+    {"key": "hudLightStyle", "label": "HUD shift light style", "type": "choice", "default": "gt3", "when": {"hud": ["on", "test"], "hudLights": true},
+     "options": [["gt3", "GT3 (outside in, flash)"], ["bar", "Left to right"]]},
     {"key": "hudUnlit", "label": "Unlit segments on HUD", "type": "choice", "default": "dim", "when": {"hud": ["on", "test"]},
      "options": [["dim", "Dim"], ["hidden", "Hidden"]]},
     {"key": "advanced", "label": "Advanced settings", "type": "bool", "default": false},

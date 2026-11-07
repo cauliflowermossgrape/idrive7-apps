@@ -51,7 +51,20 @@ function gearText(d) {
 function drawTach(cv, x, y, w, h, s) {
     const ledH = s.lights ? Math.round(h * 0.2) : 0, barY = y + (s.lights ? ledH + Math.round(h * 0.15) : 0), barH = y + h - barY;
     const rpm = s.rpm, shiftNow = isNum(rpm) && rpm >= s.shift;
-    if (s.lights) {
+    if (s.lights && s.gt3) {
+        // GT3: pairs light from both ends inwards over the last 1500 rpm (outer green, then
+        // yellow, inner red); at the shift point every light flashes
+        const n = 12, pairs = n / 2, range = 1500, gap = 6, lw = (w - gap * (n - 1)) / n;
+        const pairCol = (k) => (k < 2 ? GREEN : k < 4 ? YELLOW : RED);       // k = 0 outermost
+        const flashCol = s.style === 'f1' ? BLUE : RED;
+        const lit = isNum(rpm) ? clamp((rpm - (s.shift - range)) / range, 0, 1) * pairs : 0;
+        for (let i = 0; i < n; i++) {
+            const k = Math.min(i, n - 1 - i);
+            const c = shiftNow ? (s.red ? flashCol : null) : k < Math.floor(lit) ? pairCol(k) : null;
+            if (c) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, c);
+            else if (s.dim) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, withAlpha(shiftNow ? flashCol : pairCol(k), 0.16));
+        }
+    } else if (s.lights) {
         const n = 12, range = 2000, gap = 6, lw = (w - gap * (n - 1)) / n;
         const ledCol = (i) => {
             const f = i / (n - 1);
@@ -99,7 +112,7 @@ function drawHud(cv, f) {
     const o = f.opts, d = f.d;
     cv.clear();
     const tx = o.gear ? 70 : 0, tw = IW - tx;
-    const shiftNow = drawTach(cv, tx, 2, tw, 50, { rpm: d.rpm, shift: f.shift, redline: f.redline, max: f.max, red: f.red, lights: o.lights, style: o.style, dim: o.dim });
+    const shiftNow = drawTach(cv, tx, 2, tw, 50, { rpm: d.rpm, shift: f.shift, redline: f.redline, max: f.max, red: f.red, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
     if (o.gear) cv.text(gearText(d), 30, 78, 72, shiftNow && f.red ? RED : WHITE, { align: 'center', font: 'gear' });
     if (o.temps) {
         // right of TEMP_X only: BMW draws its driver-assistance graphic (lanes, steering wheel,
@@ -238,13 +251,15 @@ function start(ctx, src) {
     /** What drawHud needs, now. */
     function frameData() {
         const d = src.data(), sp = src.shiftPoint(d.oil);
-        if (settings.get('flash') && isNum(d.rpm) && d.rpm >= sp.rpm) blink = !blink; else blink = true;
+        // GT3 lights always flash at the shift point; the bar style only with "Blink and flash"
+        const gt3 = settings.get('hudLightStyle') !== 'bar';
+        if ((gt3 || settings.get('flash')) && isNum(d.rpm) && d.rpm >= sp.rpm) blink = !blink; else blink = true;
         return {
             d: d, shift: sp.rpm, redline: src.redline(), max: src.maxRpm(), red: blink,
             gearbox: src.gearbox ? src.gearbox.value() : null,
             opts: {
                 gear: settings.get('hudGear') !== 'off', temps: settings.get('hudTemps') !== false,
-                lights: settings.get('hudLights') !== false, dim: settings.get('hudUnlit') === 'dim',
+                lights: settings.get('hudLights') !== false, gt3: gt3, dim: settings.get('hudUnlit') === 'dim',
                 style: settings.get('lights'), warmOil: num('warmOil', 80),
             },
         };
