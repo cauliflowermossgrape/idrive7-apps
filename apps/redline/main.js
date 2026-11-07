@@ -23,6 +23,7 @@ const Car = require('./kit/car');
 const Engine = require('./kit/engine');
 const Hud = require('./hud');
 const GearboxTemp = require('./gearbox');
+const Limiter = require('./limiter');
 
 const W = 1600, H = 520;
 // rev bar (G20 style): left to right, slanted segments; top edge shifted right by 'slant'
@@ -41,9 +42,23 @@ mgu.run({
         const gearbox = new GearboxTemp(ctx);
         const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers()));
 
-        /* ---------- derived limits ---------- */
-        const redline = () => engine.redline();
-        const maxRpm = () => engine.scaleMax();
+        /* ---------- derived limits ----------
+         * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
+         * (limiter.js, setting "learnRedline"), the engine profile. The scale's top follows it. */
+        const limiter = new Limiter({ dataDir: ctx.dataDir, log });
+        const manualRedline = () => { const v = settings.get('redline'); return typeof v === 'number' && v > 0 ? v : 0; };
+        const learned = () => (settings.get('learnRedline') !== false ? limiter.value() : null);
+        const profileRedline = () => Engine.PROFILES[engine.profile()].redline;
+        const redlineSource = () => (manualRedline() ? 'manual' : learned() ? 'learned' : 'profile');
+        const baseRedline = () => manualRedline() || learned() || engine.redline();
+        const maxRpm = () => {
+            const s = settings.get('rpmScale');
+            return typeof s === 'number' && s > 0 ? s : Math.ceil((baseRedline() + 800) / 1000) * 1000;
+        };
+        const redline = () => Math.min(baseRedline(), maxRpm());
+        limiter.onChange(() => car.setRedline(redline()));
+        settings.onChange((key, v) => { if (key === 'learnRedline' && v === false) limiter.forget(); });
+        log.info('redline ' + redline() + ' (' + redlineSource() + ')');
         // never below 2500: shifts under that are not scored
         const normalShift = () => Math.max(2500, redline() - settings.get('shiftBefore'));
         car.setRedline(redline());
@@ -90,6 +105,11 @@ mgu.run({
             const lim = d.rpm >= redline() - 60;
             if (lim && !onLimiter) limiterHits++;
             onLimiter = lim;
+            // learn the real limit (live data only, warm oil): plateaus from 1000 below the profile's redline
+            if (!car.data().demo) {
+                const pr = profileRedline();
+                limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
+            }
 
             // upshift: gear number goes up, or (no gear signal) rpm falls >18 % within 0.4 s while still moving
             const g = d.gear;
@@ -253,6 +273,7 @@ mgu.run({
             const rx = W - 40;
             cv.text('SHIFT AT', rx, 156, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
             cv.text(String(sp.rpm), rx, 222, 64, sp.cold ? t.cold : t.text, { align: 'right', font: 'num' });
+            cv.text('REDLINE ' + redline() + '  ·  ' + redlineSource().toUpperCase(), rx, 262, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
             cv.fillRect(W - 340, 298, 300, 1, withAlpha(t.tick, 0.6));
             cv.text('LAST SHIFT', rx, 334, 22, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
             if (lastShift) {
