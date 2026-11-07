@@ -13,7 +13,7 @@
  *     and climbs with the oil temperature
  *
  * Pages: tach / shift log / learned (what it learned from this car, with resets) / HUD looks (a live
- * preview of the HUD as set up, layouts to tap, an editor: look, items on / off, units, place;
+ * preview of the HUD as set up, layouts to tap, an editor: look, items on / off, place;
  * Play on HUD). The tach's
  * peak marker drops back after "Peak hold" seconds; BTN_RESET clears it and the session stats.
  *
@@ -541,11 +541,17 @@ mgu.run({
                 cv.target(x, y, w, h, () => { settings.set('hudStyle', l[0]); return render(); }, 'look_' + l[0]);
             });
             // the editor under the preview: tabs, then that panel's buttons
-            const panels = [['look', 'Look'], ['items', 'Items'], ['units', 'Units'], ['place', 'Place']];
+            // category tabs: text with an underline on a divider (like the page tabs), not pills, so they
+            // read as categories and the pills below as the things you change
+            const panels = [['look', 'LOOK'], ['items', 'ITEMS'], ['place', 'PLACE']];
+            cv.fillRect(24, 398, 1552, 1, withAlpha(t.tick, 0.6));
             let tx = 40;
             panels.forEach((pn) => {
-                const w = G.button(cv, t, tx, 360, 150, 40, pn[1], () => { studio.panel = pn[0]; return render(); }, { key: 'studio_tab_' + pn[0], primary: studio.panel === pn[0] });
-                tx += (w || 150) + 10;
+                const sel = studio.panel === pn[0], w = cv.textWidth(pn[1], 20, { font: 'bold', spacing: 2 });
+                cv.text(pn[1], tx, 388, 20, sel ? t.text : t.dim, { font: 'bold', spacing: 2 });
+                if (sel) cv.fillRect(tx - 4, 395, w + 8, 4, t.accent);
+                cv.target(tx - 16, 356, w + 32, 46, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
+                tx += w + 56;
             });
             cv.text(STUDIO_HINT[studio.panel], 1576, 388, 16, t.dim, { align: 'right' });
             if (studio.panel === 'look') {
@@ -571,10 +577,6 @@ mgu.run({
                     ['Downshift arrows', down, () => settings.set('downCue', down ? 'off' : 'slowing')],
                     ['Limiter shake', o.shake, () => settings.set('hudShake', !o.shake)],
                 ]);
-            } else if (studio.panel === 'units') {
-                choiceRow(cv, t, 414, 'BOOST', 'hudBoostUnit', o.boostUnit, [['bar', 'bar'], ['psi', 'psi'], ['kpa', 'kPa']]);
-                choiceRow(cv, t, 462, 'TEMPS', 'hudTempUnit', o.fahrenheit ? 'f' : 'c', [['c', '°C'], ['f', '°F']]);
-                choiceRow(cv, t, 462, 'SHOW', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Only when cold or hot'], ['always', 'Always']], false, 560);
             } else {
                 // size and position, a step at a time through each setting's own steps (live on the glass)
                 cv.text('SIZE', 40, 414 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
@@ -586,8 +588,8 @@ mgu.run({
             }
         }
         const STUDIO_HINT = {
-            look: 'Layouts: tap one above', items: 'Tap to add or remove (filled = on the HUD)',
-            units: 'Boost and temperature units', place: 'Moves the HUD on the glass at once',
+            look: 'Layouts: tap one above', items: 'Tap to add or remove (filled = on the HUD); units: Settings > HUD readouts',
+            place: 'Moves the HUD on the glass at once',
         };
         /** Toggle chips at y: [label, on, flip, disabled]; filled when on. */
         function chips(cv, t, y, list) {
