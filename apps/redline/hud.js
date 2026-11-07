@@ -44,39 +44,62 @@ function gearText(d) {
 }
 
 /**
- * The HUD tach in the box (x, y, w, h). s = { rpm, shift, redline, max, gear (text), red (shift
- * colour on), lights (bool), style ('m' | 'f1' | 'mono'), accent, dim (unlit segments faint) }.
- * Shift lights over the top fifth, the slanted bar under them in 500 rpm segments.
+ * Shift cue: when the shift lights start counting and when they flash, from how fast the revs
+ * climb. st = state kept between frames ({}); returns { from, at, shift, limiter, rate }:
+ *   at     = the rpm the lights flash at: the shift point minus what the revs climb in the
+ *            driver's reaction time (leadMs), at most 800 rpm early;
+ *   from   = where the count starts: ~1 s of climb before 'at' (800..2000 rpm; 1500 while the
+ *            revs aren't climbing), so the count-in takes about as long in every gear;
+ *   shift  = flashing now; latched until the revs fall 300 below 'at' (the upshift), so a
+ *            wobble in the climb rate doesn't make it flicker;
+ *   limiter= at the redline (within 100): everything flashes.
+ * Rate: smoothed rpm per second from successive frames, rises only (a lift or a shift resets it).
+ */
+function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
+    if (!isNum(rpm)) { st.rate = 0; st.on = false; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0 }; }
+    if (isNum(st.rpm) && tMs > st.t) {
+        const r = (rpm - st.rpm) * 1000 / (tMs - st.t);
+        st.rate = r <= 0 ? (r < -500 ? 0 : (st.rate || 0) * 0.7) : (st.rate ? st.rate * 0.5 + r * 0.5 : r);
+    }
+    st.rpm = rpm; st.t = tMs;
+    const rate = st.rate || 0, climbing = rate > 300;
+    const at = shift - (climbing ? Math.min(800, rate * leadMs / 1000) : 0);
+    const from = at - (climbing ? clamp(rate * 1.0, 800, 2000) : 1500);
+    if (!st.on && rpm >= at) st.on = true;
+    else if (st.on && rpm < Math.min(at, shift) - 300) st.on = false;
+    st.at = st.on ? (st.at || at) : at;                         // hold the flash point while latched
+    return { from: from, at: at, shift: st.on, limiter: rpm >= redline - 100, rate: rate };
+}
+
+/**
+ * The HUD tach in the box (x, y, w, h). s = { rpm, cue (shiftCue()), shift, redline, max,
+ * blink (flash phase on), lights (bool), gt3 (bool), style ('m' | 'f1' | 'mono'), accent, dim }.
+ * Shift lights over the top fifth: they count into the shift and flash for it. The slanted bar
+ * under them runs on to the redline; on the limiter everything flashes red.
  */
 function drawTach(cv, x, y, w, h, s) {
     const ledH = s.lights ? Math.round(h * 0.2) : 0, barY = y + (s.lights ? ledH + Math.round(h * 0.15) : 0), barH = y + h - barY;
-    const rpm = s.rpm, shiftNow = isNum(rpm) && rpm >= s.shift;
-    if (s.lights && s.gt3) {
-        // GT3: pairs light from both ends inwards over the last 1500 rpm (outer green, then
-        // yellow, inner red); at the shift point every light flashes
-        const n = 12, pairs = n / 2, range = 1500, gap = 6, lw = (w - gap * (n - 1)) / n;
-        const pairCol = (k) => (k < 2 ? GREEN : k < 4 ? YELLOW : RED);       // k = 0 outermost
-        const flashCol = s.style === 'f1' ? BLUE : RED;
-        const lit = isNum(rpm) ? clamp((rpm - (s.shift - range)) / range, 0, 1) * pairs : 0;
-        for (let i = 0; i < n; i++) {
-            const k = Math.min(i, n - 1 - i);
-            const c = shiftNow ? (s.red ? flashCol : null) : k < Math.floor(lit) ? pairCol(k) : null;
-            if (c) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, c);
-            else if (s.dim) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, withAlpha(shiftNow ? flashCol : pairCol(k), 0.16));
-        }
-    } else if (s.lights) {
-        const n = 12, range = 2000, gap = 6, lw = (w - gap * (n - 1)) / n;
-        const ledCol = (i) => {
-            const f = i / (n - 1);
+    const rpm = s.rpm, cue = s.cue, flash = cue.shift || cue.limiter;
+    const flashCol = cue.limiter ? RED : s.style === 'f1' ? BLUE : RED;
+    const count = isNum(rpm) ? clamp((rpm - cue.from) / (cue.at - cue.from), 0, 1) : 0;
+    if (s.lights) {
+        const n = 12, gap = 6, lw = (w - gap * (n - 1)) / n;
+        // GT3: pairs from both ends inwards (k = 0 outermost), outer green, then yellow, inner red;
+        // left to right: the screen's sequence
+        const pos = (i) => (s.gt3 ? Math.min(i, n - 1 - i) : i);
+        const steps = s.gt3 ? n / 2 : n;
+        const col = (i) => {
+            const f = pos(i) / (steps - 1);
             if (s.style === 'mono') return s.accent || WHITE;
-            if (s.style === 'f1') return f < 0.42 ? GREEN : f < 0.84 ? RED : BLUE;
-            return f < 0.42 ? GREEN : f < 0.75 ? YELLOW : RED;
+            if (s.style === 'f1' && !s.gt3) return f < 0.42 ? GREEN : f < 0.84 ? RED : BLUE;
+            return f < 0.34 ? GREEN : f < 0.67 ? YELLOW : RED;
         };
-        const lit = isNum(rpm) ? clamp((rpm - (s.shift - range)) / range, 0, 1) * n : 0;
+        // the last step (the inner pair) lights only with the flash: the count runs up to it
+        const lit = Math.ceil(count * (steps - 1));
         for (let i = 0; i < n; i++) {
-            const c = shiftNow ? (s.red ? (s.style === 'f1' ? BLUE : RED) : null) : i < lit ? ledCol(i) : null;
+            const c = flash ? (s.blink ? flashCol : null) : pos(i) < lit ? col(i) : null;
             if (c) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, c);
-            else if (s.dim) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, withAlpha(ledCol(i), 0.16));
+            else if (s.dim) cv.roundRect(x + i * (lw + gap), y, lw, ledH, 4, withAlpha(flash ? flashCol : col(i), 0.16));
         }
     }
     const slant = Math.round(barH * 0.32), X = (r) => x + clamp(r / s.max, 0, 1) * (w - slant);
@@ -87,13 +110,15 @@ function drawTach(cv, x, y, w, h, s) {
     if (s.dim) for (let r = 0; r < s.redline; r += 500) seg(r, Math.min(s.redline, r + 500), withAlpha(WHITE, 0.12));
     for (let r = s.redline; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), withAlpha(RED, 0.4));
     if (isNum(rpm) && rpm > 50) {
+        // green below the shift point, amber past it, red into the redline; all red flashing on the limiter
         const top = Math.min(rpm, s.max);
         for (let r = 0; r < top; r += 500) {
-            const f = (r + 250) / s.shift;
-            seg(r, Math.min(top, r + 500), shiftNow ? (s.red ? RED : withAlpha(RED, 0.4)) : f >= 0.92 ? RED : f >= 0.7 ? YELLOW : GREEN);
+            const mid = r + 250;
+            const c = cue.limiter ? (s.blink ? RED : withAlpha(RED, 0.35)) : mid >= s.redline ? RED : mid >= s.shift ? YELLOW : GREEN;
+            seg(r, Math.min(top, r + 500), c);
         }
     }
-    return shiftNow;
+    return cue;
 }
 
 /** One temperature: label over the value, coloured cold / warm-up / normal / hot. */
@@ -105,15 +130,18 @@ function drawTemp(cv, cx, y, label, v, limits) {
 }
 
 /**
- * The whole HUD image (IW x IH). f = { d (car.data()), shift, redline, max, gearbox, red, opts }
- * opts = { gear, temps, lights, dim, style, warmOil }.
+ * The whole HUD image (IW x IH). f = { d (car.data()), shift, redline, max, gearbox, blink, cue
+ * (shiftCue(); without one: no climb, count over the last 1500 rpm), opts }
+ * opts = { gear, temps, lights, gt3, dim, style, warmOil }.
  */
 function drawHud(cv, f) {
     const o = f.opts, d = f.d;
     cv.clear();
     const tx = o.gear ? 70 : 0, tw = IW - tx;
-    const shiftNow = drawTach(cv, tx, 2, tw, 50, { rpm: d.rpm, shift: f.shift, redline: f.redline, max: f.max, red: f.red, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
-    if (o.gear) cv.text(gearText(d), 30, 78, 72, shiftNow && f.red ? RED : WHITE, { align: 'center', font: 'gear' });
+    const cue = f.cue || shiftCue({}, d.rpm, 0, f.shift, f.redline, 0);
+    drawTach(cv, tx, 2, tw, 50, { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
+    // the gear turns red only on the limiter; the shift itself is the lights' job
+    if (o.gear) cv.text(gearText(d), 30, 78, 72, cue.limiter && f.blink ? RED : WHITE, { align: 'center', font: 'gear' });
     if (o.temps) {
         // right of TEMP_X only: BMW draws its driver-assistance graphic (lanes, steering wheel,
         // ACC distance) under the left of the bar, above its speed (G21, 2026-11-07)
@@ -185,6 +213,7 @@ function packRect(d, w, r) {
 function start(ctx, src) {
     const settings = ctx.settings, log = ctx.log;
     let cr = null, layer = 0, shown = '', lastTarget = '', timer = null, blink = false;
+    const cueState = {};
     let cur = null, prev = null, first = true, lastErr = 0;
 
     const safe = (name, fn) => function () {
@@ -250,12 +279,13 @@ function start(ctx, src) {
 
     /** What drawHud needs, now. */
     function frameData() {
-        const d = src.data(), sp = src.shiftPoint(d.oil);
-        // GT3 lights always flash at the shift point; the bar style only with "Blink and flash"
+        const d = src.data(), sp = src.shiftPoint(d.oil), redline = src.redline();
         const gt3 = settings.get('hudLightStyle') !== 'bar';
-        if ((gt3 || settings.get('flash')) && isNum(d.rpm) && d.rpm >= sp.rpm) blink = !blink; else blink = true;
+        // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
+        const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, num('hudLead', 200));
+        blink = cue.shift || cue.limiter ? !blink : true;
         return {
-            d: d, shift: sp.rpm, redline: src.redline(), max: src.maxRpm(), red: blink,
+            d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
             gearbox: src.gearbox ? src.gearbox.value() : null,
             opts: {
                 gear: settings.get('hudGear') !== 'off', temps: settings.get('hudTemps') !== false,
@@ -269,7 +299,7 @@ function start(ctx, src) {
     function sample() {
         const f = frameData();
         f.d = { rpm: 6300, gear: 3, stage: 'D', oil: 96, coolant: 97 };
-        f.shift = 6700; f.redline = 7000; f.max = 8000; f.gearbox = 74; f.red = true;
+        f.shift = 6700; f.redline = 7000; f.max = 8000; f.gearbox = 74; f.blink = true; f.cue = null;
         return f;
     }
 
@@ -313,4 +343,4 @@ function start(ctx, src) {
     return { stop: disconnect };
 }
 
-module.exports = { start, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
+module.exports = { start, shiftCue, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
