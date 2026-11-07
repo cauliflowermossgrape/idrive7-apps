@@ -40,9 +40,30 @@ cars with a HUD, but nobody has checked yet.
 
 ### What it shows
 
-From left to right: the gear (P R N D or 1–8) with the downshift arrows under it; 12 round shift
-lights over a slanted rev bar; and oil, water and gearbox temperatures. A small yellow mark
-shows the shift point and a red one the redline.
+**Layouts** (*Layout*):
+
+- **Standard:** the gear (P R N D or 1–8) with the downshift arrows under it; 12 round shift
+  lights over a slanted rev bar; and a readouts row under the bar. A small yellow mark shows the
+  shift point, a red one the redline, and a thin line where the revs peaked (*Peak marker*,
+  dropping back after Redline's *Peak hold*).
+- **Minimal:** the gear and larger shift lights only.
+- **Split wings:** the gear in the centre, with 6 lights on each side filling in towards it and
+  the bar underneath.
+
+**Palettes** (*Colours*): Colour (green / yellow / red), Night amber, Ice white.
+
+**The readouts row** (standard layout), left to right:
+
+- **Boost:** in bar, from the iDrive sport display. It shows only once the car has sent a value
+  that moves; some cars send a constant.
+- **LIMIT:** the cold-engine shift point, while the cold guard holds it down.
+- **Oil, water and gearbox temperatures.** On *Temperatures: only when cold or hot* (the
+  default) a temperature shows only while it's cold, warming (oil under *Oil warm at*) or hot,
+  so a warm car shows none.
+
+At most four readouts fit; on a cold start the gearbox temperature gives way. For 1.5 s after
+each upshift, the row shows that shift's grade instead (*Shift grade after each upshift*):
+SPOT ON, EARLY, LATE, LIMITER or COLD REV, from Redline's scoring.
 
 Black is see-through on the HUD glass, so everything is drawn on black. Unlit lights and bar
 segments can be faint or hidden (*Unlit segments*).
@@ -50,8 +71,8 @@ segments can be faint or hidden (*Unlit segments*).
 The temperatures sit to the right of x 150. That's because BMW draws its driver-assistance
 graphic (lanes, steering wheel, ACC distance) under the left of the bar.
 
-Temperature colours: blue is cold, yellow means the oil is still warming (under *Oil warm at*),
-white is normal and red is hot. A reading with no data is left out.
+Readout colours (Colour palette): blue is cold, yellow means the oil is still warming, white is
+normal and red is hot. A reading with no data is left out.
 
 ### HUD settings (one row in Settings, shown while the HUD is on)
 
@@ -59,7 +80,13 @@ white is normal and red is hot. A reading with no data is left out.
 |---|---|---|
 | Size | 70–130 % | Scales about the top centre |
 | Position left / right, up / down | px | Moves the layer only, so the change shows at once |
+| Layout | Standard / Minimal (lights and gear) / Split wings | |
+| Colours | Colour / Night amber / Ice white | |
 | Shows | tach, gear and temperatures / tach and gear / tach and temperatures / tach only | |
+| Temperatures | only when cold or hot / always | |
+| Boost | on / off | |
+| Shift grade after each upshift | on / off | |
+| Peak marker | on / off | |
 | Shift lights | GT3 (outside in, flash) / left to right / off | |
 | Frame rate | 10 / 20 / 30 fps (20) | See [Performance](#performance) |
 | Unlit segments | dim / hidden | |
@@ -202,7 +229,8 @@ Useful lines:
 | File | What |
 |---|---|
 | `main.js` | The app: the screen pages, settings, scoring, and the wiring of everything below |
-| `hud.js` | The HUD layer (connect, draw, send), `shiftCue()` (shared with the screen), `drawHud()`, the test pattern |
+| `hud.js` | The HUD layer: connect, pace, smooth the rpm, decide what to show (readouts, grade, peak), send; `shiftCue()` (shared with the screen); the test pattern |
+| `hud-draw.js` | Drawing the HUD image: the three layouts, the palettes, lights, bar, readouts, grade, downshift arrows; the cached static layer |
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |

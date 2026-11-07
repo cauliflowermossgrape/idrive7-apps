@@ -19,6 +19,7 @@
  *   hud.js       the head-up display through cluster-render, and the shift cue the HUD and this
  *                screen's lights share (count-in over ~1 s of climb, flash early by the reaction
  *                time, ended by the upshift or a lift; everything flashes on the limiter)
+ *   hud-draw.js  draws the HUD image: layouts (standard, minimal, split wings), palettes, readouts
  *   limiter.js   learns the real rev limit from the rpm plateau on the limiter
  *   shiftmap.js  learns the full-load torque curve and the gear ratios, and from them the best
  *                upshift rpm for each gear
@@ -86,10 +87,21 @@ mgu.run({
         // engine torque for the shift map, with its time: put() keeps the last value when the signal
         // goes invalid, so a stale torque would be paired with new rpm and inflate the curve
         const torque = { v: null, t: 0 };
-        const torqueWatch = { 'de.bmw.infotainment.drivingexcitement.FES': { statusActualValueTorque2: (v) => {
-            const raw = v && v.actualValueTorqueCrankshaft;
-            if (typeof raw === 'number' && raw < 4095) { torque.v = Math.max(0, raw * 0.5 - 1023.5); torque.t = Date.now(); }
-        } } };
+        // boost from the iDrive sport display (bar, raw x 0.01, 255 = none), for the HUD; shown only once
+        // it has moved (some cars send a constant), as Car Vitals does
+        const boost = { v: null, t: 0, first: null, moved: false };
+        const torqueWatch = { 'de.bmw.infotainment.drivingexcitement.FES': {
+            statusActualValueTorque2: (v) => {
+                const raw = v && v.actualValueTorqueCrankshaft;
+                if (typeof raw === 'number' && raw < 4095) { torque.v = Math.max(0, raw * 0.5 - 1023.5); torque.t = Date.now(); }
+            },
+            statusSwitchDriveDynamicSport2: (v) => {
+                const raw = v && v.displayBoostPressure;
+                if (typeof raw !== 'number' || raw === 255 || raw < 0) return;
+                if (boost.first === null) boost.first = raw; else if (raw !== boost.first) boost.moved = true;
+                boost.v = raw * 0.01; boost.t = Date.now();
+            },
+        } };
         const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), torqueWatch));
 
         /* ---------- derived limits ----------
@@ -522,7 +534,14 @@ mgu.run({
         // every screen refresh (60 fps) with the GPU renderer; 15 fps in software (PNG frames)
         ctx.loop('MAIN', 15, render);
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
-        hud = Hud.start(ctx, { data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, downshift });
+        hud = Hud.start(ctx, {
+            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, downshift,
+            // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
+            // boost once it has moved and is under 2 s old (none from the demo drive)
+            peak: () => peakRpm,
+            chip: () => (lastShift && Date.now() - lastShift.at < 1500 ? lastShift.verdict : null),
+            boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
+        });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });

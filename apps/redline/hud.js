@@ -27,13 +27,15 @@
 const fs = require('fs');
 const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
+// the drawing: layouts, palettes, readouts (hud-draw.js); this file decides what to show and when
+const Draw = require('./hud-draw');
+const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
 try { ClusterRender = require('./cluster_render_client').ClusterRender; } catch (e) { /* logged at start */ }
 
 const SCENE_W = 800, SCENE_H = 480;
 // the tach image and where it sits at 100 %: centred in the visible area, clear of BMW's speed
 const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
-const TEMP_X = 150;                                             // temperatures start here (image x)
 // frames a second: setting "hudFps" (10 / 20 / 30); the layer is made for the most, the timer paces it
 const FPS_MAX = 30, FPS_DEFAULT = 20;
 // the flash's on / off rhythm in ms (5 Hz), from the clock, so it looks the same at any frame rate
@@ -41,8 +43,6 @@ const BLINK_MS = 100;
 const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a', BLUE = '#2a7dff', COLD = '#3d8bff';
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-// colours used every frame, made once
-const DIM_TRACK = withAlpha(WHITE, 0.12), RED_ZONE = withAlpha(RED, 0.4), RED_OFF = withAlpha(RED, 0.35), LABEL = withAlpha(WHITE, 0.75);
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 
 /** Write a small file whole or not at all (temp file, then rename): a power cut mid-write can't corrupt it. */
@@ -52,12 +52,6 @@ function writeAtomic(file, text, log) {
 
 /** Canvas.d is a Uint8Array; the client copies from a Buffer (px.copy). Same memory, no copy. */
 const asBuffer = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
-
-/** Gear / selector text from car.data(): P R N while selected, else the gear, D while none is engaged. */
-function gearText(d) {
-    const g = d.gear, st = d.stage;
-    return st === 'P' || st === 'R' || st === 'N' ? st : g === -1 ? 'R' : isNum(g) && g > 0 ? String(g) : st === 'D' ? 'D' : g === 0 ? 'N' : '-';
-}
 
 /**
  * Shift cue: when the shift lights start counting and when they flash, from how fast the revs
@@ -119,128 +113,6 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
         if (r < st.peak * 0.88 || lifted) st.on = false;
     }
     return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: r >= redline - 40, rate: rate, fallSince: st.fall == null ? null : st.fall };
-}
-
-/**
- * The HUD tach in the box (x, y, w, h). s = { rpm, cue (shiftCue()), shift, redline, max,
- * blink (flash phase on), lights (bool), gt3 (bool), style ('m' | 'f1' | 'mono'), accent, dim }.
- * Round shift lights along the top: they count into the shift and flash for it. Under them a
- * thin yellow mark at the shift point and a red one at the redline, then the slanted bar, which
- * runs on to the redline; on the limiter everything flashes red.
- * s.layer: 'bg' draws only what stays put (unlit dots, the dim track, the red zone: cached by
- * drawHud), 'fg' only what moves (lit dots and segments, the marks); neither: both.
- */
-function drawTach(cv, x, y, w, h, s) {
-    const bg = s.layer !== 'fg', fg = s.layer !== 'bg';
-    const ledD = s.lights ? 14 : 0, markH = 6, barY = y + ledD + (s.lights ? 4 : 0) + markH + 2, barH = y + h - barY;
-    const rpm = s.rpm, cue = s.cue, flash = cue.shift || cue.limiter;
-    const flashCol = cue.limiter ? RED : s.style === 'f1' ? BLUE : RED;
-    const count = isNum(rpm) ? clamp((rpm - cue.from) / (cue.at - cue.from), 0, 1) : 0;
-    if (s.lights) {
-        const n = 12, pitch = w / n, rad = Math.min(ledD / 2, pitch * 0.36), cy = y + ledD / 2;
-        const dot = (i, c) => cv.circle(x + pitch * (i + 0.5), cy, rad, c);
-        // GT3: pairs from both ends inwards (k = 0 outermost), outer green, then yellow, inner red;
-        // left to right: the screen's sequence
-        const pos = (i) => (s.gt3 ? Math.min(i, n - 1 - i) : i);
-        const steps = s.gt3 ? n / 2 : n;
-        const col = (i) => {
-            const f = pos(i) / (steps - 1);
-            if (s.style === 'mono') return s.accent || WHITE;
-            if (s.style === 'f1' && !s.gt3) return f < 0.42 ? GREEN : f < 0.84 ? RED : BLUE;
-            return f < 0.34 ? GREEN : f < 0.67 ? YELLOW : RED;
-        };
-        // the last step (the inner pair) lights only with the flash: the count runs up to it
-        const lit = Math.ceil(count * (steps - 1));
-        for (let i = 0; i < n; i++) {
-            const c = flash ? (s.blink ? flashCol : null) : pos(i) < lit ? col(i) : null;
-            if (bg && s.dim) dot(i, withAlpha(flash ? flashCol : col(i), 0.16));
-            if (fg && c) dot(i, c);
-        }
-    }
-    const slant = Math.round(barH * 0.32), X = (r) => x + clamp(r / s.max, 0, 1) * (w - slant);
-    const seg = (a, b, c) => {
-        const xa = X(a) + 2, xb = X(b) - 2;
-        if (xb > xa) cv.quad([[xa + slant, barY], [xb + slant, barY], [xb, barY + barH], [xa, barY + barH]], c);
-    };
-    // marks over the bar's top edge (like the screen's): yellow at the shift point, red at the redline
-    const mark = (r, c) => cv.fillRect(Math.round(X(r) + slant) - 1, barY - markH - 2, 3, markH, c);
-    if (fg && isNum(s.shift) && s.shift < s.redline) mark(s.shift, YELLOW);
-    if (fg) mark(s.redline, RED);
-    if (bg && s.dim) for (let r = 0; r < s.redline; r += 500) seg(r, Math.min(s.redline, r + 500), DIM_TRACK);
-    if (bg) for (let r = s.redline; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), RED_ZONE);
-    if (fg && isNum(rpm) && rpm > 50) {
-        // green below the shift point, amber past it, red into the redline; all red flashing on the limiter
-        const top = Math.min(rpm, s.max);
-        for (let r = 0; r < top; r += 500) {
-            const mid = r + 250;
-            const c = cue.limiter ? (s.blink ? RED : RED_OFF) : mid >= s.redline ? RED : mid >= s.shift ? YELLOW : GREEN;
-            seg(r, Math.min(top, r + 500), c);
-        }
-    }
-    return cue;
-}
-
-/**
- * Downshift cue: n chevrons (1..3) centred at cx from y down, one for each gear you can drop
- * without passing that gear's shift point; k scales them (1 on the HUD).
- */
-function drawDown(cv, cx, y, n, k) {
-    if (!(n > 0)) return;
-    const w = 14 * k, h = 9 * k, gap = 4 * k, x0 = cx - (n * w + (n - 1) * gap) / 2;
-    for (let i = 0; i < n; i++) {
-        const x = x0 + i * (w + gap);
-        // a quad with two corners at the tip: the screen's Recorder has quad() but no convex()
-        cv.quad([[x, y], [x + w, y], [x + w / 2, y + h], [x + w / 2, y + h]], CYAN);
-    }
-}
-
-/** One temperature: label (layer 'bg'/both) over the value (layer 'fg'/both), coloured cold / warm-up / normal / hot. */
-function drawTemp(cv, cx, y, label, v, limits, layer) {
-    const col = !isNum(v) ? null : v < limits.cold ? COLD : limits.warm && v < limits.warm ? YELLOW : v > limits.hot ? RED : WHITE;
-    if (!col) return;
-    if (layer !== 'fg') cv.text(label, cx, y + 12, 12, LABEL, { align: 'center', font: 'bold', spacing: 1.2 });
-    if (layer !== 'bg') cv.text(Math.round(v) + '°', cx, y + 40, 26, col, { align: 'center', font: 'bold' });
-}
-
-/**
- * The whole HUD image (IW x IH). f = { d (car.data()), shift, redline, max, gearbox, blink, cue
- * (shiftCue(); without one: no climb, count over the last 1500 rpm), opts }
- * opts = { gear, temps, lights, gt3, dim, style, warmOil }.
- */
-const bgCache = { key: '', cv: null };
-function drawHud(cv, f) {
-    const o = f.opts, d = f.d;
-    const tx = o.gear ? 70 : 0, tw = IW - tx;
-    const cue = f.cue || shiftCue({}, d.rpm, 0, f.shift, f.redline, 0);
-    const t = { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim };
-    const temps = o.temps ? [isNum(d.oil), isNum(d.coolant), isNum(f.gearbox)] : [];
-    // what stays put (unlit dots, dim track, red zone, temperature labels) is drawn once per layout
-    // and copied in; while flashing the unlit dots take the flash colour, so that is part of the key
-    const key = [tx, o.lights, o.gt3, o.style, o.dim, f.redline, f.max, cue.shift || cue.limiter, cue.limiter, temps.join()].join('|');
-    if (bgCache.key !== key || !bgCache.cv) {
-        const b = new Canvas(IW, IH);
-        drawTach(b, tx, 2, tw, 56, Object.assign({}, t, { layer: 'bg' }));
-        if (o.temps) drawTemps(b, d, f, o, 'bg');
-        bgCache.key = key; bgCache.cv = b;
-    }
-    if (cv.d && cv.d.length === bgCache.cv.d.length) cv.d.set(bgCache.cv.d); else { cv.clear(); cv.blit(bgCache.cv, 0, 0); }
-    t.layer = 'fg';
-    drawTach(cv, tx, 2, tw, 56, t);
-    // the gear turns red only on the limiter; the shift itself is the lights' job
-    if (o.gear) {
-        cv.text(gearText(d), 30, 78, 72, cue.limiter && f.blink ? RED : WHITE, { align: 'center', font: 'gear' });
-        drawDown(cv, 30, 90, f.down || 0, 1);
-    }
-    if (o.temps) drawTemps(cv, d, f, o, 'fg');
-}
-
-/** The three temperatures, right of TEMP_X only: BMW draws its driver-assistance graphic (lanes,
- * steering wheel, ACC distance) under the left of the bar, above its speed (G21, 2026-11-07). */
-function drawTemps(cv, d, f, o, layer) {
-    const col = (IW - TEMP_X) / 3, y = 66;
-    drawTemp(cv, TEMP_X + col * 0.5, y, 'OIL', d.oil, { cold: 60, warm: o.warmOil, hot: 130 }, layer);
-    drawTemp(cv, TEMP_X + col * 1.5, y, 'WATER', d.coolant, { cold: 60, hot: 112 }, layer);
-    drawTemp(cv, TEMP_X + col * 2.5, y, 'GEARBOX', f.gearbox, { cold: 50, hot: 120 }, layer);
 }
 
 /** 800x480 test pattern: border, rulers every 40 px with labels, inset frames at 40/80/120, the tach at its place. */
@@ -429,12 +301,42 @@ function start(ctx, src) {
         // ~0.7 s of that; later, the driver lifted first and the shift says nothing about reaction
         if (flashInfo && flashInfo.fall === null && cue.fallSince !== null) flashInfo.fall = cue.fallSince;
         blink = cue.shift || cue.limiter ? Math.floor(now / BLINK_MS) % 2 === 0 : true;
+        const gb = src.gearbox ? src.gearbox.value() : null;
         return {
             d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
             down: src.downshift ? src.downshift() : 0,
-            gearbox: src.gearbox ? src.gearbox.value() : null,
+            peak: o.peak && src.peak ? src.peak() : 0,
+            chip: o.chip && src.chip ? src.chip() : null,
+            readouts: readouts(d, gb, sp, o),
             opts: o,
         };
+    }
+
+    /*
+     * The readouts row, left to right: boost (once the car has sent a moving value), the cold-engine
+     * shift limit (while the cold guard holds the shift point down), then oil, water and gearbox.
+     * Temperatures "smart": only one that is cold, warming (oil under "Oil warm at") or hot. Four at most.
+     */
+    const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
+    function readouts(d, gb, sp, o) {
+        const items = [];
+        if (o.boost && src.boost) {
+            const b = src.boost();
+            if (isNum(b)) items.push({ label: 'BOOST', value: Math.max(0, b).toFixed(1), tone: 'text' });
+        }
+        if (o.temps && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
+        if (o.temps) TEMPS.forEach((t) => {
+            const v = t[1] === 'gearbox' ? gb : d[t[1]];
+            if (!isNum(v)) return;
+            const lim = t[2];
+            const tone = v < lim.cold ? 'cold' : lim.warmOil && v < o.warmOil ? 'warm' : v > lim.hot ? 'hot' : 'text';
+            if (o.smartTemps && tone === 'text') return;
+            items.push({ label: t[0], value: Math.round(v) + '°', tone: tone });
+        });
+        // four fit the row legibly: on a cold start (boost, limit, oil, water, gearbox) the gearbox,
+        // the last to matter, gives way
+        while (items.length > 4) items.pop();
+        return items;
     }
 
     /*
@@ -465,18 +367,24 @@ function start(ctx, src) {
 
     /** The drawing options from the settings. */
     function optsNow() {
-        const style = settings.get('hudLightStyle') || 'gt3', content = settings.get('hudContent') || 'all';
+        const lights = settings.get('hudLightStyle') || 'gt3', content = settings.get('hudContent') || 'all';
+        const layout = settings.get('hudStyle');
         return {
+            style: layout === 'minimal' || layout === 'wings' ? layout : 'standard',
+            palette: settings.get('hudPalette') || 'colour',
             gear: content === 'all' || content === 'gear', temps: content === 'all' || content === 'temps',
-            lights: style !== 'off', gt3: style === 'gt3', dim: settings.get('hudUnlit') === 'dim',
-            style: settings.get('lights'), warmOil: num('warmOil', 80),
+            smartTemps: settings.get('hudTempsMode') !== 'always',
+            boost: settings.get('hudBoost') !== false, chip: settings.get('hudChip') !== false, peak: settings.get('hudPeak') !== false,
+            lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
+            lightStyle: settings.get('lights'), warmOil: num('warmOil', 80),
         };
     }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
-        return { d: { rpm: 6300, gear: 3, stage: 'D', oil: 96, coolant: 97 }, shift: 6700, redline: 7000, max: 8000,
-            gearbox: 74, blink: true, cue: null, down: 0, opts: optsNow() };
+        const o = optsNow(), d = { rpm: 6300, gear: 3, stage: 'D', oil: 96, coolant: 97 };
+        return { d: d, shift: 6700, redline: 7000, max: 8000, blink: true, cue: shiftCue({}, 6300, 0, 6700, 7000, 0), down: 0, peak: 0, chip: null,
+            readouts: [{ label: 'BOOST', value: '1.1', tone: 'text' }, { label: 'OIL', value: '96°', tone: 'text' }, { label: 'WATER', value: '97°', tone: 'text' }], opts: o };
     }
 
     let lastKey = '';
@@ -517,8 +425,9 @@ function start(ctx, src) {
         const d = f.d, c = f.cue, o = f.opts;
         const t = (v) => (isNum(v) ? Math.round(v) : '-');
         return [isNum(d.rpm) ? Math.round(d.rpm / 25) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
-            Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, t(d.oil), t(d.coolant), t(f.gearbox),
-            o.gear, o.temps, o.lights, o.gt3, o.dim, o.style, o.warmOil].join('|');
+            Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25), f.chip || '',
+            f.readouts.map((r) => r.label + r.value + r.tone).join(','),
+            o.style, o.palette, o.gear, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
     }
 
     const showTach = safe('tach', () => {
@@ -595,4 +504,4 @@ function start(ctx, src) {
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData };
 }
 
-module.exports = { start, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
+module.exports = { start, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
