@@ -73,12 +73,15 @@ function dsc(kind) {
         st.calls.push((target === 0x29 ? 'dsc ' : target === 0x19 ? 'lmv ' : target === 0x39 ? 'vip ' : 'other ') + req);
         let r;
         // G05 xDrive45e (issue #52): IB_G05 at 0x29 answers DBE1 but it does nothing; VIP_G05 at 0x39
-        const g05 = kind === 'g05' || kind === 'g05vip33';
+        // g05ice: a diesel X5 (IB_G05 0F2500, VIP_G05 0F2520) as measured: the VIP takes the job only with the engine
+        // off and the ignition on; the engine running gets NRC 33
+        const g05 = kind === 'g05' || kind === 'g05vip33' || kind === 'g05ice';
         if (g05 && target === 0x29 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x00];
-        else if (g05 && target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x30];
+        else if (g05 && target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, kind === 'g05ice' ? 0x20 : 0x30];
         else if (g05 && target === 0x39 && sid === 0x22 && data[0] === 0xDB && data[1] === 0x44) r = [0x62, 0xDB, 0x44, st.vip === undefined ? 1 : st.vip];
         else if (g05 && target === 0x39 && sid === 0x2E && data[0] === 0xDB && data[1] === 0x2F) {
-            if (kind === 'g05vip33') r = [0x7F, 0x2E, 0x33];
+            if (kind === 'g05vip33' || (kind === 'g05ice' && st.engine)) r = [0x7F, 0x2E, 0x33];
+            else if (kind === 'g05ice') { st.vip = data[2]; r = [0x6E, 0xDB, 0x2F]; }
             else if (!st.engine) r = [0x7F, 0x2E, 0x22];
             else { st.vip = data[2]; r = [0x6E, 0xDB, 0x2F]; }
         } else if (target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x30];  // G22: VIP_G05 too
@@ -338,6 +341,25 @@ async function xdriveChecks() {
     s = await mk('on', 'g22', { rpm: 750, condition: 10 });
     await s.x.requestOff(); await s.x.requestOff();
     assert.deepStrictEqual(writes(s.d), [], 'sent with the engine running');
+
+    // the ICE G05 (VIP 0F2520): the job with the engine off and the ignition on, never while it runs
+    s = await mk('on', 'g05ice', { rpm: 800, condition: 10 });
+    s.d.engine = true;
+    assert.strictEqual(s.x.view().vipIndex, '0F2520');
+    await s.x.requestOff(); await s.x.requestOff();
+    assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), [], 'sent with the engine running');
+    assert(/engine off/.test(s.x.note), s.x.note);
+    s.car.v.condition = 7; s.car.v.rpm = 0; s.d.engine = false;
+    await s.x.requestOff(); await s.x.requestOff();
+    assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), ['vip 2e db 2f 00']);
+    assert.strictEqual(s.x.noteType, 'go');
+    assert(/start the engine without switching the ignition off/.test(s.x.note), s.x.note);
+    assert(!s.d.calls.some((c) => /^dsc (2e|10|11)/.test(c)), 'sent something to the IB: ' + s.d.calls);
+    // its NRC 33 says the engine runs (an rpm the car still reports while it stops), not an unlock
+    s = await mk('on', 'g05ice', { rpm: 0, condition: 7 });
+    s.d.engine = true;
+    await s.x.requestOff(); await s.x.requestOff();
+    assert(/engine is running/.test(s.x.note) && !/unlock/.test(s.x.note), s.x.note);
 
     // a VIP that wants security access (G05, issue #52): said plainly, nothing recorded as done
     s = await mk('on', 'g05vip33', { rpm: 0, condition: 10 });
