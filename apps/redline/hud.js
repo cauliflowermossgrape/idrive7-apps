@@ -40,6 +40,9 @@ const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
 const FPS_MAX = 30, FPS_DEFAULT = 20;
 // the flash's on / off rhythm in ms (5 Hz), from the clock, so it looks the same at any frame rate
 const BLINK_MS = 100;
+// the redline shake: offsets (px) stepped every 100 ms while on the limiter. Each step moves the whole
+// picture, so the whole frame goes out (~2 MB/s at 10 steps a second): off by default
+const SHAKE = [[2, 1], [-2, -1], [1, -1], [-1, 1], [2, -1], [-2, 1]];
 const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a', BLUE = '#2a7dff', COLD = '#3d8bff';
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -306,7 +309,8 @@ function start(ctx, src) {
             d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
             down: src.downshift ? src.downshift() : 0,
             peak: o.peak && src.peak ? src.peak() : 0,
-            chip: o.chip && src.chip ? src.chip() : null,
+            chip: chipNow(o, now),
+            shake: o.shake && cue.limiter ? SHAKE[Math.floor(now / 100) % SHAKE.length] : null,
             readouts: readouts(d, gb, sp, o),
             opts: o,
         };
@@ -365,16 +369,25 @@ function start(ctx, src) {
     }
     const fps = () => { const v = num('hudFps', FPS_DEFAULT); return v >= 30 ? 30 : v >= 20 ? 20 : 10; };
 
+    /** The last upshift's grade while it shows: { verdict, age, burst } (src.chip(): { verdict, at }). */
+    function chipNow(o, now) {
+        if (o.chip === 'off' || !src.chip) return null;
+        const c = src.chip();
+        return c ? { verdict: c.verdict, age: now - c.at, burst: o.chip === 'burst' } : null;
+    }
+
     /** The drawing options from the settings. */
     function optsNow() {
         const lights = settings.get('hudLightStyle') || 'gt3', content = settings.get('hudContent') || 'all';
         const layout = settings.get('hudStyle');
         return {
-            style: layout === 'minimal' || layout === 'wings' ? layout : 'standard',
+            style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
             palette: settings.get('hudPalette') || 'colour',
             gear: content === 'all' || content === 'gear', temps: content === 'all' || content === 'temps',
             smartTemps: settings.get('hudTempsMode') !== 'always',
-            boost: settings.get('hudBoost') !== false, chip: settings.get('hudChip') !== false, peak: settings.get('hudPeak') !== false,
+            boost: settings.get('hudBoost') !== false, peak: settings.get('hudPeak') !== false,
+            chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
+            shake: settings.get('hudShake') === true,
             lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
             lightStyle: settings.get('lights'), warmOil: num('warmOil', 80),
         };
@@ -424,8 +437,13 @@ function start(ctx, src) {
     function frameKey(f) {
         const d = f.d, c = f.cue, o = f.opts;
         const t = (v) => (isNum(v) ? Math.round(v) : '-');
-        return [isNum(d.rpm) ? Math.round(d.rpm / 25) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
-            Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25), f.chip || '',
+        // the 7-segment layouts show the rpm to 10, the others draw a bar pixel per ~25 rpm
+        const step = o.style === 'digital' || o.style === 'vfd' ? 10 : 25;
+        // the burst moves until 500 ms and fades after 1200 ms; in between the picture stands still
+        const age = f.chip && f.chip.burst ? (f.chip.age < 500 || f.chip.age > 1200 ? Math.floor(f.chip.age / 40) : 'h') : '';
+        return [isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
+            Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25),
+            f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
             o.style, o.palette, o.gear, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
     }

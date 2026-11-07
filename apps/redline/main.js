@@ -539,7 +539,7 @@ mgu.run({
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
-            chip: () => (lastShift && Date.now() - lastShift.at < 1500 ? lastShift.verdict : null),
+            chip: () => (lastShift && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));

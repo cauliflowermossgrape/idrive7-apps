@@ -35,7 +35,7 @@ cars with a HUD, but nobody has checked yet.
    the tach where it will sit, plus rulers and frames every 40 px. On a G21 only the inner
    (yellow, 120 px) frame is visible: about x 120–680, y 120–360 of the 800×480 scene. BMW's
    speed and limit sign sit along its bottom edge.
-2. Use **HUD settings** → *Size* and *Position* to move the tach. The pattern follows as you go.
+2. Use **HUD position and size** → *Size* and *Position* to move the tach. The pattern follows as you go.
 3. Set **Show on HUD** to **On**.
 
 ### What it shows
@@ -49,8 +49,21 @@ cars with a HUD, but nobody has checked yet.
 - **Minimal:** the gear and larger shift lights only.
 - **Split wings:** the gear in the centre, with 6 lights on each side filling in towards it and
   the bar underneath.
+- **80s digital dash:** square lights, an LCD-style bar graph of 40 segments, and 7-segment digits
+  for the gear and rpm.
+- **VFD glow:** the same layout as a teal vacuum-fluorescent display, with unlit segments always
+  faintly visible. It uses its own colours whatever *Colours* is set to.
+- **Vector arcade:** the standard layout drawn in outlines only: rings, outlined segments and an
+  outlined 7-segment gear.
 
 **Palettes** (*Colours*): Colour (green / yellow / red), Night amber, Ice white.
+
+**Effects:**
+
+- **Shift grade:** *Burst* (the default) pops the word in (PERFECT SHIFT for a spot-on shift), grows
+  a ring from it and fades it out. *Simple* shows the plain word; *Off* shows nothing.
+- **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
+  the bar, lights and gear flash red.
 
 **The readouts row** (standard layout), left to right:
 
@@ -74,18 +87,22 @@ graphic (lanes, steering wheel, ACC distance) under the left of the bar.
 Readout colours (Colour palette): blue is cold, yellow means the oil is still warming, white is
 normal and red is hot. A reading with no data is left out.
 
-### HUD settings (one row in Settings, shown while the HUD is on)
+### HUD settings (shown while the HUD is on)
+
+Two rows in Settings. **HUD style** has what you'll switch between, Layout and Colours first;
+**HUD position and size** has what you set once. Every change shows on the HUD at once.
 
 | Setting | Values | Notes |
 |---|---|---|
 | Size | 70–130 % | Scales about the top centre |
 | Position left / right, up / down | px | Moves the layer only, so the change shows at once |
-| Layout | Standard / Minimal (lights and gear) / Split wings | |
+| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade | |
 | Colours | Colour / Night amber / Ice white | |
 | Shows | tach, gear and temperatures / tach and gear / tach and temperatures / tach only | |
 | Temperatures | only when cold or hot / always | |
 | Boost | on / off | |
-| Shift grade after each upshift | on / off | |
+| Shift grade after each upshift | Burst / Simple / Off | |
+| Shake on the limiter | on / off (off) | Each shake step resends the whole picture |
 | Peak marker | on / off | |
 | Shift lights | GT3 (outside in, flash) / left to right / off | |
 | Frame rate | 10 / 20 / 30 fps (20) | See [Performance](#performance) |
@@ -230,7 +247,7 @@ Useful lines:
 |---|---|
 | `main.js` | The app: the screen pages, settings, scoring, and the wiring of everything below |
 | `hud.js` | The HUD layer: connect, pace, smooth the rpm, decide what to show (readouts, grade, peak), send; `shiftCue()` (shared with the screen); the test pattern |
-| `hud-draw.js` | Drawing the HUD image: the three layouts, the palettes, lights, bar, readouts, grade, downshift arrows; the cached static layer |
+| `hud-draw.js` | Drawing the HUD image: the six layouts, the palettes, 7-segment digits, lights, bar and bar graph, readouts, grade burst, shake, downshift arrows; the cached static layer |
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |
