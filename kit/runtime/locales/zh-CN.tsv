@@ -1593,3 +1593,69 @@ back after an ignition cycle	点火关闭再打开后恢复
 Press again to switch xDrive back on	再按一次重新打开 xDrive
 xDrive is back · the transfer case reports it on	xDrive 已恢复 · 分动箱报告已开启
 Cleared; back at once (still present):	已清除，但立即再次出现（故障仍存在）：
+# eDrive 12 V battery (battery12.js)
+orig.	原装
+collecting...	正在收集...
+the car's signal	车辆信号
+Confirm	确认
+EARLIER	此前
+low	低
+resting	静置
+VOLTAGE, LAST 2 MIN	电压，最近 2 分钟
+voltage says: alternator charging	按电压判断：发电机正在充电
+CAPACITY	容量
+STATE OF CHARGE  (%, FROM THE DME)	荷电状态  （%，来自 DME）
+STATE OF CHARGE, LAST 5	荷电状态，最近 5 次
+older	较早
+TIME SPENT PER CHARGE BAND	各充电区间所用时间
+GOOD	良好
+engine off, car awake: well charged	发动机关闭，车辆唤醒中：电量充足
+no voltage readings yet	尚无电压读数
+lowish - a longer drive helps	偏低 - 长途行驶有帮助
+engine off, car awake: about half charged or more	发动机关闭，车辆唤醒中：约一半或以上
+low - use a battery charger	偏低 - 请使用电池充电器
+LOW	低
+engine off, car awake: low - drive or charge soon	发动机关闭，车辆唤醒中：偏低 - 请尽快行驶或充电
+VERY LOW	极低
+engine off, car awake: charge the battery	发动机关闭，车辆唤醒中：请为电池充电
+alternator resting, battery feeds the car (normal)	发电机休息，电池为车辆供电（正常）
+into the battery	流入电池
+the alternator charges the battery	发电机正在为电池充电
+out of the battery	流出电池
+DISCHARGING	放电中
+engine off: the battery feeds the car	发动机关闭：电池为车辆供电
+RESTING	静置
+little current	电流很小
+hardly any current	几乎没有电流
+resting, but low: charge or drive soon	静置但偏低：请尽快充电或行驶
+well charged	电量充足
+strong charge after a start or a deep drain	启动或深度放电后的强力充电
+waiting for the engine unit	等待发动机控制单元
+PAUSED	已暂停
+parked: reads stopped so the car can sleep	已停车：已停止读取，车辆可休眠
+slowing down: braking energy charges the battery	减速中：制动能量为电池充电
+charge low: charged all the time until it recovers	电量偏低：持续充电直至恢复
+State of charge	荷电状态
+Last hour	最近 1 小时
+Recorded by the car	车辆记录
+CURRENT  (A, + = INTO THE BATTERY)	电流  （A，+ = 流入电池）
+HEALTH (SOH)	健康度 (SOH)
+# Engine Config: Exhaust Flap - Drive mode, hold, the Close rpm guard (auto.js)
+Drive mode	驾驶模式
+Hold Open / Close	保持打开/关闭
+On · sent again every 15 s	开启：每 15 秒重新发送
+Off · the car takes over after ~20 s	关闭：约 20 秒后由车辆控制
+Close: hand back above	关闭解除转速
+Never (not recommended)	从不（不建议）
+RPM signal lost · OEM requested · select CLOSE again	无转速信号：已切换为原厂控制，请重新选择关闭
+RPM signal lost · Close paused · the car has the flap	无转速信号：关闭已暂停，由车辆控制阀门
+Close paused above {rpm} rpm · the car has the flap	高于 {rpm} rpm：关闭已暂停，由车辆控制阀门
+Waiting for the driving mode	等待驾驶模式
+holding	保持中
+Sport+	运动+
+Sport Individual	运动个性化
+Comfort+	舒适+
+Comfort Individual	舒适个性化
+Eco Pro	节能
+Eco Pro+	节能+
+Eco Pro Individual	节能个性化

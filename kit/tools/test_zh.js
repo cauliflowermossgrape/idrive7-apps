@@ -92,7 +92,7 @@ async function main(){
    ['dtc_scanner','Fault Scanner',['Faults  1/2','Check Control','Control units','Settings'],[demo]],
    ['dyno','Virtual Dyno',['Virtual dyno','Saved runs','Settings'],[demo]],
    ['edrive hybrid','eDrive',['Range','Energy','Battery','Charge log','Diagnostic','Settings'],[demo]],
-   ['edrive 12 V','eDrive',['12 V battery','Diagnostic','Settings'],[demo]],
+   ['edrive 12 V','eDrive',['12 V battery','History','Diagnostic','Settings'],[demo]],
    ['gforce','G-Force',['G-force','Records','Settings'],[demo]],
    ['live_adjustments BM3+xDrive','Engine Config',['Exhaust Flap','Engine Map','Burbles','Active Sound','xDrive','Settings'],[sim]],
    ['live_adjustments MHD','Engine Config',['Exhaust Flap','Engine Map','Max Cooling','Settings'],[sim]],

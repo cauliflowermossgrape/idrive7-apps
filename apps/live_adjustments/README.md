@@ -1,14 +1,38 @@
 # Live Adjustments
 
 Live tweaks over the head unit's own diagnostic link (InternalTasu, DME `0x12`), one tab
-each. Opening the app only reads; a command leaves only on a button press.
+each. Opening the app only reads; a command leaves only on a button press (or, with Drive
+mode chosen on the Exhaust Flap tab, on a driving mode change).
 
 ## Exhaust Flap
 
 BMW's own `0x2F` job on DID `0x60FD` (Bosch MG1 / DME8): `2F 60FD 03 03E8` open,
 `2F 60FD 03 2328` close, `2F 60FD 00` hands the flap back to the DME. The *Exhaust Flap*
 setting is the arm switch and ships **Disarmed** (simulated, nothing is sent). Tested on one
-car with an MG1.
+car with an MG1 and on a G20 320i (B48).
+
+The tab shows the rear silencer (`muffler_img.js`: the picture as ~16k cells on the device
+pixel grid, drawn once into a cached layer; the software renderer gets it as pixels) with the
+flap's butterfly turning in the right tailpipe, and four buttons:
+
+| Button | What it does |
+|---|---|
+| Open | the flap open |
+| Close | the flap closed (the rpm guard below) |
+| OEM | the flap handed back to the DME |
+| Drive mode | the flap follows the driving mode (FES) on every change: Sport / Sport+ / Sport Individual → Open; Comfort / Comfort+ / Comfort Individual / Adaptive → OEM; Eco Pro / Eco Pro+ / Eco Pro Individual → Close. The line under the state word names the driving mode. Open, Close or OEM stop following it. Saved with the settings (key `driveLink`, not in the menu), so it is still on after the next start |
+
+What the flap should do is `auto.js`; every command still goes through `controller.js`.
+
+| Setting | Default | |
+|---|---|---|
+| Hold Open / Close | On | the DME lets a tester's command go after ~20 s: On sends Open / Close again every 15 s (armed only); Off lets the car take over |
+| Close: hand back above | 4,000 rpm | 2,500 – 5,500 rpm or Never: Close is paused (OEM sent, the DME opens the flap as it needs) while the live engine speed is above it, and resumed 500 rpm below it. Open and OEM are never paused |
+
+**No engine speed** (armed, a Close limit set, no live engine speed for 5 s): a manual Close
+becomes OEM and stays OEM until Close is pressed again; Drive mode's Eco Pro becomes OEM and
+Close comes back by itself once a live engine speed below the limit is back. Demo data never
+counts as an engine speed. Tests: `kit/tools/test_live_adjustments_exhaust.js`.
 
 ## Tuned DME: BM3 and MHD
 
