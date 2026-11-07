@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.16.2",
+  "version": "1.17.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -44,6 +44,7 @@
       "title": "Redline",
       "buttons": [
         ["BTN_RESET", "Reset max"],
+        ["BTN_RESET_LEARNED", "Reset learned"],
         ["BTN_PAGE", "Next page"],
         ["BTN_PREV", "Previous page"],
         ["BTN_SETTINGS", "Settings"]
@@ -62,6 +63,8 @@
      "options": [["learned", "Per gear, learned from the engine"], ["fixed", "Redline minus the setting below"]]},
     {"key": "shiftBefore", "label": "Shift point before redline", "type": "number", "unit": "rpm", "default": 300,
      "steps": [0, 100, 200, 300, 500, 800, 1000]},
+    {"key": "downCue", "label": "Downshift cue (arrows by the gear)", "type": "choice", "default": "slowing",
+     "options": [["slowing", "While slowing down"], ["always", "Always"], ["off", "Off"]]},
     {"key": "lights", "label": "Shift light style", "type": "choice", "default": "m",
      "options": [["m", "M (green-yellow-red)"], ["f1", "Race (green-red-blue)"], ["mono", "Theme colour"]]},
     {"key": "flash", "label": "Blink and flash at shift point", "type": "bool", "default": false, "reset": 1},

@@ -70,14 +70,18 @@ function gearText(d) {
 function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
     if (!isNum(rpm)) { st.rate = 0; st.on = false; st.fall = null; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0, fallSince: null }; }
     let rising = false;
-    if (isNum(st.rpm) && tMs > st.t) {
+    // the same reading again (a frame drawn between two rpm samples) is no news: the rate is only
+    // updated on a new sample, measured over the time since the last one; a reading unchanged for
+    // 500 ms is a real standstill of the revs
+    const fresh = !isNum(st.rpm) || rpm !== st.rpm || tMs - st.t >= 500;
+    if (isNum(st.rpm) && tMs > st.t && fresh) {
         const r = (rpm - st.rpm) * 1000 / (tMs - st.t);
         rising = r > 300;
         st.rate = r <= 0 ? (r < -500 ? 0 : (st.rate || 0) * 0.7) : (st.rate ? st.rate * 0.5 + r * 0.5 : r);
-        // falling: more than 150 rpm/s down, frame after frame
+        // falling: more than 150 rpm/s down, sample after sample
         if (r < -150) { if (st.fall == null) st.fall = st.t; } else st.fall = null;
     }
-    st.rpm = rpm; st.t = tMs;
+    if (fresh) { st.rpm = rpm; st.t = tMs; }
     const rate = st.rate || 0, climbing = rate > 300;
     // span and lead from frames where the revs really rose: the smoothed rate decays over a hold
     // or a lift, and following it would shrink the count while the rpm stands still
@@ -148,6 +152,20 @@ function drawTach(cv, x, y, w, h, s) {
     return cue;
 }
 
+/**
+ * Downshift cue: n chevrons (1..3) centred at cx from y down, one for each gear you can drop
+ * without passing that gear's shift point; k scales them (1 on the HUD).
+ */
+function drawDown(cv, cx, y, n, k) {
+    if (!(n > 0)) return;
+    const w = 14 * k, h = 9 * k, gap = 4 * k, x0 = cx - (n * w + (n - 1) * gap) / 2;
+    for (let i = 0; i < n; i++) {
+        const x = x0 + i * (w + gap);
+        // a quad with two corners at the tip: the screen's Recorder has quad() but no convex()
+        cv.quad([[x, y], [x + w, y], [x + w / 2, y + h], [x + w / 2, y + h]], CYAN);
+    }
+}
+
 /** One temperature: label over the value, coloured cold / warm-up / normal / hot. */
 function drawTemp(cv, cx, y, label, v, limits) {
     const col = !isNum(v) ? null : v < limits.cold ? COLD : limits.warm && v < limits.warm ? YELLOW : v > limits.hot ? RED : WHITE;
@@ -168,7 +186,10 @@ function drawHud(cv, f) {
     const cue = f.cue || shiftCue({}, d.rpm, 0, f.shift, f.redline, 0);
     drawTach(cv, tx, 2, tw, 56, { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, lights: o.lights, gt3: o.gt3, style: o.style, dim: o.dim });
     // the gear turns red only on the limiter; the shift itself is the lights' job
-    if (o.gear) cv.text(gearText(d), 30, 78, 72, cue.limiter && f.blink ? RED : WHITE, { align: 'center', font: 'gear' });
+    if (o.gear) {
+        cv.text(gearText(d), 30, 78, 72, cue.limiter && f.blink ? RED : WHITE, { align: 'center', font: 'gear' });
+        drawDown(cv, 30, 90, f.down || 0, 1);
+    }
     if (o.temps) {
         // right of TEMP_X only: BMW draws its driver-assistance graphic (lanes, steering wheel,
         // ACC distance) under the left of the bar, above its speed (G21, 2026-11-07)
@@ -335,6 +356,7 @@ function start(ctx, src) {
         blink = cue.shift || cue.limiter ? !blink : true;
         return {
             d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
+            down: src.downshift ? src.downshift() : 0,
             gearbox: src.gearbox ? src.gearbox.value() : null,
             opts: {
                 gear: settings.get('hudGear') !== 'off', temps: settings.get('hudTemps') !== false,
@@ -422,7 +444,16 @@ function start(ctx, src) {
     }
 
     // frame: one frame's data without drawing (for tests)
-    return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, frame: frameData };
+    /** The learned reaction time for the Learned page: { ms, shifts, auto } (auto: the setting is on Auto). */
+    function learned() { return { ms: leadMs(), shifts: leadShifts, auto: num('hudLead', -1) < 0 }; }
+    /** Forget the learned reaction time (back to 200 ms). */
+    function resetLead() {
+        learnedLead = 200; leadShifts = 0;
+        try { fs.unlinkSync(leadFile); } catch (e) { /* gone */ }
+        log.info('hud: reaction time reset');
+    }
+
+    return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData };
 }
 
-module.exports = { start, shiftCue, writeAtomic, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
+module.exports = { start, shiftCue, drawDown, writeAtomic, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };

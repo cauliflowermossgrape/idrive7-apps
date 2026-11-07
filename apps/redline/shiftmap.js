@@ -70,6 +70,16 @@ class ShiftMap {
     onChange(fn) { this.listeners.push(fn); }
     shiftFor(gear) { return this.shift[gear] === undefined ? null : this.shift[gear]; }
     table() { return Object.assign({}, this.shift); }
+    /** Gear g's rpm per km/h once known, else null (for the downshift cue and the Learned page). */
+    ratio(g) { return this._k(g); }
+    /** Learning progress of gear g's ratio: samples so far and how many make it known. */
+    ratioProgress(g) { const r = this.ratios[g]; return { n: r ? Math.min(r.buf.length, RATIO_KNOWN) : 0, of: RATIO_KNOWN }; }
+    /** The confirmed full-load torque curve: [[rpm, Nm], ...] by rpm (the Learned page's chart). */
+    curve() {
+        const pts = [];
+        for (let i = 0; i < NBINS; i++) { const p = this._point(i); if (p) pts.push([p[0], p[1]]); }
+        return pts;
+    }
 
     setRedline(rpm) {
         try {

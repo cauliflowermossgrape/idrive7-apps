@@ -12,7 +12,7 @@
  *   - cold-engine rev guard: until the oil is warm the shift point is pulled down
  *     and climbs with the oil temperature
  *
- * Pages: tach / shift log. The tach's peak marker drops back after "Peak hold" seconds;
+ * Pages: tach / shift log / learned (what it learned from this car, with resets). The tach's peak marker drops back after "Peak hold" seconds;
  * BTN_RESET clears it and the session stats.
  */
 const mgu = require('./kit/mgu');
@@ -100,6 +100,27 @@ mgu.run({
         let shifts = [];                    // { at, from, to, rpm, target, verdict }
         const recent = [];                  // [t, rpm, speed] last ~1 s
         let lastGear = null, onLimiter = false, lastShift = null, hud = null;
+        const cueState = {};
+        let screenCue = null, slowingUntil = 0;
+
+        /*
+         * Downshift cue: how many gears (0..3) you can drop now without the revs passing that gear's
+         * shift point (300 rpm margin): the rpm after a downshift is the speed times that gear's
+         * learned rpm per km/h. Setting "downCue": while slowing (default), always, off.
+         */
+        function downshift() {
+            const mode = settings.get('downCue') || 'slowing', d = car.data();
+            if (mode === 'off' || d.demo || !G.isNum(d.gear) || d.gear < 2 || !(d.speed > 10)) return 0;
+            if (mode === 'slowing' && Date.now() > slowingUntil) return 0;
+            if (!shiftMap.ratio(d.gear)) return 0;
+            let n = 0;
+            for (let g = d.gear - 1; g >= 1 && n < 3; g--) {
+                const k = shiftMap.ratio(g);
+                if (!k || d.speed * k > shiftPoint(d.oil, g).rpm - 300) break;
+                n++;
+            }
+            return n;
+        }
         const verdict = (rpm, target, cold) => (rpm >= redline() - 60 ? 'LIMITER' : rpm < target - 250 ? 'EARLY' : rpm > target + 200 ? (cold ? 'COLD REV' : 'LATE') : 'SPOT ON');
         const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff' };
 
@@ -116,9 +137,16 @@ mgu.run({
         }
 
         car.onSample((d, t) => {
-            if (!G.isNum(d.rpm)) return;
+            if (!G.isNum(d.rpm)) { screenCue = null; Hud.shiftCue(cueState, null, t, 0, 0, 0); return; }
             recent.push([t, d.rpm, d.speed]);
             while (recent.length && t - recent[0][0] > 1200) recent.shift();
+            // the screen's shift cue, the same as the HUD's (count-in by climb rate, early flash,
+            // lift handling), updated on each sample so a fast screen doesn't see repeated readings
+            screenCue = Hud.shiftCue(cueState, d.rpm, t, shiftPoint(d.oil, d.gear).rpm, redline(), hud ? hud.lead() : 200);
+            // slowing (for the downshift cue): braking, down at least 6 km/h per second (~0.17 g) over
+            // the last 0.5 s; coasting off the throttle stays under it
+            const back = recent.find((r) => t - r[0] <= 500);
+            if (back && G.isNum(back[2]) && G.isNum(d.speed) && t - back[0] >= 300 && (back[2] - d.speed) * 1000 / (t - back[0]) >= 6) slowingUntil = Date.now() + 800;
             const now = Date.now(), hold = settings.get('peakHold') * 1000;
             if (d.rpm >= peakRpm || (hold > 0 && now - peakRpmT > hold)) { peakRpm = d.rpm; peakRpmT = now; }
             sessionRpm = Math.max(sessionRpm, d.rpm);
@@ -143,7 +171,7 @@ mgu.run({
                 if (hi > 3000 && d.rpm < hi * 0.82 && (!lastShift || Date.now() - lastShift.at > 800)) recordShift(t, '?', '?');
             }
             if (G.isNum(g)) lastGear = g;
-        }, () => { recent.length = 0; lastGear = null; });
+        }, () => { recent.length = 0; lastGear = null; screenCue = null; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); });
 
         /* ---------- rev bar geometry + static background (cached) ---------- */
         const BW = BAR.x1 - BAR.x0 - BAR.slant, BH = BAR.y1 - BAR.y0;
@@ -202,12 +230,12 @@ mgu.run({
             });
         }
 
-        function shiftLights(cv, t, rpm, sp, on) {
+        /** The 12 lights: they count from cue.from to cue.at and strobe while cue.shift (the HUD's cue). */
+        function shiftLights(cv, t, rpm, cue, on) {
             const cols = ledColors(t);
             const x0 = GX - 330, w = 660, gap = 10, lw = (w - gap * (N_LEDS - 1)) / N_LEDS, y = 48, h = 30;
-            const start = sp - LED_RANGE;
-            const lit = G.isNum(rpm) ? Math.floor(G.clamp((rpm - start) / LED_RANGE, 0, 1) * N_LEDS) : 0;
-            const strobe = G.isNum(rpm) && rpm >= sp;
+            const lit = G.isNum(rpm) && !cue.shift ? Math.ceil(G.clamp((rpm - cue.from) / (cue.at - cue.from), 0, 1) * (N_LEDS - 1)) : 0;
+            const strobe = cue.shift;
             for (let i = 0; i < N_LEDS; i++) {
                 const x = x0 + i * (lw + gap);
                 let c = withAlpha(cols[i], 0.12);
@@ -229,14 +257,16 @@ mgu.run({
             const sx = BAR.x0 + barX(sp.rpm);                                                   // shift point mark
             cv.fillRect(sx + BAR.slant - 2, BAR.y0 - 14, 4, 12, t.warn);
             const rpm = d.rpm;
-            const shiftNow = G.isNum(rpm) && rpm >= sp.rpm;
+            // the cue from the last sample; before any sample, the plain shift point
+            const cue = screenCue || Hud.shiftCue({}, rpm, now, sp.rpm, redline(), 0);
+            const shiftNow = G.isNum(rpm) && cue.shift;
             // setting "flash" on: lights, gear and SHIFT blink (GPU renderer: 8 Hz clock phase;
             // software, few fps: alternate every frame) and the screen flashes red. Off: they
             // just turn solid red at the shift point, nothing blinks.
             const flash = settings.get('flash');
             blink = shiftNow && flash ? (ctx.display.active() ? Math.floor(now / 62) % 2 === 0 : !blink) : false;
             const redNow = shiftNow && (!flash || blink);
-            shiftLights(cv, t, rpm, sp.rpm, redNow);
+            shiftLights(cv, t, rpm, cue, redNow);
             if (shiftNow && flash && blink) {
                 cv.gradientRect(0, 0, W, H, [[0, withAlpha(t.crit, 0.55)], [0.5, withAlpha(t.crit, 0.22)], [1, withAlpha(t.crit, 0.5)]]);
                 const fr = withAlpha('#ff2a2a', 0.9);                                            // red frame
@@ -270,6 +300,7 @@ mgu.run({
             const g = d.gear, st = d.stage;
             const gs = st === 'P' || st === 'R' || st === 'N' ? st : g === -1 ? 'R' : G.isNum(g) && g > 0 ? String(g) : st === 'D' ? 'D' : g === 0 ? 'N' : '-';
             cv.text(gs, GX, 500, 200, redNow ? '#ff2a2a' : t.text, { align: 'center', font: 'gear' });
+            Hud.drawDown(cv, GX + 120, 470, downshift(), 2);                                // downshift cue
             if (d.gearGuessed && G.isNum(g) && g > 0) cv.text('EST.', GX + 90, 352, 22, t.dim, { font: 'bold', spacing: 1 });
             if (shiftNow) cv.text('SHIFT', GX + 150, 436, 30, redNow ? '#ff2a2a' : withAlpha('#ff2a2a', 0.5), { font: 'bold', spacing: 3 });
 
@@ -353,36 +384,93 @@ mgu.run({
             }
         }
 
+        /* ---------- Learned page: what Redline has learned from this car, each with a reset ---------- */
+        function drawLearned(cv, t) {
+            // torque curve (full load), from the car's torque signal
+            const cp = G.panel(cv, t, 24, 44, 760, 468, 'Torque curve (full load)');
+            G.button(cv, t, 784 - 20 - 150, 56, 150, 40, 'Reset', () => { shiftMap.forget(); return render(); }, { key: 'resetMap', confirm: true, color: t.warn });
+            const pts = shiftMap.curve(), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
+            G.chart(cv, t, 44, 116, 720, Math.max(200, cp.y + cp.h - 136), {
+                xMin: 1000, xMax: maxRpm(), xStep: 1000, xFmt: (v) => String(v / 1000), xUnit: 'x1000 rpm',
+                yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: 'Nm', padTop: 22,
+                series: pts.length ? [{ pts: pts, color: t.accent, width: 3 }] : [],
+                empty: 'Nothing yet: full-throttle pulls, a few from low rpm, fill it in',
+            });
+
+            // shift points and gear ratios, the redline and the reaction time
+            G.panel(cv, t, 808, 44, 768, 468, 'Shift points');
+            G.button(cv, t, 1576 - 20 - 170, 56, 170, 40, 'Reset all', () => { shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead(); return render(); }, { key: 'resetAll', confirm: true, color: t.warn });
+            const table = shiftMap.table();
+            let y = 130;
+            cv.text('GEAR', 836, y, 18, t.dim, { font: 'bold', spacing: 1 });
+            cv.text('SHIFT AT', 1080, y, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
+            cv.text('RPM PER KM/H', 1300, y, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
+            for (let g = 1; g <= 7; g++) {
+                y += 32;
+                const k = shiftMap.ratio(g), pr = shiftMap.ratioProgress(g), at = table[g];
+                cv.text(g + ' > ' + (g + 1), 836, y, 22, t.text, { font: 'bold' });
+                cv.text(G.isNum(at) ? String(Math.min(at, redline() - 100)) : '--', 1080, y, 24, G.isNum(at) ? t.text : t.dim, { align: 'right', font: 'num' });
+                cv.text(k ? k.toFixed(1) : pr.n ? 'learning ' + pr.n + '/' + pr.of : '--', 1300, y, k ? 22 : 18, k ? t.text : t.dim, { align: 'right', font: k ? 'num' : 'bold' });
+            }
+            // no shift point yet though ratios are known: the curve has to reach the redline
+            if (!Object.keys(table).length && shiftMap.ratio(1)) { cv.text('Shift points need full-throttle pulls up to the redline (' + redline() + ')', 836, y + 26, 15, t.dim); y += 18; }
+            const lim = limiter.value(), lead = hud ? hud.learned() : null;
+            y += 46;
+            cv.fillRect(836, y - 30, 712, 1, withAlpha(t.tick, 0.6));
+            cv.text('REDLINE', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
+            cv.text(redline() + ' rpm  ·  ' + redlineSource(), 990, y, 20, t.text, { font: 'bold' });
+            if (!lim && !manualRedline() && settings.get('learnRedline') !== false) cv.text('learns after two hits of the limiter, oil warm', 990, y + 20, 15, t.dim);
+            G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { limiter.forget(); return render(); }, { key: 'resetRedline', confirm: true, color: t.warn });
+            y += 46;
+            cv.text('REACTION', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
+            cv.text(lead ? lead.ms + ' ms early  ·  ' + (lead.auto ? 'learned from ' + lead.shifts + ' shifts' : 'set by hand') : '--', 990, y, 20, t.text, { font: 'bold' });
+            if (resetArmed()) cv.text('Press Reset learned again to forget it all', 836, y + 34, 18, t.warn, { font: 'bold' });
+            G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { if (hud) hud.resetLead(); return render(); }, { key: 'resetLead', confirm: true, color: t.warn });
+        }
+
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t, d) {
-            G.frame(cv, t, ['Tach', 'Shift log'], page, [d.demo && { text: 'DEMO' }]);
+            G.frame(cv, t, ['Tach', 'Shift log', 'Learned'], page, [d.demo && { text: 'DEMO' }]);
         }
 
         async function render() {
             const t = ctx.theme(), d = car.data(), now = Date.now();
             let cv;
             cv = ctx.canvas(W, H).clear(t.bg);
-            if (page === 0) drawTach(cv, t, d, now); else drawLog(cv, t);
+            if (page === 0) drawTach(cv, t, d, now); else if (page === 1) drawLog(cv, t); else drawLearned(cv, t);
             header(cv, t, d);
             await ui.image('MAIN_GFX', cv);
         }
 
         /* ---------- buttons ---------- */
-        const flip = () => { page = 1 - page; return render(); };
+        const PAGES = 3;
+        const flip = () => { page = (page + 1) % PAGES; return render(); };
+        const flipBack = () => { page = (page + PAGES - 1) % PAGES; return render(); };
         ui.onClick('BTN_PAGE', flip);
-        ui.onClick('BTN_PREV', flip);
-        ctx.onTab((i) => i !== page && flip());
+        ui.onClick('BTN_PREV', flipBack);
+        ctx.onTab((i) => { if (i !== page && i >= 0 && i < PAGES) { page = i; return render(); } return null; });
         // Reset max: on the Shift log page, or the bar's button
         function resetMax() {
             peakRpm = 0; peakRpmT = 0; sessionRpm = 0; peakSpeed = 0; limiterHits = 0; shifts = []; lastShift = null;
             log.info('peaks reset'); return render();
         }
         ui.onClick('BTN_RESET', resetMax);
+        // where the HMI draws the bar (software renderer) the Learned page has no buttons: this bar
+        // button forgets everything learned, on a second press within 5 s
+        let resetLearnAt = 0;
+        const resetArmed = () => Date.now() - resetLearnAt < 5000;
+        ui.onClick('BTN_RESET_LEARNED', () => {
+            if (!resetArmed()) { resetLearnAt = Date.now(); page = 2; return render(); }
+            resetLearnAt = 0; shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead();
+            log.info('learned data reset from the bar button');
+            return render();
+        });
+        ctx.hideButton('BTN_RESET_LEARNED');
         ctx.hideButton('BTN_RESET');
         // every screen refresh (60 fps) with the GPU renderer; 15 fps in software (PNG frames)
         ctx.loop('MAIN', 15, render);
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
-        hud = Hud.start(ctx, { data: () => car.data(), shiftPoint, redline, maxRpm, gearbox });
+        hud = Hud.start(ctx, { data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, downshift });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });
