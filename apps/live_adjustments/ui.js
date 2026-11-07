@@ -6,14 +6,20 @@
  * for the tune picked in Settings (tune.js); 'xDrive' with the experimental setting (xdrive.js).
  *
  * House style of the other apps: an "Exhaust Flap" title with the M→white underline up
- * top, the twin tailpipes seen end-on with the butterfly valves opening/closing in the
- * middle, the big state word, and the three mode buttons (OEM / Open / Close) across the
- * bottom — the selected one filled red, like the other apps (drawn with G.button; the
- * HMI bar is hidden in main.js). A fifth arg `act` carries the press callbacks.
+ * top, the rear silencer in the middle (one silencer, two tailpipes; the flap is in the RIGHT
+ * one, as on the car, its butterfly turning in the bore; smoke out of the left tailpipe always
+ * and out of the right one as far as the flap is open), the big state word, the status line
+ * (auto.js: the driving mode, the Close rpm guard, hold) and the four buttons (Open / Close /
+ * OEM / Drive mode) across the bottom — the selected one filled red, like the other apps (drawn
+ * with G.button; the HMI bar is hidden in main.js). A fifth arg `act` carries the press callbacks.
  *
- * GPU-safe: only circle / arc / roundRect / strokeRoundRect / line / text / gradientRect
- * (the car's Recorder has no cv.convex / N-point polygon fill).
+ * GPU-safe: the silencer is a cached layer (muffler_img.js), the rest circle / roundRect /
+ * strokeRoundRect / line / convex quad / text.
  */
+
+const IMG = require('./muffler_img');
+const { Canvas } = require('./kit/canvas');
+const { t: translate } = require('./kit/i18n');
 
 const W = 1600, H = 520;
 
@@ -41,8 +47,8 @@ function draw(cv, G, t, v, act) {
     if (page === 'Active Sound') return drawAsd(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'xDrive') return drawXDrive(cv, G, t, v.xdrive || {}, act || {}, bottom);
 
-    // --- valve figure: twin tailpipes seen end-on, butterfly opening/closing ---
-    drawExhaust(cv, G, t, W / 2 - 310, G.TOP + 18, 620, 250 + bottom - G.BOTTOM, v);
+    // --- the rear silencer, the flap's butterfly in the right tailpipe ---
+    drawMuffler(cv, G, t, 100, G.TOP + 12, W - 200, bottom - 142 - G.TOP, v);
 
     // --- state word (big), centered below the figure (no DME/version clutter) ---
     const word = v.confirmed !== 'UNKNOWN' ? v.confirmed : v.requested;
@@ -53,26 +59,43 @@ function draw(cv, G, t, v, act) {
     // NOTHING, and no "sending…" clutter either.
     if (v.error) {
         cv.text('! ' + v.error, W / 2, bottom - 64, 14, t.crit, { align: 'center', font: 'label' });
+    } else if (v.note) {
+        // Drive mode's driving mode, the Close rpm pause or the no-rpm fail-safe, hold: one line under the word
+        cv.text(noteText(v.note.text), W / 2, bottom - 64, 17, v.note.warn ? (t.warn || '#d29922') : t.dim,
+            { align: 'center', font: 'label', literal: true });
     }
 
-    // --- the three mode buttons on the canvas, the selected one red — like the other
+    // --- the four mode buttons on the canvas, the selected one red — like the other
     // apps (G.button draws when the app owns the screen; the HMI bar is hidden). ---
     drawButtons(cv, G, t, v, act, bottom);
     return cv;
 }
 
-/** OPEN · CLOSE · OEM across the bottom; the selected (requested) mode is filled red. */
+/**
+ * The status line, from the shared catalogues piece by piece ('Sport · holding'); the rpm guard's line as one
+ * sentence with its rpm figure kept. Drawn literal: the pieces are already translated.
+ */
+const PAUSED = /^Close paused above (.+) rpm · the car has the flap$/;
+function noteText(s) {
+    const m = PAUSED.exec(s);
+    if (m) return translate('Close paused above {rpm} rpm · the car has the flap').replace('{rpm}', m[1]);
+    const whole = translate(s);
+    return whole !== s ? whole : s.split(' · ').map((p) => translate(p)).join(' · ');
+}
+
+/** OPEN · CLOSE · OEM · DRIVE MODE across the bottom; the selected one (v.selected, else v.requested) filled red. */
 function drawButtons(cv, G, t, v, act, bottom) {
     act = act || {};
     const modes = [
         { k: 'OPEN', label: 'Open', run: act.open },
         { k: 'CLOSED', label: 'Close', run: act.close },
         { k: 'OEM', label: 'OEM', run: act.oem },
+        { k: 'DRIVE', label: 'Drive mode', run: act.drive },      // follow the driving mode (auto.js)
     ];
     const bw = 236, bh = 56, gap = 30, by = bottom - 56;
     let bx = (W - (modes.length * bw + (modes.length - 1) * gap)) / 2;
     for (const m of modes) {
-        const on = m.k === v.requested;
+        const on = m.k === (v.selected || v.requested);
         const busy = !!v.busy && m.k !== 'OEM';     // OEM stays pressable: it is queued, never dropped
         const opts = on
             ? { color: t.crit || '#ef2b2d', primary: true, key: 'la_' + m.k, busy }   // selected = red
@@ -237,46 +260,74 @@ function drawFan(cv, G, t, cx, cy, r, col) {
 }
 
 /**
- * One tailpipe tip seen end-on: a chromed round bezel with a dark bore and the butterfly
- * valve inside. open 0 = shut (plate covers the bore), 1 = open (plate edge-on, bore
- * reveals). Built from concentric discs for a metallic look.
+ * The silencer, cut out (the panel shows through), centred in x, y, w, h; the flap's butterfly in the RIGHT tailpipe,
+ * smoke out of the left one always and out of the right one as far as the flap is open.
+ * v.angle: 0 = shut .. 1 = open (eased in main.js).
  */
-function drawTip(cv, G, t, cx, cy, r, open, accent) {
-    const wa = G.withAlpha;
-    cv.circle(cx, cy + 4, r + 6, wa('#000000', 0.32));      // soft drop shadow
-    cv.circle(cx, cy, r + 2, '#0b0e12');                     // outer edge
-    cv.circle(cx, cy, r, '#9aa1ac');                         // chrome base
-    cv.circle(cx, cy, r * 0.93, '#565d68');                  // shade ring
-    cv.circle(cx, cy, r * 0.87, '#cdd2da');                  // bright lip
-    cv.circle(cx, cy, r * 0.79, '#272c34');                  // groove
-    cv.circle(cx, cy, r * 0.71, '#9ea5af');                  // inner lip
-    const rb = r * 0.65;
-    cv.circle(cx, cy, rb, '#0a0c10');                        // dark bore
-    cv.circle(cx, cy - rb * 0.1, rb * 0.9, '#050608');       // bore depth
-    if (open > 0.4) {                                        // flow glow when open
-        const g = (open - 0.4) / 0.6;
-        cv.circle(cx, cy, rb * 0.72, wa(accent, 0.13 * g));
-        cv.circle(cx, cy, rb * 0.4, wa(accent, 0.20 * g));
+function drawMuffler(cv, G, t, x, y, w, h, v) {
+    const open = v.angle == null ? (v.confirmed === 'OPEN' ? 1 : 0) : Math.max(0, Math.min(1, v.angle));
+    // the picture: a cached layer (drawn once into a texture, one blit a frame), at its own size
+    const ix = Math.round(x + (w - IMG.LW) / 2), iy = Math.round(y + Math.max(0, (h - IMG.LH) / 2));
+    const pic = G.layer('live_adjustments_muffler', IMG.LW, IMG.LH, (c) => IMG.draw(c), cv.textScale);
+    // the software renderer would play the layer's shaded triangles in flat colours: it gets the picture as pixels
+    // instead (made the first time it asks; the GPU never reads pic.soft)
+    if (pic && !pic.mufflerSoft) {
+        let px = null;
+        Object.defineProperty(pic, 'soft', {
+            configurable: true, enumerable: true,
+            get() { if (!px) px = IMG.soft(new Canvas(pic.w, pic.h)); return px; },
+            set(s) { px = s; },
+        });
+        pic.mufflerSoft = true;
     }
-    // butterfly plate: a vertical pill whose width shrinks as it opens
-    const ws = Math.max(0.10, Math.cos(open * Math.PI / 2 * 0.95));
-    const pw = 2 * rb * ws;
-    cv.roundRect(cx - pw / 2, cy - rb, pw, 2 * rb, Math.min(pw / 2, rb), '#c7cdd5');
-    if (pw > 12) cv.roundRect(cx - pw * 0.28, cy - rb * 0.92, pw * 0.3, rb * 1.84, Math.min(pw * 0.15, rb), wa('#ffffff', 0.28));
-    cv.line(cx, cy - rb, cx, cy + rb, 2, wa('#20242b', 0.8));
-    cv.circle(cx, cy, 5.5, '#1a1e24'); cv.circle(cx, cy, 2.5, '#434a53');   // hub
-    cv.circle(cx - r * 0.4, cy - r * 0.48, r * 0.1, wa('#ffffff', 0.5));    // specular dot
+    cv.blit(pic, ix, iy);
+    const L = IMG.BORES.left, R = IMG.BORES.right;
+    const rx = ix + R.c[0], ry = iy + R.c[1], lx = ix + L.c[0], ly = iy + L.c[1];
+    flapPlate(cv, G, rx, ry, R.a, R.b, R.rot, open);
+    const ts = Date.now() / 1000;
+    smoke(cv, G, lx, ly, -1, 1, ts, 0.0);
+    smoke(cv, G, rx, ry, 1, open, ts, 0.37);
 }
 
-/** Twin tailpipes seen end-on, with the butterfly valves opening/closing. */
-function drawExhaust(cv, G, t, x, y, w, h, v) {
-    const a = (v.angle == null ? (v.confirmed === 'OPEN' ? 1 : v.confirmed === 'UNKNOWN' ? 0.5 : 0) : v.angle);
-    const accent = (v.confirmed === 'OPEN' || v.requested === 'OPEN') ? (t.accent2 || '#81c4ff') : (t.crit || '#ef2b2d');
-    const cx = x + w * 0.5, cy = y + h * 0.5;
-    const r = Math.min(h * 0.40, w * 0.19);
-    const ox = r * 0.8, oy = r * 0.32;        // diagonal offset between the twin tips
-    drawTip(cv, G, t, cx - ox, cy + oy, r, a, accent);   // left/lower
-    drawTip(cv, G, t, cx + ox, cy - oy, r, a, accent);   // right/upper
+/** The butterfly in an elliptic bore (centre cx, cy; semi-axes a along, b across; tilt rot deg): shut it fills the
+ * bore, opening it turns about the shaft across the bore and narrows to a sliver. Convex quads only (GPU-safe). */
+function flapPlate(cv, G, cx, cy, a, b, rot, open) {
+    const ws = Math.max(0.07, Math.cos(open * Math.PI / 2));
+    const cr = Math.cos(rot * Math.PI / 180), sr = Math.sin(rot * Math.PI / 180);
+    const P = (u, w) => [cx + u * cr - w * sr, cy + u * sr + w * cr];
+    const N = 24, ea = a * 0.94 * ws, eb = b * 0.94;
+    // the wedges overlap by half a step: no seam where two meet (software draws each edge soft)
+    const ell = (sa, sb, ox, oy, col) => {
+        for (let i = 0; i < N; i++) {
+            const t0 = i * 2 * Math.PI / N, t1 = t0 + 1.5 * Math.PI / N, t2 = t0 + 3 * Math.PI / N;
+            cv.quad([P(ox, oy), P(ox + Math.cos(t0) * sa, oy + Math.sin(t0) * sb), P(ox + Math.cos(t1) * sa, oy + Math.sin(t1) * sb),
+                P(ox + Math.cos(t2) * sa, oy + Math.sin(t2) * sb)], col);
+        }
+    };
+    ell(ea, eb, 0, 0, '#8e959e');                                         // the plate
+    ell(ea * 0.55, eb * 0.45, -ea * 0.18, -eb * 0.32, '#a7acb3');            // sheen (the plate + 22 % white, opaque)
+    const s0 = P(0, -b * 0.97), s1 = P(0, b * 0.97);
+    cv.line(s0[0], s0[1], s1[0], s1[1], 2.5, G.withAlpha('#20242b', 0.9));           // the shaft
+    const c0 = P(0, 0);
+    cv.circle(c0[0], c0[1], 3.2, '#1a1e24');
 }
 
-module.exports = { draw, W, H };
+/** Exhaust smoke out of a tailpipe at ox, oy: puffs that drift outward (dir -1 left / 1 right), rise, grow and fade.
+ * amt 0..1 = how much; a function of the time only, so every frame of the loop moves it on. */
+function smoke(cv, G, ox, oy, dir, amt, ts, seed) {
+    if (amt < 0.04) return;
+    const N = 10, period = 2.4;
+    for (let i = 0; i < N; i++) {
+        const p = ((ts / period + i / N + seed) % 1 + 1) % 1;
+        const x = ox + dir * (24 + p * 150) + Math.sin(ts * 1.7 + i * 1.3) * 7 * p;
+        const y = oy + (p * 18 - p * p * 95);
+        const r = 7 + p * 40;
+        const al = amt * 0.42 * (1 - p) * Math.min(1, p * 5);
+        if (al < 0.004) continue;
+        cv.circle(x, y, r, G.withAlpha('#d8dce2', al * 0.45));
+        cv.circle(x - r * 0.12, y - r * 0.1, r * 0.66, G.withAlpha('#e6e9ee', al * 0.55));
+        cv.circle(x - r * 0.18, y - r * 0.16, r * 0.36, G.withAlpha('#f2f4f7', al * 0.6));
+    }
+}
+
+module.exports = { draw, noteText, W, H };

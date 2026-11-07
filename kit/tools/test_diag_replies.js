@@ -23,6 +23,8 @@ fs.writeFileSync(path.join(src, 'kit/mgu.js'), 'module.exports = { run(app) { mo
 fs.writeFileSync(path.join(src, 'kit/gauges.js'), 'module.exports = require("./any")({ TOP: 60, BOTTOM: 500, MARGIN: 12, pageBottom: () => 500 });\n');
 fs.writeFileSync(path.join(src, 'kit/canvas.js'), 'class Canvas { constructor() { return require("./any")({ own: true }); } }\nmodule.exports = { Canvas };\n');
 fs.writeFileSync(path.join(src, 'kit/car.js'), 'module.exports = class { data() { return { demo: true }; } };\n');
+fs.writeFileSync(path.join(src, 'kit/record.js'), 'module.exports = { OP: {} };\n');           // the silencer picture (muffler_img.js)
+fs.writeFileSync(path.join(src, 'kit/i18n.js'), 'module.exports = { t: (s) => s, getLanguage: () => "en" };\n');
 process.on('exit', () => fs.rmSync(src, { recursive: true, force: true }));
 
 const { Diag } = require(path.join(src, 'kit/diag'));
@@ -80,7 +82,7 @@ const echo = (sid, data) => [sid + 0x40].concat(data);
     const buttons = [];
     UI.draw(anyOf({ own: true }), anyOf({ TOP: 60, BOTTOM: 500, MARGIN: 12, pageBottom: () => 500,
         button: (cv, t, x, y, w, h, label, run, o) => buttons.push([label, !!o.busy]) }), anyOf({}), c.view(), {});
-    assert.deepStrictEqual(buttons, [['Open', true], ['Close', true], ['OEM', false]], 'only OEM stays pressable while a command is in flight');
+    assert.deepStrictEqual(buttons, [['Open', true], ['Close', true], ['OEM', false], ['Drive mode', true]], 'only OEM stays pressable while a command is in flight');
     await later(10);
     assert.deepStrictEqual(b.sent.filter((s) => s[0] === 0x2F), [OPEN], 'a second flap command went out while one was in flight');
     b.d.emit('frame', { ecu: 0x12, uds: [0x6F, 0x60, 0xFD, 0x03, 0x03, 0xE8] });
@@ -151,7 +153,7 @@ const echo = (sid, data) => [sid + 0x40].concat(data);
     assert(REFRESH_KEYS.every((k) => keys.includes(k)), 'REFRESH_KEYS names a key that is not a setting: ' + REFRESH_KEYS);
     const sent = [];
     let onResp, awake = true;
-    const signals = { proxy: async () => ({}), on: async (p, n, fn) => { onResp = fn; }, onAvailable: async (p, fn) => fn(true),
+    const signals = { watch: async () => ({}), proxy: async () => ({}), on: async (p, n, fn) => { onResp = fn; }, onAvailable: async (p, fn) => fn(true),
         call: async (p, m, a) => {
             sent.push(a.serviceID);
             const did = [...a.udsData].slice(0, 2);

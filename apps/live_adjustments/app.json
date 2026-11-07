@@ -1,8 +1,8 @@
 {
   "id": "live_adjustments",
   "title": "Engine Config",
-  "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
-  "version": "0.7.10",
+  "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link, or following the driving mode (Sport open, Eco Pro closed); held against the DME's timeout, Close handed back above a set engine speed. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
+  "version": "0.8.0",
   "vendor": "custom",
   "loggingId": "OAA0",
   "iconGlyph": "sliders",
@@ -28,6 +28,9 @@
     },
     "de.bmw.infrastructure.VehicleCondition": {
       "VehicleCondition": "s"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "statusFESVehicleDynamicSwitchHMI": "rs"
     }
   },
   "screens": [
@@ -47,6 +50,10 @@
         [
           "BTN_OEM",
           "OEM"
+        ],
+        [
+          "BTN_DRIVE",
+          "Drive mode"
         ],
         [
           "BTN_PAGE",
@@ -73,6 +80,62 @@
         [
           "on",
           "Armed · actuates the real valve"
+        ]
+      ]
+    },
+    {
+      "key": "hold",
+      "label": "Hold Open / Close",
+      "type": "choice",
+      "default": "on",
+      "options": [
+        [
+          "on",
+          "On · sent again every 15 s"
+        ],
+        [
+          "off",
+          "Off · the car takes over after ~20 s"
+        ]
+      ]
+    },
+{
+      "key": "closeLimit",
+      "label": "Close: hand back above",
+      "type": "choice",
+      "default": "4000",
+      "options": [
+        [
+          "2500",
+          "2,500 rpm"
+        ],
+        [
+          "3000",
+          "3,000 rpm"
+        ],
+        [
+          "3500",
+          "3,500 rpm"
+        ],
+        [
+          "4000",
+          "4,000 rpm"
+        ],
+        [
+          "4500",
+          "4,500 rpm"
+        ],
+        [
+          "5000",
+          "5,000 rpm"
+        ],
+        [
+          "5500",
+          "5,500 rpm"
+        ],
+        [
+          "off",
+          "Never (not recommended)"
         ]
       ]
     },
