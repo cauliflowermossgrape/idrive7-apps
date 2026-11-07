@@ -150,6 +150,32 @@ function optsFrom(settings) {
     };
 }
 
+/**
+ * The car's driving mode (FES statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, a
+ * name or a number, as Live Data and Live Adjustments read it) -> 'sport', 'comfort', 'eco' or null.
+ * Adaptive, initialising and anything unknown are null: the HUD then shows as set up.
+ */
+function driveModeOf(raw) {
+    if (raw === undefined || raw === null) return null;
+    const n = Number(raw);
+    if (!isNaN(n) && String(raw).trim() !== '') return n >= 1 && n <= 3 ? 'sport' : n >= 4 && n <= 6 ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : null;
+    const s = String(raw).toUpperCase();
+    return /SPORT/.test(s) ? 'sport' : /ECO/.test(s) ? 'eco' : /COMFORT|TRAFFIC/.test(s) ? 'comfort' : null;
+}
+/**
+ * What the HUD does in this driving mode (setting hudComfort): 'all', 'lights' (shift lights, rev
+ * bar and gear only) or 'hide'. Sport and an unknown mode always 'all'.
+ */
+function calmFor(drive, setting) {
+    if (drive !== 'comfort' && drive !== 'eco') return 'all';
+    return setting === 'lights' || setting === 'hide' ? setting : 'all';
+}
+/** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
+function calmOpts(o) {
+    return Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, limit: false,
+        oil: false, coolant: false, gearbox: false, outside: false, chip: 'off', peak: false, shake: false });
+}
+
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
 // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
 const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
@@ -423,7 +449,7 @@ function start(ctx, src) {
         const sp = dm ? { rpm: dm.shift, cold: false } : src.shiftPoint(d.oil, d.gear), redline = dm ? 6550 : src.redline();
         const demoKey = dm ? 'play' : !!d.demo;
         if (demoKey !== lastDemo) { lastDemo = demoKey; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
-        const o = optsNow(), lights = o.lights;
+        const o = calm(playing) === 'lights' ? calmOpts(optsNow()) : optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const show = dm ? d.rpm : smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
@@ -511,6 +537,8 @@ function start(ctx, src) {
 
     /** The drawing options from the settings. */
     function optsNow() { return optsFrom(settings); }
+    /** What the driving mode asks of the HUD now ('all', 'lights', 'hide'); "Play on HUD" always shows all. */
+    function calm(playing) { return playing ? 'all' : calmFor(src.driveMode ? src.driveMode() : null, settings.get('hudComfort')); }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
@@ -526,8 +554,22 @@ function start(ctx, src) {
      * for the target once the layer has content, so idle / acquiring must draw.
      */
     const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
+    let hiddenLogged = false;
     const tick = safe('tick', () => {
-        if (!cr || !layer || !cr.ready) return;
+        if (!cr || !cr.ready) return;
+        // Comfort / Eco Pro on "Hide": the image is dropped (BMW's own HUD shows), the timer keeps
+        // running to bring it back when the mode changes
+        if (shown === 'tach') {
+            if (calm(Date.now() < demoUntil) === 'hide') {
+                if (layer) { cr.drop(layer); layer = 0; }
+                if (src.gearbox) src.gearbox.stop();
+                if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
+                return;
+            }
+            if (!layer) { makeLayer(); if (!layer) return; }
+            if (hiddenLogged) { hiddenLogged = false; log.info('hud: back on'); }
+        }
+        if (!layer) return;
         // nothing to draw while the HUD isn't showing (behind BMW's content, disabled, unavailable):
         // the first frame after it is sent whole. No target event yet: draw (it may never come).
         if (paused()) {
@@ -568,13 +610,20 @@ function start(ctx, src) {
             o.style, o.palette, o.gear, o.bar, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
     }
 
-    const showTach = safe('tach', () => {
+    /** The tach's image layer at the current place and size, with fresh canvases (the next frame is sent whole). */
+    function makeLayer() {
         const r = rect();
-        if (shown === 'tach') { cr.set(layer, r); return; }
-        dropLayer();
         layer = cr.image({ target: 'hud', klass: 'overlay', x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
         if (!layer) { log.warn('hud: tach layer refused by the client'); return; }
-        cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true;
+        cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true; lastKey = '';
+    }
+
+    const showTach = safe('tach', () => {
+        const r = rect();
+        if (shown === 'tach') { if (layer) cr.set(layer, r); return; }
+        dropLayer();
+        makeLayer();
+        if (!layer) return;
         shown = 'tach';
         if (src.gearbox) src.gearbox.start();
         timer = setInterval(tick, Math.round(1000 / fps()));
@@ -627,6 +676,7 @@ function start(ctx, src) {
         if (!cr || !cr.ready) return NOT_RUNNING;
         if (target && target.disabled) return 'HUD: off after display errors';
         if (m === 'test') return 'HUD: test pattern';
+        if (shown === 'tach' && !layer) return 'HUD: hidden in Comfort / Eco Pro';
         const st = target ? target.state : '';
         if (st === 'shown') return 'HUD: on';
         if (st === 'parked' || st === 'waiting') return 'HUD: giving way to BMW';
@@ -652,4 +702,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, readoutsFor, MAX_READOUTS, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, readoutsFor, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

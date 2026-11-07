@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -12,9 +12,10 @@
       "statusEngineTemperature": "rs"
     },
     "de.bmw.infotainment.drivingexcitement.FES": {
-      "_optional": "engine torque (per-gear shift points) and boost (HUD)",
+      "_optional": "engine torque (per-gear shift points), boost and the driving mode (HUD)",
       "statusActualValueTorque2": "rs",
-      "statusSwitchDriveDynamicSport2": "rs"
+      "statusSwitchDriveDynamicSport2": "rs",
+      "statusFESVehicleDynamicSwitchHMI": "rs"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs",
@@ -112,6 +113,8 @@
      "aliases": {"true": "burst", "false": "off"},
      "options": [["burst", "Burst (pops, ring)"], ["simple", "Simple"], ["off", "Off"]]},
     {"key": "hudPeak", "label": "Peak marker", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}, "group": "HUD style"},
+    {"key": "hudComfort", "label": "In Comfort / Eco Pro", "type": "choice", "default": "all", "when": {"hud": ["on", "test"]}, "group": "HUD style",
+     "options": [["all", "Show all"], ["lights", "Shift lights and gear only"], ["hide", "Hide (BMW's own HUD)"]]},
     {"key": "hudShake", "label": "Shake on the limiter", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}, "group": "HUD style"},
     {"key": "hudUnlit", "label": "Unlit segments", "type": "choice", "default": "dim", "when": {"hud": ["on", "test"]}, "group": "HUD style",
      "options": [["dim", "Dim"], ["hidden", "Hidden"]]},

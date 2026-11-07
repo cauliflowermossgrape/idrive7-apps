@@ -102,6 +102,7 @@ mgu.run({
         // it has moved (some cars send a constant), as Car Vitals does
         const boost = { v: null, t: 0, first: null, moved: false };
         const gearMode = { v: null, seen: [] };
+        const driveMode = { v: null, seen: [] };
         /** 'M' (shifting by hand), 'S', 'D', or null when the car hasn't said (then nothing is held back). */
         const modeNow = () => (gearMode.v && !car.data().demo ? gearMode.v : null);
         // the HUD's extra readouts, as Live Data scales them: accelerator pedal (%), g sideways and
@@ -114,6 +115,12 @@ mgu.run({
             statusActualValueTorque2: (v) => {
                 const raw = v && v.actualValueTorqueCrankshaft;
                 if (typeof raw === 'number' && raw < 4095) { torque.v = Math.max(0, raw * 0.5 - 1023.5); torque.t = Date.now(); }
+            },
+            // the driving mode (Sport / Comfort / Eco Pro), for "In Comfort / Eco Pro" on the HUD
+            statusFESVehicleDynamicSwitchHMI: (v) => {
+                const raw = v && v.actualValueModeDrivingExperience;
+                driveMode.v = Hud.driveModeOf(raw);
+                if (driveMode.seen.indexOf(String(raw)) < 0 && driveMode.seen.length < 16) { driveMode.seen.push(String(raw)); log.info('driving mode: ' + JSON.stringify(raw) + ' -> ' + driveMode.v); }
             },
             statusSwitchDriveDynamicSport2: (v) => {
                 const raw = v && v.displayBoostPressure;
@@ -577,6 +584,8 @@ mgu.run({
             if (studio.panel === 'look') {
                 choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
                 // temperatures only while cold, warming or hot (invisible at operating temperature), or always
+                // what the HUD does in Comfort and Eco Pro (Sport always shows all of it)
+                choiceRow(cv, t, 414, 'COMFORT', 'hudComfort', settings.get('hudComfort') || 'all', [['all', 'Show all'], ['lights', 'Lights + gear'], ['hide', 'Hide']], false, 720);
                 choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']]);
             } else if (studio.panel === 'gauge') {
                 // the gauge's parts; tap to add or remove
@@ -623,7 +632,7 @@ mgu.run({
             }
         }
         const STUDIO_HINT = {
-            look: 'Layouts: tap one above; temperatures show only cold, warming or hot unless Always',
+            look: 'Comfort / Eco Pro: all, only lights + gear, or hidden; Sport always shows all',
             gauge: 'Tap to add or remove; turn everything else off for just the lights',
             readouts: 'Up to four show, in this order; a cold or hot one keeps its place. Units: Settings',
             effects: 'Grade after an upshift, downshift arrows, peak line, limiter shake',
@@ -760,6 +769,8 @@ mgu.run({
             peak: () => peakRpm,
             chip: () => (lastShift && lastShift.mode !== 'D' && lastShift.mode !== 'S' && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             mode: modeNow,
+            // 'sport', 'comfort', 'eco' or null (unknown, Adaptive, the demo data): the HUD shows as set up
+            driveMode: () => (car.data().demo ? null : driveMode.v),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
             extras: () => (car.data().demo ? null : {

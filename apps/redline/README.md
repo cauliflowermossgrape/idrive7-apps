@@ -67,8 +67,8 @@ cars with a HUD, but nobody has checked yet.
 - **Picking:** on the right, the six layouts; tap one to use it.
 - **Editing:** under the preview, five tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
-  - **Look:** colours, and temperatures hidden at operating temperature (only blue, yellow or red
-    ones show) or always shown.
+  - **Look:** colours, what the HUD does in Comfort / Eco Pro, and temperatures hidden at
+    operating temperature (only blue, yellow or red ones show) or always shown.
   - **Gauge:** Rev bar (the main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M), and the
     shift light style (GT3, filling from the outside in, or left to right). Every part can be
     turned off, so the HUD can be, say, the VFD shift lights alone.
@@ -91,6 +91,18 @@ cars with a HUD, but nobody has checked yet.
   a ring from it and fades it out. *Simple* shows the plain word; *Off* shows nothing.
 - **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
   the bar, lights and gear flash red.
+
+**By driving mode** (*In Comfort / Eco Pro*): the car's driving mode (FES
+`statusFESVehicleDynamicSwitchHMI`, as Live Data shows it) picks how much the HUD shows.
+- *Show all* (the default): the same in every mode.
+- *Shift lights and gear only*: in Comfort and Eco Pro, the shift lights, rev bar and gear, with
+  no readouts, grade, peak marker or shake.
+- *Hide*: in Comfort and Eco Pro the image is dropped, so BMW's own HUD shows; it comes back as
+  soon as the mode is Sport.
+
+Sport, Sport+ and Sport Individual always show everything. Adaptive, a mode it doesn't know, or
+a car that doesn't send the mode count as Sport, so the HUD never disappears for lack of a signal.
+*Play on HUD* and the HUD looks preview ignore the mode.
 
 **The readouts row** (standard layout), left to right:
 
@@ -136,6 +148,7 @@ layout and colours by picture.
 | Shift grade after each upshift | Burst / Simple / Off |
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
+| In Comfort / Eco Pro | Show all / Shift lights and gear only / Hide (BMW's own HUD) |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.
