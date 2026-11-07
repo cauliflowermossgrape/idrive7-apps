@@ -1227,3 +1227,11 @@ SOOT	碳烟
 LOAD (ADAPTED)	负载（自适应）
 ASH (ADAPTED)	灰分（自适应）
 Reading the engine unit...	正在读取发动机控制单元...
+Exhaust Remote	排气远程控制
+Drive mode	驾驶模式
+Hold Open / Close	保持打开/关闭
+On · sent again every 15 s	开启：每 15 秒重新发送
+Off · the car takes over after ~20 s	关闭：约 20 秒后由车辆控制
+Close: hand back above	关闭解除转速
+Never (not recommended)	从不（不建议）
+Made by	制作

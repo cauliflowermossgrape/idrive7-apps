@@ -16,8 +16,8 @@ Translation by：jaimeen shim
 ## 포함된 작업
 
 - Redline, Service, M Vitals, eDrive, Live Data, G-Force, Warm-Up, Virtual Dyno,
-  Brake Test, Drag Timer, Fault Scanner, Engine Config, Transmission Config,
-  Doom의 공통 설정 및 앱 표시 문구 번역.
+  Brake Test, Drag Timer, Fault Scanner, Engine Config, Exhaust Remote,
+  Transmission Config, Doom, 12V Battery의 공통 설정 및 앱 표시 문구 번역.
 - `kit/runtime/locales/ko.tsv`와 `ko.json`: 한국어 사전 1,774개 항목.
 - Noto Sans CJK KR 기반 한글 글꼴. 번역에 쓰인 모든 글자, KS X 1001의 완성형
   한글 2,350자, 호환 자모, 숫자·단위·기호를 하나의 공용 아틀라스에 포함.
@@ -77,7 +77,7 @@ Python 3와 Node.js 14 이상이 필요합니다. 기존 프로젝트에 이미 
 python kit/tools/make_kit.py --language ko redline service car_vitals edrive warmup gforce
 ```
 
-앱 이름을 생략하면 전체 14개 앱을 한국어로 빌드합니다.
+앱 이름을 생략하면 전체 16개 앱을 한국어로 빌드합니다.
 ```sh
 python kit/tools/make_kit.py --language ko
 ```

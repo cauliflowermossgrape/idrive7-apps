@@ -1,0 +1,397 @@
+{
+  "id": "battery12v",
+  "title": "12V Battery",
+  "description": "The 12 V starter battery as the engine unit (DME) sees it through the intelligent battery sensor: state of charge, state of health, voltage, current, capacity, charge history",
+  "version": "1.6.2",
+  "vendor": "custom",
+  "loggingId": "OAA4",
+  "iconGlyph": "battery",
+  "signals": {
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "_instances": "SystemFunctionsInternalTasuInst1",
+      "_methods": [
+        "sendTasuRequest"
+      ],
+      "_broadcasts": [
+        "sendTasuResponse"
+      ]
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "ExteriorTemperature": "s"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "12V Battery",
+      "buttons": [
+        [
+          "BTN_READ",
+          "Read now"
+        ],
+        [
+          "BTN_PAGE",
+          "Next page"
+        ],
+        [
+          "BTN_PREV",
+          "Previous page"
+        ],
+        [
+          "BTN_SETTINGS",
+          "Settings"
+        ]
+      ]
+    }
+  ],
+  "config": {
+    "comment": "All values are read with UDS ReadDataByIdentifier (0x22) from the engine unit (DME, ecu 18 = 0x12), which reads the intelligent battery sensor (IBS) on the battery's minus terminal. Every group lists candidates; the first one whose first field decodes to a plausible number wins and is tried first next time. Field: raw = 'bytes' big-endian bytes from 'at' (0 = first data byte after the DID), value = raw * factor + offset; 'signed' = two's complement; a raw value of all 0xFF bytes counts as 'no value'; outside min..max = not plausible. A candidate with 'obd' instead of 'did' asks OBD service 01 for that PID. 'ecu' on a candidate overrides the default. Layouts from the OBDb project's BMW signal sets (402B, 40AD, 40A9 answer on most F- and G-series DMEs; on some newer DMEs, e.g. a G20 320i's, 402B answers with all 0xFF: the voltage then comes from the 'volt' candidates, the page shows the voltage trend instead of the current, the outside temperature is shown either way); 59AA (VALSOH, the battery's state of health in %) as Live Data reads it on the B38 / B48 / B58 DMEs (DME8FF_R). currentSign: 402B's current is positive while the battery is discharged; -1 shows charging as +.",
+    "battery": {
+      "ecu": 18,
+      "currentSign": -1,
+      "ibs": [
+        {
+          "did": "402B",
+          "note": "IBS: battery temperature, voltage, current",
+          "fields": {
+            "volt": {
+              "at": 2,
+              "bytes": 2,
+              "factor": 0.00025,
+              "offset": 6,
+              "min": 6,
+              "max": 20
+            },
+            "amp": {
+              "at": 4,
+              "bytes": 2,
+              "factor": 0.08,
+              "offset": -200,
+              "min": -200,
+              "max": 1000
+            },
+            "temp": {
+              "at": 0,
+              "bytes": 2,
+              "factor": 0.1,
+              "signed": true,
+              "min": -40,
+              "max": 100
+            }
+          }
+        }
+      ],
+      "volt": [
+        {
+          "did": "F442",
+          "note": "OBD 'control module voltage' of the engine unit (terminal 30), 1 mV - the source eDrive reads on G-series cars",
+          "fields": {
+            "volt": {
+              "at": 0,
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 6,
+              "max": 20
+            }
+          }
+        },
+        {
+          "obd": "42",
+          "note": "the same PID with OBD service 01, for engine units that refuse F442",
+          "fields": {
+            "volt": {
+              "at": 0,
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 6,
+              "max": 20
+            }
+          }
+        },
+        {
+          "ecu": 24,
+          "did": "F442",
+          "note": "gearbox unit (EGS 0x18) control module voltage",
+          "fields": {
+            "volt": {
+              "at": 0,
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 6,
+              "max": 20
+            }
+          }
+        },
+        {
+          "did": "5853",
+          "note": "battery voltage from the battery sensor, 1 mV (seen only on F32 4 Series 2017-2019 DMEs: tried last)",
+          "fields": {
+            "volt": {
+              "at": 0,
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 6,
+              "max": 20
+            }
+          }
+        }
+      ],
+      "soc": [
+        {
+          "did": "40AD",
+          "note": "state of charge now, the last 5 recorded values, time spent per charge band",
+          "fields": {
+            "soc": {
+              "at": 0,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h1": {
+              "at": 2,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h2": {
+              "at": 4,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h3": {
+              "at": 6,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h4": {
+              "at": 8,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h5": {
+              "at": 10,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "b0_40": {
+              "at": 12,
+              "bytes": 2
+            },
+            "b40_60": {
+              "at": 14,
+              "bytes": 2
+            },
+            "b60_70": {
+              "at": 16,
+              "bytes": 2
+            },
+            "b70_80": {
+              "at": 18,
+              "bytes": 2
+            },
+            "b80_90": {
+              "at": 20,
+              "bytes": 2
+            },
+            "b90_100": {
+              "at": 22,
+              "bytes": 2
+            },
+            "bInvalid": {
+              "at": 24,
+              "bytes": 2
+            }
+          }
+        }
+      ],
+      "cap": [
+        {
+          "did": "40A9",
+          "note": "battery capacity (as registered) and the original battery's",
+          "fields": {
+            "cap": {
+              "at": 0,
+              "bytes": 1,
+              "min": 10,
+              "max": 250
+            },
+            "capNew": {
+              "at": 2,
+              "bytes": 1,
+              "min": 10,
+              "max": 250
+            }
+          }
+        }
+      ],
+      "soh": [
+        {
+          "did": "59AA",
+          "note": "battery state of health (DME energy management, VALSOH, %; read by Live Data as 'Battery health'): 100 = as new",
+          "fields": {
+            "soh": {
+              "at": 0,
+              "bytes": 1,
+              "signed": true,
+              "min": 1,
+              "max": 100
+            }
+          }
+        }
+      ]
+    }
+  },
+  "settings": [
+    {
+      "key": "poll",
+      "label": "Read voltage / current every",
+      "type": "number",
+      "unit": "s",
+      "default": 2,
+      "steps": [
+        1,
+        2,
+        5,
+        10,
+        30
+      ]
+    },
+    {
+      "key": "batteryType",
+      "label": "Battery type (voltage estimate)",
+      "type": "choice",
+      "default": "agm",
+      "options": [
+        [
+          "agm",
+          "AGM"
+        ],
+        [
+          "flooded",
+          "Flooded (lead-acid)"
+        ]
+      ]
+    },
+    {
+      "key": "flipCurrent",
+      "label": "Swap charge / discharge direction",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "tempUnit",
+      "label": "Temperature unit",
+      "type": "choice",
+      "default": "c",
+      "options": [
+        [
+          "c",
+          "Celsius"
+        ],
+        [
+          "f",
+          "Fahrenheit"
+        ]
+      ]
+    },
+    {
+      "key": "theme",
+      "label": "Colour theme",
+      "type": "choice",
+      "default": "m_tricolour",
+      "options": [
+        [
+          "m_red",
+          "M Red"
+        ],
+        [
+          "m_tricolour",
+          "M Tricolour"
+        ],
+        [
+          "ice",
+          "Ice White"
+        ],
+        [
+          "amber",
+          "Night Amber"
+        ]
+      ]
+    },
+    {
+      "key": "layout",
+      "label": "Screen layout",
+      "type": "choice",
+      "default": "full",
+      "options": [
+        [
+          "full",
+          "Full screen"
+        ],
+        [
+          "standard",
+          "Standard"
+        ]
+      ]
+    },
+    {
+      "key": "renderer",
+      "label": "Renderer",
+      "type": "choice",
+      "default": "auto",
+      "options": [
+        [
+          "auto",
+          "GPU 60 fps (default)"
+        ],
+        [
+          "software",
+          "Software"
+        ]
+      ]
+    },
+    {
+      "key": "demo",
+      "label": "Demo data",
+      "type": "choice",
+      "default": "auto",
+      "options": [
+        [
+          "auto",
+          "Auto"
+        ],
+        [
+          "on",
+          "Always"
+        ],
+        [
+          "off",
+          "Never"
+        ]
+      ]
+    },
+    {
+      "key": "credit",
+      "label": "Made by",
+      "type": "choice",
+      "default": "yt",
+      "options": [
+        [
+          "yt",
+          "https://www.youtube.com/@g20_320i"
+        ]
+      ]
+    }
+  ]
+}

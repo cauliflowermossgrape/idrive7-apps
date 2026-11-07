@@ -1751,3 +1751,11 @@ SOOT	САЖА
 LOAD (ADAPTED)	ЗАГРУЗКА (АДАПТ.)
 ASH (ADAPTED)	ЗОЛА (АДАПТ.)
 Reading the engine unit...	Чтение блока двигателя...
+Exhaust Remote	Пульт выхлопа
+Drive mode	Режим движения
+Hold Open / Close	Удержание Открыть / Закрыть
+On · sent again every 15 s	Вкл · повтор каждые 15 с
+Off · the car takes over after ~20 s	Выкл · через ~20 с управляет автомобиль
+Close: hand back above	Закрыто: вернуть автомобилю выше
+Never (not recommended)	Никогда (не рекомендуется)
+Made by	Автор
