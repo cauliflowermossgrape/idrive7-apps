@@ -15,6 +15,9 @@ on:
       - 'kit/tools/localize.py'
       - 'kit/tools/import_diagnostic_ru.py'
       - 'kit/tools/build_diagnostic_ru.py'
+      - 'kit/tools/build_diagnostic_zh.py'
+      - 'kit/tools/bake_cjk.py'
+      - 'kit/tools/locale-revisions.json'
       - '.github/workflows/app-tests.yml'
   push:
     paths:
@@ -27,6 +30,9 @@ on:
       - 'kit/tools/localize.py'
       - 'kit/tools/import_diagnostic_ru.py'
       - 'kit/tools/build_diagnostic_ru.py'
+      - 'kit/tools/build_diagnostic_zh.py'
+      - 'kit/tools/bake_cjk.py'
+      - 'kit/tools/locale-revisions.json'
       - '.github/workflows/app-tests.yml'
 
 permissions:
@@ -56,5 +62,11 @@ jobs:
       - run: node kit/tools/test_service_engine.js
       - run: node kit/tools/test_car_vitals.js
       - run: node kit/tools/test_zh.js
+      # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
+      # that (--preview-only needs no SDK). dtc_scanner has its own run because it ships diagnostic-zh-CN.json as its atlas.
+      - run: python3 kit/tools/build.py --language zh-CN --preview-only service
+      - run: python3 kit/tools/build.py --language zh-CN --preview-only dtc_scanner
+      - run: node kit/tools/test_zh.js dist/service/source/javascript/kit
+      - run: node kit/tools/test_zh.js dist/dtc_scanner/source/javascript/kit
       - run: cd kit/tools && python3 test_zh.py
       - run: python3 kit/tools/test_import_diagnostic_ru.py
