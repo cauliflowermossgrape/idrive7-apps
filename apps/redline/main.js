@@ -13,7 +13,8 @@
  *     and climbs with the oil temperature
  *
  * Pages: tach / shift log / learned (what it learned from this car, with resets) / HUD looks (a live
- * preview of the HUD as set up, every layout and look option to tap, Play on HUD). The tach's
+ * preview of the HUD as set up, layouts to tap, an editor: look, items on / off, units, place;
+ * Play on HUD). The tach's
  * peak marker drops back after "Peak hold" seconds; BTN_RESET clears it and the session stats.
  *
  * Experimental parts (README.md in this folder has the whole story):
@@ -475,7 +476,7 @@ mgu.run({
          * peak and shake, each a row of buttons. "Play on HUD" runs the same drive on the glass. */
         const LOOKS = [['standard', 'Standard'], ['minimal', 'Minimal'], ['wings', 'Split wings'],
             ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade']];
-        const studio = { cue: {}, t0: Date.now() };
+        const studio = { cue: {}, t0: Date.now(), panel: 'items' };
         /** The preview's frame at now: what frameData would give the HUD for the scripted drive. */
         function studioFrame(now) {
             const o = Hud.optsFrom(settings), t = now - studio.t0, dm = Hud.demoAt(t);
@@ -505,9 +506,9 @@ mgu.run({
             });
         }
         /** One row of choice buttons: label, then [value, text] options; the current one filled. */
-        function choiceRow(cv, t, y, label, key, cur, options, disabled) {
-            cv.text(label, 40, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-            let x = 200;
+        function choiceRow(cv, t, y, label, key, cur, options, disabled, x0) {
+            cv.text(label, x0 ? x0 : 40, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+            let x = x0 ? x0 + 120 : 200;
             options.forEach((op) => {
                 const w = G.button(cv, t, x, y, 0, 40, op[1], () => { settings.set(key, op[0]); return render(); },
                     { key: 'studio_' + key + '_' + op[0], primary: op[0] === cur, busy: disabled });
@@ -522,7 +523,7 @@ mgu.run({
             cv.roundRect(24, 48, 816, 276, 12, '#000000');
             HudDraw.drawLayer(HudDraw.scaled(cv, 2, px + sh[0] * 2, py + sh[1] * 2), f);
             const playing = hud && hud.playing();
-            cv.text(on ? (playing ? 'Playing on the HUD...' : 'Preview of your HUD as set up') : 'Show on HUD is off (Settings): the preview still shows your setup',
+            cv.text(on ? (playing ? 'Playing on the HUD...' : 'Your HUD as set up: change it below') : 'Show on HUD is off (Settings): the preview still shows your setup',
                 40, 344, 18, on ? t.dim : t.warn, { font: 'bold' });
             // only while the HUD shows and the car stands still (it replaces the real lights on the glass)
             const still = !(car.data().speed > 3);
@@ -539,15 +540,71 @@ mgu.run({
                 if (sel) cv.text('in use', x + 218, y + 62, 16, t.accent, { font: 'bold' });
                 cv.target(x, y, w, h, () => { settings.set('hudStyle', l[0]); return render(); }, 'look_' + l[0]);
             });
-            // the look's options, a row each
-            choiceRow(cv, t, 366, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
-            choiceRow(cv, t, 414, 'LIGHTS', 'hudLightStyle', o.lights ? (o.gt3 ? 'gt3' : 'bar') : 'off', [['gt3', 'GT3'], ['bar', 'Left to right'], ['off', 'Off']]);
-            choiceRow(cv, t, 462, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
-            cv.text('PEAK', 820, 462 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-            G.button(cv, t, 890, 462, 120, 40, o.peak ? 'On' : 'Off', () => { settings.set('hudPeak', !o.peak); return render(); }, { key: 'studio_peak', primary: o.peak });
-            cv.text('SHAKE', 1040, 462 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-            G.button(cv, t, 1120, 462, 120, 40, o.shake ? 'On' : 'Off', () => { settings.set('hudShake', !o.shake); return render(); }, { key: 'studio_shake', primary: o.shake });
-            cv.text('More: Settings > HUD readouts', 1576, 344, 16, t.dim, { align: 'right' });
+            // the editor under the preview: tabs, then that panel's buttons
+            const panels = [['look', 'Look'], ['items', 'Items'], ['units', 'Units'], ['place', 'Place']];
+            let tx = 40;
+            panels.forEach((pn) => {
+                const w = G.button(cv, t, tx, 360, 150, 40, pn[1], () => { studio.panel = pn[0]; return render(); }, { key: 'studio_tab_' + pn[0], primary: studio.panel === pn[0] });
+                tx += (w || 150) + 10;
+            });
+            cv.text(STUDIO_HINT[studio.panel], 1576, 388, 16, t.dim, { align: 'right' });
+            if (studio.panel === 'look') {
+                choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
+                choiceRow(cv, t, 462, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
+            } else if (studio.panel === 'items') {
+                // tap to add, tap again to remove: filled = on the HUD
+                chips(cv, t, 414, [
+                    ['Gear', o.gear, () => settings.set('hudShowGear', !o.gear)],
+                    ['D / S / M', o.mode, () => settings.set('hudShowMode', !o.mode)],
+                    ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
+                    ['Oil', o.oil, () => settings.set('hudShowOil', !o.oil)],
+                    ['Water', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
+                    ['Gearbox', o.gearbox, () => settings.set('hudShowGearbox', !o.gearbox)],
+                    ['Cold limit', o.limit, () => settings.set('hudShowLimit', !o.limit)],
+                ]);
+                const down = settings.get('downCue') !== 'off';
+                chips(cv, t, 462, [
+                    ['Shift lights', o.lights, () => settings.set('hudLightStyle', o.lights ? 'off' : 'gt3')],
+                    ['GT3 style', o.lights && o.gt3, () => settings.set('hudLightStyle', o.gt3 ? 'bar' : 'gt3'), !o.lights],
+                    ['Shift grade', o.chip !== 'off', () => settings.set('hudChip', o.chip === 'off' ? 'burst' : 'off')],
+                    ['Peak marker', o.peak, () => settings.set('hudPeak', !o.peak)],
+                    ['Downshift arrows', down, () => settings.set('downCue', down ? 'off' : 'slowing')],
+                    ['Limiter shake', o.shake, () => settings.set('hudShake', !o.shake)],
+                ]);
+            } else if (studio.panel === 'units') {
+                choiceRow(cv, t, 414, 'BOOST', 'hudBoostUnit', o.boostUnit, [['bar', 'bar'], ['psi', 'psi'], ['kpa', 'kPa']]);
+                choiceRow(cv, t, 462, 'TEMPS', 'hudTempUnit', o.fahrenheit ? 'f' : 'c', [['c', '°C'], ['f', '°F']]);
+                choiceRow(cv, t, 462, 'SHOW', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Only when cold or hot'], ['always', 'Always']], false, 560);
+            } else {
+                // size and position, a step at a time through each setting's own steps (live on the glass)
+                cv.text('SIZE', 40, 414 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+                stepButtons(cv, t, 200, 414, 'hudSize', [['Smaller', -1], ['Bigger', 1]], (v) => v + ' %');
+                cv.text('MOVE', 40, 462 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+                stepButtons(cv, t, 200, 462, 'hudX', [['Left', -1], ['Right', 1]], (v) => (v === 0 ? 'centre' : (v > 0 ? '+' : '') + v + ' px'));
+                stepButtons(cv, t, 700, 462, 'hudY', [['Up', -1], ['Down', 1]], (v) => (v === 0 ? 'default' : (v > 0 ? '+' : '') + v + ' px'));
+                G.button(cv, t, 1200, 462, 160, 40, 'Reset', () => { settings.set('hudSize', 100); settings.set('hudX', 0); settings.set('hudY', 0); return render(); }, { key: 'studio_place_reset' });
+            }
+        }
+        const STUDIO_HINT = {
+            look: 'Layouts: tap one above', items: 'Tap to add or remove (filled = on the HUD)',
+            units: 'Boost and temperature units', place: 'Moves the HUD on the glass at once',
+        };
+        /** Toggle chips at y: [label, on, flip, disabled]; filled when on. */
+        function chips(cv, t, y, list) {
+            let x = 40;
+            list.forEach((c, i) => {
+                const w = G.button(cv, t, x, y, 0, 40, c[0], () => { c[2](); return render(); }, { key: 'studio_chip_' + y + '_' + i, primary: !!c[1], busy: !!c[3] });
+                x += (w || 160) + 10;
+            });
+        }
+        /** Buttons that step a number setting through its "steps" (−1 / +1), with the value between. */
+        function stepButtons(cv, t, x, y, key, buttons, fmt) {
+            const it = settings.item(key), steps = (it && it.steps) || [], cur = settings.get(key);
+            const i = Math.max(0, steps.indexOf(cur));
+            const go = (d) => { const j = Math.max(0, Math.min(steps.length - 1, i + d)); settings.set(key, steps[j]); return render(); };
+            const w0 = G.button(cv, t, x, y, 0, 40, buttons[0][0], () => go(buttons[0][1]), { key: 'studio_step_' + key + '_a', busy: i <= 0 });
+            cv.text(fmt(steps.length ? steps[i] : cur), x + (w0 || 120) + 70, y + 27, 18, t.text, { align: 'center', font: 'bold' });
+            G.button(cv, t, x + (w0 || 120) + 140, y, 0, 40, buttons[1][0], () => go(buttons[1][1]), { key: 'studio_step_' + key + '_b', busy: i >= steps.length - 1 });
         }
 
         let learnedView = null;
