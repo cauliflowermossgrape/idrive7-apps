@@ -1,8 +1,8 @@
 {
   "id": "edrive",
   "title": "eDrive",
-  "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, 12 V battery voltage and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.7.9",
+  "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
+  "version": "2.8.0",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -492,7 +492,7 @@
     }
   ],
   "config": {
-    "comment": "HV battery values and the 12 V voltage are read with UDS ReadDataByIdentifier (0x22). Each value tries its candidates in order and keeps the first that answers with a plausible number: value = raw * factor + offset, raw = 'bytes' big-endian bytes from 'at' (0 = first data byte after the DID). 'ecu' on a candidate overrides battery.ecu (decimal: 7 = SME battery unit, 18 = DME engine unit). DIDs differ between models: check the Diagnostics page in the app and adjust here if a value shows n/a or looks wrong. F442 is the standard OBD 'control module voltage' (terminal 30, i.e. the 12 V battery). The live pages (live.js) read config.battery.fast (pack voltage and current, as fast as the car answers) and config.battery.slow (cells, temperatures, limits, every slowPoll s): each a list of candidates { ecu (optional, decimal), did, fields }, every field { at, bytes, factor, offset, signed, min, max } on the same reply; the first that answers is used. powerSign: kW = V x A / 1000 x powerSign (+ = the battery gives power); if regen shows while accelerating, set it to 1. probes: climate-unit values (IHKA 0x78; with a factor, the climate's kW on the Energy page); scanKnown: identifiers the Scan page compares when a unit has no saved scan.",
+    "comment": "HV battery values and the 12 V voltage are read with UDS ReadDataByIdentifier (0x22). Each value tries its candidates in order and keeps the first that answers with a plausible number: value = raw * factor + offset, raw = 'bytes' big-endian bytes from 'at' (0 = first data byte after the DID). 'ecu' on a candidate overrides battery.ecu (decimal: 7 = SME battery unit, 18 = DME engine unit). DIDs differ between models: check the Diagnostics page in the app and adjust here if a value shows n/a or looks wrong. F442 is the standard OBD 'control module voltage' (terminal 30, i.e. the 12 V battery). The live pages (live.js) read config.battery.fast (pack voltage and current, as fast as the car answers) and config.battery.slow (cells, temperatures, limits, every slowPoll s): each a list of candidates { ecu (optional, decimal), did, fields }, every field { at, bytes, factor, offset, signed, min, max } on the same reply; the first that answers is used. powerSign: kW = V x A / 1000 x powerSign (+ = the battery gives power); if regen shows while accelerating, set it to 1. probes: climate-unit values (IHKA 0x78; with a factor, the climate's kW on the Energy page); scanKnown: identifiers the Scan page compares when a unit has no saved scan. Without a hybrid system (battery12.js): soc40 (40AD) and cap12 (40A9) are candidates with fields too; v12 keeps asking the candidate that answered (an engine unit like a G20 320i's answers 402B with all FF and refuses F442: OBD 42 or the gearbox unit then)",
     "battery": {
       "ecu": 7,
       "soc": [
@@ -599,6 +599,28 @@
           "offset": 0,
           "min": 5,
           "max": 18
+        },
+        {
+          "ecu": 18,
+          "did": "402B",
+          "bytes": 2,
+          "at": 2,
+          "factor": 0.00025,
+          "offset": 6,
+          "min": 5,
+          "max": 18,
+          "note": "the battery sensor (IBS) itself; a G20 320i's engine unit answers all FF (out of range): then the ones above"
+        },
+        {
+          "ecu": 18,
+          "did": "5853",
+          "bytes": 2,
+          "at": 0,
+          "factor": 0.001,
+          "offset": 0,
+          "min": 5,
+          "max": 18,
+          "note": "battery voltage from the battery sensor, 1 mV (seen on F32 DMEs)"
         }
       ],
       "chargeMinPct": 3,
@@ -955,6 +977,107 @@
           "min": -200,
           "max": 200,
           "note": "12 V battery current from the battery sensor (IBS), negative = discharging"
+        },
+        {
+          "ecu": 18,
+          "did": "402B",
+          "bytes": 2,
+          "at": 4,
+          "factor": -0.08,
+          "offset": 200,
+          "min": -200,
+          "max": 200,
+          "note": "the battery sensor's current in 402B (sent + while discharging: turned round); all FF on a G20 320i"
+        }
+      ],
+      "soc40": [
+        {
+          "ecu": 18,
+          "did": "40AD",
+          "note": "state of charge the engine unit keeps (%), the 5 values before it, time per charge band (b..: 0-40 % .. 90-100 %)",
+          "fields": {
+            "soc": {
+              "at": 0,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h1": {
+              "at": 2,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h2": {
+              "at": 4,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h3": {
+              "at": 6,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h4": {
+              "at": 8,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "h5": {
+              "at": 10,
+              "bytes": 1,
+              "min": 0,
+              "max": 100
+            },
+            "b0_40": {
+              "at": 12,
+              "bytes": 2
+            },
+            "b40_60": {
+              "at": 14,
+              "bytes": 2
+            },
+            "b60_70": {
+              "at": 16,
+              "bytes": 2
+            },
+            "b70_80": {
+              "at": 18,
+              "bytes": 2
+            },
+            "b80_90": {
+              "at": 20,
+              "bytes": 2
+            },
+            "b90_100": {
+              "at": 22,
+              "bytes": 2
+            }
+          }
+        }
+      ],
+      "cap12": [
+        {
+          "ecu": 18,
+          "did": "40A9",
+          "note": "battery capacity as registered in the engine unit (Ah) and the original battery's",
+          "fields": {
+            "cap": {
+              "at": 0,
+              "bytes": 1,
+              "min": 10,
+              "max": 250
+            },
+            "capNew": {
+              "at": 2,
+              "bytes": 1,
+              "min": 10,
+              "max": 250
+            }
+          }
         }
       ],
       "soc12": [
