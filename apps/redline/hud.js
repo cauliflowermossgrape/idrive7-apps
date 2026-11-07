@@ -36,6 +36,11 @@ const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 
+/** Write a small file whole or not at all (temp file, then rename): a power cut mid-write can't corrupt it. */
+function writeAtomic(file, text, log) {
+    try { fs.writeFileSync(file + '.tmp', text); fs.renameSync(file + '.tmp', file); } catch (e) { if (log) log.warn('save ' + path.basename(file) + ': ' + e); }
+}
+
 /** Canvas.d is a Uint8Array; the client copies from a Buffer (px.copy). Same memory, no copy. */
 const asBuffer = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
 
@@ -52,8 +57,8 @@ function gearText(d) {
  *            driver's reaction time (leadMs), at most 800 rpm early;
  *   from   = where the count starts: ~1 s of climb before 'at' (800..2000 rpm; 1500 while the
  *            revs aren't climbing), so the count-in takes about as long in every gear;
- *   shift  = flashing now; latched until the revs fall 300 below 'at' (the upshift), so a
- *            wobble in the climb rate doesn't make it flicker;
+ *   shift  = flashing now; latched until the revs fall 800 below 'at' (the upshift), so a
+ *            wobble in the climb rate or a dip of the revs doesn't make it flicker;
  *   limiter= at the redline (within 100): everything flashes.
  * Rate: smoothed rpm per second from successive frames, rises only (a lift or a shift resets it).
  */
@@ -67,10 +72,11 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs) {
     const rate = st.rate || 0, climbing = rate > 300;
     const at = shift - (climbing ? Math.min(800, rate * leadMs / 1000) : 0);
     const from = at - (climbing ? clamp(rate * 1.0, 800, 2000) : 1500);
-    if (!st.on && rpm >= at) st.on = true;
-    else if (st.on && rpm < Math.min(at, shift) - 300) st.on = false;
-    st.at = st.on ? (st.at || at) : at;                         // hold the flash point while latched
-    return { from: from, at: at, shift: st.on, limiter: rpm >= redline - 100, rate: rate };
+    // latch: the flash point is held from the moment it fires; it ends only when the revs fall
+    // 800 below that point (an upshift drops ~30 %; a traction dip less), not when the live point moves with a noisy climb rate
+    if (!st.on && rpm >= at) { st.on = true; st.at = at; }
+    else if (st.on && rpm < st.at - 800) st.on = false;
+    return { from: from, at: st.on ? st.at : at, shift: st.on, limiter: rpm >= redline - 100, rate: rate };
 }
 
 /**
@@ -305,7 +311,11 @@ function start(ctx, src) {
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const cue = shiftCue(cueState, d.rpm, Date.now(), sp.rpm, redline, lead);
-        if (cue.shift && !was) flashInfo = { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead };
+        // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
+        if (cue.shift && !was) {
+            const seen = settings.get('hudLights') !== false && target && target.state === 'shown';
+            flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead } : null;
+        }
         blink = cue.shift || cue.limiter ? !blink : true;
         return {
             d: d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
@@ -371,11 +381,13 @@ function start(ctx, src) {
         if (!f || !isNum(rpm) || Date.now() - f.t > 2000 || f.rate < 300) return;
         const lateMs = (rpm - f.target) / f.rate * 1000;
         const ideal = clamp(f.lead + lateMs, 0, 600);
+        const before = learnedLead;
         learnedLead = Math.round(clamp(learnedLead + (ideal - learnedLead) * 0.3, 0, 600) / 10) * 10;
         leadShifts++;
         log.info('hud: shift at ' + Math.round(rpm) + ' for ' + f.target + ' (' + (lateMs >= 0 ? Math.round(lateMs) + ' ms late' : Math.round(-lateMs) + ' ms early') +
             '), reaction lead now ' + learnedLead + ' ms after ' + leadShifts + ' shifts');
-        try { fs.writeFileSync(leadFile, JSON.stringify({ ms: learnedLead, n: leadShifts })); } catch (e) { /* read-only */ }
+        // written only when the lead moves (once settled, seldom)
+        if (learnedLead !== before) writeAtomic(leadFile, JSON.stringify({ ms: learnedLead, n: leadShifts }), log);
     });
 
     /** One line for Redline's screen: what the HUD is doing. */
@@ -396,4 +408,4 @@ function start(ctx, src) {
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, frame: frameData };
 }
 
-module.exports = { start, shiftCue, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };
+module.exports = { start, shiftCue, writeAtomic, drawHud, drawTach, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H };

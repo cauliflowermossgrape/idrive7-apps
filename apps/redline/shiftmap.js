@@ -19,7 +19,7 @@
  * points. The shift point is the first r where after >= 0.99 * now (a tie: same wheel torque); none means shift on the limiter
  * (the redline). Unknown (null) until both gears are known and every bin from the lowest r2 to
  * the redline is. Recomputed at most every 2 s; bins and ratios kept in data/shiftmap.json
- * (saved at most every 30 s, and when a shift point changes).
+ * (saved at most every 5 min while something new was learned, and when a shift point changes).
  *
  *   const sm = new ShiftMap({ dataDir, log });
  *   sm.feed(tMs, { rpm, speed, gear, torque });   // every live sample
@@ -34,7 +34,7 @@ const TIE = 0.99;
 const BIN = 250, LO = 1000, HI = 9000, NBINS = (HI - LO) / BIN + 1;
 const TOPK = 8, CONFIRM = 3, NEAR = 0.05;
 const RATIO_N = 50, RATIO_KNOWN = 20, RATIO_TOL = 0.03, RATIO_STEP = 0.02, RATIO_RESET = 30;
-const STEADY_MS = 1000, CALC_MS = 2000, SAVE_MS = 30000, SPAN = 2500, STEP = 50, MAX_GEAR = 10;
+const STEADY_MS = 1000, CALC_MS = 2000, SAVE_MS = 300000, SPAN = 2500, STEP = 50, MAX_GEAR = 10;
 
 const num = (x) => typeof x === 'number' && isFinite(x);
 const binOf = (rpm) => Math.round((rpm - LO) / BIN);
@@ -142,10 +142,12 @@ class ShiftMap {
             return;
         }
         r.rej = 0;
-        const was = r.buf.length;
+        const was = r.buf.length, old = r.med;
         r.buf.push(k); if (r.buf.length > RATIO_N) r.buf.shift();
         this._median(r);
-        this.dirty = true;
+        // worth saving only while the gear is being learned or when its ratio really moves (0.2 %):
+        // a steady cruise must not rewrite the file (flash wear)
+        if (was < RATIO_KNOWN || old === null || Math.abs(r.med - old) / old > 0.002) this.dirty = true;
         if (was === RATIO_KNOWN - 1) this.log.info('shiftmap: gear ' + g + ' at ' + r.med.toFixed(2) + ' rpm per km/h');
     }
 
@@ -198,7 +200,8 @@ class ShiftMap {
         this.dirty = false;
         const ratios = {};
         Object.keys(this.ratios).forEach((g) => { if (this.ratios[g].buf.length) ratios[g] = this.ratios[g].buf.map((k) => Math.round(k * 1000) / 1000); });
-        try { fs.writeFileSync(this.file, JSON.stringify({ bins: this.bins, ratios: ratios, at: Date.now() })); } catch (e) { this.log.warn('shiftmap save: ' + e); }
+        // whole or not at all (temp file, then rename): a power cut mid-write can't corrupt it
+        try { fs.writeFileSync(this.file + '.tmp', JSON.stringify({ bins: this.bins, ratios: ratios, at: Date.now() })); fs.renameSync(this.file + '.tmp', this.file); } catch (e) { this.log.warn('shiftmap save: ' + e); }
     }
 
     _emit() { const t = this.table(); this.listeners.forEach((fn) => { try { fn(t); } catch (e) { this.log.error(e); } }); }

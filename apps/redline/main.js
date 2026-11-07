@@ -41,7 +41,14 @@ mgu.run({
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
         // gearbox oil temperature for the HUD (EGS over UDS, or BasicDataSet); polled only while the HUD is on
         const gearbox = new GearboxTemp(ctx);
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'torque'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers()));
+        // engine torque for the shift map, with its time: put() keeps the last value when the signal
+        // goes invalid, so a stale torque would be paired with new rpm and inflate the curve
+        const torque = { v: null, t: 0 };
+        const torqueWatch = { 'de.bmw.infotainment.drivingexcitement.FES': { statusActualValueTorque2: (v) => {
+            const raw = v && v.actualValueTorqueCrankshaft;
+            if (typeof raw === 'number' && raw < 4095) { torque.v = Math.max(0, raw * 0.5 - 1023.5); torque.t = Date.now(); }
+        } } };
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), torqueWatch));
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
@@ -121,9 +128,10 @@ mgu.run({
             onLimiter = lim;
             // learn the real limit (live data only, warm oil): plateaus from 1000 below the profile's redline
             if (!car.data().demo) {
-                shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: d.torque });
+                const tq = Date.now() - torque.t < 300 ? torque.v : null;
+                shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq });
                 const pr = profileRedline();
-                limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
+                if (settings.get('learnRedline') !== false) limiter.feed(t, { rpm: d.rpm, gear: d.gear, speed: d.speed, warm: G.isNum(d.oil) && d.oil >= settings.get('warmOil') }, pr - 1000, pr + 1500);
             }
 
             // upshift: gear number goes up, or (no gear signal) rpm falls >18 % within 0.4 s while still moving
@@ -155,7 +163,8 @@ mgu.run({
         }
         /** Static part of the tach page (cached layer; redrawn when the theme / limits change). */
         function background(cv, t, sp) {
-            const key = ['redline-bg', settings.get('theme'), maxRpm(), redline(), sp.rpm].join('|');
+            // the shift mark is drawn over it (per gear and cold-oil step: a key each would fill the cache)
+            const key = ['redline-bg', settings.get('theme'), maxRpm(), redline()].join('|');
             cv.blit(G.layer(key, W, H, (c) => drawBackground(c, t, sp), cv.textScale), 0, 0);
         }
         function drawBackground(cv, t, sp) {
@@ -175,10 +184,8 @@ mgu.run({
                 cv.fillRect(x - (major ? 1.5 : 1), BAR.y1 + 8, major ? 3 : 2, major ? 14 : 8, red ? t.crit : major ? t.text : t.tick);
                 if (major) cv.text(String(rpm / 1000), x, BAR.y1 + 46, 26, red ? t.crit : t.text, { align: 'center', font: 'bold' });
             }
-            [[sp.rpm, t.warn], [redline(), t.crit]].forEach(([r, c]) => {
-                const x = BAR.x0 + barX(r);
-                cv.fillRect(x + BAR.slant - 2, BAR.y0 - 14, 4, 12, c);
-            });
+            const rx = BAR.x0 + barX(redline());
+            cv.fillRect(rx + BAR.slant - 2, BAR.y0 - 14, 4, 12, t.crit);
         }
 
         /* ---------- drawing ---------- */
@@ -219,6 +226,8 @@ mgu.run({
         function drawTach(cv, t, d, now) {
             const sp = shiftPoint(d.oil, d.gear);
             background(cv, t, sp);
+            const sx = BAR.x0 + barX(sp.rpm);                                                   // shift point mark
+            cv.fillRect(sx + BAR.slant - 2, BAR.y0 - 14, 4, 12, t.warn);
             const rpm = d.rpm;
             const shiftNow = G.isNum(rpm) && rpm >= sp.rpm;
             // setting "flash" on: lights, gear and SHIFT blink (GPU renderer: 8 Hz clock phase;

@@ -20,13 +20,16 @@ const path = require('path');
 
 // the plateau is judged on the last HOLD_MS only, so the end of the run up to it doesn't count
 const HOLD_MS = 500, BAND = 200, TREND = 60, WINDOW_MS = HOLD_MS + 20;
+// a limiter stops a climb dead: the 500 ms before the plateau must have climbed this fast (a driver
+// easing off to hold a steady rpm, e.g. up a hill, slows the climb first)
+const APPROACH_MS = 500, APPROACH_RATE = 600, HIST_MS = 1200;
 
 class Limiter {
     constructor(opts) {
         this.log = opts.log;
         this.file = path.join(opts.dataDir, 'limiter.json');
         this.saved = null; this.at = 0;
-        this.win = []; this.peak = null; this.listeners = [];
+        this.win = []; this.hist = []; this.peak = null; this.listeners = [];
         try {
             const j = JSON.parse(fs.readFileSync(this.file, 'utf8'));
             if (typeof j.rpm === 'number' && j.rpm > 0) { this.saved = j.rpm; this.at = j.at || 0; }
@@ -47,6 +50,7 @@ class Limiter {
     /** One live sample; floor / ceil = the rpm range a limiter can be in for this engine. */
     feed(t, s, floor, ceil) {
         try {
+            if (typeof s.rpm === 'number') { this.hist.push([t, s.rpm]); while (this.hist.length && t - this.hist[0][0] > HIST_MS) this.hist.shift(); }
             const ok = typeof s.rpm === 'number' && s.rpm >= floor && s.rpm <= ceil + 300 &&
                 !(typeof s.gear === 'number' && s.gear <= 0) && !(typeof s.speed === 'number' && s.speed < 15) && s.warm;
             if (!ok) { this._end(); this.win.length = 0; return; }
@@ -59,9 +63,20 @@ class Limiter {
             const half = this.win.length >> 1;
             const avg = (a) => a.reduce((x, w) => x + w[1], 0) / a.length;
             if (half < 2 || Math.abs(avg(this.win.slice(0, half)) - avg(this.win.slice(half))) > TREND) return;
+            if (this.peak === null && !this._cutOff(this.win[0][0])) return;
             this.peak = Math.max(this.peak || 0, hi);
             this.ceil = ceil;
         } catch (e) { this.log.warn('limiter: ' + e); }
+    }
+
+    /** Did the revs climb at least APPROACH_RATE in the APPROACH_MS before t0 (the plateau's start)? */
+    _cutOff(t0) {
+        let a = null, b = null;
+        for (const h of this.hist) {
+            if (h[0] <= t0 - APPROACH_MS) a = h;
+            if (h[0] <= t0) b = h;
+        }
+        return !!(a && b && b[0] > a[0] && (b[1] - a[1]) * 1000 / (b[0] - a[0]) >= APPROACH_RATE);
     }
 
     _end() {
@@ -78,7 +93,7 @@ class Limiter {
         }
         this.log.info('limiter: learned ' + rpm + ' rpm' + (this.saved !== null ? ' (was ' + this.saved + ')' : ''));
         this.saved = rpm; this.at = Date.now();
-        try { fs.writeFileSync(this.file, JSON.stringify({ rpm: rpm, at: this.at })); } catch (e) { this.log.warn('limiter save: ' + e); }
+        try { fs.writeFileSync(this.file + '.tmp', JSON.stringify({ rpm: rpm, at: this.at })); fs.renameSync(this.file + '.tmp', this.file); } catch (e) { this.log.warn('limiter save: ' + e); }
         this._emit();
     }
 
