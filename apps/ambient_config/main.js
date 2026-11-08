@@ -3,8 +3,8 @@
  * Ambient config - the ambient light's colour, set here or by the driving mode.
  *
  *   - the colour now, and BMW's colours by number to set one by hand
- *   - a colour for Sport, Comfort, Eco Pro and Adaptive, set when the mode changes; "Leave as is" gives the
- *     driver's own colour back
+ *   - a colour for each driving mode the car has (Sport, Comfort, Eco Pro, Adaptive; on a plug-in hybrid Sport,
+ *     Hybrid, Hybrid Eco Pro, Electric), set when the mode changes; "Leave as is" gives the driver's own colour back
  *
  * It runs from the platform's start (app.json "autostart"), so the driving modes work with the app closed.
  * ambient.js has the rules.
@@ -15,7 +15,7 @@ const { withAlpha } = require('./kit/canvas');
 const { Ambient, MODES, SLOTS } = require('./ambient');
 
 const W = 1600, H = 520;
-const MODE_NAMES = { sport: 'Sport', comfort: 'Comfort', eco: 'Eco Pro', adaptive: 'Adaptive' };
+const MODE_NAMES = { sport: 'Sport', comfort: 'Comfort', eco: 'Eco Pro', adaptive: 'Adaptive', hybrid: 'Hybrid', hybridEco: 'Hybrid Eco Pro', electric: 'Electric' };
 
 async function background(bg) {
     const ambient = new Ambient({ settings: bg.settings, signals: bg.signals, log: bg.log });
@@ -54,7 +54,7 @@ mgu.run({
         function drawModes(cv, t) {
             G.panel(cv, t, 804, 44, 772, 468, 'By driving mode');
             const follow = !!settings.get('follow'), mode = ambient.mode();
-            MODES.forEach((m, i) => {
+            ambient.modes().forEach((m, i) => {
                 const y = 100 + i * 66, v = Number(settings.get(m)) || 0;
                 if (m === mode) cv.roundRect(820, y - 6, 740, 60, 10, withAlpha(t.accent, 0.14));
                 cv.text(MODE_NAMES[m], 840, y + 32, 26, follow ? t.text : t.dim, { font: 'bold' });

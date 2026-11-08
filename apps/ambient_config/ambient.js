@@ -7,6 +7,8 @@
  * on; ambientLightInteriorColour sets one. A set names only the slot and leaves every other field "not filled",
  * so brightness and the light's other modes stay as they are.
  *
+ * The car's driving modes: Sport, Comfort, Eco Pro and Adaptive; a plug-in hybrid's Sport, Hybrid, Hybrid Eco Pro
+ * and Electric instead, known from the first PHEV mode the car reports (setting carKind, kept).
  * Driving mode (FES statusFESVehicleDynamicSwitchHMI): when it changes to a mode with a colour set, that colour;
  * to one set to "Leave as is", the driver's own colour back (setting "restore"). The driver's own colour is the
  * last one not set by this app's driving modes: one chosen in BMW's menu or by hand here. One write at a time, at
@@ -14,7 +16,7 @@
  *
  *   const a = new Ambient({ settings, signals, log });
  *   await a.start();
- *   a.slot() -> 1..12 | null        a.mode() -> 'sport' | 'comfort' | 'eco' | 'adaptive' | null
+ *   a.slot() -> 1..12 | null        a.mode() -> one of MODES, or null        a.modes() -> this car's
  *   a.own() -> the driver's own colour | null       a.setSlot(n) by hand       a.on('change', fn)
  */
 const EventEmitter = require('events');
@@ -23,16 +25,27 @@ const LIGHT = 'de.bmw.infotainment.misc.ComfortFunctionIuK';
 const FES = 'de.bmw.infotainment.drivingexcitement.FES';
 const SLOTS = 12;
 const MIN_GAP_MS = 1500;
-const MODES = ['sport', 'comfort', 'eco', 'adaptive'];
+const MODES = ['sport', 'comfort', 'eco', 'adaptive', 'hybrid', 'hybridEco', 'electric'];
+const KIND_MODES = { ice: ['sport', 'comfort', 'eco', 'adaptive'], hybrid: ['sport', 'hybrid', 'hybridEco', 'electric'] };
 const UNFILLED = 'SIGNAL_UNBEFUELLT';
 
-/* actualValueModeDrivingExperience: a name or its wire number -> one of MODES, or null. */
+// actualValueModeDrivingExperience's names and wire numbers
+const BY_NAME = {
+    SPORT_DYNAMIC: 1, SPORT_EXPERT: 2, SPORT_INDIVIDUAL: 3, COMFORT: 4, COMFORT_PLUS: 5, COMFORT_INDIVIDUAL: 6,
+    ECO_PRO_EFFICIENT: 7, ECO_PRO_PLUS: 8, ECO_PRO_INDIVIDUAL: 9, ADAPTIVE: 10, PHEV_SPORT_STANDARD: 15, PHEV_SPORT_INDIVIDUAL: 16,
+    PHEV_HYBRID_STANDARD: 17, PHEV_HYBRID_ECO: 18, PHEV_HYBRID_COMFORT: 19, PHEV_ELECTRIC_STANDARD: 20, PHEV_ELECTRIC_INDIVIDUAL: 21,
+    PHEV_SPORT_PLUS: 23,
+};
+const BY_NUMBER = { 1: 'sport', 2: 'sport', 3: 'sport', 4: 'comfort', 5: 'comfort', 6: 'comfort', 7: 'eco', 8: 'eco', 9: 'eco', 10: 'adaptive',
+    15: 'sport', 16: 'sport', 23: 'sport', 17: 'hybrid', 19: 'hybrid', 18: 'hybridEco', 20: 'electric', 21: 'electric' };
+const PHEV = [15, 16, 17, 18, 19, 20, 21, 22, 23];
+
+/* actualValueModeDrivingExperience: a name or its wire number -> { mode (one of MODES or null), phev }, or null. */
 function modeOf(raw) {
     if (raw === undefined || raw === null || raw === '') return null;
-    const n = Number(raw);
-    if (!isNaN(n)) return n >= 1 && n <= 3 ? 'sport' : n >= 4 && n <= 6 ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : n === 10 ? 'adaptive' : null;
-    const s = String(raw).toUpperCase();
-    return /SPORT/.test(s) ? 'sport' : /ECO/.test(s) ? 'eco' : /COMFORT/.test(s) ? 'comfort' : /ADAPTIV/.test(s) ? 'adaptive' : null;
+    const n = typeof raw === 'number' || /^\d+$/.test(String(raw)) ? Number(raw) : BY_NAME[String(raw).toUpperCase()];
+    if (n === undefined) return null;
+    return { mode: BY_NUMBER[n] || null, phev: PHEV.indexOf(n) >= 0 };
 }
 
 /* statusMenuAmbientePanoramicRoofInteriorLighting: FARBAUSWAHL_n or n -> n (1..SLOTS), or null. */
@@ -78,6 +91,7 @@ class Ambient extends EventEmitter {
     }
 
     slot() { return this._slot; }
+    modes() { return KIND_MODES[this.settings.get('carKind') === 'hybrid' ? 'hybrid' : 'ice']; }
     mode() { return this._mode; }
     own() { return this._own; }
 
@@ -106,7 +120,13 @@ class Ambient extends EventEmitter {
 
     /* A status of the driving mode. */
     drive(v) {
-        const m = modeOf(v && v.actualValueModeDrivingExperience);
+        const got = modeOf(v && v.actualValueModeDrivingExperience);
+        if (!got) return;
+        if (got.phev && this.settings.get('carKind') !== 'hybrid') {
+            this.log.info('ambient: a plug-in hybrid\'s driving modes');
+            this.settings.set('carKind', 'hybrid');
+        }
+        const m = got.mode;
         if (m === null || m === this._mode) return;
         this._mode = m;
         this.log.info('ambient: driving mode ' + m);
@@ -159,4 +179,4 @@ class Ambient extends EventEmitter {
     stop() { clearTimeout(this._timer); this._timer = null; }
 }
 
-module.exports = { Ambient, modeOf, slotOf, request, MODES, SLOTS, MIN_GAP_MS };
+module.exports = { Ambient, modeOf, slotOf, request, MODES, KIND_MODES, SLOTS, MIN_GAP_MS };

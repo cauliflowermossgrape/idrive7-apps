@@ -1919,5 +1919,10 @@
   "Leave as is gives my own colour back": "그대로 두기: 내 색상으로 복원",
   "By driving mode": "주행 모드별",
   "Following driving mode": "주행 모드 따름",
-  "Not following": "따르지 않음"
+  "Not following": "따르지 않음",
+  "Car type": "차량 유형",
+  "Petrol or diesel": "가솔린 또는 디젤",
+  "Hybrid Eco Pro": "하이브리드 에코 프로",
+  "Hybrid": "하이브리드",
+  "Electric": "전기"
 }

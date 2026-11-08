@@ -1655,5 +1655,10 @@
   "Leave as is gives my own colour back": "保持不变时恢复我的颜色",
   "By driving mode": "按驾驶模式",
   "Following driving mode": "跟随驾驶模式",
-  "Not following": "不跟随"
+  "Not following": "不跟随",
+  "Car type": "车辆类型",
+  "Petrol or diesel": "汽油或柴油",
+  "Hybrid Eco Pro": "混合动力节能",
+  "Hybrid": "混合动力",
+  "Electric": "纯电"
 }
