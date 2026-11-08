@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.15.0",
+  "version": "1.15.1",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -33,6 +33,10 @@
     "de.bmw.infrastructure.EnvironmentalInformation": {
       "_optional": "outside temperature on the HUD",
       "ExteriorTemperature": "s"
+    },
+    "de.bmw.infrastructure.VehicleCondition": {
+      "_optional": "the car switched off: the HUD back to Cluster functions",
+      "VehicleCondition": "s"
     },
     "de.bmw.infotainment.misc.MDrive": {
       "_optional": "the gearbox programme (D / S / M): shift grades and learning only from shifts made by hand",

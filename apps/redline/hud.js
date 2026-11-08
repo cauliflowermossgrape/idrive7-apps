@@ -30,6 +30,7 @@ const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
 // the drawing: layouts, palettes, readouts (hud-draw.js); this file decides what to show and when
 const Draw = require('./hud-draw');
+const { HudClaim } = require('./kit/hud_claim');
 const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
 try { ClusterRender = require('./cluster_render_client').ClusterRender; } catch (e) { /* logged at start */ }
@@ -648,8 +649,31 @@ function start(ctx, src) {
         log.info('hud: tach on at ' + r.x + ',' + r.y + ' ' + r.w + 'x' + r.h);
     });
 
+    /*
+     * Shared with a standing HUD app (Cluster functions, kit/hud_claim.js): while on, Redline holds the HUD and
+     * the other gives way; with one installed, Redline's HUD lasts until the car is switched off (vehicle state
+     * from drive or ignition back to parked) or the head unit starts again.
+     */
+    const claim = new HudClaim('redline', log);
+    const appData = ctx.dataDir || null;
+    const handBack = (why) => {
+        if (mode() === 'off' || !HudClaim.standingOn(appData)) return;
+        log.info('hud: ' + why + ': off, the HUD back to the app that stands on it');
+        settings.set('hud', 'off');
+    };
+    if (mode() !== 'off' && !claim.thisBoot()) handBack('the head unit started again');
+    let ignition = false;
+    const condTimer = setInterval(safe('condition', () => {
+        const c = src.data && src.data().condition;
+        if (!isNum(c)) return;
+        if (c >= 7) ignition = true;
+        else if (c <= 5 && ignition) { ignition = false; handBack('the car was switched off'); }
+    }), 2000);
+    if (condTimer.unref) condTimer.unref();
+
     const apply = safe('apply', () => {
         const m = mode();
+        claim.hold(m !== 'off');
         if (m === 'off') { disconnect(); return; }
         connect();
         if (!cr) return;

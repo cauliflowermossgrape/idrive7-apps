@@ -39,6 +39,13 @@ cars with a HUD, but nobody has checked yet.
 2. Use **HUD position and size** → *Size* and *Position* to move the tach. The pattern follows as you go.
 3. Set **Show on HUD** to **On**.
 
+### With Cluster functions
+
+Cluster functions (the HUD map, turn signals and gear) stands on the HUD whenever it is on. Turning
+Redline's HUD on takes the HUD over: Cluster functions gives way. When the car is switched off, or the
+head unit starts again, Redline's *Show on HUD* goes back to *Off* and Cluster functions has the HUD
+again. Without Cluster functions installed, Redline's HUD stays on. (`kit/runtime/hud_claim.js`.)
+
 ### What it shows
 
 **Layouts** (*Layout*):
