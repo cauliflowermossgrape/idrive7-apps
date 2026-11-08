@@ -2,7 +2,7 @@
   "id": "live_adjustments",
   "title": "Engine Config",
   "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link, or following the driving mode (Sport open, Eco Pro closed); held against the DME's timeout, Close handed back above a set engine speed. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "vendor": "custom",
   "loggingId": "OAA0",
   "iconGlyph": "sliders",
@@ -31,6 +31,25 @@
     },
     "de.bmw.infotainment.drivingexcitement.FES": {
       "statusFESVehicleDynamicSwitchHMI": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "_optional": "xDrive live: g and yaw rate",
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs",
+      "statusYawVelocityVehicle": "rs"
+    },
+    "de.bmw.infrastructure.analytics.BasicDataSet": {
+      "_optional": "xDrive live: the front / rear split",
+      "basicDataSet": "s"
+    },
+    "de.bmw.powertrain.Powertrain": {
+      "_optional": "xDrive live: wheel slip",
+      "ActualValueRPMWheel": "s"
+    },
+    "de.bmw.chassis.SteeringAngle": {
+      "_optional": "xDrive live: the steering wheel",
+      "ActualSteeringAngleDriver": "s",
+      "actualSteeringAngleDriverNoCRC": "s"
     }
   },
   "screens": [
@@ -99,7 +118,7 @@
         ]
       ]
     },
-{
+    {
       "key": "closeLimit",
       "label": "Close: hand back above",
       "type": "choice",
@@ -199,7 +218,22 @@
         ]
       ]
     },
-    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full", "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {
+      "key": "layout",
+      "label": "Screen layout",
+      "type": "choice",
+      "default": "full",
+      "options": [
+        [
+          "full",
+          "Full screen"
+        ],
+        [
+          "standard",
+          "Standard"
+        ]
+      ]
+    },
     {
       "key": "renderer",
       "label": "Renderer",

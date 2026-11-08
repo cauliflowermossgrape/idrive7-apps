@@ -4,7 +4,9 @@
  *   Exhaust Flap - BMW's own 0x60FD on the DME (controller.js + adapters), always there;
  *   Engine Map / Max Cooling / Burbles / Active Sound - the tune picked in Settings
  *   ("Tuning software": Off, BM3, MHD) gets its own tabs (tune.js). Off sends nothing;
- *   xDrive - EXPERIMENTAL, xDrive off until the ignition cycle (xdrive.js), only with its setting on.
+ *   xDrive - EXPERIMENTAL, xDrive off until the ignition cycle (xdrive.js), only with its setting on;
+ *   xDrive live - read only: front / rear split, wheel slip, steering, yaw and g (xdrive_live.js), with that setting
+ *   or once the car showed it has xDrive.
  *
  * Exhaust Flap modes: OEM (hand the flap back to the DME), OPEN (request it open) and
  * CLOSE (request it shut) — the bottom action buttons — and DRIVE MODE: the flap follows the
@@ -26,16 +28,18 @@ const UI = require('./ui');
 const { Controller, REFRESH_KEYS } = require('./controller');
 const { TuneControl } = require('./tune');
 const { XDriveControl } = require('./xdrive');
+const { XDriveLive } = require('./xdrive_live');
 const Car = require('./kit/car');
 const { AutoFlap } = require('./auto');
 
 const FES = 'de.bmw.infotainment.drivingexcitement.FES';
 const RPM_STALE_MS = 5000;          // the Close rpm guard: an engine speed older than this is none
 
-/** The tabs this car gets: Exhaust Flap always, the picked tune's pages, xDrive when switched on. */
-function pagesFor(f, xdrive) {
+/** The tabs this car gets: Exhaust Flap always, the picked tune's pages, xDrive when switched on, xDrive live with
+ * it or on a car that showed it has xDrive. */
+function pagesFor(f, xdrive, live) {
     return ['Exhaust Flap'].concat(f.map ? ['Engine Map'] : [], f.cooling ? ['Max Cooling'] : [],
-        f.burbles ? ['Burbles'] : [], f.asd ? ['Active Sound'] : [], xdrive ? ['xDrive'] : []);
+        f.burbles ? ['Burbles'] : [], f.asd ? ['Active Sound'] : [], xdrive ? ['xDrive'] : [], xdrive || live ? ['xDrive live'] : []);
 }
 
 // eased valve angle toward the current state (0 = shut, 1 = open)
@@ -53,9 +57,10 @@ mgu.run({
         const controller = new Controller(ctx);
         // engine speed for Max Cooling's rpm threshold: live values only, never the demo drive
         // xDrive (experimental) also wants speed and the selector: live values only as well
-        const car = new Car(ctx, ['rpm', 'speed', 'gear', 'condition']);
+        const car = new Car(ctx, ['rpm', 'speed', 'gear', 'condition', 'accel']);
         const tune = new TuneControl(ctx, { rpm: () => { const d = car.data(); return d.demo ? null : d.rpm; } });
         const xdrive = new XDriveControl(ctx, car);
+        const xlive = new XDriveLive(ctx, car);
         let angle = 0.18;
         let page = 'Exhaust Flap';          // by name: the tune's tabs come and go with the setting
         let loop = null;
@@ -86,7 +91,7 @@ mgu.run({
             xdriveOff: tuneAct(() => xdrive.requestOff()),
             xdriveOn: tuneAct(() => xdrive.requestOn()),
         };
-        const pages = () => pagesFor(tune.features(), xdrive.enabled);
+        const pages = () => pagesFor(tune.features(), xdrive.enabled, xlive.seen);
 
         const render = async () => {
             const v = controller.view();
@@ -102,10 +107,11 @@ mgu.run({
             v.pages = list;
             v.page = page;
             v.tune = tune.view();
-            if (page === 'xDrive') {
+            if (page === 'xDrive' || page === 'xDrive live') {
                 const r = xdrive.tick();             // DBE1 read now and then, only on this tab
                 if (r) r.then(repaint).catch((e) => log.error('xdrive', e));
                 v.xdrive = xdrive.view();
+                if (page === 'xDrive live') v.xlive = xlive.view();
             }
             const t = ctx.theme();
             const cv = ctx.canvas(UI.W, UI.H) || new Canvas(UI.W, UI.H);
@@ -146,6 +152,7 @@ mgu.run({
         await controller.start();        // read-only: detect DME + read state, no actuation
         await tune.start(controller.link);   // nothing at all while "Tuning software" is Off
         await xdrive.start(controller.link); // nothing at all while "xDrive (experimental)" is Off
+        await xlive.start();
         // the diagnostic link often comes up after the app started (at boot): detect again then
         // (the car came up: the DME starts on its own strategy, so what is wanted - Drive mode's - goes again)
         if (controller.link) controller.link.onAvailable((on) => controller.refresh().then(() => tune.refresh())

@@ -46,6 +46,7 @@ function draw(cv, G, t, v, act) {
     if (page === 'Burbles') return drawBurbles(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'Active Sound') return drawAsd(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'xDrive') return drawXDrive(cv, G, t, v.xdrive || {}, act || {}, bottom);
+    if (page === 'xDrive live') return drawXDriveLive(cv, G, t, v.xlive || {}, v.xdrive || {}, bottom);
 
     // --- the rear silencer, the flap's butterfly in the right tailpipe ---
     drawMuffler(cv, G, t, 100, G.TOP + 12, W - 200, bottom - 142 - G.TOP, v);
@@ -241,6 +242,56 @@ function drawXDrive(cv, G, t, x, act, bottom) {
         buttonRow(cv, G, t, [offBtn, [x.confirmWhat === 'on' ? 'Confirm xDrive on' : 'xDrive on', act.xdriveOn, x.confirmWhat === 'on']],
             bottom, 300, x.busy, 'la_xd');
     } else buttonRow(cv, G, t, [offBtn], bottom, 360, x.busy, 'la_xd');
+    return cv;
+}
+
+/**
+ * xDrive live (read only, xdrive_live.js): the car from above with the split between its axles and each wheel's slip,
+ * and the readings beside it. Slip within 3 % is shown plain, up to 8 % amber, above that red.
+ */
+function drawXDriveLive(cv, G, t, x, xd, bottom) {
+    const pct = (v, d) => (G.isNum(v) ? (v > 0 && d ? '+' : '') + v.toFixed(d || 0) + ' %' : '--');
+    const slipCol = (v) => (!G.isNum(v) ? t.dim : Math.abs(v) > 8 ? RED(t) : Math.abs(v) > 3 ? (t.warn || '#d29922') : t.text);
+    // the car from above, front up
+    const top = G.TOP + 30, h = Math.max(300, bottom - top - 40), cx = 420, bw = 170;
+    cv.strokeRoundRect(cx - bw / 2, top, bw, h, 60, 3, G.withAlpha('#ffffff', 0.35));
+    const wy = [top + h * 0.2, top + h * 0.8], ww = 34, wh = 74;
+    [['FL', -1, 0], ['FR', 1, 0], ['RL', -1, 1], ['RR', 1, 1]].forEach(([k, side, axle]) => {
+        const slip = x.wheels ? x.wheels[k] : null, col = slipCol(slip);
+        const wx = cx + side * (bw / 2 + 8) - (side < 0 ? ww : 0);
+        cv.roundRect(wx, wy[axle] - wh / 2, ww, wh, 8, G.withAlpha(col, 0.55));
+        cv.text(pct(slip, 1), side < 0 ? wx - 14 : wx + ww + 14, wy[axle] + 8, 24, col, { align: side < 0 ? 'right' : 'left', font: 'bold' });
+    });
+    // the split: a bar along the car, front share lit from the top
+    const rear = G.isNum(x.rear) ? x.rear : null, front = rear === null ? null : 100 - rear;
+    const by = wy[0] + 10, bh = wy[1] - wy[0] - 20;
+    cv.roundRect(cx - 14, by, 28, bh, 10, t.track || G.withAlpha('#ffffff', 0.1));
+    if (front !== null) {
+        cv.roundRect(cx - 14, by, 28, Math.max(10, bh * front / 100), 10, t.accent2 || '#81c4ff');
+        cv.roundRect(cx - 14, by + bh * front / 100, 28, Math.max(10, bh * rear / 100), 10, RED(t));
+    }
+    cv.text(front === null ? '--' : Math.round(front) + ' %', cx, top - 4, 22, front === null ? t.dim : t.text, { align: 'center', font: 'bold' });
+    cv.text(rear === null ? '--' : Math.round(rear) + ' %', cx, top + h + 28, 22, rear === null ? t.dim : t.text, { align: 'center', font: 'bold' });
+
+    // the readings
+    const nm = xd && xd.torque ? xd.torque.actual.toFixed(0) + ' Nm' : '--';
+    const rows = [
+        ['FRONT / REAR', front === null ? '--' : Math.round(front) + ' / ' + Math.round(rear) + ' %'],
+        ['FRONT AXLE TORQUE', nm],
+        ['FRONT AXLE AGAINST REAR', pct(x.axle, 1)],
+        ['STEERING WHEEL', G.isNum(x.steer) ? Math.round(x.steer) + '°' : '--'],
+        ['YAW RATE', G.isNum(x.yaw) ? x.yaw.toFixed(1) + ' °/s' : '--'],
+        ['LATERAL', G.isNum(x.gLat) ? x.gLat.toFixed(2) + ' g' : '--'],
+        ['LONGITUDINAL', G.isNum(x.gLong) ? x.gLong.toFixed(2) + ' g' : '--'],
+    ];
+    const step = Math.max(44, Math.min(60, (bottom - G.TOP - 80) / rows.length));
+    rows.forEach(([label, value], i) => {
+        const y = G.TOP + 56 + i * step;
+        cv.text(label, 820, y, 20, t.dim, { font: 'bold', spacing: 1.2 });
+        cv.text(value, 1520, y, 28, value === '--' ? t.dim : t.text, { font: 'bold', align: 'right' });
+    });
+    cv.text('Read only · wheel slip compared between the wheels, above 5 km/h' + (xd && xd.torque ? '' : ' · front axle torque with the xDrive tab\'s setting'),
+        820, bottom - 16, 16, t.dim, { font: 'label' });
     return cv;
 }
 
