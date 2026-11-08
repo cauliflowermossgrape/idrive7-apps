@@ -81,6 +81,16 @@ function gearText(d) {
     return st === 'P' || st === 'R' || st === 'N' ? st : g === -1 ? 'R' : isNum(g) && g > 0 ? String(g) : st === 'D' ? 'D' : g === 0 ? 'N' : '-';
 }
 
+const RACE_BLUE = '#2a7dff';
+/**
+ * A shift light's colour at f (0 first .. 1 last) for the app's "Shift light style" (setting "lights"),
+ * as the app's own lights: m green / yellow / red, f1 (Race) green / red / blue, mono one colour.
+ */
+function lightCol(style, P, f) {
+    if (style === 'mono') return P.text;
+    if (style === 'f1') return f < 0.42 ? P.low : f < 0.84 ? P.high : RACE_BLUE;
+    return f < 0.34 ? P.low : f < 0.67 ? P.mid : P.high;
+}
 /**
  * Shift lights at the points pts ([[x, y]]), radius rad. pos[i]: the step light i belongs to (0 lights
  * first); steps: how many steps. They count from cue.from to cue.at (the last step lights only with
@@ -89,14 +99,10 @@ function gearText(d) {
 function drawLights(cv, pts, pos, steps, rad, s) {
     const bg = s.layer !== 'fg', fg = s.layer !== 'bg', P = s.P, cue = s.cue;
     const flash = cue.shift || cue.limiter;
-    const flashCol = cue.limiter ? P.limit : s.style === 'f1' ? '#2a7dff' : P.flash;
+    const flashCol = cue.limiter ? P.limit : s.style === 'f1' ? RACE_BLUE : P.flash;
     const count = isNum(s.rpm) ? clamp((s.rpm - cue.from) / (cue.at - cue.from), 0, 1) : 0;
     const lit = Math.ceil(count * (steps - 1));
-    const col = (k) => {
-        if (s.style === 'mono') return P.text;
-        const f = k / (steps - 1);
-        return f < 0.34 ? P.low : f < 0.67 ? P.mid : P.high;
-    };
+    const col = (k) => lightCol(s.style, P, k / (steps - 1));
     // shape: 'dot' (filled), 'rect' (an LCD block), 'ring' (vector: outline, lit ones with a core)
     const shape = s.shape || 'dot';
     const put = (p, c, lit) => {
@@ -354,4 +360,4 @@ function scaled(r, k, ox, oy) {
     };
 }
 
-module.exports = { scaled, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };
+module.exports = { scaled, lightCol, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };

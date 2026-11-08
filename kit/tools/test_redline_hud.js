@@ -147,6 +147,16 @@ ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'lights') ===
     ok(Hud.readoutsFor({ rpm: 5000, oil: 30, coolant: 30 }, 30, 1.2, { rpm: 4000, cold: true }, c, { torque: 300 }).length === 0, 'lights + gear only: no readouts, not even cold temps');
 }
 
+/* ---------- shift light colours follow the app's "Shift light style" ---------- */
+{
+    const P = Draw.PALETTES.colour, at = (st, n) => Array.from({ length: n }, (_, i) => Draw.lightCol(st, P, i / (n - 1)));
+    const m = at('m', 12), f1 = at('f1', 12);
+    ok(m[0] === P.low && m.indexOf(P.mid) > 0 && m[11] === P.high, 'M: green, yellow, red');
+    ok(f1[0] === P.low && f1.indexOf(P.mid) < 0 && f1[6] === P.high && f1[11] !== P.high && f1[11] !== P.low, 'Race: green, red, blue (no yellow)');
+    ok(at('f1', 6).slice(0, 5).indexOf(P.high) > 0, 'Race on 6 GT3 steps: red before the flash');
+    ok(at('mono', 12).every((c) => c === P.text), 'Theme colour: one colour');
+}
+
 /* ---------- the demo drive ---------- */
 for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     const d = Hud.demoAt(t);
