@@ -7,8 +7,10 @@
  * on; ambientLightInteriorColour sets one. A set names only the slot and leaves every other field "not filled",
  * so brightness and the light's other modes stay as they are.
  *
- * The car's driving modes: Sport, Comfort, Eco Pro and Adaptive; a plug-in hybrid's Sport, Hybrid, Hybrid Eco Pro
- * and Electric instead, known from the first PHEV mode the car reports (setting carKind, kept).
+ * The car's driving modes, each with its variants: Sport (Sport, Sport Plus, Sport Individual, XtraBoost), Comfort
+ * (petrol and diesel cars), Hybrid and Electric (plug-in hybrids), Eco Pro, and Adaptive once the car has shown it
+ * has it (setting adaptiveSeen). A plug-in hybrid is known from the first PHEV mode the car reports (setting
+ * carKind); both are kept.
  * Driving mode (FES statusFESVehicleDynamicSwitchHMI): when it changes to a mode with a colour set, that colour;
  * to one set to "Leave as is", the driver's own colour back (setting "restore"). The driver's own colour is the
  * last one not set by this app's driving modes: one chosen in BMW's menu or by hand here. One write at a time, at
@@ -25,8 +27,8 @@ const LIGHT = 'de.bmw.infotainment.misc.ComfortFunctionIuK';
 const FES = 'de.bmw.infotainment.drivingexcitement.FES';
 const SLOTS = 12;
 const MIN_GAP_MS = 1500;
-const MODES = ['sport', 'comfort', 'eco', 'adaptive', 'hybrid', 'hybridEco', 'electric'];
-const KIND_MODES = { ice: ['sport', 'comfort', 'eco', 'adaptive'], hybrid: ['sport', 'hybrid', 'hybridEco', 'electric'] };
+const MODES = ['sport', 'comfort', 'hybrid', 'electric', 'eco', 'adaptive'];
+const KIND_MODES = { ice: ['sport', 'comfort', 'eco'], hybrid: ['sport', 'hybrid', 'electric', 'eco'] };
 const UNFILLED = 'SIGNAL_UNBEFUELLT';
 
 // actualValueModeDrivingExperience's names and wire numbers
@@ -34,10 +36,10 @@ const BY_NAME = {
     SPORT_DYNAMIC: 1, SPORT_EXPERT: 2, SPORT_INDIVIDUAL: 3, COMFORT: 4, COMFORT_PLUS: 5, COMFORT_INDIVIDUAL: 6,
     ECO_PRO_EFFICIENT: 7, ECO_PRO_PLUS: 8, ECO_PRO_INDIVIDUAL: 9, ADAPTIVE: 10, PHEV_SPORT_STANDARD: 15, PHEV_SPORT_INDIVIDUAL: 16,
     PHEV_HYBRID_STANDARD: 17, PHEV_HYBRID_ECO: 18, PHEV_HYBRID_COMFORT: 19, PHEV_ELECTRIC_STANDARD: 20, PHEV_ELECTRIC_INDIVIDUAL: 21,
-    PHEV_SPORT_PLUS: 23,
+    PHEV_SPORT_PLUS: 23, BOOST: 28,
 };
 const BY_NUMBER = { 1: 'sport', 2: 'sport', 3: 'sport', 4: 'comfort', 5: 'comfort', 6: 'comfort', 7: 'eco', 8: 'eco', 9: 'eco', 10: 'adaptive',
-    15: 'sport', 16: 'sport', 23: 'sport', 17: 'hybrid', 19: 'hybrid', 18: 'hybridEco', 20: 'electric', 21: 'electric' };
+    15: 'sport', 16: 'sport', 23: 'sport', 28: 'sport', 17: 'hybrid', 18: 'hybrid', 19: 'hybrid', 20: 'electric', 21: 'electric' };
 const PHEV = [15, 16, 17, 18, 19, 20, 21, 22, 23];
 
 /* actualValueModeDrivingExperience: a name or its wire number -> { mode (one of MODES or null), phev }, or null. */
@@ -91,7 +93,10 @@ class Ambient extends EventEmitter {
     }
 
     slot() { return this._slot; }
-    modes() { return KIND_MODES[this.settings.get('carKind') === 'hybrid' ? 'hybrid' : 'ice']; }
+    modes() {
+        const own = KIND_MODES[this.settings.get('carKind') === 'hybrid' ? 'hybrid' : 'ice'];
+        return this.settings.get('adaptiveSeen') ? own.concat(['adaptive']) : own;
+    }
     mode() { return this._mode; }
     own() { return this._own; }
 
@@ -126,6 +131,7 @@ class Ambient extends EventEmitter {
             this.log.info('ambient: a plug-in hybrid\'s driving modes');
             this.settings.set('carKind', 'hybrid');
         }
+        if (got.mode === 'adaptive' && !this.settings.get('adaptiveSeen')) this.settings.set('adaptiveSeen', true);
         const m = got.mode;
         if (m === null || m === this._mode) return;
         this._mode = m;
