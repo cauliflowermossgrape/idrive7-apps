@@ -375,6 +375,11 @@ const checks = [
         asked = []; now += 2000; await b.read();
         const volt = asked.filter((q) => q.ecu === 18 && (q.sid === 0x01 || [0xF442, 0x5853].indexOf((q.req[0] << 8) | q.req[1]) >= 0));
         assert.deepStrictEqual(volt.map((q) => q.sid), [0x01], 'only OBD 42 asked for the voltage');
+        // a read or two missed (the engine unit busy): the last voltage stays up, dimmed, not a blank
+        delete replies['18:OBD 42'];
+        now += 15000; await b.read();
+        t = await b.draw();
+        assert(t.includes('12.65') && !t.includes('--.--'), 'the last voltage kept: ' + t.join(' | '));
         // charging while the car slows down: REGEN
         replies['18:OBD 42'] = v(14.6);
         now += 2000; await b.read();

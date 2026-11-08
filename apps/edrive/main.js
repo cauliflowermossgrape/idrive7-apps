@@ -563,17 +563,20 @@ mgu.run({
 
         let busy = false, pollTimer = null;
         let sohFailT = 0, last48Try = 0;
+        let pollMs = 0;
         async function poll(forceSoh) {
             if (busy) return;
             busy = true;
+            const t0 = Date.now();
             try {
                 // no hybrid system: parked (not driven, the page not used lately) nothing is read, so the car can sleep
                 if (diag.available && (kind() !== 'none' || b12.allowed(forceSoh))) {
                     // 12 V: every poll, from the source that answered last (after 3 failures in a row only every 5 minutes)
                     const v12 = await b12.readVolt(forceSoh);
                     // without a hybrid system only re-check the battery unit every 5 minutes
+                    // (and not while the 12 V page is up: those units' timeouts would hold up the voltage)
                     const noHy = st.noHybrid && settings.get('hybrid') !== 'yes';
-                    if (!noHy || forceSoh || Date.now() - lastSocTry > 300000) {
+                    if (!noHy || forceSoh || (Date.now() - lastSocTry > 300000 && !b12.fast())) {
                         lastSocTry = Date.now();
                         const soc = await readValue('soc');
                         if (soc !== null) { live.soc = soc; live.socT = Date.now(); onSoc(soc, live.socT); }
@@ -590,19 +593,20 @@ mgu.run({
                     // no high-voltage battery: a 48 V one (looked for while not known, then every 5 minutes while
                     // there is none), and the 12 V battery's own values
                     const k = kind(), auto = settings.get('hybrid') === 'auto';
-                    if (k === 'mhev' || (auto && k === 'none' && (!st.no48 || forceSoh || Date.now() - last48Try > 300000))) {
+                    if (k === 'mhev' || (auto && k === 'none' && (!st.no48 || forceSoh || (Date.now() - last48Try > 300000 && !b12.fast())))) {
                         last48Try = Date.now();
                         await read48(v12 !== null);
                     }
                     if (kind() !== 'phev') await b12.readValues(forceSoh);
                 }
             } catch (e) { log.warn('poll: ' + e); }
+            pollMs = Date.now() - t0;
             busy = false;
         }
         function schedule() {
             clearTimeout(pollTimer);
-            // the 12 V pages up and in use: every 2 s (what the battery does, the voltage's last minutes)
-            pollTimer = setTimeout(() => poll(false).then(schedule), b12.fast() ? 2000 : settings.get('poll') * 1000);
+            // the 12 V pages up and in use: the voltage every second (what the battery does, the last minutes)
+            pollTimer = setTimeout(() => poll(false).then(schedule), b12.fast() ? Math.max(250, b12.FAST_MS - pollMs) : settings.get('poll') * 1000);
         }
         diag.on('available', (a) => { if (a) poll(false); });
         poll(false).then(schedule);
@@ -705,7 +709,7 @@ mgu.run({
             const km = G.isNum(soc) ? estimate(soc, live.ambient, null, paceNow(), comfortKw()).mid : null;
             return (G.isNum(km) ? Math.round(D(km)) : '--') + ' ' + dU();
         };
-        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]) });
+        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, kind: () => kind(), page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]) });
         const isLive = (p) => lv.PAGES.indexOf(p) >= 0;
 
         /* ---------- for other apps (Cluster functions' HUD): the power now and the range, four times a second ----------

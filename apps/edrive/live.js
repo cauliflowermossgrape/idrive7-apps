@@ -224,6 +224,8 @@ module.exports = function live(ctx, sh) {
     }
     async function readPower() {
         // a car without the current identifier: only every 30 s. One that has answered keeps being asked
+        // (no high-voltage battery: nothing to ask; the tries cost the 12 V reads seconds every 30 s)
+        if (sh.kind && sh.kind() !== 'phev') return;
         if (!diag.available || !inUse() || (!iOk && iFail >= 3 && Date.now() - iTry < 30000)) return;
         const queued = Date.now();
         await exclusive(async () => {
