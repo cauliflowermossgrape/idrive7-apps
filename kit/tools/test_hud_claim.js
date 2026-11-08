@@ -53,19 +53,20 @@ h.stop();
 s = settings('off'); h = start(s);
 s.set('hud', 'on');
 ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'turned on: Redline holds the HUD');
+const until = (check, ms) => new Promise((res) => { const end = Date.now() + ms; const poll = () => (check() || Date.now() > end ? res() : setTimeout(poll, 50)); poll(); });
 cond = 10;
-setTimeout(() => {
+(async () => {
+    await new Promise((res) => setTimeout(res, 4500));       // the 2 s check has seen the car on (twice)
     ok(s.v.hud === 'on', 'still on while driving');
     cond = 5;
-    setTimeout(() => {
-        ok(s.v.hud === 'off' && HudClaim.others('robertn_waze_cluster').length === 0, 'switched off: Redline\'s HUD off, the claim given back');
-        h.stop();
-        // without a standing app Redline keeps its HUD on
-        HudClaim.standing(wc, false);
-        s = settings('on'); fs.rmSync(process.env.MGU_HUD_CLAIMS, { recursive: true, force: true });
-        h = start(s);
-        ok(s.v.hud === 'on', 'no standing app: Redline\'s HUD stays on after a start');
-        console.log('hud claim: ' + checks + ' checks, ' + fails + ' failed');
-        process.exit(fails ? 1 : 0);
-    }, 2300);
-}, 2300);
+    await until(() => s.v.hud === 'off', 8000);
+    ok(s.v.hud === 'off' && HudClaim.others('robertn_waze_cluster').length === 0, 'switched off: Redline\'s HUD off, the claim given back');
+    h.stop();
+    // without a standing app Redline keeps its HUD on
+    HudClaim.standing(wc, false);
+    s = settings('on'); fs.rmSync(process.env.MGU_HUD_CLAIMS, { recursive: true, force: true });
+    h = start(s);
+    ok(s.v.hud === 'on', 'no standing app: Redline\'s HUD stays on after a start');
+    console.log('hud claim: ' + checks + ' checks, ' + fails + ' failed');
+    process.exit(fails ? 1 : 0);
+})();

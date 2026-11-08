@@ -21,7 +21,7 @@ const realDiag = require(path.join(KIT, 'diag'));
 
 global.setInterval = () => 0;
 // the engine unit's replies by DID (data after the DID, hex); anything else: no reply
-const REPLIES = {
+let REPLIES = {
     '411A': '80 00 74 00 00 07 CF 80 00',    // oil life 64 % (hours), 58 % (fuel); 512 000 s = 142.2 h on this oil
     '4404': '03 0F',                         // 7830 km on this oil
     '4163': '00 00 00 00 01 9C 00 00 49 70', // spark plugs: 41 200 km left, 18 800 km driven
@@ -98,7 +98,31 @@ const flush = async () => { for (let i = 0; i < 40; i++) await new Promise((r) =
         t = await draw();
         assert(t.includes('DIAGNOSTICS'), 'Diagnostics after Engine');
         void last;
-        console.log('Service Engine page checks passed (decoded values, -- for a missing one, read-only, once a minute, tabs).');
+
+        // a B47 / B57 diesel (DDE D83BX7C0 by its SGBD index): the particulate filter's values, a regeneration likely
+        // running while it is hotter than 500 °C before the filter
+        REPLIES = {
+            'F150': '0F 1F E8 01',
+            '44BE': '04 A8',          // 1192 x 0.01525902 = 18.2 g soot
+            '44BD': '0A 96',          // 2710 -> 41.4 g ash
+            '4502': '45 06',          // 17670 x 0.03128099 - 50 = 502.7 °C
+            '44B8': '00 D6',          // 214 regenerations
+            '44BF': '00 04 5D 30',    // 286 000 m -> 286 km
+            '44C7': '02 00',          // every 512 km
+        };
+        delete require.cache[require.resolve(MAIN)];
+        require(MAIN);
+        S.diagPage = false;
+        await app.start(ctx);
+        await flush();
+        sent = [];
+        await tab(1);
+        t = await draw();
+        ['18.2 g', '41.4 g', '503 °C', '214', '286 km', '512 km', 'LIKELY RUNNING', 'SOOT', 'DISTANCE']
+            .forEach((x) => assert(t.includes(x), x + ' on a diesel\'s Engine page: ' + t.join(' | ')));
+        assert(!t.includes('SPARK PLUGS: LEFT'), 'no spark plugs on a diesel');
+        assert(!sent.some((r) => r[2] === 0x41 && r[3] === 0x1A), 'no petrol identifiers asked of a diesel unit');
+        console.log('Service Engine page checks passed (decoded values, -- for a missing one, read-only, once a minute, tabs, a diesel\'s filter).');
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }
