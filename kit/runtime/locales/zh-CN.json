@@ -1648,5 +1648,12 @@
   "Eco Pro Individual": "节能个性化",
   "ENGINE": "发动机",
   "VOLTAGE FROM": "电压来源",
-  "running": "运行中"
+  "running": "运行中",
+  "Ambient config": "氛围灯设置",
+  "Colour by driving mode": "按驾驶模式设颜色",
+  "Leave as is": "保持不变",
+  "Leave as is gives my own colour back": "保持不变时恢复我的颜色",
+  "By driving mode": "按驾驶模式",
+  "Following driving mode": "跟随驾驶模式",
+  "Not following": "不跟随"
 }
