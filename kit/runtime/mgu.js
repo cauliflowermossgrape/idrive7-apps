@@ -527,6 +527,17 @@ async function runInner(impl) {
     }
     await app.start();
     active();
+    const settings = new Settings(SPEC.settings);
+    // impl.background(bg): what the app does with or without its screens (app.json "autostart": true, an app the
+    // platform starts by itself); bg = { app, log, settings, signals, spec, dataDir }. What it returns is
+    // ctx.background for impl.start.
+    let background = null;
+    if (impl && impl.background) {
+        try {
+            background = await impl.background({ app, log, settings, signals: require('./signals'), spec: SPEC, dataDir: DATA_DIR });
+        } catch (e) { log.error('background start: ' + (e && e.stack || e)); }
+        if (!app.rhmiApplication) { log.info('no screens for this start: running in the background'); return; }
+    }
     if (!app.rhmiApplication) {
         // The SDK did not create the app's screens: nothing can be shown. Stay up (idle) rather than throw: a
         // crash makes CorruptAppsHandler wipe the app's data, and a second one uninstalls it (issue #39).
@@ -537,11 +548,10 @@ async function runInner(impl) {
         return;
     }
     const ui = new Ui(app);
-    const settings = new Settings(SPEC.settings);
     const display = new Display(ui, log, SPEC, settings, () => themes.theme(settings.get('theme')));
     ui.display = display;
     const ctx = {
-        app, ui, settings, log, spec: SPEC, dataDir: DATA_DIR, display, widget,
+        app, ui, settings, log, spec: SPEC, dataDir: DATA_DIR, display, widget, background,
         signals: require('./signals'),
         theme: () => themes.theme(settings.get('theme')),
         /**

@@ -1916,3 +1916,16 @@ Readouts refresh (faster: more work for the head unit, experimental)	표시값 �
 Readout labels	표시값 이름
 Clearer (bigger, brighter)	선명하게 (더 크고 밝게)
 Outside temp (blue at 3 °C / 37 °F and below)	외기 온도 (3 °C / 37 °F 이하 파란색)
+Ambient config	앰비언트 설정
+Colour by driving mode	주행 모드별 색상
+Leave as is	그대로 두기
+Leave as is gives my own colour back	그대로 두기: 내 색상으로 복원
+By driving mode	주행 모드별
+Following driving mode	주행 모드 따름
+Not following	따르지 않음
+Car type	차량 유형
+Petrol or diesel	가솔린 또는 디젤
+Hybrid Eco Pro	하이브리드 에코 프로
+Hybrid	하이브리드
+Electric	전기
+Give the HUD back to Cluster functions at switch-off	시동을 끄면 HUD를 Cluster functions에 돌려주기

@@ -1807,5 +1807,18 @@
   "Eco Pro Individual": "Эко Про индивидуальный",
   "Adaptive": "Адаптивный",
   "ENGINE": "ДВИГАТЕЛЬ",
-  "VOLTAGE FROM": "НАПРЯЖЕНИЕ ИЗ"
+  "VOLTAGE FROM": "НАПРЯЖЕНИЕ ИЗ",
+  "Ambient config": "Настройка подсветки",
+  "Colour by driving mode": "Цвет по режиму движения",
+  "Leave as is": "Не менять",
+  "Leave as is gives my own colour back": "«Не менять» возвращает мой цвет",
+  "By driving mode": "По режиму движения",
+  "Following driving mode": "По режиму движения: вкл.",
+  "Not following": "По режиму движения: выкл.",
+  "Car type": "Тип автомобиля",
+  "Petrol or diesel": "Бензин или дизель",
+  "Hybrid Eco Pro": "Гибрид Эко Про",
+  "Hybrid": "Гибрид",
+  "Electric": "Электро",
+  "Give the HUD back to Cluster functions at switch-off": "Возвращать HUD приложению Cluster functions при выключении"
 }

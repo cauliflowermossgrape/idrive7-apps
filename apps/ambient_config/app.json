@@ -1,0 +1,50 @@
+{
+  "id": "ambient_config",
+  "title": "Ambient config",
+  "description": "The ambient light's colour: set it here, or let each driving mode choose one",
+  "version": "1.1.0",
+  "vendor": "custom",
+  "loggingId": "OAA4",
+  "iconGlyph": "ambient",
+  "autostart": true,
+  "signals": {
+    "de.bmw.infotainment.misc.ComfortFunctionIuK": {
+      "ambientLightInteriorColour": "w",
+      "statusAmbientLightInteriorColour": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "the driving mode: colours by mode",
+      "statusFESVehicleDynamicSwitchHMI": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Ambient config",
+      "buttons": [
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "carKind", "label": "Car type", "type": "choice", "default": "ice", "hidden": true,
+     "options": [["ice", "Petrol or diesel"], ["hybrid", "Plug-in hybrid"]]},
+    {"key": "follow", "label": "Colour by driving mode", "type": "bool", "default": true},
+    {"key": "sport", "label": "Sport", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true}, "group": "Colour by driving mode"},
+    {"key": "hybrid", "label": "Hybrid", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "hybrid"}, "group": "Colour by driving mode"},
+    {"key": "hybridEco", "label": "Hybrid Eco Pro", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "hybrid"}, "group": "Colour by driving mode"},
+    {"key": "electric", "label": "Electric", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "hybrid"}, "group": "Colour by driving mode"},
+    {"key": "comfort", "label": "Comfort", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "ice"}, "group": "Colour by driving mode"},
+    {"key": "eco", "label": "Eco Pro", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "ice"}, "group": "Colour by driving mode"},
+    {"key": "adaptive", "label": "Adaptive", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "ice"}, "group": "Colour by driving mode"},
+    {"key": "restore", "label": "Leave as is gives my own colour back", "type": "bool", "default": true, "when": {"follow": true}}
+  ]
+}

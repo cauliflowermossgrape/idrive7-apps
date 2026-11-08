@@ -147,7 +147,7 @@ mgu.run({
                 if (gearMode.seen.indexOf(String(raw)) < 0 && gearMode.seen.length < 12) { gearMode.seen.push(String(raw)); log.info('gearbox programme: ' + JSON.stringify(raw) + ' -> ' + gearMode.v); }
             },
         } };
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), torqueWatch));
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), torqueWatch));
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter

@@ -435,6 +435,10 @@ def build(app_id, language='en', preview_only=False):
             'userLoginRequired': False, 'backgroundPriority': 200, 'someipManifest': 'manifest.json',
         },
     }
+    # app.json "autostart": the platform starts the app by itself (the Store's deploy tool lists it so); its
+    # impl.background runs then, without screens
+    if spec.get('autostart'):
+        pkg['mguAppStartType'] = 'autostart'
     json.dump(pkg, open(os.path.join(src, 'package.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     json.dump(manifest, open(os.path.join(src, 'manifest.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     shutil.copy(os.path.join(KIT, 'platform', 'permissions.json'), os.path.join(src, 'permissions.json'))

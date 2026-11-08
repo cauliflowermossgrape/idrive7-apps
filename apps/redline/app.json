@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard",
-  "version": "1.15.0",
+  "version": "1.15.1",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -33,6 +33,10 @@
     "de.bmw.infrastructure.EnvironmentalInformation": {
       "_optional": "outside temperature on the HUD",
       "ExteriorTemperature": "s"
+    },
+    "de.bmw.infrastructure.VehicleCondition": {
+      "_optional": "the car switched off: the HUD back to Cluster functions",
+      "VehicleCondition": "s"
     },
     "de.bmw.infotainment.misc.MDrive": {
       "_optional": "the gearbox programme (D / S / M): shift grades and learning only from shifts made by hand",
@@ -104,6 +108,7 @@
      "steps": [0, 5, 10, 15, 30, 60]},
     {"key": "hud", "label": "Show on HUD (experimental)", "type": "choice", "default": "off",
      "options": [["off", "Off"], ["on", "On"], ["test", "Test pattern"]]},
+    {"key": "hudHandBack", "label": "Give the HUD back to Cluster functions at switch-off", "type": "bool", "default": true, "when": {"hud": ["on", "test"]}},
     {"key": "hudStyle", "label": "Layout", "type": "choice", "default": "standard", "when": {"hud": ["on", "test"]}, "group": "HUD style",
      "options": [["standard", "Standard"], ["minimal", "Minimal (lights and gear)"], ["wings", "Split wings"], ["digital", "80s digital dash"], ["vfd", "VFD glow (teal)"], ["vector", "Vector arcade (outlines)"]]},
     {"key": "hudPalette", "label": "Colours", "type": "choice", "default": "colour", "when": {"hud": ["on", "test"], "hudStyle": ["standard", "minimal", "wings", "digital", "vector"]}, "group": "HUD style",

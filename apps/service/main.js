@@ -30,7 +30,9 @@
  * "CBS details" cycles through the extra card fields without crowding the native three-tile layout.
  * Engine (a page of its own): what the engine unit (DME 0x12, the B58 / B48 / B38 petrol engines) says about its
  * oil, spark plugs, hours and particulate filter, read with 0x22 as Live Data reads them (ENGINE below), on that
- * page at most once a minute; an engine unit that has none of them shows "--".
+ * page at most once a minute; an engine unit that has none of them shows "--". A B47 / B57 diesel's unit (DDE,
+ * told by its SGBD index) has its particulate filter's soot, ash, temperature, pressure and regenerations instead
+ * (DIESEL below); while the filter is hotter than a drive makes it, a regeneration is likely running.
  * HMI Polish letters use ASCII equivalents because the upstream font atlases lack Polish glyphs.
  * Raw diagnostic JSON preserves Unicode as escaped code units rather than unreadable glyphs.
  */
@@ -113,6 +115,21 @@ const ENGINE = {
     opfLoad: [{ did: '558C', bytes: 2, factor: 0.001, signed: true, min: 0, max: 30 }],        // its adapted total load
     opfAsh: [{ did: '558B', bytes: 2, factor: 0.001, signed: true, min: 0, max: 30 }],         // its adapted ash
 };
+// a B47 / B57 diesel's engine unit (DDE D70BX7A0 / D75BX7A0 / D83BX7C0, their SGBD indexes in DDE_INDEXES): its
+// particulate filter, from those SGBDs' identifiers
+const DDE_INDEXES = ['0F1F70', '0F1F80', '0F1F90', '0F1FA0', '0F1FE8', '0F1FF0', '0F1FF4', '0F1FF8', '0F2670', '0F2674', '0F2678', '0F267C'];
+const DIESEL = {
+    soot: [{ did: '44BE', bytes: 2, factor: 0.01525902, min: 0, max: 200 }],                  // soot in the filter, g
+    ash: [{ did: '44BD', bytes: 2, factor: 0.01525902, min: 0, max: 1000 }],                  // oil ash in it, g
+    dpfTemp: [{ did: '4502', bytes: 2, factor: 0.03128099, offset: -50, min: -40, max: 1000 }], // before the filter, °C
+    dpfDp: [{ did: '44ED', bytes: 2, factor: 0.04577707, offset: -1000, min: -200, max: 1000 }], // pressure across it, hPa
+    regens: [{ did: '44B8', bytes: 2, min: 0, max: 65000 }],                                  // successful regenerations
+    sinceKm: [{ did: '44BF', bytes: 4, factor: 0.001, min: 0, max: 100000 }],                 // distance since the last
+    sinceH: [{ did: '44B7', bytes: 4, factor: 1 / 3600, min: 0, max: 10000 }],                // engine time since it
+    sinceL: [{ did: '44BC', bytes: 2, factor: 0.01, min: 0, max: 600 }],                      // fuel since it, l
+    avgKm: [{ did: '44C7', bytes: 2, min: 0, max: 65000 }],                                   // average distance between
+};
+const REGEN_TEMP = 500;       // °C before the filter: above what driving alone makes, a regeneration is likely running
 const ENGINE_DEMO = { oilHours: 64, oilFuel: 58, oilEngineH: 142, oilKm: 7830, plugsLeft: 41200, plugsDriven: 18800,
     engineHours: 1384, soot: 6.4, opfLoad: 0.312, opfAsh: 0.041 };
 const CBS_RECORD_SIZE = 12;
@@ -513,16 +530,28 @@ mgu.run({
         }
 
         /* ---------- the engine unit's wear values (Engine page) ---------- */
-        const engine = { values: {}, at: null, busy: false, error: '' };
+        const engine = { values: {}, at: null, busy: false, error: '', kind: null };
         let engineReader = null;
+        /* 'diesel' for a B47 / B57 DDE (its SGBD index, 22 F150), 'petrol' for another unit, null without a reply */
+        async function engineKind(d) {
+            const ok = (u) => (u[0] === 0x62 && u[1] === 0xF1 && u[2] === 0x50) || (u[0] === 0x7F && u[1] === 0x22);
+            const u = await d.physical(0x12, 0x22, [0xF1, 0x50], 4000, ok).catch(() => null);
+            if (!u || u[0] !== 0x62 || u.length < 6) return null;
+            const index = [u[3], u[4], u[5]].map((x) => hex(x)).join('').toUpperCase();
+            log.info('engine unit: SGBD index ' + index);
+            return DDE_INDEXES.indexOf(index) >= 0 ? 'diesel' : 'petrol';
+        }
         async function readEngine(force) {
             if (engine.busy || useDemo() || (!force && engine.at && Date.now() - engine.at < ENGINE_REFRESH_MS)) return;
             engine.busy = true; changed();
             try {
                 const d = await link();
                 engineReader = engineReader || new DidReader(d, { ecu: 0x12 });
-                for (const k of Object.keys(ENGINE)) engine.values[k] = await engineReader.value(k, ENGINE[k]);
-                engine.error = Object.keys(ENGINE).some((k) => engine.values[k] !== null) ? '' : 'the engine unit has none of these values';
+                if (!engine.kind) engine.kind = await engineKind(d);
+                const set = engine.kind === 'diesel' ? DIESEL : ENGINE;
+                engine.values = {};
+                for (const k of Object.keys(set)) engine.values[k] = await engineReader.value(k, set[k]);
+                engine.error = Object.keys(set).some((k) => engine.values[k] !== null) ? '' : 'the engine unit has none of these values';
             } catch (e) {
                 engine.error = String(e.message || e);
             }
@@ -593,6 +622,7 @@ mgu.run({
 
         /** The engine unit's oil, spark plugs, hours and particulate filter. */
         function drawEngine(cv, t) {
+            if (engine.kind === 'diesel' && !useDemo()) return drawDiesel(cv, t);
             const v = useDemo() ? ENGINE_DEMO : engine.values;
             const num = (x, dec, unit) => (G.isNum(x) ? G.fmt(x, dec) + (unit ? ' ' + unit : '') : '--');
             const km = (x) => (G.isNum(x) ? Math.round(x).toLocaleString('en-US').replace(/,/g, ' ') + ' km' : '--');
@@ -615,6 +645,35 @@ mgu.run({
                 .forEach((r, i) => row(1088, 464, 136 + i * step, r[0], r[1]));
             const note = useDemo() ? '' : engine.busy ? 'Reading the engine unit...' : engine.error ? 'Engine unit: ' + engine.error
                 : engine.at ? 'From the engine unit (B58 / B48 / B38), read ' + new Date(engine.at).toTimeString().slice(0, 5) : 'Not read yet';
+            cv.text(fit(cv, note, 20, 1500), 48, 496 + ex, 20, engine.error ? t.warn : t.dim);
+        }
+
+        /** A B47 / B57 diesel: its particulate filter, its regenerations and what came since the last one. */
+        function drawDiesel(cv, t) {
+            const v = engine.values;
+            const num = (x, dec, unit) => (G.isNum(x) ? G.fmt(x, dec) + (unit ? ' ' + unit : '') : '--');
+            const km = (x) => (G.isNum(x) ? Math.round(x).toLocaleString('en-US').replace(/,/g, ' ') + ' km' : '--');
+            const row = (x, w, y, label, value, col) => {
+                cv.text(label, x, y, 22, t.dim, { font: 'bold', spacing: 1.2 });
+                cv.text(value, x + w, y, 28, col || (value === '--' ? t.dim : t.text), { font: 'bold', align: 'right' });
+            };
+            const ex = G.pageBottom(cv) - G.BOTTOM, step = 70 + Math.round(ex / 4);
+            const hot = G.isNum(v.dpfTemp) && v.dpfTemp >= REGEN_TEMP;
+            G.panel(cv, t, 24, 44, 500, 468, 'Particulate filter');
+            [['SOOT', num(v.soot, 1, 'g')], ['OIL ASH', num(v.ash, 1, 'g')], ['TEMPERATURE BEFORE', num(v.dpfTemp, 0, '°C'), hot ? t.warn : null],
+                ['PRESSURE ACROSS', num(v.dpfDp, 1, 'hPa')]]
+                .forEach((r, i) => row(48, 452, 136 + i * step, r[0], r[1], r[2]));
+            G.panel(cv, t, 544, 44, 500, 468, 'Regeneration');
+            const state = !G.isNum(v.dpfTemp) ? '--' : hot ? 'LIKELY RUNNING' : 'NOT RUNNING';
+            cv.text(state, 568, 150, 34, hot ? t.warn : state === '--' ? t.dim : t.text, { font: 'bold', spacing: 1.5 });
+            cv.text(hot ? 'Hotter than ' + REGEN_TEMP + ' °C before the filter: keep driving' : 'From the temperature before the filter', 568, 186, 20, t.dim);
+            [['REGENERATIONS', num(v.regens, 0)], ['AVERAGE EVERY', km(v.avgKm)]]
+                .forEach((r, i) => row(568, 452, 136 + (i + 1.5) * step, r[0], r[1]));
+            G.panel(cv, t, 1064, 44, 512, 468, 'Since the last one');
+            [['DISTANCE', km(v.sinceKm)], ['ENGINE TIME', num(v.sinceH, 1, 'h')], ['FUEL', num(v.sinceL, 1, 'l')]]
+                .forEach((r, i) => row(1088, 464, 136 + i * step, r[0], r[1]));
+            const note = engine.busy ? 'Reading the engine unit...' : engine.error ? 'Engine unit: ' + engine.error
+                : engine.at ? 'From the engine unit (B47 / B57 diesel), read ' + new Date(engine.at).toTimeString().slice(0, 5) : 'Not read yet';
             cv.text(fit(cv, note, 20, 1500), 48, 496 + ex, 20, engine.error ? t.warn : t.dim);
         }
 
