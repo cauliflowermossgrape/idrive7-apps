@@ -147,6 +147,14 @@ ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'lights') ===
     ok(Hud.readoutsFor({ rpm: 5000, oil: 30, coolant: 30 }, 30, 1.2, { rpm: 4000, cold: true }, c, { torque: 300 }).length === 0, 'lights + gear only: no readouts, not even cold temps');
 }
 
+/* ---------- RPM readout format, refresh, clearer labels ---------- */
+ok(Hud.rpmItem(4537, '10').value === '4540' && Hud.rpmItem(4537, '50').value === '4550' && Hud.rpmItem(4537, 'k').value === '4.5', 'rpm to 10, to 50, in thousands');
+ok(Hud.rpmItem(-20, 'k').value === '0.0' && Hud.rpmItem(6960, 'k').value === '7.0', 'thousands: clamped, rounded');
+ok(optsDefault.rpmFormat === '10' && optsDefault.readoutMs === 250 && !optsDefault.clearLabels, 'defaults: to 10, 4 a second, normal labels');
+{ const o = Hud.optsFrom(settingsOf({ hudRpmFormat: 'k', hudReadoutRate: 10, hudLabels: 'clear' }));
+    ok(o.rpmFormat === 'k' && o.readoutMs === 100 && o.clearLabels, 'thousands, 10 a second, clearer labels');
+    ok(Hud.readoutsFor({ rpm: 3260 }, null, null, null, Object.assign({}, optsDefault, o, { boost: false, oil: false, coolant: false, gearbox: false }), {})[0].value === '3.3', 'readouts row uses the format'); }
+
 /* ---------- shift light colours follow the app's "Shift light style" ---------- */
 {
     const P = Draw.PALETTES.colour, at = (st, n) => Array.from({ length: n }, (_, i) => Draw.lightCol(st, P, i / (n - 1)));

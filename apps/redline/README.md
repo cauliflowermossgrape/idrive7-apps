@@ -158,13 +158,17 @@ layout and colours by picture.
 | Setting | Values |
 |---|---|
 | Gear | on / off |
-| RPM | on / off: a number in the readouts row (to 50 rpm); the 7-segment digits in the digital and VFD layouts |
+| RPM | on / off: a number in the readouts row; the 7-segment digits in the digital and VFD layouts |
+| RPM readout | Exact (to 10 rpm, default) / Steady (to 50 rpm) / Thousands (KRPM 4.5) |
+| Readouts refresh | 4 (default) / 10 / 20 a second. Faster sends more frames to the HUD while the numbers change (experimental) |
+| Readout labels | Normal / Clearer (bigger, full brightness). Also under HUD looks → Look |
 | Boost | on / off |
 | Boost unit | bar / psi / kPa |
 | Oil, Water, Gearbox temperature | on / off each |
 | Cold-engine shift limit | on / off (the LIMIT readout while the cold guard holds the shift point down) |
 | Temperatures | only when cold or hot / always |
-| Temperature unit | °C / °F (the cold and hot colours go by °C either way) |
+| Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
+| Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
 
 At most four readouts fit the row; past that the last one gives way.
 

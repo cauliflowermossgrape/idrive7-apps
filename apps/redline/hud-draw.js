@@ -202,12 +202,16 @@ function drawDown(cv, cx, y, n, k, col) {
  * 'hot'), as many columns as items (4 at most: hud.js keeps it there), slightly smaller beyond 3. Labels
  * are bg, values fg.
  */
-function drawReadouts(cv, x0, x1, y, items, P, layer) {
+function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
     if (!items.length) return;
     const n = items.length, colw = (x1 - x0) / Math.max(3, n), k = Math.min(1, colw / 70);
     items.forEach((it, i) => {
         const cx = x0 + colw * (i + 0.5);
-        if (layer !== 'fg') cv.text(it.label, cx, y + 12, 12 * k, withAlpha(P.text, 0.75), { align: 'center', font: 'bold', spacing: 1.2 * k });
+        // "Clearer" labels: a third bigger and full brightness (12 px at 75 % is thin on the glass)
+        if (layer !== 'fg') {
+            if (clear) cv.text(it.label, cx, y + 14, 16 * k, P.text, { align: 'center', font: 'bold', spacing: 1.5 * k });
+            else cv.text(it.label, cx, y + 12, 12 * k, withAlpha(P.text, 0.75), { align: 'center', font: 'bold', spacing: 1.2 * k });
+        }
         if (layer !== 'bg') cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), P[it.tone] || P.text, { align: 'center', font: 'bold' });
     });
 }
@@ -267,7 +271,7 @@ function drawLayer(cv, f, layer) {
         if (fg) drawDown(cv, 29, 106, f.down || 0, 1, P.arrow);
         const rpmTxt = isNum(d.rpm) && d.rpm < 9995 ? String(Math.max(0, Math.round(d.rpm / 10) * 10)).padStart(4, ' ') : '----';
         if (o.rpm !== false) seg7text(cv, rpmTxt, 76, 64, 16, 30, 4, 5, P.text, ghost, false, layer);
-        if (f.chip) { if (fg) drawChip(cv, 166, IW, 62, f.chip, P); } else drawReadouts(cv, 166, IW, 62, f.readouts || [], P, layer);
+        if (f.chip) { if (fg) drawChip(cv, 166, IW, 62, f.chip, P); } else drawReadouts(cv, 166, IW, 62, f.readouts || [], P, layer, o.clearLabels);
         return;
     }
 
@@ -312,13 +316,13 @@ function drawLayer(cv, f, layer) {
         drawLights(cv, r.pts, r.pts.map((p, i) => (o.gt3 ? Math.min(i, 11 - i) : i)), o.gt3 ? 6 : 12, r.rad, s);
     }
     if (o.bar !== false) drawBar(cv, tx, o.lights ? 20 : 2, tw, o.lights ? 38 : 56, s);
-    if (f.chip) { if (fg) drawChip(cv, TEMP_X, IW, 66, f.chip, P); } else drawReadouts(cv, TEMP_X, IW, 66, f.readouts || [], P, layer);
+    if (f.chip) { if (fg) drawChip(cv, TEMP_X, IW, 66, f.chip, P); } else drawReadouts(cv, TEMP_X, IW, 66, f.readouts || [], P, layer, o.clearLabels);
 }
 
 /** The key of the static ('bg') layer: what it depends on. */
 function bgKey(f) {
     const o = f.opts, c = f.cue;
-    return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, f.redline, f.max, c.shift || c.limiter, c.limiter,
+    return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, f.redline, f.max, c.shift || c.limiter, c.limiter,
         f.chip ? 'chip' : (f.readouts || []).map((r) => r.label).join(',')].join('|');
 }
 

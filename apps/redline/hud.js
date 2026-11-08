@@ -142,6 +142,9 @@ function optsFrom(settings) {
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
+        rpmFormat: ['50', 'k'].indexOf(String(settings.get('hudRpmFormat'))) >= 0 ? String(settings.get('hudRpmFormat')) : '10',
+        readoutMs: Math.round(1000 / clamp(Number(settings.get('hudReadoutRate')) || 4, 1, 30)),
+        clearLabels: settings.get('hudLabels') === 'clear',
         peak: on('hudPeak'),
         chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
         shake: settings.get('hudShake') === true,
@@ -184,6 +187,12 @@ const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa:
 const TORQUE_UNITS = { nm: [1, 'TORQUE'], lbft: [0.737562, 'LB-FT'] };
 const POWER_UNITS = { hp: [1.34102, 'HP'], kw: [1, 'KW'], ps: [1.35962, 'PS'] };
 const MAX_READOUTS = 4;
+/** The RPM readout for format f: '10' (to 10, the default), '50', or 'k' (thousands, 4.5). */
+function rpmItem(rpm, f) {
+    const r = Math.max(0, rpm), step = f === '50' ? 50 : 10;
+    if (f === 'k') return { label: 'KRPM', value: (Math.round(r / 100) / 10).toFixed(1), tone: 'text' };
+    return { label: 'RPM', value: String(Math.round(r / step) * step), tone: 'text' };
+}
 const roundTo = (v, step) => Math.round(v / step) * step;
 /**
  * The readouts row for o (optsFrom): d (rpm, oil, coolant), gearbox temperature, boost (bar), sp
@@ -195,9 +204,9 @@ const roundTo = (v, step) => Math.round(v / step) * step;
 function readoutsFor(d, gb, boost, sp, o, x) {
     const items = [];
     x = x || {};
-    // the rpm as a number: the 7-segment layouts have their own digits, the others a readout (to 50,
-    // so it doesn't flicker)
-    if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push({ label: 'RPM', value: String(Math.max(0, Math.round(d.rpm / 50) * 50)), tone: 'text' });
+    // the rpm as a number (the 7-segment layouts have their own digits): to 10, to 50, or in
+    // thousands with one decimal (4.5), which reads at a glance like the tach's own numbers
+    if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push(rpmItem(d.rpm, o.rpmFormat));
     if (o.boost) {
         const b = boost, u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
         if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });
@@ -488,11 +497,11 @@ function start(ctx, src) {
      */
     const ro = { t: 0, v: [], o: null };
     function readouts(d, gb, sp, o) {
-        // at most 4 times a second: power, torque and g change with every sample, and a row of
-        // numbers changing faster than that can't be read anyway (an options change shows at once)
+        // 4 times a second by default (setting "Readouts refresh"): power, torque and g change with
+        // every sample; faster means more frames sent to the HUD (an options change shows at once)
         const now = Date.now();
         const ok = JSON.stringify(o);
-        if (ok !== ro.o || now - ro.t >= READOUT_MS || now < ro.t) {
+        if (ok !== ro.o || now - ro.t >= (o.readoutMs || READOUT_MS) || now < ro.t) {
             ro.v = readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o, src.extras ? src.extras() : null);
             ro.t = now; ro.o = ok;
         }
@@ -711,4 +720,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, readoutsFor, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

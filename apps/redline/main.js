@@ -334,6 +334,9 @@ mgu.run({
 
         /* ---------- drawing ---------- */
         const mph = () => settings.get('speedUnit') === 'mph';
+        // temperatures and torque in the units chosen in Settings (the HUD uses the same settings)
+        const temp = (c) => (G.isNum(c) && settings.get('hudTempUnit') === 'f' ? c * 9 / 5 + 32 : c);
+        const lbft = () => settings.get('hudTorqueUnit') === 'lbft';
         let page = 0;
 
         function ledColors(t) {
@@ -430,9 +433,9 @@ mgu.run({
             const warm = settings.get('warmOil'), coldOil = G.isNum(d.oil) && d.oil < warm;
             const oilCol = !G.isNum(d.oil) ? t.dim : d.oil < 60 ? t.cold : coldOil ? YELLOW : d.oil > 130 ? t.crit : t.text;
             cv.text('OIL', 40, 334, 22, t.dim, { font: 'bold', spacing: 1.5 });
-            cv.text(G.fmt(d.oil, 0) + (G.isNum(d.oil) ? '°' : ''), 40, 376, 40, oilCol, { font: 'bold' });
+            cv.text(G.fmt(temp(d.oil), 0) + (G.isNum(d.oil) ? '°' : ''), 40, 376, 40, oilCol, { font: 'bold' });
             cv.text('WATER', 190, 334, 22, t.dim, { font: 'bold', spacing: 1.5 });
-            cv.text(G.fmt(d.coolant, 0) + (G.isNum(d.coolant) ? '°' : ''), 190, 376, 40, t.text, { font: 'bold' });
+            cv.text(G.fmt(temp(d.coolant), 0) + (G.isNum(d.coolant) ? '°' : ''), 190, 376, 40, t.text, { font: 'bold' });
             // cold oil is always shown: with the guard on it also lowers the shift point
             if (coldOil) {
                 cv.roundRect(40, 392, 300, 36, 8, withAlpha(t.cold, 0.2));
@@ -593,6 +596,7 @@ mgu.run({
                 // what the HUD does in Comfort and Eco Pro (Sport always shows all of it)
                 choiceRow(cv, t, 414, 'COMFORT', 'hudComfort', settings.get('hudComfort') || 'all', [['all', 'Show all'], ['lights', 'Lights + gear'], ['hide', 'Hide']], false, 720);
                 choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']]);
+                choiceRow(cv, t, 462, 'LABELS', 'hudLabels', o.clearLabels ? 'clear' : 'normal', [['normal', 'Normal'], ['clear', 'Clearer']], false, 720);
             } else if (studio.panel === 'gauge') {
                 // the gauge's parts; tap to add or remove
                 switches(cv, t, 414, 'GAUGE', [
@@ -680,10 +684,11 @@ mgu.run({
             G.button(cv, t, 784 - 20 - 150, 56, 150, 40, 'Reset', () => { shiftMap.forget(); learnedView = null; return render(); }, { key: 'resetMap', confirm: true, color: t.warn });
             // the learned data changes every few seconds at most: read it once a second, not per frame
             if (!learnedView || Date.now() - learnedView.t > 1000) learnedView = { t: Date.now(), pts: shiftMap.curve(), table: shiftMap.table() };
-            const pts = learnedView.pts.filter((p) => p[0] >= 1000 && p[0] <= maxRpm()), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
+            const tk = lbft() ? 0.737562 : 1;
+            const pts = learnedView.pts.filter((p) => p[0] >= 1000 && p[0] <= maxRpm()).map((p) => [p[0], p[1] * tk]), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
             G.chart(cv, t, 44, 116, 720, Math.max(200, cp.y + cp.h - 136), {
                 xMin: 1000, xMax: maxRpm(), xStep: 1000, xFmt: (v) => String(v / 1000), xUnit: 'x1000 rpm',
-                yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: 'Nm', padTop: 22,
+                yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: lbft() ? 'lb-ft' : 'Nm', padTop: 22,
                 series: pts.length ? [{ pts: pts, color: t.accent, width: 3 }] : [],
                 empty: 'Nothing yet: full-throttle pulls, a few from low rpm, fill it in',
             });

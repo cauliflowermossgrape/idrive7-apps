@@ -1905,3 +1905,11 @@ Only when cold or hot	차갑거나 뜨거울 때만
 Position left / right	위치 좌 / 우
 Position up / down	위치 상 / 하
 Frame rate	프레임 속도
+RPM readout	RPM 표시
+Exact (to 10 rpm)	정밀 (10 rpm 단위)
+Steady (to 50 rpm)	안정 (50 rpm 단위)
+Thousands (4.5)	천 단위 (4.5)
+Readouts refresh (faster: more work for the head unit, experimental)	표시값 갱신 빈도 (빠를수록 헤드 유닛 부하 증가, 실험적)
+Readout labels	표시값 라벨
+Clearer (bigger, brighter)	더 선명하게 (크고 밝게)
+Outside temp (blue at 3 °C / 37 °F and below)	외기 온도 (3 °C / 37 °F 이하 파란색)
