@@ -270,8 +270,17 @@ module.exports = function battery12(ctx, sh) {
             alt: L.x12T.alt12 && now - L.x12T.alt12 < 120000 ? L.x12.alt12 : null,
             engine, regen: engine !== false && G.isNum(L.speed) && decelT > 0 && now - decelT < REGEN_HOLD_MS,
             paused: !inUse(), trip,
+            // values this engine unit never gave (3 tries, none answered: a G20 320i's has no 5854 / 4604) make room
+            gone: { t: none('t12'), alt: none('alt12') }, vFrom: vFrom(),
         };
     }
+    const none = (k) => (fails[k] || 0) >= 3 && !L.x12T[k];
+    const UNITS = { 7: 'SME', 18: 'DME', 19: 'DME 2', 24: 'EGS' };
+    /** Where the voltage comes from: 'DME · OBD 42', 'EGS · F442', ... */
+    const vFrom = () => {
+        const c = vs.pick !== null ? (cfg.v12 || [])[vs.pick] : null;
+        return c ? (UNITS[c.ecu] || 'ECU ' + c.ecu) + '  ·  ' + (c.obd ? 'OBD ' + c.obd : c.did) : null;
+    };
     /** The battery is being charged now: current in, or (no current reading) the charging voltage. */
     const charging = (d) => (G.isNum(d.i) ? d.i > 1 : G.isNum(d.v) && d.v >= CHARGE_V);
 
@@ -416,9 +425,15 @@ module.exports = function battery12(ctx, sh) {
         kv(cv, t, 'HEALTH (SOH)', G.isNum(d.soh) ? G.fmt(d.soh, 0) + ' %' : '--', x0, Y(130), w, hc);
         // the capacity registered in the engine unit (the original battery's beside it when it differs)
         kv(cv, t, 'CAPACITY', !G.isNum(d.cap) ? '--' : G.fmt(d.cap, 0) + ' Ah' + (G.isNum(d.capNew) && Math.abs(d.cap - d.capNew) >= 1 ? '  (orig. ' + G.fmt(d.capNew, 0) + ')' : ''), x0, Y(168), w);
-        kv(cv, t, 'TEMPERATURE', G.isNum(d.t) ? G.fmt(T(d.t), 0) + ' ' + tU() : '--', x0, Y(206), w);
-        kv(cv, t, 'ALTERNATOR', G.isNum(d.alt) ? G.fmt(d.alt, 0) + ' A' : '--', x0, Y(244), w);
-        kv(cv, t, 'OUTSIDE', G.isNum(sh.ambient()) ? G.fmt(T(sh.ambient()), 1) + ' ' + tU() : '--', x0, Y(282), w);
+        // three rows: the battery's temperature and the alternator's current where the engine unit gives them, else
+        // (dropped once it did not answer them) the engine and where the voltage comes from in their place
+        const gone = d.gone || {}, rows = [];
+        if (!gone.t) rows.push(['TEMPERATURE', G.isNum(d.t) ? G.fmt(T(d.t), 0) + ' ' + tU() : '--']);
+        if (!gone.alt) rows.push(['ALTERNATOR', G.isNum(d.alt) ? G.fmt(d.alt, 0) + ' A' : '--']);
+        rows.push(['OUTSIDE', G.isNum(sh.ambient()) ? G.fmt(T(sh.ambient()), 1) + ' ' + tU() : '--']);
+        if (rows.length < 3) rows.push(['ENGINE', d.engine === true ? 'running' : d.engine === false ? 'off' : '--', d.engine === true ? GO : null]);
+        if (rows.length < 3) rows.push(['VOLTAGE FROM', d.vFrom || '--']);
+        rows.forEach((r, i) => kv(cv, t, r[0], r[1], x0, Y(206 + 38 * i), w, r[2]));
         cv.fillRect(x0, Y(300), w, 1, t.tick);
         cv.text('THIS DRIVE', x0, Y(336), 21, t.dim, { font: 'bold', spacing: 1.5 });
         G.button(cv, t, x0 + w - 110, Y(310), 110, 36, 'Reset', () => { touched(); resetTrip(); return sh.render(); }, { key: 'trip12', confirm: true });
