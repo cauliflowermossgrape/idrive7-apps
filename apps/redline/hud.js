@@ -40,8 +40,8 @@ const SCENE_W = 800, SCENE_H = 480;
 const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
 // frames a second: setting "hudFps" (10 / 20 / 30); the layer is made for the most, the timer paces it
 const FPS_MAX = 30, FPS_DEFAULT = 20;
-const READOUT_MS = 250;
-const START_LOOK_MS = 30000;     // after a head-unit start: how long the standing HUD app is looked for      // the readouts row is refreshed at most this often
+const READOUT_MS = 250;          // the readouts row is refreshed at most this often
+const START_LOOK_MS = 30000;     // after a head-unit start: how long the standing HUD app is looked for
 // the flash's on / off rhythm in ms (5 Hz), from the clock, so it looks the same at any frame rate
 const BLINK_MS = 100;
 // the redline shake: offsets (px) stepped every 100 ms while on the limiter. Each step moves the whole
@@ -656,12 +656,12 @@ function start(ctx, src) {
     /*
      * Shared with a standing HUD app (Cluster functions, kit/hud_claim.js): while Redline draws on the HUD it holds
      * it and the other gives way (not while its tach is hidden in Comfort / Eco Pro). With one there and setting
-     * hudHandBack on (the default), Redline's HUD lasts until the car is switched off (vehicle state from drive or
-     * ignition back to parked) or the head unit starts again; off, it stays on.
+     * hudHandBack on, Redline's HUD lasts until the car is switched off (vehicle state from drive or ignition back to
+     * parked) or the head unit starts again; off (the default), it stays on.
      */
     const claim = new HudClaim('redline', log);
     const handBack = (why) => {
-        if (mode() === 'off' || settings.get('hudHandBack') === false || !HudClaim.standingOn('redline')) return false;
+        if (mode() === 'off' || !settings.get('hudHandBack') || !HudClaim.standingOn('redline')) return false;
         log.info('hud: ' + why + ': off, the HUD back to the app that stands on it');
         settings.set('hud', 'off');
         return true;

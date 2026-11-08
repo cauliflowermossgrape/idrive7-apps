@@ -28,9 +28,19 @@ const DIR = process.env.MGU_HUD_CLAIMS || '/dev/shm/mgu-hud';
 const TOUCH_MS = 2000, FRESH_MS = 6000;
 const STANDING = '.standing';
 
-/* The claims' folder, made if it is not there (Node 8: no recursive mkdir; /dev/shm is there). */
+/*
+ * The claims' folder, made if it is not there (Node 8: no recursive mkdir; /dev/shm is there). Every app writes in
+ * it, each as its own user, so it is opened as /tmp is (1777, sticky: anyone writes, only a file's owner removes
+ * it); mkdir's mode alone would lose the group and other write to the umask. Only the app that made the folder can
+ * open it: the others' chmod fails, and once tried it is not tried again until the folder is made anew.
+ */
+let opened = false;
 function folder() {
-    try { fs.mkdirSync(DIR, 0o777); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    let made = false;
+    try { fs.mkdirSync(DIR); made = true; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    if (opened && !made) return;
+    opened = true;
+    try { fs.chmodSync(DIR, 0o1777); } catch (e) { /* another app's folder: it opens it */ }
 }
 
 class HudClaim {

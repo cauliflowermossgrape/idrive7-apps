@@ -42,6 +42,8 @@ const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
     const t1 = at('a');
     await sleep(2200);
     ok(at('a') > t1, 'touched again (the folder there already)');
+    // each app runs as its own user: the folder is open to all (sticky) whatever the umask (no modes on Windows)
+    if (process.platform !== 'win32') ok((fs.statSync(SHM).mode & 0o7777) === 0o1777, 'the claims folder is 1777, not ' + (fs.statSync(SHM).mode & 0o7777).toString(8));
     ok(HudClaim.others('b').join() === 'a' && HudClaim.others('a').length === 0, 'a held claim is seen by the others');
     a.hold(false);
     ok(HudClaim.others('b').length === 0 && a.thisBoot(), 'given back: not seen, still known for this boot');
@@ -80,6 +82,14 @@ const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
     s = settings({ hudHandBack: false }); h = start(s);
     await sleep(2500);
     ok(s.v.hud === 'on', 'hudHandBack off: Redline\'s HUD stays on');
+    h.stop();
+    // and off is the default: not set at all, it stays on too
+    const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8')).settings.filter((x) => x.key === 'hudHandBack')[0];
+    ok(spec && spec.default === false, 'hudHandBack is off by default');
+    fs.rmSync(path.join(SHM, 'redline'), { force: true });
+    s = settings({ hudHandBack: undefined }); h = start(s);
+    await sleep(2500);
+    ok(s.v.hud === 'on', 'hudHandBack not set: Redline\'s HUD stays on');
     h.stop();
 
     // turned on in this boot: held until the car is switched off
