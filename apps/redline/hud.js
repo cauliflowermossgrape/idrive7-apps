@@ -40,7 +40,8 @@ const SCENE_W = 800, SCENE_H = 480;
 const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
 // frames a second: setting "hudFps" (10 / 20 / 30); the layer is made for the most, the timer paces it
 const FPS_MAX = 30, FPS_DEFAULT = 20;
-const READOUT_MS = 250;      // the readouts row is refreshed at most this often
+const READOUT_MS = 250;
+const START_LOOK_MS = 30000;     // after a head-unit start: how long the standing HUD app is looked for      // the readouts row is refreshed at most this often
 // the flash's on / off rhythm in ms (5 Hz), from the clock, so it looks the same at any frame rate
 const BLINK_MS = 100;
 // the redline shake: offsets (px) stepped every 100 ms while on the limiter. Each step moves the whole
@@ -579,10 +580,12 @@ function start(ctx, src) {
                     if (target) target = { state: '', holder: '', disabled: target.disabled };
                 }
                 if (src.gearbox) src.gearbox.stop();
+                claim.hold(false);          // nothing of Redline's on the HUD: the standing app may show
                 if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }
             if (!layer) { makeLayer(); if (!layer) return; }
+            claim.hold(true);
             if (hiddenLogged) { hiddenLogged = false; log.info('hud: back on'); }
         }
         if (!layer) return;
@@ -643,6 +646,7 @@ function start(ctx, src) {
         // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
         const hidden = calm(Date.now() < demoUntil) === 'hide';
         if (!hidden) { makeLayer(); if (!layer) return; }
+        claim.hold(!hidden);
         shown = 'tach';
         // (the gearbox unit is started by the tick, only while its readout shows)
         timer = setInterval(tick, Math.round(1000 / fps()));
@@ -650,18 +654,27 @@ function start(ctx, src) {
     });
 
     /*
-     * Shared with a standing HUD app (Cluster functions, kit/hud_claim.js): while on, Redline holds the HUD and
-     * the other gives way; with one installed, Redline's HUD lasts until the car is switched off (vehicle state
-     * from drive or ignition back to parked) or the head unit starts again.
+     * Shared with a standing HUD app (Cluster functions, kit/hud_claim.js): while Redline draws on the HUD it holds
+     * it and the other gives way (not while its tach is hidden in Comfort / Eco Pro). With one there and setting
+     * hudHandBack on (the default), Redline's HUD lasts until the car is switched off (vehicle state from drive or
+     * ignition back to parked) or the head unit starts again; off, it stays on.
      */
     const claim = new HudClaim('redline', log);
-    const appData = ctx.dataDir || null;
     const handBack = (why) => {
-        if (mode() === 'off' || !HudClaim.standingOn(appData)) return;
+        if (mode() === 'off' || settings.get('hudHandBack') === false || !HudClaim.standingOn('redline')) return false;
         log.info('hud: ' + why + ': off, the HUD back to the app that stands on it');
         settings.set('hud', 'off');
+        return true;
     };
-    if (mode() !== 'off' && !claim.thisBoot()) handBack('the head unit started again');
+    // a new start: the standing app may start after Redline, so it is looked for during START_LOOK_MS
+    if (mode() !== 'off' && !claim.thisBoot()) {
+        const t0 = Date.now();
+        const look = setInterval(safe('start', () => {
+            if (handBack('the head unit started again') || mode() === 'off' || Date.now() - t0 > START_LOOK_MS) clearInterval(look);
+        }), 2000);
+        if (look.unref) look.unref();
+        handBack('the head unit started again');
+    }
     let ignition = false;
     const condTimer = setInterval(safe('condition', () => {
         const c = src.data && src.data().condition;

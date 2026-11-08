@@ -1,19 +1,28 @@
 'use strict';
-// kit/runtime/hud_claim.js and Redline's side of it: a claim seen by the others while held, the standing
-// app's marker, and Redline's HUD off again at a head-unit start or the car's switch-off (with a standing
-// app installed), on otherwise.
+// kit/runtime/hud_claim.js and Redline's side of it: a claim seen by the others while held and touched again, the
+// standing app's marker on tmpfs, and Redline's HUD off again at a head-unit start (the standing app looked for a
+// while) or the car's switch-off with a standing app there and hudHandBack on; on otherwise; the claim given
+// back while the tach is hidden in Comfort / Eco Pro.
 //   node kit/tools/test_hud_claim.js
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Module = require('module');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-claim-'));
-process.env.MGU_HUD_CLAIMS = path.join(TMP, 'shm');
+const SHM = process.env.MGU_HUD_CLAIMS = path.join(TMP, 'shm');
 const ROOT = path.join(__dirname, '..', '..');
+// a stand-in cluster-render: ready at once, layers counted
+const layers = new Set();
+class FakeCr {
+    constructor() { this.ready = true; this.backend = 'test'; this.targets = 'hud'; this.n = 0; }
+    on() {} connect() {} close() {} removeAllListeners() {} set() {} pixels() {} send() {}
+    image() { this.n++; layers.add(this.n); return this.n; }
+    drop(r) { layers.delete(r); }
+}
 const load = Module._load;
 Module._load = function (req, parent, isMain) {
     if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    if (req === './cluster_render_client') throw new Error('not in this test');
+    if (req === './cluster_render_client') return { ClusterRender: FakeCr };
     return load.call(this, req, parent, isMain);
 };
 const { HudClaim } = require(path.join(ROOT, 'kit', 'runtime', 'hud_claim'));
@@ -22,51 +31,86 @@ const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
 let fails = 0, checks = 0;
 const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
 const log = { info() {}, warn() {}, error() {} };
-const dataOf = (id) => { const d = path.join(TMP, 'apps', id, 'data'); fs.mkdirSync(d, { recursive: true }); return d; };
-
-const a = new HudClaim('a', log);
-ok(!a.thisBoot() && HudClaim.others('b').length === 0, 'nothing held at the start');
-a.hold(true);
-ok(HudClaim.others('b').join() === 'a' && HudClaim.others('a').length === 0, 'a held claim is seen by the others');
-a.hold(false);
-ok(HudClaim.others('b').length === 0 && a.thisBoot(), 'given back: not seen, still known for this boot');
-
-const wc = dataOf('robertn_waze_cluster'), rl = dataOf('redline');
-ok(!HudClaim.standingOn(rl), 'no standing app');
-HudClaim.standing(wc, true);
-ok(HudClaim.standingOn(rl) && !HudClaim.standingOn(wc), 'a standing app is seen by the others, not by itself');
-
-const settings = (hud) => {
-    const v = { hud }, fns = [];
-    return { v, get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
-};
-let cond;
-const start = (s) => Hud.start({ settings: s, log, dataDir: rl }, { data: () => ({ condition: cond }), shiftPoint: () => ({}), redline: () => 6500, maxRpm: () => 7000 });
-
-// a head unit start (no claim of Redline's on tmpfs): off again
-let s = settings('on');
-let h = start(s);
-ok(s.v.hud === 'off', 'a new head-unit start: Redline\'s HUD off, back to the standing app');
-h.stop();
-
-// turned on in this boot: Redline holds the HUD until the car is switched off
-s = settings('off'); h = start(s);
-s.set('hud', 'on');
-ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'turned on: Redline holds the HUD');
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const until = (check, ms) => new Promise((res) => { const end = Date.now() + ms; const poll = () => (check() || Date.now() > end ? res() : setTimeout(poll, 50)); poll(); });
-cond = 10;
+const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
+
 (async () => {
-    await new Promise((res) => setTimeout(res, 4500));       // the 2 s check has seen the car on (twice)
+    const a = new HudClaim('a', log);
+    ok(!a.thisBoot() && HudClaim.others('b').length === 0, 'nothing held at the start');
+    a.hold(true);
+    const t1 = at('a');
+    await sleep(2200);
+    ok(at('a') > t1, 'touched again (the folder there already)');
+    ok(HudClaim.others('b').join() === 'a' && HudClaim.others('a').length === 0, 'a held claim is seen by the others');
+    a.hold(false);
+    ok(HudClaim.others('b').length === 0 && a.thisBoot(), 'given back: not seen, still known for this boot');
+
+    ok(!HudClaim.standingOn('redline'), 'no standing app');
+    HudClaim.standing('robertn_waze_cluster', true);
+    ok(HudClaim.standingOn('redline') && !HudClaim.standingOn('robertn_waze_cluster'), 'a standing app is seen by the others, not by itself');
+    ok(HudClaim.others('x').indexOf('robertn_waze_cluster.standing') < 0, 'a standing marker is no claim');
+
+    const settings = (over) => {
+        const v = Object.assign({ hud: 'on', hudHandBack: true, hudComfort: 'all' }, over), fns = [];
+        return { v, get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
+    };
+    let cond, drive = 'sport';
+    const start = (s) => Hud.start({ settings: s, log, dataDir: TMP }, { data: () => ({ condition: cond }), shiftPoint: () => ({}), redline: () => 6500,
+        maxRpm: () => 7000, driveMode: () => drive });
+
+    // a head unit start (no claim of Redline's on tmpfs): off again
+    let s = settings();
+    let h = start(s);
+    ok(s.v.hud === 'off', 'a new head-unit start: Redline\'s HUD off, back to the standing app');
+    h.stop();
+
+    // the standing app comes after Redline: looked for, then off
+    fs.rmSync(path.join(SHM, 'redline'), { force: true });
+    HudClaim.standing('robertn_waze_cluster', false);
+    s = settings(); h = start(s);
+    ok(s.v.hud === 'on', 'no standing app yet: on');
+    HudClaim.standing('robertn_waze_cluster', true);
+    await until(() => s.v.hud === 'off', 6000);
+    ok(s.v.hud === 'off', 'the standing app came within the start\'s look: off');
+    h.stop();
+
+    // hudHandBack off: stays on at a start
+    fs.rmSync(path.join(SHM, 'redline'), { force: true });
+    s = settings({ hudHandBack: false }); h = start(s);
+    await sleep(2500);
+    ok(s.v.hud === 'on', 'hudHandBack off: Redline\'s HUD stays on');
+    h.stop();
+
+    // turned on in this boot: held until the car is switched off
+    s = settings({ hud: 'off' }); h = start(s);
+    s.set('hud', 'on');
+    ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'turned on: Redline holds the HUD');
+    // hidden in Comfort: given back while hidden
+    s.v.hudComfort = 'hide'; drive = 'comfort';
+    await until(() => HudClaim.others('robertn_waze_cluster').length === 0, 3000);
+    ok(HudClaim.others('robertn_waze_cluster').length === 0, 'tach hidden in Comfort: the claim given back');
+    drive = 'sport';
+    await until(() => HudClaim.others('robertn_waze_cluster').length === 1, 3000);
+    ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'back in Sport: held again');
+    cond = 10;
+    await sleep(4500);       // the 2 s check has seen the car on (twice)
     ok(s.v.hud === 'on', 'still on while driving');
     cond = 5;
     await until(() => s.v.hud === 'off', 8000);
     ok(s.v.hud === 'off' && HudClaim.others('robertn_waze_cluster').length === 0, 'switched off: Redline\'s HUD off, the claim given back');
     h.stop();
+
     // without a standing app Redline keeps its HUD on
-    HudClaim.standing(wc, false);
-    s = settings('on'); fs.rmSync(process.env.MGU_HUD_CLAIMS, { recursive: true, force: true });
-    h = start(s);
+    fs.rmSync(SHM, { recursive: true, force: true });
+    s = settings(); h = start(s);
+    await sleep(2500);
     ok(s.v.hud === 'on', 'no standing app: Redline\'s HUD stays on after a start');
+    // a claim folder that cannot be written: no new start
+    fs.rmSync(SHM, { recursive: true, force: true });
+    fs.writeFileSync(SHM, 'not a folder');
+    HudClaim.standing('robertn_waze_cluster', true);
+    ok(new HudClaim('redline', log).thisBoot(), 'an unwritable claim folder: not a new start');
     console.log('hud claim: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
 })();

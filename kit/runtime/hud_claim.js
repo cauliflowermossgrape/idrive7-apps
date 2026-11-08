@@ -8,23 +8,30 @@
  *   - An app holding the HUD keeps a claim, /dev/shm/mgu-hud/<id>, touched every 2 s. It is on tmpfs, so a
  *     head-unit start clears it; a claim not touched for 6 s (its app stopped) counts for nothing.
  *   - The standing app gives way while another app's claim is fresh (HudClaim.others).
- *   - The standing app says it is installed and on in its data/hud-standing ({"on": true}); an app that
+ *   - The standing app says it is there and on in /dev/shm/mgu-hud/<id>.standing ({"on": true}); an app that
  *     takes the HUD over turns its own HUD off again at the car's switch-off or the head unit's next start,
- *     only while such an app is installed (HudClaim.standingOn).
+ *     only while such an app is there (HudClaim.standingOn).
+ *   - Where /dev/shm/mgu-hud cannot be written, nothing counts as a new start (thisBoot() is true): nothing is
+ *     handed back for want of a claim file.
  *
  *   const claim = new HudClaim(id, log)
  *   claim.hold(on)                    take the HUD (true) or give it back
- *   claim.thisBoot()                  this app held the HUD since the head unit started
+ *   claim.thisBoot()                  this app held the HUD since the head unit started (or that cannot be told)
  *   HudClaim.others(id)               ids of the other apps holding the HUD now
- *   HudClaim.standing(dataDir, on)    (the standing app) installed, and on or off
- *   HudClaim.standingOn(dataDir)      another installed app stands on the HUD (dataDir: this app's own)
+ *   HudClaim.standing(id, on)         (the standing app) there, and on or off
+ *   HudClaim.standingOn(id)           another app stands on the HUD (id: this app's own)
  */
 const fs = require('fs');
 const path = require('path');
 
 const DIR = process.env.MGU_HUD_CLAIMS || '/dev/shm/mgu-hud';
 const TOUCH_MS = 2000, FRESH_MS = 6000;
-const STANDING = 'hud-standing';
+const STANDING = '.standing';
+
+/* The claims' folder, made if it is not there (Node 8: no recursive mkdir; /dev/shm is there). */
+function folder() {
+    try { fs.mkdirSync(DIR, 0o777); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+}
 
 class HudClaim {
     constructor(id, log) {
@@ -32,6 +39,7 @@ class HudClaim {
         this.log = log;
         this.file = path.join(DIR, id);
         this.timer = null;
+        this.failed = false;
     }
 
     hold(on) {
@@ -47,14 +55,22 @@ class HudClaim {
         }
     }
 
-    // the file stays when given back (held false): the head unit has not restarted since
-    thisBoot() { return fs.existsSync(this.file); }
+    // the file stays when given back (held false): the head unit has not restarted since. A folder that cannot be
+    // written tells nothing: as the same start
+    thisBoot() {
+        if (fs.existsSync(this.file)) return true;
+        try { folder(); if (!fs.statSync(DIR).isDirectory()) return true; fs.accessSync(DIR, fs.constants.W_OK); return false; } catch (e) { return true; }
+    }
 
     _touch() {
         try {
-            fs.mkdirSync(DIR, { recursive: true, mode: 0o777 });
+            folder();
             fs.writeFileSync(this.file, JSON.stringify({ held: true, at: Date.now() }) + '\n');
-        } catch (e) { if (this.log) this.log.warn('HUD claim: ' + e.message); }
+            this.failed = false;
+        } catch (e) {
+            if (!this.failed && this.log) this.log.warn('HUD claim: ' + e.message);
+            this.failed = true;
+        }
     }
 
     static others(id) {
@@ -62,7 +78,7 @@ class HudClaim {
         try { names = fs.readdirSync(DIR); } catch (e) { return []; }
         const now = Date.now();
         return names.filter((n) => {
-            if (n === id) return false;
+            if (n === id || n.endsWith(STANDING)) return false;
             try {
                 const f = path.join(DIR, n);
                 return now - fs.statSync(f).mtimeMs < FRESH_MS && JSON.parse(fs.readFileSync(f, 'utf8')).held === true;
@@ -70,23 +86,20 @@ class HudClaim {
         });
     }
 
-    static standing(dataDir, on) {
-        if (!dataDir) return;
-        const f = path.join(dataDir, STANDING);
+    static standing(id, on) {
+        const f = path.join(DIR, id + STANDING);
         try {
             if (JSON.parse(fs.readFileSync(f, 'utf8')).on === !!on) return;
         } catch (e) { /* not written yet */ }
-        try { fs.writeFileSync(f + '.tmp', JSON.stringify({ on: !!on }) + '\n'); fs.renameSync(f + '.tmp', f); } catch (e) { /* read-only */ }
+        try { folder(); fs.writeFileSync(f, JSON.stringify({ on: !!on }) + '\n'); } catch (e) { /* tmpfs gone */ }
     }
 
-    static standingOn(dataDir) {
-        if (!dataDir) return false;
-        const appDir = path.dirname(dataDir), parent = path.dirname(appDir);
-        let dirs = [];
-        try { dirs = fs.readdirSync(parent); } catch (e) { return false; }
-        return dirs.some((d) => {
-            if (path.join(parent, d) === appDir) return false;
-            try { return JSON.parse(fs.readFileSync(path.join(parent, d, 'data', STANDING), 'utf8')).on === true; } catch (e) { return false; }
+    static standingOn(id) {
+        let names = [];
+        try { names = fs.readdirSync(DIR); } catch (e) { return false; }
+        return names.some((n) => {
+            if (!n.endsWith(STANDING) || n === id + STANDING) return false;
+            try { return JSON.parse(fs.readFileSync(path.join(DIR, n), 'utf8')).on === true; } catch (e) { return false; }
         });
     }
 }
