@@ -32,17 +32,19 @@ const G = require('./kit/gauges');
 const { getLanguage } = require('./kit/i18n');
 
 const GO = '#2fd27a';
-const FAST_MS = 2000;             // the 12 V pages shown and in use: voltage and current this often (regen, trend)
+const FAST_MS = 1000;             // the 12 V pages shown and in use: the voltage this often (regen, trend)
 const SHOWN_MS = 3000;            // the screen counts as shown when drawn this recently
 const VOLT_TIMEOUT_MS = 1500;     // one voltage candidate's wait (the kit's 4 s is for one-off reads)
 const DIAG_OPTS = { retryBaseMs: 150, pendingTimeoutMs: 1500, callTimeoutMs: 2000 };
 const MISS_LIMIT = 3;             // misses in a row of the source that worked before the others are tried
 const RETRY_VOLT_MS = 15000;      // no source found yet: the search again after this
 const FRESH_MS = 10000;           // a voltage / current this old still counts as now (a miss or two)
+const KEEP_V_MS = 30000;          // a voltage this old is still shown (dimmed after FRESH_MS) rather than a blank
 const MID_MS = 10000;             // temperature, alternator
 const SOC_MS = 30000;             // the charge (40AD, else 56F0)
 const SLOW_MS = 30 * 60000;       // capacity, health: they change over months
 const FAIL_MS = 5 * 60000;        // a value that failed 3 times in a row: only this often
+const NEVER_MS = 30 * 60000;      // one that never answered (this engine unit has none): only this often
 const TREND_MS = 2 * 60000;       // the voltage in place of the current: last 2 minutes, every reading
 const HIST_MS = 60 * 60000, HIST_STEP = 5000;
 const DECEL_KMH = 1.5, DECEL_MS = 2000, DECEL_MIN_KMH = 8, REGEN_HOLD_MS = 3000;
@@ -137,10 +139,14 @@ module.exports = function battery12(ctx, sh) {
     };
 
     /* ---------- the voltage: the source that answered keeps being asked ---------- */
-    const vs = { pick: G.isNum(st.v12Pick) ? st.v12Pick : null, miss: 0, fails: 0, tryT: 0, refused: {} };
+    // res[i]: what candidate i did last - 'ok', 'nrc' (refused), 'none' (no reply, the unit isn't there), 'bad' (FF)
+    const vs = { pick: G.isNum(st.v12Pick) ? st.v12Pick : null, miss: 0, fails: 0, tryT: 0, res: {} };
     const trend = [], hist = [];
     const trip = { regenS: 0, regenN: 0, chargeS: 0, wasRegen: false, minV: null, maxV: null };
     let histT = 0;
+    // search order: those that answered before, untried ones, refused / FF, and last the ones that never reply
+    // (each of those costs a whole timeout)
+    const RANK = { ok: 0, new: 1, nrc: 2, bad: 2, none: 3 };
     async function readVolt(force) {
         const list = (cfg.v12 || []).map((c) => Object.assign({ timeoutMs: VOLT_TIMEOUT_MS, diagOpts: DIAG_OPTS }, c));
         if (!list.length) return null;
@@ -149,9 +155,10 @@ module.exports = function battery12(ctx, sh) {
         if (!force && vs.fails >= 3 && now - vs.tryT < (sh.kind() === 'none' ? RETRY_VOLT_MS : FAIL_MS)) return null;
         vs.tryT = now;
         const one = async (i) => {
-            const v = await exclusive(() => reader.read(list[i]), false, 'v12');
-            const r = reader.raws[reader.key(list[i])];
-            vs.refused[i] = !!(r && /^NRC/.test(r.why || ''));
+            // urgent: the voltage goes ahead of the other reads waiting for the link
+            const v = await exclusive(() => reader.read(list[i]), true, 'v12');
+            const r = reader.raws[reader.key(list[i])], why = (r && r.why) || '';
+            vs.res[i] = v !== null ? 'ok' : /^NRC/.test(why) ? 'nrc' : /no reply/.test(why) ? 'none' : 'bad';
             return v;
         };
         let v = null;
@@ -163,7 +170,7 @@ module.exports = function battery12(ctx, sh) {
         }
         if (v === null) {
             const order = list.map((c, i) => i).filter((i) => i !== p)
-                .sort((a, b) => (vs.refused[a] ? 1 : 0) - (vs.refused[b] ? 1 : 0) || a - b);
+                .sort((a, b) => RANK[vs.res[a] || 'new'] - RANK[vs.res[b] || 'new'] || a - b);
             if (p !== null) order.push(p);
             for (const i of order) {
                 v = await one(i);
@@ -198,17 +205,24 @@ module.exports = function battery12(ctx, sh) {
     const last = {}, fails = {};
     const due = (k, every, force) => {
         const f = fails[k] || 0;
-        return force || Date.now() - (last[k] || 0) >= (f >= 3 ? Math.max(every, FAIL_MS) : every);
+        return force || Date.now() - (last[k] || 0) >= (f >= 3 ? Math.max(every, L.x12T[k] ? FAIL_MS : NEVER_MS) : every);
     };
     const counted = (k, v) => { last[k] = Date.now(); fails[k] = v === null ? (fails[k] || 0) + 1 : 0; return v; };
     const one = (k) => exclusive(() => reader.value(k, (cfg[k] || []).map((c) => Object.assign({ timeoutMs: VOLT_TIMEOUT_MS, diagOpts: DIAG_OPTS }, c))), false, k);
     const keep = (k, v) => { if (v !== null) { L.x12[k] = v; L.x12T[k] = Date.now(); } };
     // the charge the engine unit keeps (40AD: now, the five before, time per band), its capacity (40A9): kept across restarts
     const x = { soc: st.soc40 || null, socT: 0, cap: st.cap12 || null };
+    /**
+     * The values besides the voltage. With the 12 V page up (fast) only the current and one of the others per
+     * round, so the voltage comes every FAST_MS; else (or forced: Read now) all that are due.
+     */
     async function readValues(force) {
         if (due('i12', 0, force)) keep('i12', counted('i12', await one('i12')));
-        for (const k of ['t12', 'alt12']) if (due(k, MID_MS, force)) keep(k, counted(k, await one(k)));
-        if (due('soc40', SOC_MS, force)) {
+        const quick = !force && fastNow();
+        let n = 0;
+        const go = (k, every) => due(k, every, force) && !(quick && n++ > 0);
+        for (const k of ['t12', 'alt12']) if (go(k, MID_MS)) keep(k, counted(k, await one(k)));
+        if (go('soc40', SOC_MS)) {
             const r = counted('soc40', await group('soc40'));
             if (r) {
                 x.soc = { soc: r.soc, hist: ['h1', 'h2', 'h3', 'h4', 'h5'].map((k) => r[k]), bands: BANDS.reduce((o, [k]) => Object.assign(o, { [k]: r[k] }), {}) };
@@ -218,9 +232,9 @@ module.exports = function battery12(ctx, sh) {
             }
         }
         // 56F0 only where 40AD doesn't answer
-        if ((fails.soc40 || 0) >= 3 && due('soc12', SOC_MS, force)) keep('soc12', counted('soc12', await one('soc12')));
-        if (due('soh12', SLOW_MS, force)) keep('soh12', counted('soh12', await one('soh12')));
-        if (due('cap12', SLOW_MS, force)) {
+        if ((fails.soc40 || 0) >= 3 && go('soc12', SOC_MS)) keep('soc12', counted('soc12', await one('soc12')));
+        if (go('soh12', SLOW_MS)) keep('soh12', counted('soh12', await one('soh12')));
+        if (go('cap12', SLOW_MS)) {
             const r = counted('cap12', await group('cap12'));
             if (r && G.isNum(r.cap)) {
                 x.cap = { cap: r.cap, capNew: r.capNew };
@@ -242,7 +256,7 @@ module.exports = function battery12(ctx, sh) {
     setInterval(() => {
         if (!shown() || sh.usingDemo() || sh.kind() !== 'none') { trip.wasRegen = false; return; }
         const d = values();
-        if (!G.isNum(d.v)) { trip.wasRegen = false; return; }
+        if (!G.isNum(d.v) || d.vAge > FRESH_MS) { trip.wasRegen = false; return; }
         const ch = charging(d);
         if (ch) trip.chargeS += 1;
         const rg = ch && d.regen;
@@ -260,7 +274,7 @@ module.exports = function battery12(ctx, sh) {
                 trip: { regenS: 95, regenN: 23, chargeS: 412, minV: 12.41, maxV: 14.62 } });
         }
         const s = soc(), fresh = (k) => L.x12T[k] && now - L.x12T[k] < FRESH_MS;
-        const v = L.v12T && now - L.v12T < FRESH_MS ? L.v12 : null, engine = engineState();
+        const v = L.v12T && now - L.v12T < KEEP_V_MS ? L.v12 : null, engine = engineState();
         return {
             demo: false, v, vAge: L.v12T ? now - L.v12T : null, lastV: L.v12T ? L.v12 : null,
             i: fresh('i12') ? L.x12.i12 : null, iAge: L.x12T.i12 ? now - L.x12T.i12 : null, iOk: (fails.i12 || 0) < 3 && !!L.x12T.i12,
@@ -270,8 +284,17 @@ module.exports = function battery12(ctx, sh) {
             alt: L.x12T.alt12 && now - L.x12T.alt12 < 120000 ? L.x12.alt12 : null,
             engine, regen: engine !== false && G.isNum(L.speed) && decelT > 0 && now - decelT < REGEN_HOLD_MS,
             paused: !inUse(), trip,
+            // values this engine unit never gave (3 tries, none answered: a G20 320i's has no 5854 / 4604) make room
+            gone: { t: none('t12'), alt: none('alt12') }, vFrom: vFrom(),
         };
     }
+    const none = (k) => (fails[k] || 0) >= 3 && !L.x12T[k];
+    const UNITS = { 7: 'SME', 18: 'DME', 19: 'DME 2', 24: 'EGS' };
+    /** Where the voltage comes from: 'DME · OBD 42', 'EGS · F442', ... */
+    const vFrom = () => {
+        const c = vs.pick !== null ? (cfg.v12 || [])[vs.pick] : null;
+        return c ? (UNITS[c.ecu] || 'ECU ' + c.ecu) + '  ·  ' + (c.obd ? 'OBD ' + c.obd : c.did) : null;
+    };
     /** The battery is being charged now: current in, or (no current reading) the charging voltage. */
     const charging = (d) => (G.isNum(d.i) ? d.i > 1 : G.isNum(d.v) && d.v >= CHARGE_V);
 
@@ -359,7 +382,9 @@ module.exports = function battery12(ctx, sh) {
         /* ---- voltage and what the battery is doing; current and power, or the voltage of the last minutes ---- */
         const s = state(t, d), trendMode = !G.isNum(d.i) && (d.demo || ((fails.i12 || 0) > 0 && diag.available));
         G.panel(cv, t, 548, 44, 516, 468, trendMode ? 'Voltage' : 'Voltage & current');
-        const v = d.v, vcol = !G.isNum(v) ? t.dim : v < 11.8 ? t.crit : v < 12.2 || v > 15.0 ? t.warn : t.text;
+        // a reading older than FRESH_MS (a few missed reads): kept, dimmed
+        const old = !d.demo && G.isNum(d.vAge) && d.vAge > FRESH_MS;
+        const v = d.v, vcol = !G.isNum(v) || old ? t.dim : v < 11.8 ? t.crit : v < 12.2 || v > 15.0 ? t.warn : t.text;
         // parked, reads stopped: the last voltage read, dimmed
         const vShow = G.isNum(v) ? v.toFixed(2) : d.paused && G.isNum(d.lastV) ? d.lastV.toFixed(2) : '--.--';
         const vw = big(cv, t, vShow, 572, Y(210), 110, vcol);
@@ -416,9 +441,15 @@ module.exports = function battery12(ctx, sh) {
         kv(cv, t, 'HEALTH (SOH)', G.isNum(d.soh) ? G.fmt(d.soh, 0) + ' %' : '--', x0, Y(130), w, hc);
         // the capacity registered in the engine unit (the original battery's beside it when it differs)
         kv(cv, t, 'CAPACITY', !G.isNum(d.cap) ? '--' : G.fmt(d.cap, 0) + ' Ah' + (G.isNum(d.capNew) && Math.abs(d.cap - d.capNew) >= 1 ? '  (orig. ' + G.fmt(d.capNew, 0) + ')' : ''), x0, Y(168), w);
-        kv(cv, t, 'TEMPERATURE', G.isNum(d.t) ? G.fmt(T(d.t), 0) + ' ' + tU() : '--', x0, Y(206), w);
-        kv(cv, t, 'ALTERNATOR', G.isNum(d.alt) ? G.fmt(d.alt, 0) + ' A' : '--', x0, Y(244), w);
-        kv(cv, t, 'OUTSIDE', G.isNum(sh.ambient()) ? G.fmt(T(sh.ambient()), 1) + ' ' + tU() : '--', x0, Y(282), w);
+        // three rows: the battery's temperature and the alternator's current where the engine unit gives them, else
+        // (dropped once it did not answer them) the engine and where the voltage comes from in their place
+        const gone = d.gone || {}, rows = [];
+        if (!gone.t) rows.push(['TEMPERATURE', G.isNum(d.t) ? G.fmt(T(d.t), 0) + ' ' + tU() : '--']);
+        if (!gone.alt) rows.push(['ALTERNATOR', G.isNum(d.alt) ? G.fmt(d.alt, 0) + ' A' : '--']);
+        rows.push(['OUTSIDE', G.isNum(sh.ambient()) ? G.fmt(T(sh.ambient()), 1) + ' ' + tU() : '--']);
+        if (rows.length < 3) rows.push(['ENGINE', d.engine === true ? 'running' : d.engine === false ? 'off' : '--', d.engine === true ? GO : null]);
+        if (rows.length < 3) rows.push(['VOLTAGE FROM', d.vFrom || '--']);
+        rows.forEach((r, i) => kv(cv, t, r[0], r[1], x0, Y(206 + 38 * i), w, r[2]));
         cv.fillRect(x0, Y(300), w, 1, t.tick);
         cv.text('THIS DRIVE', x0, Y(336), 21, t.dim, { font: 'bold', spacing: 1.5 });
         G.button(cv, t, x0 + w - 110, Y(310), 110, 36, 'Reset', () => { touched(); resetTrip(); return sh.render(); }, { key: 'trip12', confirm: true });
@@ -505,12 +536,13 @@ module.exports = function battery12(ctx, sh) {
         } else cv.text('not available', x0, Y(400), 22, t.dim);
     }
 
+    const fastNow = () => sh.kind() === 'none' && shown() && inUse();
     return {
         PAGES: ['hist12'],
         NAMES: { hist12: 'History' },
         readVolt, readValues, allowed, touched, onSpeed,
         /** No hybrid system and the 12 V pages up and in use: read every FAST_MS. */
-        fast: () => sh.kind() === 'none' && shown() && inUse(),
+        fast: fastNow, FAST_MS,
         /** Draws 'main' (the 12 V battery) or 'hist12'. */
         draw(name, cv, t) {
             const opened = Date.now() - lastDrawT > 5000;

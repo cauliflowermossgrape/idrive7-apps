@@ -355,22 +355,31 @@ const checks = [
             '18:402B': 'FF FF FF FF FF FF', '18:F442': 'NRC 31', '18:OBD 42': v(12.65), '24:F442': v(12.6),
             // 40AD: 48 % now, 50 52 49 47 51 before; time per band 0-40 .. 90-100 %
             '18:40AD': '30 00 32 00 34 00 31 00 2F 00 33 00 00 0A 01 F4 00 64 00 32 00 0A 00 00 FF FF',
-            '18:40A9': '5A 00 50', '18:59AA': '5C', '18:5854': '59', '18:4604': '01 40',
+            '18:40A9': '5A 00 50', '18:59AA': '5C',             // (no 5854 / 4604: the battery's temperature, the alternator)
         };
         asked = [];
         const b = await boot(dir, {}, { demo: 'off', hybrid: 'no' });
         await b.read();
+        for (let k = 0; k < 3; k++) { now += 11000; await b.read(); }
         let t = await b.draw();
         assert(t.includes('12.65'), 'the voltage from OBD 42: ' + t.join(' | '));
         assert.strictEqual(state(dir).v12Pick, SPEC.config.battery.v12.findIndex((c) => c.ecu === 18 && c.obd === '42'), 'the source kept');
         assert(t.includes('VOLTAGE, LAST 2 MIN') && !t.includes('POWER'), 'no current from this engine unit: the voltage trend in its place');
-        ['48', '~43 / 90 Ah', '90 Ah  (orig. 80)', '50  52  49  47  51 %', '92 %', '40 A', 'HEALTH (SOH)', 'low - use a battery charger']
+        ['48', '~43 / 90 Ah', '90 Ah  (orig. 80)', '50  52  49  47  51 %', '92 %', 'HEALTH (SOH)', 'low - use a battery charger']
             .forEach((x) => assert(t.includes(x), x + ' in ' + t.join(' | ')));
+        // the temperature and the alternator this engine unit does not give: the engine and the voltage's source in their place
+        assert(!t.includes('TEMPERATURE') && !t.includes('ALTERNATOR') && t.includes('OUTSIDE') && t.includes('ENGINE') && t.includes('VOLTAGE FROM')
+            && t.includes('DME  ·  OBD 42'), 'rows: ' + t.join(' | '));
         assert(asked.every((q) => q.sid === 0x22 || q.sid === 0x01), 'read-only: UDS 22 / OBD 01 only');
         // the next reads ask the source that answered first (no time lost on the refusing / FF ones)
         asked = []; now += 2000; await b.read();
         const volt = asked.filter((q) => q.ecu === 18 && (q.sid === 0x01 || [0xF442, 0x5853].indexOf((q.req[0] << 8) | q.req[1]) >= 0));
         assert.deepStrictEqual(volt.map((q) => q.sid), [0x01], 'only OBD 42 asked for the voltage');
+        // a read or two missed (the engine unit busy): the last voltage stays up, dimmed, not a blank
+        delete replies['18:OBD 42'];
+        now += 15000; await b.read();
+        t = await b.draw();
+        assert(t.includes('12.65') && !t.includes('--.--'), 'the last voltage kept: ' + t.join(' | '));
         // charging while the car slows down: REGEN
         replies['18:OBD 42'] = v(14.6);
         now += 2000; await b.read();

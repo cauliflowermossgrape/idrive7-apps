@@ -1860,3 +1860,59 @@ Eco Pro	에코 프로
 Eco Pro+	에코 프로 플러스
 Eco Pro Individual	에코 프로 개별 설정
 Adaptive	어댑티브
+ENGINE	엔진
+VOLTAGE FROM	전압 출처
+Reset learned	학습값 초기화
+Learn from driving (redline, shift points, reaction time)	주행 중 학습 (레드라인, 변속 시점, 반응 시간)
+Learn redline from the limiter	리미터에서 레드라인 학습
+Shift point	변속 시점
+Per gear, learned (experimental)	단별 학습값 (실험적)
+Redline minus the setting below	레드라인에서 아래 설정값을 뺀 값
+Minimum shift point	최소 변속 시점
+Shift lights early by (reaction time, experimental)	변속 표시등 앞당김 (반응 시간, 실험적)
+Downshift cue (experimental)	다운시프트 알림 (실험적)
+While slowing down	감속 중
+Show on HUD (experimental)	HUD에 표시 (실험적)
+Test pattern	테스트 패턴
+Minimal (lights and gear)	최소 (표시등과 단수)
+Split wings	양쪽 날개
+VFD glow (teal)	VFD 발광 (청록)
+Vector arcade (outlines)	벡터 아케이드 (윤곽선)
+Night amber	야간 앰버
+Ice white	아이스 화이트
+Shift lights	변속 표시등
+GT3 (outside in, flash)	GT3 (바깥에서 안쪽, 점멸)
+Left to right	왼쪽에서 오른쪽
+Shift grade after each upshift	업시프트 후 변속 평가
+Burst (pops, ring)	버스트 (팝, 링)
+Peak marker	최고값 표시
+Shake on the limiter	리미터에서 흔들림
+Unlit segments	꺼진 칸 표시
+Rev bar (the bar graph tach)	회전 막대 (막대형 회전계)
+RPM readout (a number; 7-segment digits in the digital and VFD layouts)	RPM 숫자 (디지털·VFD 레이아웃은 7세그먼트)
+Gearbox mode (D / S / M) by the gear	단수 옆 변속기 모드 (D / S / M)
+Boost unit	부스트 단위
+Power (from torque and rpm)	출력 (토크와 rpm으로 계산)
+Throttle (accelerator pedal)	스로틀 (가속 페달)
+G-force (sideways and braking / accelerating together)	G-포스 (좌우와 제동·가속 함께)
+Oil temp	오일 온도
+Water temp	냉각수 온도
+Gearbox temp	변속기 온도
+Outside temp (blue at 3 °C and below)	외기 온도 (3 °C 이하 파란색)
+Cold-engine shift limit	냉간 엔진 변속 한계
+Only when cold or hot	차갑거나 뜨거울 때만
+Position left / right	좌우 위치
+Position up / down	상하 위치
+Frame rate	프레임 속도
+In Comfort / Eco Pro	컴포트 / 에코 프로에서
+Show all	모두 표시
+Shift lights and gear only	변속 표시등과 단수만
+Hide (BMW's own HUD)	숨김 (BMW 순정 HUD)
+RPM readout	RPM 숫자
+Exact (to 10 rpm)	정밀 (10 rpm 단위)
+Steady (to 50 rpm)	안정 (50 rpm 단위)
+Thousands (4.5)	천 단위 (4.5)
+Readouts refresh (faster: more work for the head unit, experimental)	표시값 갱신 (빠를수록 헤드유닛 부하 증가, 실험적)
+Readout labels	표시값 이름
+Clearer (bigger, brighter)	선명하게 (더 크고 밝게)
+Outside temp (blue at 3 °C / 37 °F and below)	외기 온도 (3 °C / 37 °F 이하 파란색)
