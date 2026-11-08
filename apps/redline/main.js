@@ -102,11 +102,13 @@ mgu.run({
         // it has moved (some cars send a constant), as Car Vitals does
         const boost = { v: null, t: 0, first: null, moved: false };
         const gearMode = { v: null, seen: [] };
+        const driveMode = { v: null, seen: [] };
         /** 'M' (shifting by hand), 'S', 'D', or null when the car hasn't said (then nothing is held back). */
         const modeNow = () => (gearMode.v && !car.data().demo ? gearMode.v : null);
-        // the HUD's extra readouts, as Live Data scales them: accelerator pedal (%), g sideways and
-        // forward, outside temperature (°C); each { v, t }, used while under 2 s old (outside: 10 min)
-        const extra = { pedal: { v: null, t: 0 }, gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
+        // the HUD's extra readouts, as Live Data scales them: g sideways and forward, outside
+        // temperature (°C); each { v, t }, used while under 2 s old (outside: 10 min). (The accelerator
+        // pedal is left out until its scaling is checked: Live Data's guess read 60-96 % at a light touch.)
+        const extra = { gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
         const keep = (e, v) => { e.v = v; e.t = Date.now(); };
         const fresh = (e, ms) => (e.v !== null && Date.now() - e.t < ms ? e.v : null);
         const G0 = 9.80665;
@@ -115,15 +117,18 @@ mgu.run({
                 const raw = v && v.actualValueTorqueCrankshaft;
                 if (typeof raw === 'number' && raw < 4095) { torque.v = Math.max(0, raw * 0.5 - 1023.5); torque.t = Date.now(); }
             },
+            // the driving mode (Sport / Comfort / Eco Pro), for "In Comfort / Eco Pro" on the HUD
+            statusFESVehicleDynamicSwitchHMI: (v) => {
+                const raw = v && v.actualValueModeDrivingExperience;
+                driveMode.v = Hud.driveModeOf(raw);
+                if (driveMode.seen.indexOf(String(raw)) < 0 && driveMode.seen.length < 16) { driveMode.seen.push(String(raw)); log.info('driving mode: ' + JSON.stringify(raw) + ' -> ' + driveMode.v); }
+            },
             statusSwitchDriveDynamicSport2: (v) => {
                 const raw = v && v.displayBoostPressure;
                 if (typeof raw !== 'number' || raw === 255 || raw < 0) return;
                 if (boost.first === null) boost.first = raw; else if (raw !== boost.first) boost.moved = true;
                 boost.v = raw * 0.01; boost.t = Date.now();
             },
-        },
-        'de.bmw.powertrain.AcceleratorPedal': {
-            AngleAcceleratorPedal: (v) => { const raw = v && v.actualValueAngleAcceleratorPedal; if (typeof raw === 'number') { const p = raw * 0.025; if (p >= -2 && p <= 102) keep(extra.pedal, p); } },
         },
         'de.bmw.infotainment.vehicle.CDS2': {
             statusLateralAccelerationMassCenter: (v) => { const raw = v && v.lateralAccelerationCentreOfGravity; if (typeof raw === 'number' && raw !== 65535) keep(extra.gLat, (raw * 0.002 - 65) / G0); },
@@ -224,14 +229,21 @@ mgu.run({
         // LIMITER: on the cut itself (25 rpm): shift points sit 150 under the redline, so the old 60 caught
         // shifts on the point
         const verdict = (rpm, target, cold) => (rpm >= redline() - 25 ? 'LIMITER' : rpm < target - 250 ? 'EARLY' : rpm > target + 200 ? (cold ? 'COLD REV' : 'LATE') : 'SPOT ON');
-        const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff' };
+        // only shifts aimed at the shift point are graded: the revs within GRADE_FROM of it (where the
+        // shift lights count in) and shifted by hand; the rest are logged as CRUISE (an everyday shift
+        // well below the point) or AUTO (the gearbox shifted, in D or S) and left out of the accuracy
+        const GRADE_FROM = 1500;
+        const gradeOf = (rpm, sp, mode) => (mode === 'D' || mode === 'S' ? 'AUTO' : rpm < sp.rpm - GRADE_FROM ? 'CRUISE' : verdict(rpm, sp.rpm, sp.cold));
+        const graded = (s) => s.verdict !== 'CRUISE' && s.verdict !== 'AUTO';
+        const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff', CRUISE: '#8a8f98', AUTO: '#8a8f98' };
 
         function recordShift(t, from, to) {
             const win = recent.filter((r) => t - r[0] < 600);
             const rpm = Math.max.apply(null, win.map((r) => r[1]));
             if (!(rpm > 2500)) return;
             const sp = shiftPoint(car.data().oil, from);
-            lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: verdict(rpm, sp.rpm, sp.cold), mode: modeNow() };
+            const gm = modeNow();
+            lastShift = { at: Date.now(), from, to, rpm: Math.round(rpm), target: sp.rpm, verdict: gradeOf(rpm, sp, gm), mode: gm };
             if (hud && learning() && !car.data().demo) hud.upshift(rpm);         // never learn from the demo drive
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
@@ -322,6 +334,9 @@ mgu.run({
 
         /* ---------- drawing ---------- */
         const mph = () => settings.get('speedUnit') === 'mph';
+        // temperatures and torque in the units chosen in Settings (the HUD uses the same settings)
+        const temp = (c) => (G.isNum(c) && settings.get('hudTempUnit') === 'f' ? c * 9 / 5 + 32 : c);
+        const lbft = () => settings.get('hudTorqueUnit') === 'lbft';
         let page = 0;
 
         function ledColors(t) {
@@ -418,9 +433,9 @@ mgu.run({
             const warm = settings.get('warmOil'), coldOil = G.isNum(d.oil) && d.oil < warm;
             const oilCol = !G.isNum(d.oil) ? t.dim : d.oil < 60 ? t.cold : coldOil ? YELLOW : d.oil > 130 ? t.crit : t.text;
             cv.text('OIL', 40, 334, 22, t.dim, { font: 'bold', spacing: 1.5 });
-            cv.text(G.fmt(d.oil, 0) + (G.isNum(d.oil) ? '°' : ''), 40, 376, 40, oilCol, { font: 'bold' });
+            cv.text(G.fmt(temp(d.oil), 0) + (G.isNum(d.oil) ? '°' : ''), 40, 376, 40, oilCol, { font: 'bold' });
             cv.text('WATER', 190, 334, 22, t.dim, { font: 'bold', spacing: 1.5 });
-            cv.text(G.fmt(d.coolant, 0) + (G.isNum(d.coolant) ? '°' : ''), 190, 376, 40, t.text, { font: 'bold' });
+            cv.text(G.fmt(temp(d.coolant), 0) + (G.isNum(d.coolant) ? '°' : ''), 190, 376, 40, t.text, { font: 'bold' });
             // cold oil is always shown: with the guard on it also lowers the shift point
             if (coldOil) {
                 cv.roundRect(40, 392, 300, 36, 8, withAlpha(t.cold, 0.2));
@@ -462,11 +477,12 @@ mgu.run({
 
             const ap = G.panel(cv, t, 808, 44, 768, 468, 'Shift accuracy');
             const pitch = 46 + (ap.y + ap.h - G.BOTTOM) / 4;          // the bars spread over a taller panel
-            const n = shifts.length;
-            const cnt = (v) => shifts.filter((s) => s.verdict === v).length;
+            // accuracy from the graded shifts only (CRUISE / AUTO are in the log, not in the score)
+            const aimed = shifts.filter(graded), n = aimed.length;
+            const cnt = (v) => aimed.filter((s) => s.verdict === v).length;
             const spot = cnt('SPOT ON');
             cv.text(n ? Math.round(spot / n * 100) + '%' : '--', 832, 199, 96, n ? GREEN : t.dim, { font: 'num' });
-            cv.text('SPOT ON  (' + n + ' ' + plural(n, 'shifts', 'shifts') + ')', 836, 235, 22, t.dim, { font: 'bold', spacing: 1 });
+            cv.text('SPOT ON  (' + n + ' graded)', 836, 235, 22, t.dim, { font: 'bold', spacing: 1 });
             ['EARLY', 'SPOT ON', 'LATE', 'COLD REV', 'LIMITER'].forEach((v, i) => {
                 const y = 276 + Math.round(i * pitch), c = cnt(v), f = n ? c / n : 0;
                 cv.text(v, 836, y + 22, 22, VCOL[v], { font: 'bold', spacing: 1 });
@@ -476,7 +492,7 @@ mgu.run({
             });
             // scatter: shift rpm vs target
             if (n) {
-                const ys = shifts.slice(0, 30).map((s) => s.rpm - s.target);
+                const ys = aimed.slice(0, 30).map((s) => s.rpm - s.target);
                 const avg = ys.reduce((a, b) => a + b, 0) / ys.length;
                 cv.text('AVG ' + (avg >= 0 ? '+' : '') + Math.round(avg) + ' rpm vs shift point', 1240, 199, 24, t.text, { align: 'center', font: 'bold' });
                 cv.text('PEAK ' + Math.round(sessionRpm) + ' RPM  ·  ' + G.fmt(mph() ? peakSpeed / MPH : peakSpeed, 0) + (mph() ? ' MPH' : ' KM/H'), 1240, 235, 22, t.dim, { align: 'center', font: 'bold', spacing: 0.5 });
@@ -571,13 +587,16 @@ mgu.run({
                 cv.target(tx - 16, 356, w + 32, 46, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 56;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.throttle, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             cv.text(over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show (temperatures only when cold or hot)' : STUDIO_HINT[studio.panel], 1576, 388, 16, over ? t.warn : t.dim, { align: 'right' });
             if (studio.panel === 'look') {
                 choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
                 // temperatures only while cold, warming or hot (invisible at operating temperature), or always
+                // what the HUD does in Comfort and Eco Pro (Sport always shows all of it)
+                choiceRow(cv, t, 414, 'COMFORT', 'hudComfort', settings.get('hudComfort') || 'all', [['all', 'Show all'], ['lights', 'Lights + gear'], ['hide', 'Hide']], false, 720);
                 choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']]);
+                choiceRow(cv, t, 462, 'LABELS', 'hudLabels', o.clearLabels ? 'clear' : 'normal', [['normal', 'Normal'], ['clear', 'Clearer']], false, 720);
             } else if (studio.panel === 'gauge') {
                 // the gauge's parts; tap to add or remove
                 switches(cv, t, 414, 'GAUGE', [
@@ -594,7 +613,6 @@ mgu.run({
                     ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
                     ['Torque', o.torque, () => settings.set('hudShowTorque', !o.torque)],
                     ['Power', o.power, () => settings.set('hudShowPower', !o.power)],
-                    ['Throttle', o.throttle, () => settings.set('hudShowThrottle', !o.throttle)],
                     ['G-force', o.g, () => settings.set('hudShowG', !o.g)],
                 ]);
                 switches(cv, t, 462, 'TEMPS', [
@@ -623,7 +641,7 @@ mgu.run({
             }
         }
         const STUDIO_HINT = {
-            look: 'Layouts: tap one above; temperatures show only cold, warming or hot unless Always',
+            look: 'Comfort / Eco Pro: all, only lights + gear, or hidden; Sport always shows all',
             gauge: 'Tap to add or remove; turn everything else off for just the lights',
             readouts: 'Up to four show, in this order; a cold or hot one keeps its place. Units: Settings',
             effects: 'Grade after an upshift, downshift arrows, peak line, limiter shake',
@@ -666,10 +684,11 @@ mgu.run({
             G.button(cv, t, 784 - 20 - 150, 56, 150, 40, 'Reset', () => { shiftMap.forget(); learnedView = null; return render(); }, { key: 'resetMap', confirm: true, color: t.warn });
             // the learned data changes every few seconds at most: read it once a second, not per frame
             if (!learnedView || Date.now() - learnedView.t > 1000) learnedView = { t: Date.now(), pts: shiftMap.curve(), table: shiftMap.table() };
-            const pts = learnedView.pts.filter((p) => p[0] >= 1000 && p[0] <= maxRpm()), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
+            const tk = lbft() ? 0.737562 : 1;
+            const pts = learnedView.pts.filter((p) => p[0] >= 1000 && p[0] <= maxRpm()).map((p) => [p[0], p[1] * tk]), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
             G.chart(cv, t, 44, 116, 720, Math.max(200, cp.y + cp.h - 136), {
                 xMin: 1000, xMax: maxRpm(), xStep: 1000, xFmt: (v) => String(v / 1000), xUnit: 'x1000 rpm',
-                yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: 'Nm', padTop: 22,
+                yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: lbft() ? 'lb-ft' : 'Nm', padTop: 22,
                 series: pts.length ? [{ pts: pts, color: t.accent, width: 3 }] : [],
                 empty: 'Nothing yet: full-throttle pulls, a few from low rpm, fill it in',
             });
@@ -697,7 +716,11 @@ mgu.run({
             cv.fillRect(836, y - 30, 712, 1, withAlpha(t.tick, 0.6));
             cv.text('REDLINE', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
             cv.text(redline() + ' rpm  ·  ' + redlineSource(), 990, y, 20, t.text, { font: 'bold' });
-            if (!lim && !manualRedline() && settings.get('learnRedline') !== false) cv.text('learns after two hits of the limiter, oil warm', 990, y + 20, 15, t.dim);
+            if (!lim && !manualRedline() && settings.get('learnRedline') !== false) {
+                const p = limiter.waiting();
+                cv.text(p ? '1 of 2 limiter hits seen (' + p + ' rpm): one more, held half a second, oil warm'
+                    : 'learns after two hits of the limiter, each held half a second, oil warm', 990, y + 20, 15, p ? t.text : t.dim);
+            }
             G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { limiter.forget(); return render(); }, { key: 'resetRedline', confirm: true, color: t.warn });
             y += 46;
             cv.text('REACTION', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
@@ -758,13 +781,15 @@ mgu.run({
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
-            chip: () => (lastShift && lastShift.mode !== 'D' && lastShift.mode !== 'S' && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
+            chip: () => (lastShift && graded(lastShift) && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             mode: modeNow,
+            // 'sport', 'comfort', 'eco' or null (unknown, Adaptive, the demo data): the HUD shows as set up
+            driveMode: () => (car.data().demo ? null : driveMode.v),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
             extras: () => (car.data().demo ? null : {
                 torque: Date.now() - torque.t < 2000 ? torque.v : null,
-                pedal: fresh(extra.pedal, 2000), gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
+                gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),
             }),
         });

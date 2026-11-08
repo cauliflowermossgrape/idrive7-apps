@@ -16,7 +16,8 @@
  *
  *   const lim = new Limiter({ dataDir, log });
  *   lim.feed(tMs, { rpm, gear, speed, warm }, floor, ceil);   // every live sample
- *   lim.value()   -> rpm or null;  lim.onChange(fn);  lim.forget()
+ *   lim.value()   -> rpm or null;  lim.waiting() -> the first plateau's rpm or null;
+ *   lim.onChange(fn);  lim.forget()
  */
 const fs = require('fs');
 const path = require('path');
@@ -40,6 +41,8 @@ class Limiter {
     }
 
     value() { return this.saved; }
+    /** The first plateau, waiting for a second to confirm it (rpm), or null. Kept in memory only. */
+    waiting() { return this.saved === null && typeof this.pending === 'number' ? this.pending : null; }
     onChange(fn) { this.listeners.push(fn); }
 
     forget() {

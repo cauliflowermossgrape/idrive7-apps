@@ -1,8 +1,9 @@
 # Redline
 
 A full-screen rev display in the style of the G20 Live Cockpit (Sport). It shows a wide slanted
-rev bar, digital rpm, a big gear, speed, oil and water temperatures, and 12 shift lights. Every
-upshift is scored against your shift point. A cold-engine guard holds the shift point down until
+rev bar, digital rpm, a big gear, speed, oil and water temperatures, and 12 shift lights. Upshifts
+made by hand near your shift point are scored against it; everyday shifts well below it show as
+CRUISE and the gearbox's own shifts (D / S) as AUTO, left out of the score. A cold-engine guard holds the shift point down until
 the oil is warm. The main README's app table describes the screen itself.
 
 This file is mostly about the **experimental** parts added on top. Each one is marked
@@ -67,12 +68,12 @@ cars with a HUD, but nobody has checked yet.
 - **Picking:** on the right, the six layouts; tap one to use it.
 - **Editing:** under the preview, five tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
-  - **Look:** colours, and temperatures hidden at operating temperature (only blue, yellow or red
-    ones show) or always shown.
+  - **Look:** colours, what the HUD does in Comfort / Eco Pro, and temperatures hidden at
+    operating temperature (only blue, yellow or red ones show) or always shown.
   - **Gauge:** Rev bar (the main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M), and the
     shift light style (GT3, filling from the outside in, or left to right). Every part can be
     turned off, so the HUD can be, say, the VFD shift lights alone.
-  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, Throttle, G-force. *Temps*: Oil,
+  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, G-force. *Temps*: Oil,
     Water, Gearbox, Outside, and the cold-engine limit. Up to four show, in this order; when more
     are on, the last plain ones give way, so a cold or hot reading keeps its place.
   - **Effects:** the shift grade (Burst / Simple / Off), downshift arrows (When braking /
@@ -92,12 +93,25 @@ cars with a HUD, but nobody has checked yet.
 - **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
   the bar, lights and gear flash red.
 
+**By driving mode** (*In Comfort / Eco Pro*): the car's driving mode (FES
+`statusFESVehicleDynamicSwitchHMI`, as Live Data shows it) picks how much the HUD shows.
+- *Show all* (the default): the same in every mode.
+- *Shift lights and gear only*: in Comfort and Eco Pro, the shift lights, rev bar and gear, with
+  no readouts, grade, peak marker or shake.
+- *Hide*: in Comfort and Eco Pro the image is dropped, so BMW's own HUD shows; it comes back as
+  soon as the mode is Sport.
+
+Sport, Sport+ and Sport Individual always show everything. Adaptive, a mode it doesn't know, or
+a car that doesn't send the mode count as Sport, so the HUD never disappears for lack of a signal.
+*Play on HUD* and the HUD looks preview ignore the mode.
+
 **The readouts row** (standard layout), left to right:
 
 - **RPM:** the engine speed as a number (7-segment digits in the digital and VFD layouts).
 - **Torque** (Nm or lb-ft) from the engine's own torque signal, and **power** (hp, PS or kW)
   worked out from torque and rpm. Both off by default.
-- **Throttle:** the accelerator pedal, in %. Off by default.
+- **Throttle** is left out for now: the accelerator pedal signal's scaling isn't confirmed (on a
+  G21 it read 60-96 % at a light touch). It comes back once checked against the engine unit.
 - **G-force:** sideways and forward / braking together, from the car's acceleration sensor. Off
   by default.
 - **Outside temperature:** blue at 3 °C and below, where ice is possible. Off by default.
@@ -136,6 +150,7 @@ layout and colours by picture.
 | Shift grade after each upshift | Burst / Simple / Off |
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
+| In Comfort / Eco Pro | Show all / Shift lights and gear only / Hide (BMW's own HUD) |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.
@@ -143,13 +158,17 @@ layout and colours by picture.
 | Setting | Values |
 |---|---|
 | Gear | on / off |
-| RPM | on / off: a number in the readouts row (to 50 rpm); the 7-segment digits in the digital and VFD layouts |
+| RPM | on / off: a number in the readouts row; the 7-segment digits in the digital and VFD layouts |
+| RPM readout | Exact (to 10 rpm, default) / Steady (to 50 rpm) / Thousands (KRPM 4.5) |
+| Readouts refresh | 4 (default) / 10 / 20 a second. Faster sends more frames to the HUD while the numbers change (experimental) |
+| Readout labels | Normal / Clearer (bigger, full brightness). Also under HUD looks → Look |
 | Boost | on / off |
 | Boost unit | bar / psi / kPa |
 | Oil, Water, Gearbox temperature | on / off each |
 | Cold-engine shift limit | on / off (the LIMIT readout while the cold guard holds the shift point down) |
 | Temperatures | only when cold or hot / always |
-| Temperature unit | °C / °F (the cold and hot colours go by °C either way) |
+| Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
+| Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
 
 At most four readouts fit the row; past that the last one gives way.
 

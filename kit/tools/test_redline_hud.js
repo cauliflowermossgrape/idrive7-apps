@@ -135,6 +135,36 @@ ok(c[c.length - 1].limiter && !c[1].limiter, 'limiter within 40 of the redline o
 c = drive([[0, null, 3], [50, undefined, 3]], 5550, 200);
 ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
 
+/* ---------- driving mode (Comfort / Eco Pro) ---------- */
+[[1, 'sport'], [2, 'sport'], [3, 'sport'], [4, 'comfort'], [5, 'comfort'], [6, 'comfort'], [7, 'eco'], [9, 'eco'], [10, null], [0, null], [63, null],
+    ['SPORT_DYNAMIC', 'sport'], ['SPORT_EXPERT', 'sport'], ['ECO_PRO_EFFICIENT', 'eco'], ['COMFORT', 'comfort'], ['ADAPTIVE', null], [null, null], [undefined, null], ['', null]]
+    .forEach((c) => ok(Hud.driveModeOf(c[0]) === c[1], 'driving mode ' + JSON.stringify(c[0]) + ' -> ' + Hud.driveModeOf(c[0]) + ', not ' + c[1]));
+ok(Hud.calmFor('sport', 'hide') === 'all' && Hud.calmFor(null, 'hide') === 'all', 'Sport and an unknown mode show everything');
+ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'lights') === 'lights' && Hud.calmFor('comfort', undefined) === 'all', 'Comfort / Eco Pro follow the setting');
+{
+    const c = Hud.calmOpts(Object.assign({}, optsDefault, { torque: true, g: true }));
+    ok(c.lights && c.bar && c.gear && !c.rpm && !c.oil && !c.torque && !c.g && c.chip === 'off' && !c.peak, 'lights + gear only: readouts, grade and peak off');
+    ok(Hud.readoutsFor({ rpm: 5000, oil: 30, coolant: 30 }, 30, 1.2, { rpm: 4000, cold: true }, c, { torque: 300 }).length === 0, 'lights + gear only: no readouts, not even cold temps');
+}
+
+/* ---------- RPM readout format, refresh, clearer labels ---------- */
+ok(Hud.rpmItem(4537, '10').value === '4540' && Hud.rpmItem(4537, '50').value === '4550' && Hud.rpmItem(4537, 'k').value === '4.5', 'rpm to 10, to 50, in thousands');
+ok(Hud.rpmItem(-20, 'k').value === '0.0' && Hud.rpmItem(6960, 'k').value === '7.0', 'thousands: clamped, rounded');
+ok(optsDefault.rpmFormat === '10' && optsDefault.readoutMs === 250 && !optsDefault.clearLabels, 'defaults: to 10, 4 a second, normal labels');
+{ const o = Hud.optsFrom(settingsOf({ hudRpmFormat: 'k', hudReadoutRate: 10, hudLabels: 'clear' }));
+    ok(o.rpmFormat === 'k' && o.readoutMs === 100 && o.clearLabels, 'thousands, 10 a second, clearer labels');
+    ok(Hud.readoutsFor({ rpm: 3260 }, null, null, null, Object.assign({}, optsDefault, o, { boost: false, oil: false, coolant: false, gearbox: false }), {})[0].value === '3.3', 'readouts row uses the format'); }
+
+/* ---------- shift light colours follow the app's "Shift light style" ---------- */
+{
+    const P = Draw.PALETTES.colour, at = (st, n) => Array.from({ length: n }, (_, i) => Draw.lightCol(st, P, i / (n - 1)));
+    const m = at('m', 12), f1 = at('f1', 12);
+    ok(m[0] === P.low && m.indexOf(P.mid) > 0 && m[11] === P.high, 'M: green, yellow, red');
+    ok(f1[0] === P.low && f1.indexOf(P.mid) < 0 && f1[6] === P.high && f1[11] !== P.high && f1[11] !== P.low, 'Race: green, red, blue (no yellow)');
+    ok(at('f1', 6).slice(0, 5).indexOf(P.high) > 0, 'Race on 6 GT3 steps: red before the flash');
+    ok(at('mono', 12).every((c) => c === P.text), 'Theme colour: one colour');
+}
+
 /* ---------- the demo drive ---------- */
 for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     const d = Hud.demoAt(t);

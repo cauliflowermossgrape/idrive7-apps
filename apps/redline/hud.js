@@ -135,12 +135,16 @@ function optsFrom(settings) {
         oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
         // the extra readouts are off unless switched on
         torque: settings.get('hudShowTorque') === true, power: settings.get('hudShowPower') === true,
-        throttle: settings.get('hudShowThrottle') === true, g: settings.get('hudShowG') === true,
+        // throttle: off until the accelerator pedal's scaling is checked on a car (readoutsFor keeps it)
+        throttle: false, g: settings.get('hudShowG') === true,
         outside: settings.get('hudShowOutside') === true,
         torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
+        rpmFormat: ['50', 'k'].indexOf(String(settings.get('hudRpmFormat'))) >= 0 ? String(settings.get('hudRpmFormat')) : '10',
+        readoutMs: Math.round(1000 / clamp(Number(settings.get('hudReadoutRate')) || 4, 1, 30)),
+        clearLabels: settings.get('hudLabels') === 'clear',
         peak: on('hudPeak'),
         chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
         shake: settings.get('hudShake') === true,
@@ -150,6 +154,32 @@ function optsFrom(settings) {
     };
 }
 
+/**
+ * The car's driving mode (FES statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, a
+ * name or a number, as Live Data and Live Adjustments read it) -> 'sport', 'comfort', 'eco' or null.
+ * Adaptive, initialising and anything unknown are null: the HUD then shows as set up.
+ */
+function driveModeOf(raw) {
+    if (raw === undefined || raw === null) return null;
+    const n = Number(raw);
+    if (!isNaN(n) && String(raw).trim() !== '') return n >= 1 && n <= 3 ? 'sport' : n >= 4 && n <= 6 ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : null;
+    const s = String(raw).toUpperCase();
+    return /SPORT/.test(s) ? 'sport' : /ECO/.test(s) ? 'eco' : /COMFORT|TRAFFIC/.test(s) ? 'comfort' : null;
+}
+/**
+ * What the HUD does in this driving mode (setting hudComfort): 'all', 'lights' (shift lights, rev
+ * bar and gear only) or 'hide'. Sport and an unknown mode always 'all'.
+ */
+function calmFor(drive, setting) {
+    if (drive !== 'comfort' && drive !== 'eco') return 'all';
+    return setting === 'lights' || setting === 'hide' ? setting : 'all';
+}
+/** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
+function calmOpts(o) {
+    return Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, limit: false,
+        oil: false, coolant: false, gearbox: false, outside: false, chip: 'off', peak: false, shake: false });
+}
+
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
 // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
 const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
@@ -157,6 +187,12 @@ const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa:
 const TORQUE_UNITS = { nm: [1, 'TORQUE'], lbft: [0.737562, 'LB-FT'] };
 const POWER_UNITS = { hp: [1.34102, 'HP'], kw: [1, 'KW'], ps: [1.35962, 'PS'] };
 const MAX_READOUTS = 4;
+/** The RPM readout for format f: '10' (to 10, the default), '50', or 'k' (thousands, 4.5). */
+function rpmItem(rpm, f) {
+    const r = Math.max(0, rpm), step = f === '50' ? 50 : 10;
+    if (f === 'k') return { label: 'KRPM', value: (Math.round(r / 100) / 10).toFixed(1), tone: 'text' };
+    return { label: 'RPM', value: String(Math.round(r / step) * step), tone: 'text' };
+}
 const roundTo = (v, step) => Math.round(v / step) * step;
 /**
  * The readouts row for o (optsFrom): d (rpm, oil, coolant), gearbox temperature, boost (bar), sp
@@ -168,9 +204,9 @@ const roundTo = (v, step) => Math.round(v / step) * step;
 function readoutsFor(d, gb, boost, sp, o, x) {
     const items = [];
     x = x || {};
-    // the rpm as a number: the 7-segment layouts have their own digits, the others a readout (to 50,
-    // so it doesn't flicker)
-    if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push({ label: 'RPM', value: String(Math.max(0, Math.round(d.rpm / 50) * 50)), tone: 'text' });
+    // the rpm as a number (the 7-segment layouts have their own digits): to 10, to 50, or in
+    // thousands with one decimal (4.5), which reads at a glance like the tach's own numbers
+    if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push(rpmItem(d.rpm, o.rpmFormat));
     if (o.boost) {
         const b = boost, u = BOOST_UNITS[o.boostUnit] || BOOST_UNITS.bar;
         if (isNum(b)) items.push({ label: u[2], value: (Math.max(0, b) * u[0]).toFixed(u[1]), tone: 'text' });
@@ -346,6 +382,7 @@ function start(ctx, src) {
         if (isNum(j.ms)) { learnedLead = clamp(Math.round(j.ms), 0, 600); leadShifts = isNum(j.n) && j.n > 0 ? Math.floor(j.n) : 0; }
     } catch (e) { /* none yet */ }
     let cur = null, prev = null, first = true, lastErr = 0;
+    let hiddenLogged = false;     // the HUD is hidden by the driving mode (logged once each way)
 
     const safe = (name, fn) => function () {
         try { return fn.apply(null, arguments); } catch (e) {
@@ -387,7 +424,7 @@ function start(ctx, src) {
 
     const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); };
 
-    const dropLayer = safe('drop', () => { stopTimer(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; });
+    const dropLayer = safe('drop', () => { stopTimer(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
 
     const disconnect = safe('disconnect', () => {
         dropLayer();
@@ -423,7 +460,7 @@ function start(ctx, src) {
         const sp = dm ? { rpm: dm.shift, cold: false } : src.shiftPoint(d.oil, d.gear), redline = dm ? 6550 : src.redline();
         const demoKey = dm ? 'play' : !!d.demo;
         if (demoKey !== lastDemo) { lastDemo = demoKey; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
-        const o = optsNow(), lights = o.lights;
+        const o = calm(playing) === 'lights' ? calmOpts(optsNow()) : optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const show = dm ? d.rpm : smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
@@ -460,11 +497,11 @@ function start(ctx, src) {
      */
     const ro = { t: 0, v: [], o: null };
     function readouts(d, gb, sp, o) {
-        // at most 4 times a second: power, torque and g change with every sample, and a row of
-        // numbers changing faster than that can't be read anyway (an options change shows at once)
+        // 4 times a second by default (setting "Readouts refresh"): power, torque and g change with
+        // every sample; faster means more frames sent to the HUD (an options change shows at once)
         const now = Date.now();
         const ok = JSON.stringify(o);
-        if (ok !== ro.o || now - ro.t >= READOUT_MS || now < ro.t) {
+        if (ok !== ro.o || now - ro.t >= (o.readoutMs || READOUT_MS) || now < ro.t) {
             ro.v = readoutsFor(d, gb, o.boost && src.boost ? src.boost() : null, sp, o, src.extras ? src.extras() : null);
             ro.t = now; ro.o = ok;
         }
@@ -511,6 +548,8 @@ function start(ctx, src) {
 
     /** The drawing options from the settings. */
     function optsNow() { return optsFrom(settings); }
+    /** What the driving mode asks of the HUD now ('all', 'lights', 'hide'); "Play on HUD" always shows all. */
+    function calm(playing) { return playing ? 'all' : calmFor(src.driveMode ? src.driveMode() : null, settings.get('hudComfort')); }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
@@ -527,7 +566,25 @@ function start(ctx, src) {
      */
     const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
     const tick = safe('tick', () => {
-        if (!cr || !layer || !cr.ready) return;
+        if (!cr || !cr.ready) return;
+        // Comfort / Eco Pro on "Hide": the image is dropped (BMW's own HUD shows), the timer keeps
+        // running to bring it back when the mode changes
+        if (shown === 'tach') {
+            if (calm(Date.now() < demoUntil) === 'hide') {
+                if (layer) {
+                    cr.drop(layer); layer = 0;
+                    // the old layer's target state isn't the new one's: forget it (keeping a guard
+                    // stop), so a layer made again isn't held back waiting for a target event
+                    if (target) target = { state: '', holder: '', disabled: target.disabled };
+                }
+                if (src.gearbox) src.gearbox.stop();
+                if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
+                return;
+            }
+            if (!layer) { makeLayer(); if (!layer) return; }
+            if (hiddenLogged) { hiddenLogged = false; log.info('hud: back on'); }
+        }
+        if (!layer) return;
         // nothing to draw while the HUD isn't showing (behind BMW's content, disabled, unavailable):
         // the first frame after it is sent whole. No target event yet: draw (it may never come).
         if (paused()) {
@@ -536,7 +593,9 @@ function start(ctx, src) {
             return;
         }
         // the gearbox unit is asked only while its readout is on
-        if (src.gearbox) { if (optsNow().gearbox) src.gearbox.start(); else src.gearbox.stop(); }
+        // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
+        const oNow = calm(Date.now() < demoUntil) === 'lights' ? calmOpts(optsNow()) : optsNow();
+        if (src.gearbox) { if (oNow.gearbox) src.gearbox.start(); else src.gearbox.stop(); }
         const f = frameData();
         // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
         const key = frameKey(f);
@@ -568,15 +627,23 @@ function start(ctx, src) {
             o.style, o.palette, o.gear, o.bar, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
     }
 
-    const showTach = safe('tach', () => {
+    /** The tach's image layer at the current place and size, with fresh canvases (the next frame is sent whole). */
+    function makeLayer() {
         const r = rect();
-        if (shown === 'tach') { cr.set(layer, r); return; }
-        dropLayer();
         layer = cr.image({ target: 'hud', klass: 'overlay', x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
         if (!layer) { log.warn('hud: tach layer refused by the client'); return; }
-        cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true;
+        cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true; lastKey = '';
+    }
+
+    const showTach = safe('tach', () => {
+        const r = rect();
+        if (shown === 'tach') { if (layer) cr.set(layer, r); return; }
+        dropLayer();
+        // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
+        const hidden = calm(Date.now() < demoUntil) === 'hide';
+        if (!hidden) { makeLayer(); if (!layer) return; }
         shown = 'tach';
-        if (src.gearbox) src.gearbox.start();
+        // (the gearbox unit is started by the tick, only while its readout shows)
         timer = setInterval(tick, Math.round(1000 / fps()));
         log.info('hud: tach on at ' + r.x + ',' + r.y + ' ' + r.w + 'x' + r.h);
     });
@@ -627,6 +694,7 @@ function start(ctx, src) {
         if (!cr || !cr.ready) return NOT_RUNNING;
         if (target && target.disabled) return 'HUD: off after display errors';
         if (m === 'test') return 'HUD: test pattern';
+        if (shown === 'tach' && !layer) return 'HUD: hidden in Comfort / Eco Pro';
         const st = target ? target.state : '';
         if (st === 'shown') return 'HUD: on';
         if (st === 'parked' || st === 'waiting') return 'HUD: giving way to BMW';
@@ -652,4 +720,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, readoutsFor, MAX_READOUTS, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
