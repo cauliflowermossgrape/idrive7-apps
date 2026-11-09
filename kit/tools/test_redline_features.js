@@ -98,7 +98,9 @@ const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 
 // every option that isn't the default, of the settings that change the picture
 // hudHybridSeen: found by the app, not a choice (it only lets the hybrid switches work: test_redline_hud.js)
-const SKIP = ['hudHybridSeen', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle'];
+const SKIP = ['hudHybridSeen', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle',
+    // the directions: their own layer (test_redline_hud_nav.js), not the tach's picture
+    'hudNav', 'hudNavX', 'hudNavY'];
 const variants = [];
 spec.settings.filter((s) => s.key && (/^hud/.test(s.key) || s.key === 'lights') && SKIP.indexOf(s.key) < 0).forEach((s) => {
     if (s.type === 'bool') variants.push([s.key, !s.default]);

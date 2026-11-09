@@ -21,6 +21,10 @@
  *   - Never throws: an uncaught error exits the app, MainApp's CorruptAppsHandler wipes an
  *     app's data on its first crash and uninstalls it on the second.
  *
+ *   - Directions (setting "hudNav", hud-nav.js, nav.js): while a route runs, the next turn as a second picture
+ *     (200x76) in the bottom right corner of the glass. With a route but no turn it can read, Redline steps aside so BMW's
+ *     own card shows (the KOMBI hides it behind Redline).
+ *
  * Settings: hud (off | on | test); groups "HUD style" (layout, colours, lights, grade, peak, shake,
  * unlit), "HUD readouts" (gear, boost, each temperature, the cold limit, smart temperatures, units),
  * "HUD position and size"; hudLead (also the screen's lights). README.md lists them.
@@ -30,6 +34,8 @@ const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
 // the drawing: layouts, palettes, readouts (hud-draw.js); this file decides what to show and when
 const Draw = require('./hud-draw');
+// Redline's own directions (the next turn, its distance, the street, the lanes), a picture in the bottom right corner
+const HudNav = require('./hud-nav');
 const { HudClaim } = require('./kit/hud_claim');
 const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
@@ -143,6 +149,44 @@ function placeOf(settings) {
     const y = BASE_Y + clamp(numOf(settings, 'hudY', 0), -120, 120);
     return { x: clamp(x, 0, SCENE_W - w), y: clamp(y, 0, SCENE_H - h), w: w, h: h };
 }
+
+/*
+ * Where the directions go: the bottom right corner of the glass (the test pattern's 120 px frame, x 120..680,
+ * y 120..360, seen whole on a G21), right of BMW's limit sign and speed at the bottom left; "hudNavX" / "hudNavY"
+ * move them (px). Their own size: they don't scale or move with the tach.
+ */
+const NAV_RIGHT = 672, NAV_BOTTOM = 356, NAV_GAP = 4;
+// what the directions must never cover or sit under: BMW's limit sign and speed along the glass's bottom left
+// (2026-11-09 photos of the G21's test pattern: x ~120..340, y ~322..366), besides the tach itself
+const BMW_SPEED = { x: 116, y: 320, w: 236, h: 48 };
+// the glass the driver sees whole (the test pattern's 120 px frame on the G21)
+const GLASS = { x: 120, y: 120, w: 560, h: 240 };
+const overlapOf = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+/**
+ * Where the directions go: the glass's bottom right corner ("hudNavX" / "hudNavY" move it), but never over or
+ * under the tach (its rev bar, gear, readouts, grade and arrows are all inside placeOf's rectangle) or BMW's speed.
+ * When the tach's Size / Position reach the corner, the next place that's clear is taken: under the tach, right
+ * of it, left of it, above it; on the glass first. With nowhere clear, the place that covers least.
+ */
+function navPlaceOf(settings) {
+    const w = HudNav.NW, h = HudNav.NH, t = placeOf(settings);
+    const dx = clamp(Number(settings.get('hudNavX')) || 0, -400, 100), dy = clamp(Number(settings.get('hudNavY')) || 0, -200, 100);
+    const at = (x, y) => ({ x: clamp(Math.round(x), 0, SCENE_W - w), y: clamp(Math.round(y), 0, SCENE_H - h), w: w, h: h });
+    const corner = at(NAV_RIGHT - w + dx, NAV_BOTTOM - h + dy);
+    const tries = [corner,
+        at(corner.x, t.y + t.h + NAV_GAP),                  // under the tach
+        at(t.x + t.w + NAV_GAP, corner.y),                  // right of it
+        at(t.x - w - NAV_GAP, corner.y),                    // left of it
+        at(corner.x, t.y - h - NAV_GAP)];                   // above it
+    // covering anything weighs far more than reaching past the glass's edge (px outside it, summed per side)
+    const outside = (r) => Math.max(GLASS.x - r.x, 0) + Math.max(r.x + r.w - GLASS.x - GLASS.w, 0) + Math.max(GLASS.y - r.y, 0) + Math.max(r.y + r.h - GLASS.y - GLASS.h, 0);
+    const cost = (r) => (overlapOf(r, t) + overlapOf(r, BMW_SPEED)) * 1000 + outside(r);
+    let best = tries[0];
+    tries.forEach((r) => { if (cost(r) < cost(best)) best = r; });
+    return best;
+}
+/** "hudNav": off / route (while a route runs, the default) / near (under 1 km, and lanes). */
+function navModeOf(settings) { const m = settings.get('hudNav'); return m === 'off' || m === 'near' ? m : 'route'; }
 
 /**
  * The part of the HUD's 800x480 scene seen through the windshield, measured from car photos by bimmer-lab
@@ -557,6 +601,43 @@ function start(ctx, src) {
     const rect = () => placeOf(settings);
 
     /*
+     * The directions' picture (hud-nav.js): its own image layer in the bottom right corner, made while there is a turn to show,
+     * dropped when there isn't. Only what changed is sent (the distance counting down), nothing when it's the same.
+     */
+    let navLayer = 0, navCur = null, navPrev = null, navFirst = true, navLast = '', navGiving = false;
+    const dropNav = () => { if (cr && navLayer) cr.drop(navLayer); navLayer = 0; navLast = ''; };
+    /** What the directions do now: { show, giveWay } (nothing while the demo plays or without the source). */
+    // a directions layer the renderer refused or failed: made again after NAV_RETRY_MS (dropNav; the next tick)
+    let navRefusedLogged = false, navFailedAt = -Infinity;
+    const NAV_RETRY_MS = 5000;
+    const navFailed = (why) => { log.warn('hud: directions layer ' + why + ', made again in ' + NAV_RETRY_MS / 1000 + ' s'); dropNav(); navFailedAt = Date.now(); };
+    const navNow = (playing) => (src.nav && !playing ? src.nav.view(navModeOf(settings)) : { show: null, giveWay: false });
+    const drawNavLayer = (m) => {
+        if (!m) { dropNav(); return; }
+        if (!navLayer) {
+            if (Date.now() - navFailedAt < NAV_RETRY_MS) return;
+            const r = navPlaceOf(settings);
+            navLayer = cr.image({ target: 'hud', klass: 'overlay', z: 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: HudNav.NW, ih: HudNav.NH, fps: 5, sampling: 'bilinear' });
+            if (!navLayer) { if (!navRefusedLogged) { navRefusedLogged = true; log.warn('hud: directions layer refused by the client'); } return; }
+            navRefusedLogged = false;
+            navCur = new Canvas(HudNav.NW, HudNav.NH); navPrev = new Canvas(HudNav.NW, HudNav.NH); navFirst = true; navLast = '';
+        }
+        const o = optsNow(), no = { palette: o.style === 'vfd' ? 'vfd' : o.palette };
+        const key = HudNav.navKey(m, no);
+        if (!navFirst && key === navLast) return;
+        navLast = key;
+        HudNav.drawNav(navCur, m, no);
+        if (navFirst) { if (cr.pixels(navLayer, null, asBuffer(navCur.d))) navFirst = false; }
+        else {
+            // one box (changedBoxes' bands are the tach's)
+            const r = changedBox(navCur.d, navPrev.d, HudNav.NW, HudNav.NH);
+            if (!r) return;
+            cr.pixels(navLayer, [r], packRect(navCur.d, HudNav.NW, r));
+        }
+        const t = navPrev; navPrev = navCur; navCur = t;
+    };
+
+    /*
      * BMW's own content in the HUD's slot (0x323). With CarPlay directions on (2026-11-09 drive, Apple Maps:
      * "Proceed to the route", the line, the arrow and the distance) they didn't show while Redline held the slot:
      * the KOMBI shows the first content in a slot and parks the rest behind it. BMW shows them for the whole
@@ -589,8 +670,15 @@ function start(ctx, src) {
         }));
         cr.on('layer', safe('layer', (ref, state, reason) => {
             if (ref === layer) log.info('hud: layer ' + state + (reason ? ' (' + reason + ')' : ''));
+            else if (navLayer && ref === navLayer) {
+                log.info('hud: directions layer ' + state + (reason ? ' (' + reason + ')' : ''));
+                if (state === 'error') navFailed('failed');
+            }
         }));
-        cr.on('refused', safe('refused', (op, ref, reason) => log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason)));
+        cr.on('refused', safe('refused', (op, ref, reason) => {
+            log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason);
+            if (navLayer && ref === navLayer) navFailed('refused');
+        }));
         cr.on('status', safe('status', onSlots));
         cr.connect();
         log.info('hud: connecting to cluster-render');
@@ -598,7 +686,7 @@ function start(ctx, src) {
 
     const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); if (src.knock) src.knock.stop(); };
 
-    const dropLayer = safe('drop', () => { stopTimer(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
+    const dropLayer = safe('drop', () => { stopTimer(); dropNav(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; navGiving = false; });
 
     const disconnect = safe('disconnect', () => {
         dropLayer();
@@ -618,6 +706,12 @@ function start(ctx, src) {
         // (a scaled copy of the 400x130 picture would lose its see-through and dim parts: drawImage is opaque)
         if (r.w === IW && r.h === IH) { const t = new Canvas(IW, IH); drawHud(t, sample()); cv.blit(t, r.x, r.y); }
         else Draw.drawLayer(Draw.scaled(cv, r.w / IW, r.x, r.y), sample());
+        // where the directions go (setting "Directions"): a sample turn at 100 %, its frame at any size
+        if (navModeOf(settings) !== 'off') {
+            const nr = navPlaceOf(settings);
+            cv.strokeRoundRect(nr.x, nr.y, nr.w, nr.h, 6, 1, withAlpha(CYAN, 0.6));
+            if (nr.w === HudNav.NW) { const t = new Canvas(HudNav.NW, HudNav.NH); HudNav.drawNav(t, HudNav.SAMPLE, { palette: 'colour' }); cv.blit(t, nr.x, nr.y); }
+        }
         if (!cr.pixels(layer, null, asBuffer(cv.d))) log.warn('hud: test pattern pixels refused');
         shown = 'test';
         log.info('hud: test pattern up');
@@ -777,9 +871,14 @@ function start(ctx, src) {
         if (!cr || !cr.ready) return;
         // Comfort / Eco Pro on "Hide": the image is dropped (BMW's own HUD shows), the timer keeps
         // running to bring it back when the mode changes
+        let nv = { show: null, giveWay: false };
         if (shown === 'tach') {
             const playing = Date.now() < demoUntil;
-            if (calm(playing) === 'hide') {
+            nv = navNow(playing);
+            // a route without a turn Redline can read: out of the way, so BMW's own card shows (nav.js logs it)
+            navGiving = nv.giveWay;
+            if (calm(playing) === 'hide' || nv.giveWay) {
+                dropNav();
                 if (layer) {
                     cr.drop(layer); layer = 0;
                     // the old layer's target state isn't the new one's: forget it (keeping a guard
@@ -788,9 +887,11 @@ function start(ctx, src) {
                 }
                 if (src.gearbox) src.gearbox.stop();
                 if (src.knock) src.knock.stop();
-            if (src.electrical) src.electrical.stop();
-                claim.hold(false);          // nothing of Redline's on the HUD: the standing app may show
-                if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
+                if (src.electrical) src.electrical.stop();
+                // nothing of Redline's on the HUD. Comfort's hide: the standing app (Cluster functions) may show. Giving
+                // way: keep the claim, so it's BMW's card that shows, not Cluster functions' map over it (2026-11-09 review)
+                claim.hold(!!nv.giveWay);
+                if (!hiddenLogged && !nv.giveWay) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }
             if (!layer) { makeLayer(); if (!layer) return; }
@@ -801,12 +902,14 @@ function start(ctx, src) {
         // nothing to draw while the HUD isn't showing (behind BMW's content, disabled, unavailable):
         // the first frame after it is sent whole. No target event yet: draw (it may never come).
         if (paused()) {
-            first = true; lastKey = '';
+            first = true; lastKey = ''; navFirst = true; navLast = '';
             if (src.gearbox) src.gearbox.stop();
             if (src.knock) src.knock.stop();
             if (src.electrical) src.electrical.stop();
             return;
         }
+        // the directions: their own layer, redrawn only when what they show changes
+        if (shown === 'tach') drawNavLayer(nv.show);
         // the gearbox unit is asked only while its readout is on
         // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
         const oNow = optsNow();
@@ -861,7 +964,7 @@ function start(ctx, src) {
 
     const showTach = safe('tach', () => {
         const r = rect();
-        if (shown === 'tach') { if (layer) cr.set(layer, r); return; }
+        if (shown === 'tach') { if (layer) cr.set(layer, r); if (navLayer) cr.set(navLayer, navPlaceOf(settings)); return; }
         dropLayer();
         // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
         const hidden = calm(Date.now() < demoUntil) === 'hide';
@@ -913,7 +1016,7 @@ function start(ctx, src) {
         if (m === 'test') showTestPattern(); else showTach();
     });
 
-    const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
+    const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY', 'hudNavX', 'hudNavY', 'hudNav'];
     settings.onChange(safe('setting', (key) => {
         if (key === 'hudFps' && timer) { clearInterval(timer); timer = setInterval(tick, Math.round(1000 / fps())); log.info('hud: ' + fps() + ' fps'); return; }
         if (HUD_KEYS.indexOf(key) < 0 && shown !== 'test') { first = true; return; }
@@ -951,6 +1054,7 @@ function start(ctx, src) {
         if (!cr || !cr.ready) return NOT_RUNNING;
         if (target && target.disabled) return 'HUD: off after display errors';
         if (m === 'test') return 'HUD: test pattern';
+        if (shown === 'tach' && !layer && navGiving) return 'HUD: giving way to BMW\'s directions';
         if (shown === 'tach' && !layer) return 'HUD: hidden in Comfort / Eco Pro';
         const st = target ? target.state : '';
         if (st === 'shown') return 'HUD: on';
@@ -978,4 +1082,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, navPlaceOf, navModeOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
