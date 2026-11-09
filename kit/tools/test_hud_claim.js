@@ -66,7 +66,7 @@ const rm = (p) => {
     ok(HudClaim.others('x').indexOf('robertn_waze_cluster.standing') < 0, 'a standing marker is no claim');
 
     const settings = (over) => {
-        const v = Object.assign({ hud: 'on', hudHandBack: true, hudComfort: 'all' }, over), fns = [];
+        const v = Object.assign({ hud: 'on', hudHandBack: true, hudComfortMode: 'same' }, over), fns = [];
         return { v, get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
     };
     let cond, drive = 'sport';
@@ -109,7 +109,7 @@ const rm = (p) => {
     s.set('hud', 'on');
     ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'turned on: Redline holds the HUD');
     // hidden in Comfort: given back while hidden
-    s.v.hudComfort = 'hide'; drive = 'comfort';
+    s.v.hudComfortMode = 'hide'; drive = 'comfort';
     await until(() => HudClaim.others('robertn_waze_cluster').length === 0, 3000);
     ok(HudClaim.others('robertn_waze_cluster').length === 0, 'tach hidden in Comfort: the claim given back');
     drive = 'sport';

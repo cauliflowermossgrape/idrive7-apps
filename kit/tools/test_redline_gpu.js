@@ -103,16 +103,19 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     settings.set('hudStyle', 'standard'); await sleep(150);
     ok(cr.of('effect').length === 0 && cr.of('image').length === 1, 'Standard with GPU set: the picture (GPU is the Arc only)');
     settings.set('hudStyle', 'arc'); await sleep(150);
-    // a layout per driving mode: Sport's own, Comfort's own, "Same as Layout" the main one; a mode switching
-    // the GPU Arc off makes the layers again (and back)
-    settings.set('hudStyleComfort', 'standard'); settings.set('hudStyleSport', 'same'); await sleep(150);
-    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'Sport, same as Layout: the Arc, on the GPU');
+    // the Sport / Comfort profiles in the running HUD: Comfort follows Sport, then its own (a mode switching the
+    // GPU Arc off makes the layers again, and back), then BMW's (the layers dropped while in Comfort)
+    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'Sport: the Arc, on the GPU');
     drive = 'comfort'; await sleep(200);
-    ok(h.frame().opts.style === 'standard' && cr.of('effect').length === 0 && cr.of('image').length === 1, 'Comfort: its own layout (Standard), the GPU layer gone');
-    drive = 'sport'; settings.set('hudStyleSport', 'dial'); await sleep(200);
-    ok(h.frame().opts.style === 'dial' && h.frame().opts.gearFont === 'gear_barlow', 'Sport: its own layout (Dial), with its Auto gear font');
-    settings.set('hudStyleSport', 'same'); await sleep(200);
-    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'back to the Arc: the GPU layer made again');
+    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'Comfort, same as Sport: the Arc too');
+    Hud.profileView(settings, 'comfort').set('hudStyle', 'standard'); await sleep(200);
+    ok(h.frame().opts.style === 'standard' && cr.of('effect').length === 0 && cr.of('image').length === 1, 'Comfort, its own: Standard, the GPU layer gone');
+    drive = 'sport'; await sleep(200);
+    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'back in Sport: the Arc, the GPU layer made again');
+    Hud.setComfortMode(settings, 'hide'); drive = 'comfort'; await sleep(200);
+    ok(cr.of('image').length === 0 && cr.of('effect').length === 0, "Comfort, BMW's HUD: Redline's layers gone");
+    drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
+    ok(cr.of('effect').length === 1 && cr.of('image').length === 1, 'back in Sport: shown again');
 
     // the alpha setting re-makes it with the new output
     settings.set('hudGpuAlpha', 'premul'); await sleep(150);

@@ -169,14 +169,86 @@ function gearFontOf(choice, style) {
 }
 
 const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'];
+/*
+ * The HUD's two setups ("profiles"): Sport, the HUD settings themselves (Sport / Sport+, and a mode not known),
+ * and Comfort (Comfort / Eco Pro), which "hudComfortMode" makes the same as Sport, its own ("hudComfortSetup":
+ * { key: value } over Sport's) or hidden (BMW's own HUD). The keys a profile has are PROFILE_KEYS; the rest is
+ * the same in both: place and size, the GPU drawing, units, the light colours and the downshift arrows (the
+ * centre screen uses those too).
+ */
+const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hudRpmFormat', 'hudUnlit', 'hudLightStyle',
+    'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
+    'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
+    'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
+/** The profile a driving mode uses ('sport', 'comfort', 'eco' or null). */
+function profileOf(drive) { return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport'; }
+/** Comfort: 'same' (as Sport), 'own' or 'hide'. */
+function comfortMode(settings) { const m = settings.get('hudComfortMode'); return m === 'own' || m === 'hide' ? m : 'same'; }
+/** Sport's values of the profile keys (a copy: Comfort's own starts from it). */
+function profileSnapshot(settings) { const o = {}; PROFILE_KEYS.forEach((k) => { o[k] = settings.get(k); }); return o; }
 /**
- * The HUD's drawing options from the settings (also used by the HUD looks page). drive ('sport', 'comfort',
- * 'eco' or none): its own layout when one is set ("Layout in Sport / Sport+", "Layout in Comfort / Eco Pro").
+ * One profile as settings: get(k) reads it (Comfort's own values over Sport's), set(k, v) writes it. A change to
+ * Comfort while it follows Sport (or is hidden) gives it its own setup first, a copy of Sport's: so on the HUD
+ * looks page nothing needs unlocking before it can be changed.
+ */
+function profileView(settings, which) {
+    const comfort = which === 'comfort';
+    const store = () => { const v = settings.get('hudComfortSetup'); return v && typeof v === 'object' ? v : {}; };
+    // its own setup: while it is its own, and while hidden when it has one (so it shows as it will come back)
+    const own = () => comfort && (comfortMode(settings) === 'own' || (comfortMode(settings) === 'hide' && Object.keys(store()).length > 0));
+    return {
+        profile: comfort ? 'comfort' : 'sport',
+        get(k) {
+            if (own() && PROFILE_KEYS.indexOf(k) >= 0) { const st = store(); if (Object.prototype.hasOwnProperty.call(st, k)) return st[k]; }
+            return settings.get(k);
+        },
+        set(k, v) {
+            if (!comfort || PROFILE_KEYS.indexOf(k) < 0) return settings.set(k, v);
+            const st = Object.assign(profileSnapshot(settings), own() ? store() : {});
+            st[k] = v;
+            settings.set('hudComfortSetup', st);
+            if (!own()) settings.set('hudComfortMode', 'own');
+            return undefined;
+        },
+        item: (k) => (settings.item ? settings.item(k) : null),
+    };
+}
+/** Comfort made its own (or back): its setup starts as Sport's when it has none. */
+function setComfortMode(settings, mode) {
+    const st = settings.get('hudComfortSetup');
+    if (mode === 'own' && !(st && typeof st === 'object' && Object.keys(st).length)) settings.set('hudComfortSetup', profileSnapshot(settings));
+    settings.set('hudComfortMode', mode);
+}
+/**
+ * Once, from 1.14 / 1.15's "In Comfort / Eco Pro" (hudComfort: all, lights, hide): hide stays hidden; "shift lights
+ * and gear only" becomes Comfort's own setup without readouts and alerts. Returns what it did, or null.
+ */
+function migrateProfiles(settings) {
+    const v = settings.values || {};
+    if (v._hudProfiles) return null;
+    let did = 'none';
+    if (v.hudComfort === 'hide') { settings.set('hudComfortMode', 'hide'); did = 'hide'; }
+    else if (v.hudComfort === 'lights') {
+        const st = profileSnapshot(settings);
+        ['hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock', 'hudShowOil', 'hudShowWater',
+            'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudPeak', 'hudShake', 'hudLaunch'].forEach((k) => { st[k] = false; });
+        st.hudChip = 'off';
+        settings.set('hudComfortSetup', st);
+        settings.set('hudComfortMode', 'own');
+        did = 'lights';
+    }
+    settings.set('_hudProfiles', 1);
+    return did;
+}
+
+/**
+ * The HUD's drawing options from the settings (also used by the HUD looks page): settings, or a profile of them
+ * (profileView); drive ('sport', 'comfort', 'eco' or none): that mode's profile.
  */
 function optsFrom(settings, drive) {
+    if (drive) settings = profileView(settings, profileOf(drive));
     const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
-    const byMode = drive === 'sport' ? settings.get('hudStyleSport') : drive === 'comfort' || drive === 'eco' ? settings.get('hudStyleComfort') : null;
-    const layout = STYLES.indexOf(byMode) >= 0 ? byMode : settings.get('hudStyle');
+    const layout = settings.get('hudStyle');
     const style = STYLES.indexOf(layout) > 0 ? layout : 'standard';
     return {
         style: style,
@@ -228,9 +300,9 @@ function driveModeOf(raw) {
  * What the HUD does in this driving mode (setting hudComfort): 'all', 'lights' (shift lights, rev
  * bar and gear only) or 'hide'. Sport and an unknown mode always 'all'.
  */
-function calmFor(drive, setting) {
+function calmFor(drive, mode) {
     if (drive !== 'comfort' && drive !== 'eco') return 'all';
-    return setting === 'lights' || setting === 'hide' ? setting : 'all';
+    return mode === 'hide' ? 'hide' : 'all';
 }
 /** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
 function calmOpts(o) {
@@ -534,7 +606,7 @@ function start(ctx, src) {
         const sp = dm ? { rpm: dm.shift, cold: false } : src.shiftPoint(d.oil, d.gear), redline = dm ? 6550 : src.redline();
         const demoKey = dm ? 'play' : !!d.demo;
         if (demoKey !== lastDemo) { lastDemo = demoKey; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
-        const o = calm(playing) === 'lights' ? calmOpts(optsNow()) : optsNow(), lights = o.lights;
+        const o = optsNow(), lights = o.lights;
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const show = dm ? d.rpm : smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
@@ -650,10 +722,14 @@ function start(ctx, src) {
     }
 
     /** The drawing options from the settings. */
-    // the layout follows the driving mode when one is set for it ("Play on HUD": the main layout)
-    function optsNow() { return optsFrom(settings, Date.now() < demoUntil || !src.driveMode ? null : src.driveMode()); }
+    // the profile of the driving mode; "Play on HUD" plays the one it was asked for
+    let playProfile = 'sport';
+    function optsNow() {
+        if (Date.now() < demoUntil) return optsFrom(profileView(settings, playProfile));
+        return optsFrom(settings, src.driveMode ? src.driveMode() || 'sport' : 'sport');
+    }
     /** What the driving mode asks of the HUD now ('all', 'lights', 'hide'); "Play on HUD" always shows all. */
-    function calm(playing) { return playing ? 'all' : calmFor(src.driveMode ? src.driveMode() : null, settings.get('hudComfort')); }
+    function calm(playing) { return playing ? 'all' : calmFor(src.driveMode ? src.driveMode() : null, comfortMode(settings)); }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
@@ -704,7 +780,7 @@ function start(ctx, src) {
         }
         // the gearbox unit is asked only while its readout is on
         // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
-        const oNow = calm(Date.now() < demoUntil) === 'lights' ? calmOpts(optsNow()) : optsNow();
+        const oNow = optsNow();
         if (src.gearbox) { if (oNow.gearbox) src.gearbox.start(); else src.gearbox.stop(); }
         // the engine unit's knock values only while wanted and the engine runs
         if (src.knock) { const run = isNum(src.data().rpm) && src.data().rpm > 400; if ((oNow.knock || oNow.knockWarn) && run) src.knock.start(); else src.knock.stop(); }
@@ -871,11 +947,12 @@ function start(ctx, src) {
     }
 
     /** "Play on HUD": the scripted drive (demoAt) on the HUD for ms (two loops by default). */
-    const play = safe('play', (ms) => { demoStart = Date.now(); demoUntil = demoStart + (ms || 2 * DEMO_MS); first = true; log.info('hud: playing the demo'); });
+    // profile: which setup plays ('sport' / 'comfort': the HUD looks page's)
+    const play = safe('play', (ms, profile) => { playProfile = profile === 'comfort' ? 'comfort' : 'sport'; demoStart = Date.now(); demoUntil = demoStart + (ms || 2 * DEMO_MS); first = true; log.info('hud: playing the demo (' + playProfile + ')'); });
     const stopPlay = () => { demoUntil = 0; first = true; };
 
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

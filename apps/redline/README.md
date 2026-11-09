@@ -119,7 +119,10 @@ missing falls back to Ubuntu.
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
 - **Picking:** on the right, the nine layouts; tap one to use it.
-- **Editing:** under the preview, six tabs, each showing its changes in the preview at once.
+- **Sport or Comfort:** under the preview, **SPORT** and **COMFORT / ECO PRO** pick the setup you're
+  looking at and changing; with Comfort picked, *Same as Sport*, *Its own* or *BMW's HUD* beside it.
+  Everything on the page then shows and changes that setup (size and position are shared).
+- **Editing:** under that, five tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
   - **Look:** HUD colours (not on VFD and the M layouts, which keep their own), gear font, label
     size, and how the rpm reads (exact, steady, thousands).
@@ -132,8 +135,6 @@ missing falls back to Ubuntu.
   - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
     peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
     gear or the best one).
-  - **Modes:** a layout of its own in Sport / Sport+ and in Comfort / Eco Pro (< and > step
-    through them), and what Comfort / Eco Pro shows (everything, lights and gear, nothing).
   - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; on Arc, the GPU drawing (test). Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
@@ -149,17 +150,24 @@ missing falls back to Ubuntu.
 - **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
   the bar, lights and gear flash red.
 
-**By driving mode** (*In Comfort / Eco Pro*): the car's driving mode (FES
-`statusFESVehicleDynamicSwitchHMI`, as Live Data shows it) picks how much the HUD shows.
-- *Show all* (the default): the same in every mode.
-- *Shift lights and gear only*: in Comfort and Eco Pro, the shift lights, rev bar and gear, with
-  no readouts, grade, peak marker or shake.
-- *Hide*: in Comfort and Eco Pro the image is dropped, so BMW's own HUD shows; it comes back as
-  soon as the mode is Sport.
+**Sport and Comfort** (two HUD setups): the car's driving mode (FES `statusFESVehicleDynamicSwitchHMI`,
+as Live Data shows it) picks which one shows.
 
-Sport, Sport+ and Sport Individual always show everything. Adaptive, a mode it doesn't know, or
-a car that doesn't send the mode count as Sport, so the HUD never disappears for lack of a signal.
-*Play on HUD* and the HUD looks preview ignore the mode.
+- **Sport** is used in Sport, Sport+ and Sport Individual, and also in Adaptive, a mode it doesn't
+  know, or when the car doesn't send the mode, so the HUD never disappears for lack of a signal.
+- **Comfort / Eco Pro** is one of three (*In Comfort / Eco Pro*, in Settings and on HUD looks):
+  - *Same HUD as Sport* (the default): one HUD for every mode.
+  - *Its own HUD*: a setup of its own: layout, colours, readouts, alerts, everything on HUD looks.
+    It starts as a copy of Sport's. On HUD looks, with **COMFORT / ECO PRO** picked, changing
+    anything makes Comfort its own, so nothing needs switching on first.
+  - *BMW's own HUD*: Redline steps aside in Comfort and Eco Pro; it comes back as soon as the mode
+    is Sport. Comfort's own setup, if it has one, is kept for later.
+- Shared by both: size and position, the GPU drawing, units, the light colours and the downshift
+  arrows (the centre screen uses those too).
+- From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
+  becomes Comfort's own setup without readouts or alerts.
+
+HUD looks opens on the setup of the mode the car is in; *Play on HUD* plays the one picked there.
 
 **The readouts row** (standard layout), left to right:
 
@@ -193,10 +201,11 @@ normal and red is hot. A reading with no data is left out.
 
 ### HUD settings (shown while the HUD is on)
 
-Settings keeps the HUD short: **Show on HUD**, **HUD layout**, and **All HUD options here**. Everything
+Settings keeps the HUD short: **Show on HUD**, **HUD layout**, **In Comfort / Eco Pro** and **All HUD
+options here**. Everything
 else is on the **HUD looks** page, by picture and with a live preview. Switch *All HUD options here*
-on to also list them in Settings, as six groups (*HUD: look*, *gauge*, *readouts*, *alerts*, *modes*,
-*place*). The rest of Settings is grouped too: *Shift point*, *Engine*, *Learning*, *Units* (all
+on to also list them in Settings, as five groups (*HUD: look*, *gauge*, *readouts*, *alerts*, *place*);
+they set the Sport HUD (Comfort's own is set up on HUD looks). The rest of Settings is grouped too: *Shift point*, *Engine*, *Learning*, *Units* (all
 five units, app-wide), *Screen*, and behind *Advanced settings*, the renderer and the HUD's frame
 rate, readout refresh, GPU edges and hand-back. Every change shows on the HUD at once. The tables
 below list them by what they do.
@@ -214,8 +223,7 @@ below list them by what they do.
 | Shift grade after each upshift | Burst / Simple / Off |
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
-| In Comfort / Eco Pro | Show all / Shift lights and gear only / Hide (BMW's own HUD) |
-| Layout in Sport / Sport+, Layout in Comfort / Eco Pro | Same as Layout, or any layout: the HUD changes layout with the driving mode (Play on HUD shows the main one) |
+| In Comfort / Eco Pro | Same HUD as Sport / Its own HUD (set up on HUD looks) / BMW's own HUD |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.

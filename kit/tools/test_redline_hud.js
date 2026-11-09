@@ -141,7 +141,44 @@ ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
     ['SPORT_DYNAMIC', 'sport'], ['SPORT_EXPERT', 'sport'], ['ECO_PRO_EFFICIENT', 'eco'], ['COMFORT', 'comfort'], ['ADAPTIVE', null], [null, null], [undefined, null], ['', null]]
     .forEach((c) => ok(Hud.driveModeOf(c[0]) === c[1], 'driving mode ' + JSON.stringify(c[0]) + ' -> ' + Hud.driveModeOf(c[0]) + ', not ' + c[1]));
 ok(Hud.calmFor('sport', 'hide') === 'all' && Hud.calmFor(null, 'hide') === 'all', 'Sport and an unknown mode show everything');
-ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'lights') === 'lights' && Hud.calmFor('comfort', undefined) === 'all', 'Comfort / Eco Pro follow the setting');
+ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'hide') === 'hide' && Hud.calmFor('comfort', 'own') === 'all' && Hud.calmFor('comfort', undefined) === 'all', 'Comfort / Eco Pro: hidden only when set so');
+
+/* ---------- the Sport / Comfort profiles ---------- */
+{
+    const store = (over) => { const v = Object.assign({}, over); return { values: v, get: (k) => (k in v ? v[k] : declared[k] ? declared[k].default : undefined), set: (k, x) => { v[k] = x; } }; };
+    // Sport is the settings themselves; Comfort follows it until it is changed
+    let st = store({ hudStyle: 'arc', hudShowTorque: true });
+    let sp = Hud.profileView(st, 'sport'), cf = Hud.profileView(st, 'comfort');
+    ok(Hud.optsFrom(cf).style === 'arc' && Hud.optsFrom(st, 'comfort').style === 'arc' && Hud.comfortMode(st) === 'same', 'profiles: Comfort follows Sport by default');
+    // a Comfort edit gives it its own copy (Sport's values), and changes only Comfort
+    cf.set('hudStyle', 'dial');
+    ok(Hud.comfortMode(st) === 'own' && Hud.optsFrom(cf).style === 'dial' && Hud.optsFrom(sp).style === 'arc', 'profiles: a Comfort edit makes it its own; Sport keeps its layout');
+    ok(Hud.optsFrom(cf).torque === true, 'profiles: Comfort own starts as a copy of Sport (torque readout kept)');
+    sp.set('hudShowTorque', false);
+    ok(Hud.optsFrom(cf).torque === true && Hud.optsFrom(sp).torque === false, 'profiles: after that, Sport changes stay in Sport');
+    // shared keys (place, units, light colours) are one for both, whichever profile changes them
+    cf.set('hudSize', 120);
+    ok(st.get('hudSize') === 120 && !('hudSize' in st.get('hudComfortSetup')), 'profiles: size is shared');
+    // the driving mode picks the profile; Sport+ and an unknown mode use Sport
+    ok(Hud.optsFrom(st, 'comfort').style === 'dial' && Hud.optsFrom(st, 'eco').style === 'dial' && Hud.optsFrom(st, 'sport').style === 'arc' && Hud.profileOf(null) === 'sport', 'profiles: the mode picks one');
+    // Same as Sport again: Comfort's setup is kept (back with Its own), Sport shows
+    Hud.setComfortMode(st, 'same');
+    ok(Hud.optsFrom(st, 'comfort').style === 'arc', 'profiles: Same as Sport');
+    Hud.setComfortMode(st, 'own');
+    ok(Hud.optsFrom(st, 'comfort').style === 'dial', 'profiles: Its own again: its setup kept');
+    // Its own from Settings with no setup yet: a copy of Sport's
+    st = store({ hudStyle: 'ramp' }); Hud.setComfortMode(st, 'own');
+    ok(Hud.optsFrom(st, 'comfort').style === 'ramp' && st.get('hudComfortSetup').hudStyle === 'ramp', 'profiles: Its own starts as Sport');
+    // 1.14 / 1.15's "In Comfort": hide stays hidden; lights + gear becomes its own setup with no readouts; once
+    st = store({ hudComfort: 'hide' });
+    ok(Hud.migrateProfiles(st) === 'hide' && Hud.comfortMode(st) === 'hide' && Hud.migrateProfiles(st) === null, 'migration: hide, once');
+    st = store({ hudComfort: 'lights', hudStyle: 'wings', hudShowOil: true, hudChip: 'burst' });
+    const m = Hud.migrateProfiles(st), co = Hud.optsFrom(st, 'comfort');
+    ok(m === 'lights' && Hud.comfortMode(st) === 'own' && co.style === 'wings' && !co.oil && !co.rpm && co.chip === 'off' && co.lights && co.gear, 'migration: lights + gear becomes Comfort without readouts');
+    ok(Hud.optsFrom(st, 'sport').oil === true, 'migration: Sport untouched');
+    st = store({});
+    ok(Hud.migrateProfiles(st) === 'none' && Hud.comfortMode(st) === 'same', 'migration: nothing set, nothing changes');
+}
 {
     const c = Hud.calmOpts(Object.assign({}, optsDefault, { torque: true, g: true }));
     ok(c.lights && c.bar && c.gear && !c.rpm && !c.oil && !c.torque && !c.g && c.chip === 'off' && !c.peak, 'lights + gear only: readouts, grade and peak off');
