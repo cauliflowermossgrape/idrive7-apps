@@ -424,7 +424,7 @@ const labels = (items) => items.map((r) => r.label).join(',');
         // the ramp draws the power bar under its band: it takes no place in the list of four
         const four = Object.assign({}, Hud.optsFrom(st({ hudShowHvBar: true, hudHybridSeen: true, hudShowTorque: true, hudTempsMode: 'always' })));
         const row = (style) => Hud.readoutsFor({ rpm: 3000, oil: 95, coolant: 90 }, 80, 1.1, null, Object.assign({}, four, { style: style }), { torque: 200, hvKw: -9 });
-        ok(row('ramp').length === 5 && row('ramp').some((i) => i.bar) && row('standard').length === 4, 'ramp: the power bar on top of four readouts; elsewhere it counts as one');
+        ok(['ramp', 'arc', 'dial', 'standard', 'vector', 'digital', 'vfd'].every((st) => row(st).length === 5 && row(st).some((i) => i.bar)) && row('wings').length === 4, 'the power bar along the gauge, on top of four readouts (Split wings: no meter, it counts as one)');
         ['hudShowFuel', 'hudShowHvBar'].forEach((k) => ok(Hud.PROFILE_KEYS.indexOf(k) >= 0, k + ' is a profile key'));
     }
     ok(spec.signals['de.bmw.infotainment.vehicle.CDS'].statusBattery2 === 'rs', 'CDS.statusBattery2 subscribed');

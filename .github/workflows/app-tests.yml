@@ -72,6 +72,8 @@ jobs:
       - run: node kit/tools/test_redline_fuel.js
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js
+      - run: node kit/tools/test_redline_meter_draw.js
+      - run: node kit/tools/test_redline_meter_m.js
       - run: node kit/tools/test_ambient_config.js
       - run: node kit/tools/test_xdrive_live.js
       - run: node kit/tools/test_zh.js
@@ -106,3 +108,5 @@ jobs:
       - run: node kit/tools/test_redline_fuel.js
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js
+      - run: node kit/tools/test_redline_meter_draw.js
+      - run: node kit/tools/test_redline_meter_m.js

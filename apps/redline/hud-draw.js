@@ -194,6 +194,68 @@ function drawGraph(cv, x, y, w, h, s, vfd) {
     }
 }
 
+/*
+ * The Recovery / Power meter (a readout with .bar = { v, lo, hi }, kW: + the battery drives, - it recovers) on the
+ * standard, vector, digital and vfd layouts: not in the readouts row but a thin row in the layout's own look under
+ * its rev bar / bar graph, the same x range, its zero where lo..hi maps 0 (a third for -40..80). Recovery fills from
+ * zero leftwards in the palette's low colour, drive rightwards in the text colour (warm from 85 % of hi); v 0 (or not
+ * a number) fills nothing, beyond lo / hi fills to the end. Track and zero tick bg (they depend on lo / hi only), the
+ * fill fg. Like the ramp's meter (hud-m.js rampMeter) it shows no number.
+ */
+const meterOf = (f) => (f.readouts || []).filter((it) => it.bar)[0] || null;
+const meterRange = (bar) => { const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1; return [lo, isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1]; };
+// recovery green (the VFD's blue: its green is its text colour, so recovery and power would look the same)
+const meterCol = (v, hi, P) => (v < 0 ? (P === PALETTES.vfd ? P.cold : P.low) : v >= 0.85 * hi ? P.warm : P.text);
+/**
+ * Under the slanted rev bar (x, w: drawBar's; barH: its segments' height, for its slant): a strip of the bar's
+ * slanted segments, top at y, h tall, from the bar's bottom-left to its bottom-right end; 18 segments split at the
+ * zero. outline (vector): outlined segments, the fill outlined with a faint fill as the bar's lit segments.
+ */
+function drawBarMeter(cv, x, w, barH, y, h, bar, P, layer, outline) {
+    const r = meterRange(bar), lo = r[0], hi = r[1], n = 18;
+    const nl = clamp(Math.round(n * -lo / (hi - lo)), 1, n - 1), nr = n - nl, sl = 2;
+    const run = w - Math.round(barH * 0.32) - sl, X = (v) => x + clamp((v - lo) / (hi - lo), 0, 1) * run;
+    const trackCol = withAlpha(P.text, outline ? 0.3 : 0.12);
+    const seg = (a, b, c) => {
+        const xa = X(a) + 1, xb = X(b) - 1;
+        if (!(xb > xa)) return;
+        const q = [[xa + sl, y], [xb + sl, y], [xb, y + h], [xa, y + h]];
+        if (outline) { cv.polyline(q.concat([q[0]]), 1.4, c); if (c !== trackCol) cv.quad(q, withAlpha(c, 0.3)); } else cv.quad(q, c);
+    };
+    const stepL = -lo / nl, stepR = hi / nr;
+    if (layer !== 'fg') {
+        for (let i = 0; i < nl; i++) seg(-stepL * (i + 1), -stepL * i, trackCol);
+        for (let i = 0; i < nr; i++) seg(stepR * i, stepR * (i + 1), trackCol);
+        // the zero tick: the bar's slant, 1 px over and under the strip (vector: as far as the outlines reach)
+        const z = X(0), e = outline ? 0.7 : 1, k = sl / h, tw = 0.7;
+        cv.quad([[z + k * e - tw, y - e], [z + k * e + tw, y - e], [z - k * (h + e) + tw, y + h + e], [z - k * (h + e) - tw, y + h + e]], withAlpha(P.text, 0.8));
+    }
+    const v = bar.v;
+    if (layer === 'bg' || !isNum(v) || v === 0) return;
+    const c = meterCol(v, hi, P);
+    if (v < 0) { const e = Math.max(v, lo); for (let i = 0; -stepL * i > e; i++) seg(Math.max(e, -stepL * (i + 1)), -stepL * i, c); }
+    else { const e = Math.min(v, hi); for (let i = 0; stepR * i < e; i++) seg(stepR * i, Math.min(e, stepR * (i + 1)), c); }
+}
+/**
+ * Under the 40-segment bar graph (x, w: drawGraph's): a row of the same columns, top at y, h tall; the zero at the
+ * column boundary nearest where 0 maps (13 columns of recovery, 27 of drive for -40..80). A column lights when the
+ * reading passes its middle, as the graph's; the unlit ones as faint ghosts.
+ */
+function drawGraphMeter(cv, x, w, y, h, bar, P, layer) {
+    const r = meterRange(bar), lo = r[0], hi = r[1], n = 40, gap = 2, sw = (w - gap * (n - 1)) / n;
+    const nl = clamp(Math.round(n * -lo / (hi - lo)), 1, n - 1), nr = n - nl, sx = (i) => x + i * (sw + gap);
+    if (layer !== 'fg') {
+        for (let i = 0; i < n; i++) cv.fillRect(sx(i), y, sw, h, withAlpha(P.text, 0.12));
+        cv.fillRect(sx(nl) - gap, y - 1, gap, h + 2, withAlpha(P.text, 0.7));
+    }
+    const v = bar.v;
+    if (layer === 'bg' || !isNum(v) || v === 0) return;
+    const c = meterCol(v, hi, P);
+    // j: the columns from the zero outwards
+    if (v < 0) { for (let j = 0; j < nl && -v >= (j + 0.5) * -lo / nl; j++) cv.fillRect(sx(nl - 1 - j), y, sw, h, c); }
+    else { for (let j = 0; j < nr && v >= (j + 0.5) * hi / nr; j++) cv.fillRect(sx(nl + j), y, sw, h, c); }
+}
+
 /**
  * Downshift cue: n chevrons (1..3) centred at cx from y down; k scales them. Quads with two corners at
  * the tip: the screen's Recorder has quad() but no convex(). col: the colour (default cyan).
@@ -210,22 +272,14 @@ function drawDown(cv, cx, y, n, k, col) {
 /**
  * The readouts row from x0 to x1 at y: items [{ label, value, tone }] (tone: 'text' | 'cold' | 'warm' |
  * 'hot'), as many columns as items (4 at most: hud.js keeps it there), slightly smaller beyond 3. Labels
- * are bg, values fg.
- * The Recovery / Power meter: an item with bar = { v, lo, hi } (kW: + the battery drives, - it recovers) draws
- * its value over a centre-zero bar (hud-m.js powerBar: outline and zero tick bg, the fill fg) and REC at the
- * bar's left end (bg) when there's room beside the value. wide: true makes it take two columns' width when the
- * row still has room for that, i.e. its items with the wide ones counted twice come to 4 or fewer (the other
- * columns then as narrow as in a row of that many); in a full row (4 items) it keeps one column.
+ * are bg, values fg. The Recovery / Power meter (an item with .bar) is not in the row: drawBarMeter / drawGraphMeter.
  */
 function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
+    items = items.filter((it) => !it.bar);
     if (!items.length) return;
-    const n = items.length, nWide = items.filter((it) => it.bar && it.wide).length, widen = nWide > 0 && n + nWide <= 4;
-    const slots = widen ? n + nWide : n, colw = (x1 - x0) / Math.max(3, slots), k = Math.min(1, colw / 70);
-    let at = 0;
+    const n = items.length, colw = (x1 - x0) / Math.max(3, n), k = Math.min(1, colw / 70);
     items.forEach((it, i) => {
-        const span = widen && it.bar && it.wide ? 2 : 1, cx = x0 + colw * (at + span / 2), cw = colw * span;
-        at += span;
-        if (it.bar) { drawPowerReadout(cv, cx, cw, y, it, P, layer, clear, k); return; }
+        const cx = x0 + colw * (i + 0.5);
         // labels: Normal 14 px nearly full brightness, Clearer 18 px full (12 px at 75 % read as specks on the
         // glass); either made smaller to fit its column, so four readouts never run into each other
         // the Tyres readout: TYRES over its four pressures in a 2x2 block (front over rear) when the column holds
@@ -246,25 +300,6 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
         cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), Theme.toneCol(it.tone, P, P.text), { align: 'center', font: 'bold' });
     });
 }
-/**
- * The power meter's column (centre cx, cw wide): its label as the others', the value where theirs is (made smaller
- * to fit), under it the bar (y + 47 .. y + 57: inside the image in every layout's row), REC over the bar's left end.
- * What goes on bg (label, REC, outline, zero tick) depends on the column only, so the cached static layer holds.
- */
-function drawPowerReadout(cv, cx, cw, y, it, P, layer, clear, k) {
-    const bx = cx - cw / 2 + 6, bw = cw - 12, vo = { align: 'center', font: 'bold' };
-    // the value's size fitted for the widest it shows (+888), so where REC fits doesn't change with the value
-    const vs = Theme.fitSize(cv, '+888', 26 * Math.max(0.8, k), cw - 10, vo), vw = cv.textWidth ? cv.textWidth('+888', vs, vo) : cw;
-    if (layer !== 'fg') {
-        const lo = { align: 'center', font: 'bold', spacing: (clear ? 1.5 : 1.2) * k };
-        cv.text(it.label, cx, y + (clear ? 15 : 13), Theme.fitSize(cv, it.label, (clear ? 18 : 14) * k, cw - 14, lo), clear ? P.text : withAlpha(P.text, 0.9), lo);
-        const ro = { font: 'bold', spacing: 1 }, rs = clear ? 13 : 11;
-        if (cv.textWidth && cv.textWidth('REC', rs, ro) + 4 <= (cw - vw) / 2 - 6) cv.text('REC', bx, y + 43, rs, P.low, ro);
-    }
-    M.powerBar(cv, bx, y + 47, bw, 10, it.bar, P, P.text, layer);
-    if (layer !== 'bg') cv.text(it.value, cx, y + 40, Theme.fitSize(cv, it.value, vs, cw - 10, vo), Theme.toneCol(it.tone, P, P.text), vo);
-}
-
 /**
  * After an upshift: its grade across the readouts row. chip = { verdict, age (ms), burst }. Burst: the
  * word (PERFECT SHIFT for spot on) pops in big and settles in 150 ms, a ring grows from it over 500 ms
@@ -323,6 +358,9 @@ function drawLayer(cv, f, layer) {
             drawLights(cv, pts, pts.map((p, i) => (o.gt3 ? Math.min(i, 11 - i) : i)), o.gt3 ? 6 : 12, 6, Object.assign({}, s, { shape: 'rect', ghost: o.style === 'vfd' }));
         }
         if (o.bar !== false) drawGraph(cv, 76, 18, IW - 76, 36, s, o.style === 'vfd');
+        // the power meter: between the graph (to y 53) and the rpm digits / readout labels (from 64)
+        const meter = meterOf(f);
+        if (meter) drawGraphMeter(cv, 76, IW - 76, 57, 4, meter.bar, P, layer);
         if (o.gear) seg7(cv, gearText(d).slice(0, 1), 4, 10, 50, 86, 9, gearCol, ghost, false, layer);
         if (fg) drawDown(cv, 29, 106, f.down || 0, 1, P.arrow);
         const rpmTxt = isNum(d.rpm) && d.rpm < 9995 ? String(Math.max(0, Math.round(d.rpm / 10) * 10)).padStart(4, ' ') : '----';
@@ -374,6 +412,10 @@ function drawLayer(cv, f, layer) {
         drawLights(cv, r.pts, r.pts.map((p, i) => (o.gt3 ? Math.min(i, 11 - i) : i)), o.gt3 ? 6 : 12, r.rad, s);
     }
     if (o.bar !== false) drawBar(cv, tx, o.lights ? 20 : 2, tw, o.lights ? 38 : 56, s);
+    // the power meter: between the bar (to y 57, lights on or off; vector's outline to 58) and the readout labels
+    // (from 68 with the clearer labels), 2 px clear of both: rows 60..65 (vector's outlines 61..65)
+    const meter = meterOf(f), vec = o.style === 'vector';
+    if (meter) drawBarMeter(cv, tx, tw, o.lights ? 28 : 46, vec ? 61.7 : 61, vec ? 3.6 : 4, meter.bar, P, layer, vec);
     if (f.chip) { if (fg) drawChip(cv, TEMP_X, IW, 66, f.chip, P); } else drawReadouts(cv, TEMP_X, IW, 66, f.readouts || [], P, layer, o.clearLabels);
 }
 
@@ -382,7 +424,9 @@ function bgKey(f) {
     const o = f.opts, c = f.cue;
     return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, f.redline, f.max, c.shift || c.limiter, c.limiter,
         // the power meter's bar: its wideness and range (where the zero tick is) are static too
-        f.chip ? 'chip' : (f.readouts || []).map((r) => r.label + (r.bar ? '~' + (r.wide ? 'w' : '') + r.bar.lo + '~' + r.bar.hi : '')).join(',')].join('|');
+        f.chip ? 'chip' : (f.readouts || []).map((r) => r.label + (r.bar ? '~' + (r.wide ? 'w' : '') + r.bar.lo + '~' + r.bar.hi : '')).join(','),
+        // the meter under the bar shows with a grade too
+        (f.readouts || []).filter((r) => r.bar).slice(0, 1).map((r) => 'm' + r.bar.lo + '~' + r.bar.hi).join('')].join('|');
 }
 
 const bgCache = { key: '', cv: null };

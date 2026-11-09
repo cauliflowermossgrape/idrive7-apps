@@ -386,6 +386,9 @@ const MAX_READOUTS = 4;
 // the recovery / power bar's ends, kW: regen to 40, drive to 80 (a 330e's e-motor gives about 80 with XtraBoost);
 // not yet checked on a car: the log of BMW's own power meter (powerlog.js) will tell
 const HV_BAR_KW = [40, 80];
+// the layouts that draw the power bar along their own gauge (hud-m.js; hud-draw.js under the bar), outside the
+// readouts row (Minimal and Split wings have no readouts, and so no power bar)
+const METER_STYLES = ['ramp', 'arc', 'dial', 'standard', 'vector', 'digital', 'vfd'];
 /** The RPM readout for format f: '10' (to 10, the default), '50', or 'k' (thousands, 4.5). */
 function rpmItem(rpm, f) {
     const r = Math.max(0, rpm), step = f === '50' ? 50 : 10;
@@ -448,8 +451,8 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     electricalItems(o, x).forEach((it) => items.push(it));
     // four fit the row legibly: the last plain readout gives way first, so a warning keeps its place
     // (on a cold start with boost, limit, oil, water and gearbox on, the gearbox goes)
-    // (the ramp draws the power bar under its band, not in the row: it takes no place there)
-    const free = o.style === 'ramp' ? items.filter((it) => it.bar).length : 0;
+    // (the layouts that draw the power bar along their own gauge, not in the row: it takes no place there)
+    const free = METER_STYLES.indexOf(o.style) >= 0 ? items.filter((it) => it.bar).length : 0;
     const keep = (it) => free && it.bar;
     while (items.length - free > MAX_READOUTS) {
         let i = items.length - 1, last = -1;

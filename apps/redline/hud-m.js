@@ -63,16 +63,28 @@ function small(cv, x, y, it, P, o, base, mode, align, vsize) {
         const ls = cv.textWidth ? Theme.fitSize(cv, it.label, lab.s, w - cv.textWidth(it.value, vs, { font: 'bold' }) - 4, lo) : lab.s;
         cv.text(it.label, x, y, ls, lab.c, lo);
         cv.text(it.value, x + w, y + 1, vs, toneCol(it, P, base), { align: 'right', font: 'bold' });
-        // the power meter: a thin bar under the row where the image has room (not under the bottom row of arc)
-        if (it.bar && y + 10 <= 129) powerBar(cv, x, y + 4, w, 6, it.bar, P, base);
         return;
     }
     cv.text(it.label, x, y, lab.s, lab.c, { align: align, font: 'bold', spacing: 1 });
     cv.text(it.value, x, y + 21, 20, toneCol(it, P, base), { align: align, font: 'bold' });
-    if (it.bar && y + 31 <= 129) {
-        const w = 60, bx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
-        powerBar(cv, bx, y + 25, w, 6, it.bar, P, base);
+}
+/*
+ * The Recovery / Power meter as a ring segment (arc and dial; a readout with .bar, hud.js): not in the list but a thin
+ * band concentric with the layout's own, from angle a0 to a1 (degrees clockwise from 12 o'clock), radii r0..r1. Zero
+ * where lo..hi maps 0; recovery fills anticlockwise from it in c.low, power clockwise in c.fill (c.warm from 85 % of
+ * bar.hi). layer 'bg': the outline (c.line) and the zero tick (c.tick, radii t0..t1); 'fg': the fill; neither: both.
+ * v beyond lo / hi fills to the end; v 0 (or not a number) fills nothing.
+ */
+function ringMeter(cv, cx, cy, r0, r1, a0, a1, t0, t1, bar, c, layer) {
+    const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
+    const az = a0 + (a1 - a0) * (-lo) / (hi - lo);
+    if (layer !== 'fg') {
+        cbox(cv, cx, cy, a0, a1, r0, r1, c.line, 1.1);
+        cv.arc(cx, cy, t0, t1, az - 0.8 * 60 / r1, az + 0.8 * 60 / r1, c.tick);
     }
+    if (layer === 'bg' || !isNum(bar.v)) return;
+    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) cv.arc(cx, cy, r0, r1, az - (az - a0) * k, az, c.low); }
+    else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) cv.arc(cx, cy, r0, r1, az, az + (a1 - az) * k, bar.v >= 0.85 * hi ? c.warm : c.fill); }
 }
 /** The shift grade at (x, y): pops in (burst), holds, fades over its last 300 ms. */
 function grade(cv, x, y, chip, P, size, align) {
@@ -100,6 +112,8 @@ const flashColour = (o, cue, h, red) => (!cue.limiter && o.lightStyle === 'f1' ?
 
 /* ---------- arc (F80) ---------- */
 const A = { cx: 200, cy: 372, span: 27, l0: 352, l1: 368, b0: 325, b1: 343, rim: 3 };
+// the power meter: a 6 px ring inside the rpm band (b0) with a gap, a little shorter than it (clear of the readouts)
+const AM = { r0: 314, r1: 320, span: 25, dn: 4 };
 const AC = { amber: '#f2a81d', red: '#e3262a', rim: '#f4f4f4', fill: '#bcd6e8', unlit: '#5d6b74', warn: '#f2b81d', zone: '#e3262a' };
 const aAng = (f) => -A.span + 2 * A.span * clamp(f, 0, 1);
 const aPt = (a, r) => [A.cx + r * Math.sin(a * Math.PI / 180), A.cy - r * Math.cos(a * Math.PI / 180)];
@@ -145,14 +159,19 @@ function drawArc(cv, f, layer, h) {
             cv.line(p[0], p[1], q[0], q[1], 2.4, '#ffffff');
         }
     }
+    // the power meter inside the band, along its curve (not in the list)
+    const meter = (f.readouts || []).filter((it) => it.bar)[0];
+    if (meter) ringMeter(cv, A.cx, A.cy, AM.r0, AM.r1, -AM.span, AM.span, AM.r0 - 3, AM.r1 + 2, meter.bar,
+        { line: withAlpha(AC.rim, 0.6), tick: AC.rim, low: h.P.low, fill: AC.fill, warm: AC.amber }, layer);
     if (!fg) return;
-    const W = '#f4f4f4', P = h.P, items = f.readouts || [];
+    const W = '#f4f4f4', P = h.P, items = (f.readouts || []).filter((it) => !it.bar);
     if (f.chip) ring(cv, A.cx, 102, 28, 70, f.chip, P);
     if (o.gear) cv.text(h.gearText(d), A.cx, 124, 62, cue.limiter && f.blink ? AC.red : W, { align: 'center', font: h.gearFont(o) });
     if (f.mode && o.gear) cv.text(f.mode, A.cx + 30, 86, 16, withAlpha(W, 0.85), { font: 'bold' });
     h.drawDown(cv, A.cx - 40, 112, f.down || 0, 0.8, P.arrow);
     // left, under the band and kept high (BMW's assistance graphic sits bottom left): readout 4
-    if (items[3]) small(cv, 132, 82, items[3], P, o, W, 'stack', 'center');
+    // (with the meter over it, 4 px lower to keep a gap)
+    if (items[3]) small(cv, 132, 82 + (meter ? AM.dn : 0), items[3], P, o, W, 'stack', 'center');
     // right: readout 1 big beside the gear, 2 and 3 stacked at the far right; the grade takes them over
     if (f.chip) grade(cv, 312, 122, f.chip, P, 24);
     else {
@@ -293,6 +312,8 @@ function drawRamp(cv, f, layer, h) {
 
 /* ---------- dial (E60) ---------- */
 const D = { cx: 200, cy: 70, r0: 50, r1: 60, a0: -125, a1: 110 };
+// the power meter: a 6 px ring round the dial (r1) with a gap, up to the image's top edge
+const DM = { r0: 64, r1: 70 };
 const DC = { green: '#a6d64a', orange: '#ff8a2e', red: '#f0313a', text: '#ff8a2e', speed: '#ff5a2e' };
 function drawDial(cv, f, layer, h) {
     const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max, fl = flashOn(o, cue);
@@ -304,7 +325,7 @@ function drawDial(cv, f, layer, h) {
     // the zones in the E60's colours, or the app's light style's: Race green / red / blue, one colour throughout
     const Z = o.lightStyle === 'f1' ? [h.P.low, h.P.high, h.RACE_BLUE] : o.lightStyle === 'mono' ? [h.P.text, h.P.text, h.P.text] : [DC.green, DC.orange, DC.red];
     const zone = (r) => (r >= f.redline ? Z[2] : r >= warn ? Z[1] : Z[0]);
-    const step = 250;
+    const step = 250, meter = (f.readouts || []).filter((it) => it.bar)[0];
     if (o.bar !== false || o.lights) {
         if (BG) for (let r = 0; r < max; r += step) {
             // the zones always faintly there; a hairline gap every 1000 rpm
@@ -321,10 +342,14 @@ function drawDial(cv, f, layer, h) {
                 if (c) cv.arc(D.cx, D.cy, D.r0, D.r1, ang(r), ang(Math.min(top, r + step)) - (r + step <= top ? g : 0), c);
             }
         }
-        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) cv.arc(D.cx, D.cy, D.r0 - 3, D.r1 + 3, ang(f.peak) - 0.8, ang(f.peak) + 0.8, '#ffffff');
+        // (with the meter round the dial, the peak stops short of it)
+        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) cv.arc(D.cx, D.cy, D.r0 - 3, meter ? D.r1 : D.r1 + 3, ang(f.peak) - 0.8, ang(f.peak) + 0.8, '#ffffff');
     }
+    // the power meter: a ring round the dial over its sweep (not in the list)
+    if (meter) ringMeter(cv, D.cx, D.cy, DM.r0, DM.r1, D.a0, D.a1, DM.r0, DM.r1 + 3, meter.bar,
+        { line: withAlpha(DC.text, 0.6), tick: DC.text, low: h.P.low, fill: DC.orange, warm: DC.red }, layer);
     if (!fg) return;
-    const items = f.readouts || [];
+    const items = (f.readouts || []).filter((it) => !it.bar);
     if (f.chip) ring(cv, D.cx, D.cy, D.r1 + 2, D.r1 + 34, f.chip, h.P);
     // readouts 2 and 3: a list on the right; 4: top left (kept high, clear of BMW's assistance graphic)
     [1, 2].forEach((i, k) => { if (items[i]) small(cv, 284, 30 + k * 28, items[i], h.P, o, DC.speed, 'row', 112); });
