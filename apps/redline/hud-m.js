@@ -23,10 +23,22 @@ const GRADE = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 
 /** A chip's colour: its own tone (the launch time), else its grade's. */
 const chipCol = (chip, P) => P[chip.tone || GRADE[chip.verdict]] || P.text;
 const toneCol = (it, P, base) => (it.tone && it.tone !== 'text' ? P[it.tone] || base : base);
+/**
+ * A readout's label size and colour: Normal 13 px nearly full brightness, Clearer 16 px full (10 / 12 px
+ * read as specks on the glass, 2026-11-09 drive).
+ */
+const labelOf = (o, base) => (o.clearLabels ? { s: 16, c: base } : { s: 13, c: withAlpha(base, 0.9) });
+/** A label at (x, y), made smaller (down to 8 px) when it would be wider than room. */
+function fitLabel(cv, text, x, y, size, col, room, opts) {
+    const lo = Object.assign({ font: 'bold', spacing: 1 }, opts || {});
+    let s = size;
+    if (cv.textWidth && room) { const w = cv.textWidth(text, s, lo); if (w > room) s = Math.max(8, s * room / w); }
+    cv.text(text, x, y, s, col, lo);
+}
 /** A small readout: label then value on one line (row) or label over value (stack); align 'left' | 'right' | 'center'. */
 function small(cv, x, y, it, P, o, base, mode, align, vsize) {
     const vs = vsize || 19;
-    const lab = o.clearLabels ? { s: 12, c: base } : { s: 10, c: withAlpha(base, 0.75) };
+    const lab = labelOf(o, base);
     if (mode === 'row') {
         // label at x, value right-aligned at the row's right edge (x + w); a label too long for the room the
         // value leaves (GEARBOX 120°, BOOST in kPa) is drawn smaller, down to 7 px, rather than run into it
@@ -34,7 +46,7 @@ function small(cv, x, y, it, P, o, base, mode, align, vsize) {
         let ls = lab.s;
         if (cv.textWidth) {
             const room = w - cv.textWidth(it.value, vs, { font: 'bold' }) - 4, lw = cv.textWidth(it.label, ls, lo);
-            if (lw > room) ls = Math.max(7, ls * room / lw);
+            if (lw > room) ls = Math.max(8, ls * room / lw);
         }
         cv.text(it.label, x, y, ls, lab.c, lo);
         cv.text(it.value, x + w, y + 1, vs, toneCol(it, P, base), { align: 'right', font: 'bold' });
@@ -120,13 +132,14 @@ function drawArc(cv, f, layer, h) {
     if (o.gear) cv.text(h.gearText(d), A.cx, 124, 62, cue.limiter && f.blink ? AC.red : W, { align: 'center', font: h.gearFont(o) });
     if (f.mode && o.gear) cv.text(f.mode, A.cx + 30, 86, 16, withAlpha(W, 0.85), { font: 'bold' });
     h.drawDown(cv, A.cx - 40, 112, f.down || 0, 0.8, P.arrow);
-    // left, kept high (BMW's assistance graphic sits bottom left): readout 4
-    if (items[3]) small(cv, 132, 70, items[3], P, o, W, 'stack', 'center');
+    // left, under the band and kept high (BMW's assistance graphic sits bottom left): readout 4
+    if (items[3]) small(cv, 132, 82, items[3], P, o, W, 'stack', 'center');
     // right: readout 1 big beside the gear, 2 and 3 stacked at the far right; the grade takes them over
     if (f.chip) grade(cv, 312, 122, f.chip, P, 24);
     else {
         if (items[0]) {
-            cv.text(items[0].label, 288, 100, o.clearLabels ? 12 : 10, o.clearLabels ? W : withAlpha(W, 0.75), { align: 'center', font: 'bold', spacing: 1 });
+            const lb = labelOf(o, W);
+            fitLabel(cv, items[0].label, 288, 100, lb.s, lb.c, 48, { align: 'center' });
             cv.text(items[0].value, 288, 125, 26, toneCol(items[0], P, W), { align: 'center', font: o.valFont || 'bold' });
         }
         // from just right of the first readout (it ends by x 313) to the edge, values a size smaller
@@ -214,7 +227,7 @@ function drawRamp(cv, f, layer, h) {
         const it = items[0];
         if (it) {
             cv.text(it.value, gx, 124, 24, it.tone && it.tone !== 'text' ? h.P[it.tone] : RC.text, { align: 'center', font: o.valFont || 'bold' });
-            cv.text(it.label.toLowerCase(), gx + 32, 102, o.clearLabels ? 12 : 9, RC.text, { font: 'bold' });
+            fitLabel(cv, it.label.toLowerCase(), gx + 32, 102, labelOf(o, RC.text).s, RC.text, 284 - gx - 36, { spacing: 0 });
         }
     }
 }
@@ -266,7 +279,7 @@ function drawDial(cv, f, layer, h) {
         const it = items[0];
         if (it) {
             cv.text(it.value, 300, 122, 26, it.tone && it.tone !== 'text' ? h.P[it.tone] : DC.speed, { align: 'right', font: o.valFont || 'bold' });
-            cv.text(it.label.toLowerCase(), 304, 122, o.clearLabels ? 13 : 10, DC.speed, { font: 'bold' });
+            fitLabel(cv, it.label.toLowerCase(), 304, 122, labelOf(o, DC.speed).s, DC.speed, 94, { spacing: 0 });
         }
     }
 }

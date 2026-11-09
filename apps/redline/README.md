@@ -224,6 +224,7 @@ below list them by what they do.
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
 | In Comfort / Eco Pro | Same HUD as Sport / Its own HUD (set up on HUD looks) / Don't show (BMW's own HUD) |
+| When BMW shows directions on the HUD | Keep Redline (directions hidden), or Show them (Redline steps aside the whole route). BMW's HUD guidance uses the same HUD space as Redline, so only one shows; Redline logs what BMW puts there (`hud: slot 0x323 ...`) |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.

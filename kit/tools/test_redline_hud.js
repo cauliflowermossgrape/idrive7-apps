@@ -217,7 +217,7 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     page.replace(/'([a-zA-Z]+)'/g, (m, k) => { onPage[k] = true; return m; });
     spec.settings.filter((s) => /^HUD: /.test(s.group || '') || s.key === 'hudStyle').forEach((s) => ok(onPage[s.key], 'setting ' + s.key + ' (' + s.group + ') is not on the HUD looks page'));
     // and Settings' top level is short: the HUD's details are behind "All HUD options here"
-    const top = spec.settings.filter((s) => !s.group);
+    const top = spec.settings.filter((s) => !s.group && !s.hidden);
     ok(top.length <= 6, 'Settings top level has ' + top.length + ' rows besides the groups: ' + top.map((s) => s.key).join(', '));
     spec.settings.filter((s) => /^HUD: /.test(s.group || '')).forEach((s) => ok(s.when && s.when.hudAll && s.when.hudAll[0] === true, s.key + ' shows in Settings without "All HUD options here"'));
 }

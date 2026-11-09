@@ -29,6 +29,7 @@ class FakeCr {
     uniform(ref, name, v, o) { this.uniforms.push({ ref: ref, name: name, v: v.slice(), type: o && o.type }); }
     pixels(ref, rects, px) { this.frames.push({ ref: ref, rects: rects, px: Buffer.from(px) }); return true; }
     drop(r) { delete this.layers[r]; }
+    status() { this.asked = (this.asked || 0) + 1; }
     of(kind) { return Object.keys(this.layers).map(Number).filter((r) => this.layers[r].kind === kind); }
 }
 const load = Module._load;
@@ -116,6 +117,20 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     ok(cr.of('image').length === 0 && cr.of('effect').length === 0, "Comfort, Don't show: Redline's layers gone");
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('effect').length === 1 && cr.of('image').length === 1, 'back in Sport: shown again');
+
+    // BMW's content in the HUD slot (CarPlay directions): Redline steps aside, back after two reports without it
+    const slot = (rows) => cr.h.status('targets: hud\nslot 0x323 status 2: ' + rows);
+    settings.set('hudGiveWay', 'aside'); await sleep(2700);
+    ok(cr.asked > 0, 'the HUD slot report is asked for while the tach is on');
+    slot('0x1000400 class 0 map 1, 0x1000250 class 0 map 3'); await sleep(200);
+    ok(cr.of('image').length === 0 && cr.of('effect').length === 0 && /stepped aside/.test(h.status()), "BMW's content waiting in the slot: Redline steps aside");
+    slot('0x1000250 class 0 map 1'); await sleep(150);
+    ok(cr.of('image').length === 0, 'still there: still aside');
+    slot(''); await sleep(100); slot(''); await sleep(200);
+    ok(cr.of('image').length === 1 && cr.of('effect').length === 1, 'two reports without it: back on');
+    settings.set('hudGiveWay', 'keep'); slot('0x1000400 class 0 map 1, 0x1000250 class 0 map 3'); await sleep(200);
+    ok(cr.of('image').length === 1, 'Keep Redline (the default): stays on');
+    settings.set('hudGiveWay', 'keep'); await sleep(100);
 
     // the alpha setting re-makes it with the new output
     settings.set('hudGpuAlpha', 'premul'); await sleep(150);

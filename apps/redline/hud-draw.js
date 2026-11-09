@@ -217,10 +217,13 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
     const n = items.length, colw = (x1 - x0) / Math.max(3, n), k = Math.min(1, colw / 70);
     items.forEach((it, i) => {
         const cx = x0 + colw * (i + 0.5);
-        // "Clearer" labels: a third bigger and full brightness (12 px at 75 % is thin on the glass)
+        // labels: Normal 14 px nearly full brightness, Clearer 18 px full (12 px at 75 % read as specks on the
+        // glass); either made smaller to fit its column, so four readouts never run into each other
         if (layer !== 'fg') {
-            if (clear) cv.text(it.label, cx, y + 14, 16 * k, P.text, { align: 'center', font: 'bold', spacing: 1.5 * k });
-            else cv.text(it.label, cx, y + 12, 12 * k, withAlpha(P.text, 0.75), { align: 'center', font: 'bold', spacing: 1.2 * k });
+            const lo = { align: 'center', font: 'bold', spacing: (clear ? 1.5 : 1.2) * k };
+            let s = (clear ? 18 : 14) * k;
+            if (cv.textWidth) { const w = cv.textWidth(it.label, s, lo); if (w > colw - 14) s = Math.max(8, s * (colw - 14) / w); }
+            cv.text(it.label, cx, y + (clear ? 15 : 13), s, clear ? P.text : withAlpha(P.text, 0.9), lo);
         }
         if (layer !== 'bg') cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), P[it.tone] || P.text, { align: 'center', font: 'bold' });
     });
