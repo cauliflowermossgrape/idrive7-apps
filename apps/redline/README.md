@@ -95,13 +95,29 @@ On all three the shift grade takes the first readout's place; with *Burst* a rin
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
 on the limiter, as in the cars.
 
-**Drawing on the GPU** (Advanced: *HUD drawing*, experimental, Arc only; Picture by default): the Arc's
-lights, band, ticks, peak line and flash as a cluster-render effect layer, a shader the renderer runs itself
-(`hud-gpu.js`), sent a few numbers only when they change; the text stays a picture over it. It ran on the
-car, but the shift lights felt a touch late next to the picture, so the picture stays the default. The HUD's
-shaders run on the instrument cluster's own renderer: a shader for every other layout, tried in 1.16.1,
-restarted the cluster on the car and was dropped. If the renderer refuses the Arc's shader, Redline goes
-back to the picture for that run (`hud: GPU drawing refused` in the log).
+**HUD drawing: a picture, not a shader.** The HUD is a 400x130 picture sent to cluster-render, only the
+part that changed and only when it changes. Drawing the moving parts with a shader (a cluster-render effect
+layer) was tried in 1.16 and left out, because of where the shader runs:
+
+- The HUD is drawn by the **instrument cluster**, not the head unit. cluster-render hands it the HUD's
+  content, shaders included, and the cluster's own graphics chip runs them.
+- A shader for every layout (the lights, bar, digits and bands, with arrays of up to 40 colours and
+  loops of up to 80 steps a pixel) **restarted the instrument cluster twice** within seconds on a G21
+  (2026-11-09, cluster-render log: "Dcsm2 not available" 5 s and 2 s after the HUD was shown). The car
+  showed brake, ABS and stability warnings and "Driver assistance restricted" until it had slept, and
+  cluster-render's guard turned the HUD off.
+- The likely cause is the cluster's GPU limits: OpenGL ES 2 only promises 16 uniform vectors a shader
+  and many embedded chips stop at 64; this shader used about 70, and a lot of work a pixel. A desktop
+  GPU (where it was checked, in WebGL) allows over 1000, so nothing showed there.
+- A cluster restart while driving is a safety risk (speedometer, warning lights and driver assistance
+  gone or limited for seconds), and a shader is sent whenever its layer is made: at start, after a
+  cluster-render restart, or on a Sport / Comfort switch to another layout.
+- What it would have saved is small: the picture path sends about 100 KB/s, where the cluster map sends
+  about 3.8 MB/s. A smaller shader for the Arc alone (8 colours, ~22 uniform vectors) ran without trouble,
+  but its shift lights felt slightly late next to the picture.
+
+So every layout is a picture. A GPU path would need shaders kept well inside what the cluster takes, made
+only while parked, and tested parked first.
 
 **Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
 Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
@@ -160,7 +176,7 @@ as Live Data shows it) picks which one shows.
     anything makes Comfort its own, so nothing needs switching on first.
   - *Don't show*: Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as soon as the mode
     is Sport. Comfort's own setup, if it has one, is kept for later.
-- Shared by both: size and position, the HUD drawing (Advanced), units, the light colours and the downshift
+- Shared by both: size and position, units, the light colours and the downshift
   arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
   becomes Comfort's own setup without readouts or alerts.
@@ -205,7 +221,7 @@ else is on the **HUD looks** page, by picture and with a live preview. Switch *A
 on to also list them in Settings, as five groups (*HUD: look*, *gauge*, *readouts*, *alerts*, *place*);
 they set the Sport HUD (Comfort's own is set up on HUD looks). The rest of Settings is grouped too: *Shift point*, *Engine*, *Learning*, *Units* (all
 five units, app-wide), *Screen*, and behind *Advanced settings*, the renderer and the HUD's frame
-rate, readout refresh, the Arc's GPU drawing and its edges, and hand-back. Every change shows on the HUD at once. The tables
+rate, readout refresh and hand-back. Every change shows on the HUD at once. The tables
 below list them by what they do.
 
 **HUD style:** how it looks.
@@ -214,8 +230,6 @@ below list them by what they do.
 |---|---|
 | Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
 | Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
-| HUD drawing (Advanced, Arc) | Picture (default) / GPU (experimental) |
-| GPU edges (Advanced) | Straight / Premultiplied (while testing the GPU drawing) |
 | Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
@@ -421,7 +435,6 @@ ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox' /var/opt/pub
 Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
-- `hud: drawing … on the GPU …`, `hud: GPU layer …`: the GPU drawing's layer and its state.
 - `hud: target hud: slot 0x323 …`: cluster-render's report on the HUD's slot (each change): whether Redline
   or BMW's content (its navigation, with CarPlay) holds it.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
