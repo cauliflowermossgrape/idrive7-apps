@@ -155,11 +155,35 @@ function placeOf(settings) {
  * y 120..360, seen whole on a G21), right of BMW's limit sign and speed at the bottom left; "hudNavX" / "hudNavY"
  * move them (px). Their own size: they don't scale or move with the tach.
  */
-const NAV_RIGHT = 672, NAV_BOTTOM = 356;
+const NAV_RIGHT = 672, NAV_BOTTOM = 356, NAV_GAP = 4;
+// what the directions must never cover or sit under: BMW's limit sign and speed along the glass's bottom left
+// (2026-11-09 photos of the G21's test pattern: x ~120..340, y ~322..366), besides the tach itself
+const BMW_SPEED = { x: 116, y: 320, w: 236, h: 48 };
+// the glass the driver sees whole (the test pattern's 120 px frame on the G21)
+const GLASS = { x: 120, y: 120, w: 560, h: 240 };
+const overlapOf = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+/**
+ * Where the directions go: the glass's bottom right corner ("hudNavX" / "hudNavY" move it), but never over or
+ * under the tach (its rev bar, gear, readouts, grade and arrows are all inside placeOf's rectangle) or BMW's speed.
+ * When the tach's Size / Position reach the corner, the next place that's clear is taken: under the tach, right
+ * of it, left of it, above it; on the glass first. With nowhere clear, the place that covers least.
+ */
 function navPlaceOf(settings) {
-    const w = HudNav.NW, h = HudNav.NH;
+    const w = HudNav.NW, h = HudNav.NH, t = placeOf(settings);
     const dx = clamp(Number(settings.get('hudNavX')) || 0, -400, 100), dy = clamp(Number(settings.get('hudNavY')) || 0, -200, 100);
-    return { x: clamp(NAV_RIGHT - w + dx, 0, SCENE_W - w), y: clamp(NAV_BOTTOM - h + dy, 0, SCENE_H - h), w: w, h: h };
+    const at = (x, y) => ({ x: clamp(Math.round(x), 0, SCENE_W - w), y: clamp(Math.round(y), 0, SCENE_H - h), w: w, h: h });
+    const corner = at(NAV_RIGHT - w + dx, NAV_BOTTOM - h + dy);
+    const tries = [corner,
+        at(corner.x, t.y + t.h + NAV_GAP),                  // under the tach
+        at(t.x + t.w + NAV_GAP, corner.y),                  // right of it
+        at(t.x - w - NAV_GAP, corner.y),                    // left of it
+        at(corner.x, t.y - h - NAV_GAP)];                   // above it
+    // covering anything weighs far more than reaching past the glass's edge (px outside it, summed per side)
+    const outside = (r) => Math.max(GLASS.x - r.x, 0) + Math.max(r.x + r.w - GLASS.x - GLASS.w, 0) + Math.max(GLASS.y - r.y, 0) + Math.max(r.y + r.h - GLASS.y - GLASS.h, 0);
+    const cost = (r) => (overlapOf(r, t) + overlapOf(r, BMW_SPEED)) * 1000 + outside(r);
+    let best = tries[0];
+    tries.forEach((r) => { if (cost(r) < cost(best)) best = r; });
+    return best;
 }
 /** "hudNav": off / route (while a route runs, the default) / near (under 1 km, and lanes). */
 function navModeOf(settings) { const m = settings.get('hudNav'); return m === 'off' || m === 'near' ? m : 'route'; }
@@ -1009,4 +1033,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, navPlaceOf, navModeOf, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, navPlaceOf, navModeOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

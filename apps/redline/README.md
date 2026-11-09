@@ -272,8 +272,10 @@ At most four readouts fit the row; past that the last one gives way.
 
 With Redline on the HUD, the KOMBI hides BMW's own direction card behind it (2026-11-09 drive). So while a
 route runs, Redline draws the next turn itself: a small picture (200x76) in the bottom right corner of the glass,
-right of BMW's limit sign and speed, which sit at the bottom left. It has its own place: the tach's size and
-position don't move it.
+right of BMW's limit sign and speed, which sit at the bottom left. It never covers the tach (rev bar, gear,
+readouts, grade, downshift arrows) or BMW's speed: when the tach's *Size* or *Position* reaches the corner, the
+directions move to the nearest clear place (under, beside or above the tach), the one reaching least past the
+glass's edge. Checked for every size and position the settings allow.
 
 ```
 [ tach ...................................... ]

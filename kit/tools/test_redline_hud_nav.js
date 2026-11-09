@@ -276,6 +276,22 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     ok(cr.layers[imgs[1]].y === 260 && cr.layers[imgs[1]].x === 432, 'Directions left / right and up / down move them');
     settings.set('hudSize', 100); settings.set('hudX', 0); settings.set('hudNavY', 0); settings.set('hudNavX', 0); await sleep(100);
 
+    // never over or under the tach (rev bar, gear, readouts, grade, arrows: all in its picture) or BMW's speed
+    const ov = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    settings.set('hudSize', 130); settings.set('hudY', 40); settings.set('hudX', 60); await sleep(120);
+    const T = cr.layers[cr.images()[0]], NL = cr.layers[cr.images()[1]];
+    ok(NL && ov(T, NL) === 0 && ov(NL, Hud.BMW_SPEED) === 0, 'a big, low tach reaching the corner: the directions move clear of it (' + [NL && NL.x, NL && NL.y].join(',') + ')');
+    settings.set('hudSize', 100); settings.set('hudY', 0); settings.set('hudX', 0); await sleep(100);
+    let clash = 0, n = 0, farOut = 0;
+    [70, 80, 90, 100, 110, 120, 130].forEach((sz) => { for (let x = -120; x <= 120; x += 20) for (let y = -40; y <= 60; y += 10) {
+        const vv = { hudSize: sz, hudX: x, hudY: y }, st = { get: (k) => vv[k] }, t = Hud.placeOf(st), r = Hud.navPlaceOf(st), G = Hud.GLASS;
+        n++;
+        if (ov(r, t) || ov(r, Hud.BMW_SPEED)) clash++;
+        if (sz <= 100 && Math.max(G.x - r.x, 0) + Math.max(r.x + r.w - G.x - G.w, 0) + Math.max(G.y - r.y, 0) + Math.max(r.y + r.h - G.y - G.h, 0) > 20) farOut++;
+    } });
+    ok(clash === 0, 'every tach size and position the settings allow (' + n + '): the directions cover nothing (' + clash + ' clash)');
+    ok(farOut === 0, 'up to 100 %: never more than 20 px past the glass (' + farOut + ')');
+
     // the turn goes: the layer goes
     view = { show: null, giveWay: false };
     await sleep(120);
