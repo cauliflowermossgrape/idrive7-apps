@@ -620,6 +620,7 @@ Useful lines:
 | `main.js` | The app: the screen pages, settings, scoring, and the wiring of everything below |
 | `hud.js` | The HUD layer: connect, pace, smooth the rpm, decide what to show (readouts, grade, peak), send; `shiftCue()` (shared with the screen); the test pattern |
 | `hud-draw.js` | Drawing the HUD image: the six layouts, the palettes, 7-segment digits, lights, bar and bar graph, readouts, grade burst, shake, downshift arrows; the cached static layer |
+| `hud-theme.js` | What the HUD drawing files share: the grade colours, the grade burst's timing, label fitting |
 | `nav.js` | Directions, the data: decodes the route events, `conclusiveDart` and the lanes into the next turn; freshness (3 s) and giving way to BMW's card |
 | `navlog.js` | The navigation probe: subscribes to the guidance sources, asks the event list, writes `redline-nav.log`, hands every value to `nav.js` |
 | `hud-nav.js` | Directions, the picture (200x76, bottom right corner): thick white arrows, distance, street or lanes |
