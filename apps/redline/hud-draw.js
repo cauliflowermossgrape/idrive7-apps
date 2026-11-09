@@ -398,4 +398,4 @@ function scaled(r, k, ox, oy) {
     };
 }
 
-module.exports = { scaled, lightCol, gearFont, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };
+module.exports = { scaled, lightCol, gearFont, drawHud, drawLayer, drawDown, gearText, PALETTES, IW, IH, TEMP_X };

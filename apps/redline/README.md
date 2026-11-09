@@ -593,8 +593,6 @@ ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox|electrical|ty
 Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
-- `hud: target hud: slot 0x323 …`: cluster-render's report on the HUD's slot (each change): whether Redline
-  or BMW's content (its navigation, with CarPlay) holds it.
 - `redline-nav.log` (beside `redline.log`): the navigation probe, read-only, behind Redline's own HUD
   directions. What BMW's guidance service (`navigation.guiding.Guidance`: route state, which app
   guides, the next manoeuvre with its distance) and the CarPlay / Android Auto managers send, each change

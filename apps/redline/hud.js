@@ -684,24 +684,6 @@ function start(ctx, src) {
         const t = navPrev; navPrev = navCur; navCur = t;
     };
 
-    /*
-     * BMW's own content in the HUD's slot (0x323). With CarPlay directions on (2026-11-09 drive, Apple Maps:
-     * "Proceed to the route", the line, the arrow and the distance) they didn't show while Redline held the slot:
-     * the KOMBI shows the first content in a slot and parks the rest behind it. BMW shows them for the whole
-     * route, so stepping aside would mean no Redline while navigating: Redline keeps the slot and only logs
-     * the slot's rows from cluster-render's status (each change), to know what BMW puts there (for drawing
-     * directions of its own).
-     */
-    let lastSlot = '';
-    function onSlots(text) {
-        const rows = String(text || '').split(/\r?\n/).filter((l) => /0x323\b/i.test(l)).map((l) => l.trim());
-        const s = rows.length ? rows.join(' | ') : 'slot 0x323 not in the report';
-        if (s !== lastSlot) { lastSlot = s; log.info('hud: ' + s); }
-    }
-    // the slot report, while the tach is on
-    const slotTimer = setInterval(safe('slots', () => { if (cr && cr.ready && cr.status && shown === 'tach') cr.status(); }), 2500);
-    if (slotTimer.unref) slotTimer.unref();
-
     const connect = safe('connect', () => {
         if (cr) return;
         if (!ClusterRender) { log.warn('hud: cluster_render_client.js is missing from the app'); return; }
@@ -726,7 +708,6 @@ function start(ctx, src) {
             log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason);
             if (navLayer && ref === navLayer) navFailed('refused');
         }));
-        cr.on('status', safe('status', onSlots));
         cr.connect();
         log.info('hud: connecting to cluster-render');
     });
@@ -1131,8 +1112,8 @@ function start(ctx, src) {
     const play = safe('play', (ms, profile) => { playProfile = profile === 'comfort' ? 'comfort' : 'sport'; demoStart = Date.now(); demoUntil = demoStart + (ms || 2 * DEMO_MS); first = true; log.info('hud: playing the demo (' + playProfile + ')'); });
     const stopPlay = () => { demoUntil = 0; first = true; };
 
-    return { stop: () => { clearInterval(slotTimer); disconnect(); }, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
+    return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil, corner: () => corner };
 }
 
-module.exports = { start, navPlaceOf, navModeOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };
