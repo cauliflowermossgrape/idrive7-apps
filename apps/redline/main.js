@@ -686,8 +686,8 @@ mgu.run({
                 // size and position, a step at a time through each setting's own steps (live on the glass)
                 cv.text('SIZE', 40, R1 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
                 stepButtons(cv, t, 200, R1, 'hudSize', [['Smaller', -1], ['Bigger', 1]], (v) => v + ' %');
-                // drawn by the GPU (experimental): every layout
-                choiceRow(cv, t, R1, 'DRAWING', 'hudRenderer', P.get('hudRenderer') || 'gpu', [['gpu', 'GPU'], ['image', 'Picture']], false, RX, 150);
+                // the Arc can be drawn by the GPU (experimental; the other layouts restarted the cluster)
+                choiceRow(cv, t, R1, 'DRAWING', 'hudRenderer', P.get('hudRenderer') || 'image', [['image', 'Picture'], ['gpu', 'GPU (Arc)']], o.style !== 'arc', RX, 150);
                 cv.text('MOVE', 40, R2 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
                 stepButtons(cv, t, 200, R2, 'hudX', [['Left', -1], ['Right', 1]], (v) => (v === 0 ? 'centre' : (v > 0 ? '+' : '') + v + ' px'));
                 stepButtons(cv, t, 700, R2, 'hudY', [['Up', -1], ['Down', 1]], (v) => (v === 0 ? 'default' : (v > 0 ? '+' : '') + v + ' px'));

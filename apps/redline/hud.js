@@ -583,8 +583,10 @@ function start(ctx, src) {
     const dropLayer = safe('drop', () => { stopTimer(); dropGpu(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
     // the GPU path: chosen, on the Arc (the only layout it draws yet), and not refused by this renderer
     let gpuFailed = false;
-    // every layout can be drawn by the GPU: the Arc by its own shader, the rest by the gauge shader
-    const useGpu = () => settings.get('hudRenderer') === 'gpu' && !gpuFailed && (optsNow().style === 'arc' || !!Gpu.GAUGE_PARTS[optsNow().style]);
+    // the GPU draws the Arc only. 1.16.1 drew every layout with the gauge shader: on the car (2026-11-09) flicking
+    // through layouts restarted the instrument cluster twice (its renderer runs the shaders) and cluster-render's
+    // guard switched the HUD off. GpuGauge stays in hud-gpu.js, unused, until the cluster's limits are known.
+    const useGpu = () => settings.get('hudRenderer') === 'gpu' && !gpuFailed && optsNow().style === 'arc';
     const gpuStale = () => !!gpu !== useGpu() || (!!gpu && gpu.style !== optsNow().style);
     /** The layers made again (the drawing path or its options changed), the timer kept. */
     const relayer = safe('relayer', () => {

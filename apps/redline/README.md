@@ -95,20 +95,14 @@ On all three the shift grade takes the first readout's place; with *Burst* a rin
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
 on the limiter, as in the cars.
 
-**Drawing on the GPU** (*Drawing*: GPU by default, or Picture): instead of re-sending the 400x130 picture
-as the revs move, what moves is a cluster-render effect layer, a shader the renderer runs itself
-(`hud-gpu.js`), sent the revs each frame and a few arrays when the lights or the cue change. The Arc
-has its own shader (lights, band, ticks, peak, under the picture). Every other layout uses one gauge
-shader over the picture, with that layout's parts: its lit shift lights, the lit bar, 80s graph, Ramp
-fields or Dial segments, and the 80s / VFD rpm digits. Their places and colours come from the picture's
-own drawing code (it hands them over instead of drawing them), so both look the same. The picture keeps
-what stands still (unlit lights, tracks, the red zone, marks, ticks, the peak line) and the text, and is
-only sent again when one of those changes. Checked in a browser (WebGL) against the picture: every layout
-the same to the pixel in counting in, the shift flash and the limiter, the Arc within 0.25 %. If the
-renderer refuses a shader, Redline goes back to the picture for that run (`hud: GPU drawing refused` in
-the log); *Drawing: Picture* does the same by hand. *GPU edges* (Straight / Premultiplied, Advanced) is
-there to find which alpha the renderer expects. The Arc on the GPU was checked on the car (2026-11-09);
-the other layouts are not yet.
+**Drawing on the GPU** (*Drawing*, experimental, Arc only; Picture by default): the Arc's lights, band,
+ticks, peak line and flash are a cluster-render effect layer, a shader the renderer runs itself
+(`hud-gpu.js`), sent a few numbers only when they change; the text stays a picture over it. The HUD's
+shaders run on the instrument cluster's own renderer. 1.16.1 drew every layout this way (a gauge shader,
+still in `hud-gpu.js`, unused): on the car, flicking through layouts restarted the cluster twice
+(driver-assistance warnings until it settled) and cluster-render's guard switched the HUD off. So only the
+Arc's shader, which ran on the car without trouble, is used. If the renderer refuses it, Redline goes back
+to the picture for that run (`hud: GPU drawing refused` in the log).
 
 **Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
 Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
@@ -140,7 +134,7 @@ missing falls back to Ubuntu.
   - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
     peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
     gear or the best one).
-  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Drawing: GPU or Picture. Reset puts
+  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; on Arc, the GPU drawing (experimental). Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
   you're parked. Nothing is learned from it.
@@ -221,7 +215,7 @@ below list them by what they do.
 |---|---|
 | Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
 | Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
-| Drawing | GPU (default) / Picture (if the GPU looks wrong) |
+| Drawing (Arc) | Picture (default) / GPU (experimental) |
 | GPU edges | Straight / Premultiplied (while testing the GPU drawing) |
 | Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
