@@ -1,5 +1,7 @@
 'use strict';
 /**
+ * run_timer.js - shared by Drag Timer (its runs and splits) and Redline (the launch score on the HUD).
+ *
  * Run timer: feed it (time ms, speed km/h) samples, it finds the launch and
  * the moments each split was reached. Crossing times are interpolated between
  * samples, so the result does not depend on how often the car sends speed.

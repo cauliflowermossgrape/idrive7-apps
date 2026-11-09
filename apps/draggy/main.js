@@ -15,7 +15,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
-const { RunTimer } = require('./timer');
+const { RunTimer } = require('./kit/run_timer');
 const Demo = require('./demo');
 
 const W = 1600, H = 520;

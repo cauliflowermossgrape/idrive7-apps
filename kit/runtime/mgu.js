@@ -82,6 +82,16 @@ process.on('exit', (code) => fileLog(code ? 'FATAL' : 'INFO', 'exit code ' + cod
 
 /* ---------------- settings (persisted in data/settings.json) ---------------- */
 class Settings {
+    /**
+     * Write a file whole or not at all: a temp file renamed over it (a reader or a power cut never sees half).
+     * In the class: hu-stub.js and test_runtime.js run this class on its own, cut from this file.
+     */
+    static writeWhole(file, text) {
+        const tmp = file + '.' + process.pid + '.tmp';
+        fs.writeFileSync(tmp, text);
+        fs.renameSync(tmp, file);
+    }
+
     constructor(schema) {
         this.schema = schema || [];
         this.file = path.join(DATA_DIR, 'settings.json');
@@ -100,7 +110,7 @@ class Settings {
             this.values._themeV = 2;            // (a fresh install has the default: the mark is saved with its first setting)
             if (saved) {
                 this.values.theme = th.default;
-                try { fs.writeFileSync(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
+                try { Settings.writeWhole(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
             }
         }
         // a setting with "reset": n in app.json goes back to its default once when n changes
@@ -110,12 +120,12 @@ class Settings {
             const mark = '_reset_' + it.key;
             if (it.reset && this.values[mark] !== it.reset) { this.values[it.key] = it.default; this.values[mark] = it.reset; changed = true; }
         }
-        if (changed && fs.existsSync(this.file)) try { fs.writeFileSync(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
+        if (changed && fs.existsSync(this.file)) try { Settings.writeWhole(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
     }
     get(key) { return this.values[key]; }
     set(key, value) {
         this.values[key] = value;
-        try { fs.writeFileSync(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { log.warn('settings save: ' + e); }
+        try { Settings.writeWhole(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { log.warn('settings save: ' + e); }
         this.listeners.forEach((fn) => { try { fn(key, value); } catch (e) { log.error(e); } });
     }
     onChange(fn) { this.listeners.push(fn); }
@@ -447,7 +457,8 @@ class Widget {
 /* ---------------- generic settings screen ---------------- */
 function wireSettings(ctx) {
     const { ui, settings } = ctx;
-    const schema = settings.schema;
+    // hidden settings (kept by the app itself, never on a screen) have no component to look up
+    const schema = settings.schema.filter((s) => !s.hidden);
     // the settings screen, or an app's own menu screen that shows them ("settings": true)
     if (!schema.length || !schema.some((s) => ui.comp('SET_' + s.key.toUpperCase()))) return;
     // choice / number settings are drop-downs (kit/tools/build.py): their rows are the values in this order

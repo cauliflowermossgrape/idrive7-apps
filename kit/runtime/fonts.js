@@ -39,10 +39,13 @@ function get(name, size, text) {
     return best;
 }
 
+/** Whether a family's atlas is there (get() falls back to 'label' for one that isn't). */
+function has(name) { return !!family(name); }
+
 function measure(f, s) {
     let w = 0;
     for (const ch of s) { const g = f.glyphs[ch.codePointAt(0)] || f.glyphs[63]; if (g) w += g[6]; }
     return w;
 }
 
-module.exports = { get, measure };
+module.exports = { get, has, measure };
