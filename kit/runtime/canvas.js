@@ -392,6 +392,34 @@ class Canvas {
     quad(pts, c) { return this.convex(pts, c); }
     triangle(pts, c) { return this.convex(pts, c); }
 
+    /**
+     * A thick path with round joins and ends, anti-aliased once over the whole path: where its pieces overlap (at a
+     * bend) the edge isn't blended twice, so a bend has no bump. pts = [[x,y],...]
+     */
+    stroke(pts, width, c) {
+        if (!pts || pts.length < 2) return this;
+        c = rgba(c);
+        const hw = width / 2;
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        pts.forEach((p) => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+        x0 = Math.max(0, Math.floor(x0 - hw - 1)); x1 = Math.min(this.w, Math.ceil(x1 + hw + 1));
+        y0 = Math.max(0, Math.floor(y0 - hw - 1)); y1 = Math.min(this.h, Math.ceil(y1 + hw + 1));
+        for (let py = y0; py < y1; py++) {
+            for (let px = x0; px < x1; px++) {
+                let d2 = Infinity;
+                for (let i = 1; i < pts.length; i++) {
+                    const xa = pts[i - 1][0], ya = pts[i - 1][1], vx = pts[i][0] - xa, vy = pts[i][1] - ya;
+                    const qx = px + 0.5 - xa, qy = py + 0.5 - ya, t = clamp01((qx * vx + qy * vy) / (vx * vx + vy * vy || 1));
+                    const ex = qx - vx * t, ey = qy - vy * t;
+                    d2 = Math.min(d2, ex * ex + ey * ey);
+                }
+                const cov = clamp01(hw - Math.sqrt(d2) + 0.5);
+                if (cov > 0) this._blend(px, py, c, cov);
+            }
+        }
+        return this;
+    }
+
     /** Polyline (e.g. a history trace). pts = [[x,y],...] */
     polyline(pts, width, c) {
         for (let i = 1; i < pts.length; i++) this.line(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], width, c);
@@ -530,6 +558,7 @@ class ScaledCanvas {
     quad(pts, c) { return this.convex(pts, c); }
     triangle(pts, c) { return this.convex(pts, c); }
     polyline(pts, width, c) { this.canvas.polyline(this._pts(pts), width * this.k, c); return this; }
+    stroke(pts, width, c) { this.canvas.stroke(this._pts(pts), width * this.k, c); return this; }
     fillUnder(pts, baseY, c) { this.canvas.fillUnder(this._pts(pts), baseY * this.k, c); return this; }
     drawImage(src, sw, sh, x, y, w, h) { const k = this.k; this.canvas.drawImage(src, sw, sh, x * k, y * k, w * k, h * k); return this; }
     blit(src, x, y) { return this.drawImage(src.d, src.w, src.h, x, y, src.w, src.h); }

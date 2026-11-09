@@ -37,7 +37,9 @@ function turnPath(deg) {
     if (deg === 0) return [[0, 36], [0, -36]];
     // a hard turn: the stem on the other side and bending high, so the way back down stands clear of it
     if (deg >= 135) return [[-15, 36], [-15, -22], [-15 + Math.sin(a) * 48, -22 - Math.cos(a) * 48]];
-    return [[0, 36], [0, 2], [Math.sin(a) * 30, 2 - Math.cos(a) * 30]];
+    // a plain turn: the stem a little to the other side and bending high, so the arm across is long (2026-11-10 drive)
+    if (deg === 90) return [[-13, 36], [-13, -4], [35, -4]];
+    return [[0, 36], [0, 6], [Math.sin(a) * 38, 6 - Math.cos(a) * 38]];
 }
 /** A turn by its direction name (TurnDirection: STRAIGHT_ON, LEFT, SLIGHT_RIGHT, HARD_LEFT, UTURN_RIGHT...). NONE: no arrow. */
 function turnShape(dir) {
@@ -51,7 +53,8 @@ function turnShape(dir) {
         p.push([-13, 24]);
         return { path: p, mir: -mir };
     }
-    return { path: turnPath(turnDeg(d)), mir: mir };
+    // the bends rounded, not a sharp corner (2026-11-10 drive)
+    return { path: turnPath(turnDeg(d)), mir: mir, round: 12 };
 }
 
 /*
@@ -171,9 +174,34 @@ function exitAngleOf(m) {
     return m.side === 'left' ? ((90 - 90 * (n - 1)) % 360 + 360) % 360 : (270 + 90 * (n - 1)) % 360;
 }
 
-/** A polyline with round joins and ends. */
+/**
+ * A polyline with round joins and ends, drawn in one pass (cv.stroke) so a bend's edge isn't blended twice: drawn
+ * piece by piece, the overlap at a bend showed as a bump on the HUD (2026-11-10 drive).
+ */
 function stroke(cv, pts, X, Y, w, c) {
+    if (cv.stroke) { cv.stroke(pts.map((p) => [X(p), Y(p)]), w, c); return; }
     for (let i = 1; i < pts.length; i++) cv.line(X(pts[i - 1]), Y(pts[i - 1]), X(pts[i]), Y(pts[i]), w, c);
+}
+/**
+ * The path with its bends rounded off, radius r (each bend a short curve). The last piece keeps at least HEAD_RUN
+ * straight for the head.
+ */
+function rounded(path, r) {
+    if (!r || path.length < 3) return path;
+    const len = (a, b) => Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+    const out = [path[0]];
+    for (let i = 1; i < path.length - 1; i++) {
+        const A = path[i - 1], B = path[i], C = path[i + 1], la = len(A, B), lc = len(B, C);
+        const rr = Math.max(0, Math.min(r, la / 2, i === path.length - 2 ? lc - HEAD_RUN : lc / 2));
+        if (rr < 1) { out.push(B); continue; }
+        const P = [B[0] + (A[0] - B[0]) * rr / la, B[1] + (A[1] - B[1]) * rr / la], Q = [B[0] + (C[0] - B[0]) * rr / lc, B[1] + (C[1] - B[1]) * rr / lc];
+        for (let k = 0; k <= 8; k++) {
+            const t = k / 8, u = 1 - t;
+            out.push([u * u * P[0] + 2 * u * t * B[0] + t * t * Q[0], u * u * P[1] + 2 * u * t * B[1] + t * t * Q[1]]);
+        }
+    }
+    out.push(path[path.length - 1]);
+    return out;
 }
 /** The bright path and its head: the head's tip at the path's end, along the last segment; the shaft runs into its base. */
 function arrowPath(cv, path, X, Y, s, W, col) {
@@ -205,7 +233,7 @@ function drawArrow(cv, m, cx, cy, s, col, dim) {
     const dims = () => (sh.dim || []).forEach((p) => stroke(cv, p, X, Y, W * 0.8, dim));
     // an underpass: the bright road first, broken where the dim road passes over it
     if (!sh.cut) dims();
-    arrowPath(cv, sh.path, X, Y, s, W, col);
+    arrowPath(cv, rounded(sh.path, sh.round), X, Y, s, W, col);
     if (sh.cut) { cv.fillRect(cx + sh.cut[0] * s, cy + sh.cut[1] * s, sh.cut[2] * s, sh.cut[3] * s, [0, 0, 0, 255]); dims(); }
 }
 
@@ -219,7 +247,11 @@ function drawArrow(cv, m, cx, cy, s, col, dim) {
 const RB_IN = 42;            // the way in: degrees round from the bottom, on the drive side
 const RB_SHARP = 67;         // exits closer than this round the island (a sharp first exit): in from the other side
 const RB_MIN = 30;           // the shortest way round drawn, degrees
-const RB_BACK = 30;          // exits within this of the bottom again (a U-turn): out straight down beside the way in
+const RB_BACK = 30;           // exits within this of the bottom again (a U-turn): out straight down beside the way in
+const RB_R = 17;             // the ring's middle; the ring is 8 wide (RB_R - 4 .. RB_R + 4)
+const RB_SEEN = 10;          // how far the way in and the way out's shaft stick out past the ring (2026-11-10 drive)
+const RB_HEAD_S = 0.6;       // the head's scale at a roundabout (its length: 20 x this)
+const RB_FIT = 38;           // the furthest the tip may reach from the box's middle; the ring moves back to keep it
 /**
  * How the roundabout is drawn for m: { tIn, tOut, back } in degrees travelled round the island from the bottom
  * (the true way in), and back: a U-turn drawn as two strokes side by side. Exported for the tests.
@@ -233,21 +265,42 @@ function roundaboutPlan(m) {
     if (d < RB_SHARP) return { dir: dir, tIn: -15, tOut: Math.max(d, RB_MIN - 15), back: false };
     return { dir: dir, tIn: RB_IN, tOut: Math.max(d, RB_IN + RB_MIN), back: false };
 }
-function drawRoundabout(cv, m, cx, cy, s, col, dim) {
-    const R = 16, oy = -2, W = 9 * s;
-    const X = (p) => cx + p[0] * s, Y = (p) => cy + p[1] * s;
-    cv.arc(cx, cy + oy * s, (R - 4) * s, (R + 4) * s, 0, 360, dim);
+// the ring big and low in the box, so the way in is short and the exit's number big (2026-11-10 drive)
+/**
+ * Where the roundabout's parts go, in the arrow box's units (box -40..40, y down): { c: the ring's middle, R, path
+ * (the bright way in, round and out), tip }. The way in sticks out RB_SEEN past the ring, round end included; the
+ * way out's shaft as far, then its head. The ring sits a little low, and moves back from a long exit so the tip
+ * stays inside the box. Exported for the tests.
+ */
+function roundaboutGeom(m) {
+    const R = RB_R, OUT = R + 4, CAP = 4.5, HEAD = 20 * RB_HEAD_S;
     const P = roundaboutPlan(m), ang = (t) => 180 + P.dir * t;      // drawing angle (anticlockwise from straight on)
-    const pt = (deg, r) => { const t = deg * Math.PI / 180; return [-Math.sin(t) * r, oy - Math.cos(t) * r]; };
-    const path = [[pt(ang(P.tIn), R)[0], 40], pt(ang(P.tIn), R)];
+    const dirOf = (deg) => { const t = deg * Math.PI / 180; return [-Math.sin(t), -Math.cos(t)]; };
+    const reach = OUT + RB_SEEN + HEAD;
+    let c = [0, 3];
+    if (!P.back) {
+        const d = dirOf(ang(P.tOut)), over = Math.max(0, (c[0] * d[0] + c[1] * d[1]) + reach - RB_FIT);
+        c = [c[0] - d[0] * over, c[1] - d[1] * over];
+    }
+    const pt = (deg, r) => { const d = dirOf(deg); return [c[0] + d[0] * r, c[1] + d[1] * r]; };
+    const IN = pt(ang(P.tIn), R);
+    // the way in ends RB_SEEN (with its round end) below the ring's outside edge where it meets it
+    const dx = IN[0] - c[0], edgeY = c[1] + Math.sqrt(Math.max(0, OUT * OUT - dx * dx)), inEnd = edgeY + RB_SEEN - CAP;
+    const path = [[IN[0], inEnd], IN];
     const n = Math.max(2, Math.ceil((P.tOut - P.tIn) / 12));
     for (let i = 1; i <= n; i++) path.push(pt(ang(P.tIn + (P.tOut - P.tIn) * i / n), R));
-    // out: a spoke long enough that the head sits clear of the ring; a U-turn: straight down beside the way in
+    // out: the shaft as long as the way in, then the head; a U-turn: straight down beside the way in, as far
     const end = pt(ang(P.tOut), R);
-    if (P.back) path.push([end[0], end[1] + 4], [end[0], 40]);
-    else path.push(pt(ang(P.tOut), R + 5), pt(ang(P.tOut), R + 22));
-    arrowPath(cv, path, X, Y, s * 0.7, W, col);
-    if (isNum(m.exit) && s >= 0.5) cv.text(String(m.exit), cx, cy + (oy + 5.5) * s, 15 * s, col, { align: 'center', font: 'bold', literal: true });
+    if (P.back) path.push([end[0], end[1] + 4], [end[0], inEnd]);
+    else path.push(pt(ang(P.tOut), R + 5), pt(ang(P.tOut), reach));
+    return { c: c, R: R, path: path, tip: path[path.length - 1], back: P.back };
+}
+function drawRoundabout(cv, m, cx, cy, s, col, dim) {
+    const G = roundaboutGeom(m), W = 9 * s;
+    const X = (p) => cx + p[0] * s, Y = (p) => cy + p[1] * s;
+    cv.arc(X(G.c), Y(G.c), (G.R - 4) * s, (G.R + 4) * s, 0, 360, dim);
+    arrowPath(cv, G.path, X, Y, s * RB_HEAD_S, W, col);
+    if (isNum(m.exit) && s >= 0.5) cv.text(String(m.exit), X(G.c), Y(G.c) + 6.5 * s, 18 * s, col, { align: 'center', font: 'bold', literal: true });
 }
 
 /** Arrival: a chequered flag; LEFT / RIGHT: a small arrow on the ground towards that side (CENTER, NOT_DIGITIZED: none). */
@@ -460,4 +513,4 @@ const TURN_DIRECTIONS = ['STRAIGHT_ON', 'SLIGHT_LEFT', 'LEFT', 'HARD_LEFT', 'UTU
 const SAMPLE = { kind: 'turn', dir: 'STRAIGHT_ON', dist: '700', unit: 'm', road: 'Example Road',
         lanes: { lanes: [{ follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'NONE', others: ['RIGHT'], hi: false, info: 'NONE' }], rec: 1, markers: ['SOLID', 'DASHED', 'DASHED', 'SOLID'] } };
 
-module.exports = { gapText, roundaboutPlan, laneWindow, HEAD_RUN, drawLaneArrows, drawNav, drawArrow, navKey, foldText, shapeOf, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };
+module.exports = { gapText, roundaboutPlan, roundaboutGeom, laneWindow, HEAD_RUN, drawLaneArrows, drawNav, drawArrow, navKey, foldText, shapeOf, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };

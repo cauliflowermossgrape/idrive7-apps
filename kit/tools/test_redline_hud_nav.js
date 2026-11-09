@@ -51,8 +51,17 @@ Object.keys(C.SAMPLES).forEach((k) => {
 const arrowBox = (m) => { const c = new Canvas(N.NW, N.NH), b = N.drawNav(c, m, { palette: 'colour' }); return { c: c, x0: b.x }; };
 const side = (m) => { const a = arrowBox(m); return lit(a.c, a.x0, a.x0 + 68).cx - (a.x0 + 34); };
 // (hard turns: their stem stands on the other side; where they point is checked below)
-['LEFT', 'SLIGHT_LEFT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) < -3, d + ': the arrow leans left (' + side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }).toFixed(1) + ')'));
-['RIGHT', 'SLIGHT_RIGHT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) > 3, d + ': the arrow leans right'));
+['SLIGHT_LEFT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) < -3, d + ': the arrow leans left (' + side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }).toFixed(1) + ')'));
+['SLIGHT_RIGHT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) > 3, d + ': the arrow leans right'));
+// a plain turn: its stem stands a little to the other side, its long arm reaches out to the turn's side (2026-11-10 drive)
+{
+    const reach = (d) => { const a = arrowBox({ kind: 'turn', dir: d, dist: '100', unit: 'm' }); return { l: lit(a.c, a.x0, a.x0 + 14).white, r: lit(a.c, a.x0 + 54, a.x0 + 68).white }; };
+    const L = reach('LEFT'), R = reach('RIGHT');
+    ok(L.l > 60 && L.r === 0, 'LEFT: the arm reaches out to the left (' + L.l + ' / ' + L.r + ')');
+    ok(R.r > 60 && R.l === 0, 'RIGHT: the arm reaches out to the right (' + R.l + ' / ' + R.r + ')');
+    const s = N.shapeOf({ kind: 'turn', dir: 'RIGHT' }).path, arm = s[2][0] - s[1][0];
+    ok(arm >= 44, 'a plain turn arm is long (' + arm + ')');
+}
 ok(Math.abs(side({ kind: 'turn', dir: 'STRAIGHT_ON', dist: '100', unit: 'm' })) < 2, 'straight on: centred');
 ok(side({ kind: 'branch', dir: 'BRANCH_LEFT', dist: '1', unit: 'km' }) < -3 && side({ kind: 'branch', dir: 'HIGHWAY_OUT_RIGHT', dist: '1', unit: 'km' }) > 3, 'exits lean to their side');
 // the roundabout seen on the drive (left-hand traffic, driveDirection LEFT): exit 1 at 307, i.e. 53 degrees left
@@ -178,12 +187,21 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
             return;
         }
         // the head where the plan says the exit leaves (drawing angle: anticlockwise from straight on)
-        const t = (180 + P.dir * P.tOut) * Math.PI / 180, tx = Math.round(50 - Math.sin(t) * 36), ty = Math.round(48 - Math.cos(t) * 36);
+        const G = N.roundaboutGeom(m), gx = G.tip[0] - G.c[0], gy = G.tip[1] - G.c[1], gl = Math.sqrt(gx * gx + gy * gy);
+        const tx = Math.round(50 + G.tip[0] - gx / gl * 5), ty = Math.round(50 + G.tip[1] - gy / gl * 5);
+        ok(Math.abs(G.tip[0]) <= 38.5 && Math.abs(G.tip[1]) <= 38.5, tag + ': the tip inside the box (' + G.tip.map((v) => v.toFixed(1)).join(', ') + ')');
         const near = lit(c, tx - 7, tx + 8, Math.max(0, ty - 7), Math.min(100, ty + 8)).white;
         ok(near > 15, tag + ': the head out there (' + near + ' px)');
         // the exit drawn within 30 degrees of the car's angle (a sharp first exit is pushed out at most that far)
         const want = (360 - a) % 360, got = ((180 + P.dir * P.tOut) % 360 + 360) % 360, off = Math.min(Math.abs(want - got), 360 - Math.abs(want - got));
         ok(off <= 30, tag + ': drawn ' + off + ' degrees from the car\'s angle');
+    });
+    // the way in and the way out's shaft stick out past the ring the same (2026-11-10 drive)
+    [0, 90, 270, 307].forEach((a) => {
+        const G = N.roundaboutGeom({ exitAngle: a, side: 'left' }), O = G.R + 4, IN = G.path[1], dx = IN[0] - G.c[0];
+        const seenIn = G.path[0][1] + 4.5 - (G.c[1] + Math.sqrt(O * O - dx * dx));
+        const seenOut = Math.sqrt(Math.pow(G.tip[0] - G.c[0], 2) + Math.pow(G.tip[1] - G.c[1], 2)) - 12 - O;
+        ok(Math.abs(seenIn - seenOut) < 0.5, 'roundabout exit at ' + a + ': in and out stick out alike (' + seenIn.toFixed(1) + ' / ' + seenOut.toFixed(1) + ')');
     });
     // a sharp first exit (left traffic: back to the left, e.g. 210) goes a short way round, not a lap (2026-11-09 review)
     [195, 210, 225].forEach((a) => { const P = N.roundaboutPlan({ exitAngle: a, side: 'left' }); ok(!P.back && P.tOut - P.tIn <= 90, 'left traffic, exit at ' + a + ': a short way round (' + (P.tOut - P.tIn) + ' degrees)'); });
