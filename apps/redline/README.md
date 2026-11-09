@@ -288,15 +288,22 @@ position don't move it.
     on), motorway entry (left, right, straight on), over- and underpass;
   - the exact junction shape (`detailedGeometry`, 31) when the car sends one: exit taken or passed, an exit that
     forks again, two- and three-way forks with the leg taken (the drive only sent `UNDEFINED`);
-  - roundabouts: the way in, round (anticlockwise with the island on the left, clockwise on the right) and out at
-    the exit's angle (from its number when the car gives none), the number inside; U-turn exits too;
+  - roundabouts: the way in, round and out at the exit's angle, the number inside. The car's `driveDirection` is
+    the traffic side: `LEFT` (the drive, in Australia) goes round clockwise, `RIGHT` anticlockwise. Its
+    `exitAngle` is read as degrees clockwise from straight on (the drive's exit 1 at 307 = 53° left, where a
+    first exit is in left-hand traffic); without one, from the exit's number. Coming back the way you came (about
+    180°): in on the traffic side and out beside it. Right-hand traffic hasn't been seen on a car yet;
   - keep left / right along the main road, lane change, the destination flag (with a pointer when it's on the left
     or right), a stopover pin with its number, a ferry, a car train;
   - not turns, and never shown in place of the next one: tunnels, borders, toll gates, speed cameras, dangerous
     curves, school zones, traffic, points of interest, placeholders. A kind newer than the catalog: a dot.
 - **Distance** as the car formats it (`450 m`, `4.7 km`, `0.3 mi`); under it the **street** (accents dropped: the
-  HUD's fonts are ASCII), or the **lanes** when there are some: in a lane to be in, the arrow to take is bright;
-  everything else is dim. Right-aligned, so it hugs the corner.
+  HUD's fonts are ASCII), or the **lanes** when there are some. Lanes are drawn like road markings, with thinner
+  lines than the big arrow: one stem per lane, turns leaving low and straight on running to the top, so a
+  straight-and-right lane keeps both heads apart. The arrows to take (`directionsToFollow`, which can be several) are
+  bright in a lane to be in; everything else is dim. A blocked lane gets a cross; "more lanes than shown"
+  (`ELLIPSIS`) three dots; the lines between lanes are solid or dashed as the car says. Bus, HOV, bike and toll lanes
+  aren't marked yet. Right-aligned, so it hugs the corner.
 - **Where it comes from:** BMW's guidance service, read-only, the same way for CarPlay, Android Auto and BMW's own
   navigation: the route's next events (`GuidanceEventList.queryContent`, asked once a second while a route runs),
   the lanes (`currentLaneGuiding`) and, for BMW's navigation, `conclusiveDart`. Proven on a G21 with CarPlay /

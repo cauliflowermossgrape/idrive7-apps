@@ -140,12 +140,17 @@ function shapeOf(m) {
     }
 }
 
-/** The exit's angle (degrees anticlockwise from straight on) from its number when the car gives none. */
+/**
+ * The exit's direction for drawing: degrees ANTICLOCKWISE from straight on (90: left).
+ * The car's exitAngle is read as degrees CLOCKWISE from straight on: the drive (left-hand traffic, Australia)
+ * had exit 1 at 307, i.e. 53 degrees left, where a first exit is in clockwise roundabouts; it's also how a
+ * CarPlay angle of -53 wraps into 0..359. Not yet seen: a roundabout in right-hand traffic.
+ * No angle: from the exit's number, a four-way roundabout (left traffic: left first; right traffic: right first).
+ */
 function exitAngleOf(m) {
-    if (isNum(m.exitAngle)) return m.exitAngle;
+    if (isNum(m.exitAngle)) return ((360 - m.exitAngle) % 360 + 360) % 360;
     const n = isNum(m.exit) && m.exit > 0 ? m.exit : 2;
-    // a four-way roundabout: right first with the island on the left, left first with it on the right
-    return m.side === 'right' ? ((90 - 90 * (n - 1)) % 360 + 360) % 360 : (270 + 90 * (n - 1)) % 360;
+    return m.side === 'left' ? ((90 - 90 * (n - 1)) % 360 + 360) % 360 : (270 + 90 * (n - 1)) % 360;
 }
 
 /** A polyline with round joins and ends. */
@@ -188,8 +193,8 @@ function drawArrow(cv, m, cx, cy, s, col, dim) {
 
 /**
  * The roundabout: the ring dim; one bright path in from below, round the island's way and out at the exit's
- * angle, with the head; the exit's number in the middle. side 'left' (island on the left, right-hand traffic):
- * anticlockwise; 'right': clockwise.
+ * angle, with the head; the exit's number in the middle. side: the traffic side (the car's driveDirection):
+ * 'left' (left-hand traffic, the drive): clockwise; 'right': anticlockwise.
  * Back the way it came (a U-turn, exit at about 180): the way in comes up on the drive side of the bottom and the
  * way out goes straight down beside it, two strokes apart, not one on the other (2026-11-09 review).
  */
@@ -199,7 +204,7 @@ function drawRoundabout(cv, m, cx, cy, s, col, dim) {
     const R = 16, oy = -2, W = 9 * s;
     const X = (p) => cx + p[0] * s, Y = (p) => cy + p[1] * s;
     cv.arc(cx, cy + oy * s, (R - 4) * s, (R + 4) * s, 0, 360, dim);
-    const dir = m.side === 'right' ? -1 : 1;          // +1: angles grow (anticlockwise on the map)
+    const dir = m.side === 'left' ? -1 : 1;           // +1: angles grow (anticlockwise on the map); left traffic: clockwise
     const inA = 180 + dir * RB_IN;
     let a = exitAngleOf(m);
     // an exit in the way in's place: just past the bottom on the other side
@@ -259,13 +264,50 @@ function drawTransport(cv, m, cx, cy, s, col, dim) {
     });
 }
 
-/**
- * The lanes: one cell per lane, each with its arrows (the one to take bright in a highlighted lane, the others
- * dim), the lines between them. Returns the width drawn (0: none).
+/*
+ * The lanes: one cell per lane, the lines between them (SOLID / DASHED, from the car). Each lane's arrows are
+ * lane glyphs, not the big turn arrows: one stem from the bottom shared by all of a lane's arrows, a turn's arm
+ * leaving low, straight on running to the top, so a straight-and-right lane shows both heads well apart (with the
+ * big arrows the straight head sat just over the turn's arm: 2026-11-09 review). The arrows to take (in a lane to
+ * be in) bright, the others dim. BLOCKED: a dim cross; ELLIPSIS (more lanes than shown): three dots.
  */
-const LANE_W = 22, LANE_H = 32, LANES_MAX = 8;
+const LANE_W = 22, LANE_H = 32, LANES_MAX = 8, LANE_S = 0.4;
 /** The lanes' cell width for n lanes in at most maxW px. */
 const laneW = (n, maxW) => Math.min(LANE_W, maxW / Math.max(1, n));
+/** A lane glyph's path (box -40..40, right-handed; LEFT ones mirrored): the stem from the bottom, then the arm. */
+function lanePath(dir) {
+    const d = String(dir || ''), mir = SIDE(d);
+    if (/UTURN|U_TURN/.test(d)) {
+        // up the stem, over the top towards the side, back down beside it (UTURN_LEFT: on the left)
+        // ends above where a turn's arm leaves (y 22), so a turn-and-U-turn lane keeps them apart
+        const p = [[0, 36], [0, -14]];
+        for (let i = 1; i <= 8; i++) { const a = Math.PI - i * Math.PI / 8; p.push([7 + 7 * Math.cos(a), -14 - 7 * Math.sin(a)]); }
+        p.push([14, 4]);
+        return { path: p, mir: mir };
+    }
+    const deg = turnDeg(d);
+    if (deg === 0) return { path: [[0, 36], [0, -38]], mir: 1 };
+    if (deg === 45) return { path: [[0, 36], [0, 14], [22, -10]], mir: mir };
+    if (deg === 90) return { path: [[0, 36], [0, 22], [26, 22]], mir: mir };
+    return { path: [[0, 36], [0, -16], [24, 10]], mir: mir };          // hard: up, then back down to the side
+}
+/** One lane's arrows at cx, cy: dim ones first, the ones to take over them. */
+function drawLaneArrows(cv, lane, cx, cy, k, col, dim) {
+    // thinner than the big arrows (9 against 12): in a 22 px cell the big stroke looked heavy (2026-11-09 review)
+    const s = LANE_S * k, W = 9 * s;
+    const one = (d, c) => {
+        if (!d || d === 'NONE') return;
+        const g = lanePath(d), X = (p) => cx + p[0] * g.mir * s, Y = (p) => cy + p[1] * s;
+        // a smaller head than the big arrows' (in a 22 px cell), on the same stroke
+        arrowPath(cv, g.path, X, Y, s * 0.8, W, c);
+    };
+    if (lane.info === 'ELLIPSIS') { [-7, 0, 7].forEach((dx) => cv.circle(cx + dx * k, cy, 1.8 * k, dim)); return; }
+    const follows = lane.follows || (lane.follow && lane.follow !== 'NONE' ? [lane.follow] : []);
+    const blocked = lane.info === 'BLOCKED';
+    lane.others.forEach((d) => one(d, dim));
+    follows.forEach((d) => one(d, lane.hi && !blocked ? col : dim));
+    if (blocked) { const r = 7 * k; cv.line(cx - r, cy - r, cx + r, cy + r, 2.5 * k, col); cv.line(cx - r, cy + r, cx + r, cy - r, 2.5 * k, col); }
+}
 function drawLanes(cv, L, x, cy, w, col, dim) {
     if (!L || !L.lanes || !L.lanes.length) return 0;
     const n = Math.min(L.lanes.length, LANES_MAX), k = w / LANE_W, h = LANE_H, y0 = cy - h / 2;
@@ -274,11 +316,7 @@ function drawLanes(cv, L, x, cy, w, col, dim) {
         if (mk === 'SOLID') cv.line(lx, y0, lx, y0 + h, 1.5, dim);
         else for (let j = 0; j < 3; j++) cv.line(lx, y0 + j * h / 3 + 2, lx, y0 + j * h / 3 + h / 6 + 2, 1.5, dim);
     }
-    for (let i = 0; i < n; i++) {
-        const lane = L.lanes[i], lx = x + (i + 0.5) * w, s = 0.34 * k;
-        lane.others.forEach((d) => drawArrow(cv, { kind: 'turn', dir: d }, lx, cy, s, dim, dim));
-        if (lane.follow !== 'NONE') drawArrow(cv, { kind: 'turn', dir: lane.follow }, lx, cy, s, lane.hi ? col : dim, dim);
-    }
+    for (let i = 0; i < n; i++) drawLaneArrows(cv, L.lanes[i], x + (i + 0.5) * w, cy, Math.min(1, k), col, dim);
     return n * w;
 }
 
@@ -341,7 +379,7 @@ function drawNav(cv, m, opts) {
 /** Everything the picture depends on (the same key: the same picture). */
 function navKey(m, opts) {
     if (!m) return '';
-    const L = m.lanes ? m.lanes.lanes.map((l) => (l.hi ? '*' : '') + l.follow + '/' + l.others.join('+')).join(',') + '|' + (m.lanes.markers || []).join(',') : '';
+    const L = m.lanes ? m.lanes.lanes.map((l) => (l.hi ? '*' : '') + (l.follows || [l.follow]).join('+') + '/' + l.others.join('+') + '/' + l.info).join(',') + '|' + (m.lanes.markers || []).join(',') : '';
     return [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.side, m.flag, m.stop, m.dist, m.unit, m.road, L, opts && opts.palette].join('|');
 }
 
@@ -398,4 +436,4 @@ const SAMPLES = {
         lanes: { lanes: [{ follow: 'NONE', others: ['LEFT'], hi: false, info: 'NONE' }, { follow: 'RIGHT', others: ['STRAIGHT_ON'], hi: true, info: 'NONE' }], rec: 1, markers: ['SOLID', 'DASHED', 'SOLID'] } },
 };
 
-module.exports = { HEAD_RUN, drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, geometryShape, exitAngleOf, SAMPLES, NW, NH, ALL_ARROWS, TURN_DIRECTIONS, BRANCH_TYPES, GEOMETRIES };
+module.exports = { HEAD_RUN, lanePath, drawLaneArrows, drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, geometryShape, exitAngleOf, SAMPLES, NW, NH, ALL_ARROWS, TURN_DIRECTIONS, BRANCH_TYPES, GEOMETRIES };

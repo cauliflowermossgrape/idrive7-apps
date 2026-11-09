@@ -78,7 +78,7 @@ eq(Object.keys(pats).sort(), [
     'NONE/STRAIGHT_ON *RIGHT/UTURN_RIGHT rec1',
 ].sort(), 'the drive\'s five lane pictures');
 const three = lanes.filter((l) => l && l.lanes.length === 3 && l.lanes[2].others[0] === 'RIGHT')[0];
-eq(three, { lanes: [{ follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'NONE', others: ['RIGHT'], hi: false, info: 'NONE' }],
+eq(three, { lanes: [{ follow: 'STRAIGHT_ON', follows: ['STRAIGHT_ON'], others: [], hi: true, info: 'NONE' }, { follow: 'STRAIGHT_ON', follows: ['STRAIGHT_ON'], others: [], hi: true, info: 'NONE' }, { follow: 'NONE', follows: [], others: ['RIGHT'], hi: false, info: 'NONE' }],
     rec: 1, markers: ['DASHED', 'DASHED', 'DASHED', 'DASHED'] }, '3 lanes: two straight on highlighted, the right one not');
 // BMW's and the phone's lane lines are the same data
 const phone = laneRows.filter((r) => r.src === 'phone'), bmw = laneRows.filter((r) => r.src === 'guidance');

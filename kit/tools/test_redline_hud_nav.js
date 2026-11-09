@@ -77,14 +77,17 @@ const side = (m) => { const a = arrowBox(m); return lit(a.c, a.x0, a.x0 + 68).cx
 ['RIGHT', 'SLIGHT_RIGHT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) > 3, d + ': the arrow leans right'));
 ok(Math.abs(side({ kind: 'turn', dir: 'STRAIGHT_ON', dist: '100', unit: 'm' })) < 2, 'straight on: centred');
 ok(side({ kind: 'branch', dir: 'BRANCH_LEFT', dist: '1', unit: 'km' }) < -3 && side({ kind: 'branch', dir: 'HIGHWAY_OUT_RIGHT', dist: '1', unit: 'km' }) > 3, 'exits lean to their side');
-// the roundabout seen on the drive: first exit at 307 degrees with the island on the left: out to the upper right
+// the roundabout seen on the drive (left-hand traffic, driveDirection LEFT): exit 1 at 307, i.e. 53 degrees left
+// of straight on (the car's angle is clockwise from straight on): out to the upper LEFT, as a first exit is there
 {
     const a = arrowBox(N.SAMPLES.roundabout), cx = a.x0 + 34;
     const ur = lit(a.c, cx + 12, cx + 34, 0, 26).white, ul = lit(a.c, cx - 34, cx - 12, 0, 26).white;
-    ok(ur > 20 && ul < 5, 'roundabout exit 1 at 307: the exit goes out upper right (' + ur + ' / ' + ul + ')');
+    ok(ul > 20 && ur < 5, 'roundabout exit 1 at 307: the exit goes out upper left (' + ul + ' / ' + ur + ')');
     const b = arrowBox(N.SAMPLES.roundabout3), bx = b.x0 + 34;
-    ok(lit(b.c, bx - 34, bx - 14, 18, 46).white > 20, 'roundabout exit 3 at 90: out to the left');
-    ok(N.exitAngleOf({ exit: 1, side: 'left' }) === 270 && N.exitAngleOf({ exit: 3, side: 'left' }) === 90 && N.exitAngleOf({ exit: 1, side: 'right' }) === 90, 'no angle from the car: from the exit\'s number');
+    ok(lit(b.c, bx + 14, bx + 34, 18, 46).white > 20, 'roundabout exit 3 at 90 (clockwise): out to the right');
+    // the car's clockwise angle as an anticlockwise one for drawing; without one, from the number (left traffic: left first)
+    ok(N.exitAngleOf({ exitAngle: 307, side: 'left' }) === 53 && N.exitAngleOf({ exitAngle: 90, side: 'left' }) === 270, 'the car\'s angle: clockwise from straight on');
+    ok(N.exitAngleOf({ exit: 1, side: 'left' }) === 90 && N.exitAngleOf({ exit: 3, side: 'left' }) === 270 && N.exitAngleOf({ exit: 1, side: 'right' }) === 270, 'no angle from the car: from the exit\'s number');
 }
 // lanes: under the distance, in the street's place; the highlighted lanes' arrows bright, the rest dim
 {
@@ -171,23 +174,65 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     });
     pairs.forEach((p) => { const d = mirrorDiff(p[0], p[1]); ok(d === 0, (p[0].geom || p[0].dir) + ' mirrors ' + (p[1].geom || p[1].dir) + ' exactly (' + d + ' px differ)'); });
     ok(pairs.length >= 20, pairs.length + ' left / right pairs checked');
-    // every roundabout exit, both traffic sides: the head leaves the ring at the exit's angle
+    // every roundabout exit (the car's angle: clockwise from straight on), both traffic sides: the head leaves there
     [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].forEach((a) => ['left', 'right'].forEach((sd) => {
         const c = new Canvas(100, 100);
         N.drawArrow(c, { kind: 'roundabout', exit: 1, exitAngle: a, side: sd }, 50, 50, 1, '#ffffff', [255, 255, 255, 89]);
         if (Math.abs(a - 180) <= 45) {
             // back the way it came: in on the drive side, out straight down on the other, two strokes with a gap
-            const inX = sd === 'left' ? 1 : -1;            // the way in: right of the middle with the island on the left
+            const inX = sd === 'left' ? -1 : 1;            // the way in: on the traffic side (left traffic: left of the middle)
             // the strokes stand about 10.7 px either side of the middle; the gap is between them, above the head
             const win = (x0, x1, y0, y1) => lit(c, Math.min(x0, x1), Math.max(x0, x1), y0, y1);
             const inS = win(50 + inX * 6, 50 + inX * 16, 70, 92), outS = win(50 - inX * 6, 50 - inX * 16, 70, 92), gap = win(48, 53, 68, 76);
-            ok(inS.white > 20 && outS.white > 20 && gap.white === 0, 'roundabout exit at ' + a + ' (island ' + sd + '): in and back out side by side, apart (' + inS.white + ', ' + outS.white + ', gap ' + gap.white + ')');
+            ok(inS.white > 20 && outS.white > 20 && gap.white === 0, 'roundabout exit at ' + a + ' (' + sd + '-hand traffic): in and back out side by side, apart (' + inS.white + ', ' + outS.white + ', gap ' + gap.white + ')');
             return;
         }
-        const t = a * Math.PI / 180, tx = Math.round(50 - Math.sin(t) * 38), ty = Math.round(48 - Math.cos(t) * 38);
+        const t = a * Math.PI / 180, tx = Math.round(50 + Math.sin(t) * 38), ty = Math.round(48 - Math.cos(t) * 38);
         const near = lit(c, tx - 7, tx + 8, Math.max(0, ty - 7), Math.min(100, ty + 8)).white;
-        ok(near > 15, 'roundabout exit at ' + a + ' (island ' + sd + '): the head out there (' + near + ' px)');
+        ok(near > 15, 'roundabout exit at ' + a + ' (' + sd + '-hand traffic): the head out there (' + near + ' px)');
     }));
+}
+
+// ---- lanes: their own glyphs, one stem, turns leaving low --------------------------------------------------------
+{
+    const W = '#ffffff', D = [89, 89, 89, 255];
+    const lane = (follows, others, hi, info) => ({ follow: follows[0] || 'NONE', follows: follows, others: others || [], hi: hi !== false, info: info || 'NONE' });
+    /** One lane cell at HUD size (22x36, the glyph at 11, 18); bright / dim pixel boxes. */
+    const cellOf = (l) => {
+        const c = new Canvas(22, 36);
+        N.drawLaneArrows(c, l, 11, 18, 1, W, D);
+        const box = (pred) => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1, n = 0; for (let y = 0; y < 36; y++) for (let x = 0; x < 22; x++) { const i = (y * 22 + x) * 4; if (c.d[i + 3] > 128 && pred(c.d[i])) { n++; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } } return { n: n, x0: x0, x1: x1, y0: y0, y1: y1 }; };
+        return { c: c, bright: box((r) => r > 200), dim: box((r) => r > 40 && r < 140), any: box(() => true) };
+    };
+    // each direction alone: inside its 22 px cell (the lines between lanes at its edges), not cut at top or bottom
+    N.TURN_DIRECTIONS.filter((d) => d !== 'NONE').forEach((d) => {
+        const b = cellOf(lane([d])).any;
+        ok(b.n > 20 && b.x0 >= 1 && b.x1 <= 20 && b.y0 >= 1 && b.y1 <= 34, 'lane ' + d + ': inside its cell (x ' + b.x0 + '..' + b.x1 + ', y ' + b.y0 + '..' + b.y1 + ')');
+    });
+    // straight and right (the review's case): the straight head at the top, the turn's arm low, well apart
+    const sr = cellOf(lane(['RIGHT'], ['STRAIGHT_ON']));
+    ok(sr.dim.y0 <= 4 && sr.bright.x1 >= 17, 'straight on (dim) to the top, the right turn (bright) out to the side');
+    let armTop = 99;
+    for (let y = 0; y < 36; y++) for (let x = 15; x < 22; x++) { const i = (y * 22 + x) * 4; if (sr.c.d[i + 3] > 128 && sr.c.d[i] > 200) armTop = Math.min(armTop, y); }
+    ok(armTop - sr.dim.y0 >= 12, 'the right turn\'s head well below the straight one\'s (' + armTop + ' against ' + sr.dim.y0 + ')');
+    // right and U-turn (the drive's lane): apart, but for the stem they share
+    const solo = (d) => { const c = new Canvas(22, 36); N.drawLaneArrows(c, lane([d]), 11, 18, 1, W, D); return c; };
+    const r1 = solo('RIGHT'), u1 = solo('UTURN_RIGHT');
+    let both = 0;
+    for (let y = 0; y < 36; y++) for (let x = 0; x < 22; x++) { if (Math.abs(x - 11) <= 3) continue; const i = (y * 22 + x) * 4; if (r1.d[i + 3] > 128 && u1.d[i + 3] > 128) both++; }
+    ok(both === 0, 'right turn and U-turn in one lane: apart but for their stem (' + both + ' px overlap)');
+    // thinner than the big arrows: the stem about 3-4 px at the HUD's size
+    let stem = 0;
+    for (let x = 0; x < 22; x++) if (solo('STRAIGHT_ON').d[(28 * 22 + x) * 4 + 3] > 128) stem++;
+    ok(stem >= 3 && stem <= 4, 'lane strokes thin: the stem ' + stem + ' px');
+    // several arrows to take (directionsToFollow): all bright
+    const two = cellOf(lane(['STRAIGHT_ON', 'RIGHT']));
+    ok(two.bright.y0 <= 4 && two.bright.x1 >= 17 && two.dim.n === 0, 'straight on and right both to take: both bright');
+    // a lane not for this route: dim only; blocked: a cross; more lanes than shown: three dots
+    ok(cellOf(lane([], ['RIGHT'], false)).bright.n === 0, 'a lane not for this route: dim');
+    const bl = cellOf(lane(['STRAIGHT_ON'], [], true, 'BLOCKED'));
+    ok(bl.bright.n > 15 && bl.dim.n > 15, 'a blocked lane: its arrow dim, a cross over it');
+    ok(cellOf(lane([], [], false, 'ELLIPSIS')).any.n > 6 && cellOf(lane([], [], false, 'ELLIPSIS')).bright.n === 0, 'more lanes than shown: dim dots');
 }
 
 // ---- the layer in hud.js -------------------------------------------------------------------------------------------

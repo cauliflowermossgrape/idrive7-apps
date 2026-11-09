@@ -23,7 +23,7 @@
  *         'branch' (dir: BranchType: BRANCH_LEFT, FORK_RIGHT, TRIPLE_FORK_STRAIGHT, HIGHWAY_OUT_RIGHT, OVERPASS...),
  *           both with geom: detailedGeometry (ManeuverGeometry: EXIT_RIGHT_TAKE_LEFT, THREE_WAY_FORK_TAKE_CENTER...)
  *           when the car gives one (null for UNDEFINED, the only value seen yet),
- *         'roundabout' (exit: the exit's number, exitAngle in degrees, side: 'left' / 'right' the island is on),
+ *         'roundabout' (exit: the exit's number, exitAngle as the car gives it, side: the traffic side 'left' / 'right'),
  *         'keep' (dir LEFT / RIGHT: along the main road), 'lanechange' (dir LEFT / RIGHT),
  *         'destination' (dir: LEFT / CENTER / RIGHT / NOT_DIGITIZED; flag false: a stopover, stop its number),
  *         'transport' (dir FERRY / CAR_TRAIN: onto a ferry or a car train),
@@ -112,7 +112,8 @@ function decodeEvent(e) {
         const n = Number(b.exitNumber), a = Number(b.exitAngle);
         m.exit = isFinite(n) && n > 0 ? Math.round(n) : null;
         m.exitAngle = isFinite(a) ? ((a % 360) + 360) % 360 : null;
-        // driveDirection: the side the island is on (LEFT: anticlockwise, right-hand traffic; seen: LEFT in Germany)
+        // driveDirection: the traffic side (LEFT: drive on the left, clockwise roundabouts; seen: LEFT on the drive, in
+        // Australia, with a lane for right turns and U-turns). exitAngle: degrees clockwise from straight on (hud-nav.js)
         m.side = str(b.driveDirection) === 'RIGHT' ? 'right' : 'left';
         break;
     }
@@ -179,9 +180,13 @@ function decodeLanes(v) {
     if (!isObj(row) || !Array.isArray(row.lanes) || !row.lanes.length) return null;
     const lanes = row.lanes.slice(0, 12).map((l) => {
         l = isObj(l) ? l : {};
-        const follow = str(l.directionToFollow) || 'NONE';
-        const others = (Array.isArray(l.otherDirections) ? l.otherDirections : []).map(str).filter((s) => s && s !== 'NONE' && s !== follow);
-        return { follow: follow, others: others, hi: l.isHighlighted === true, info: str(l.additionalLaneInfo) || 'NONE' };
+        // the arrows to take: directionsToFollow (a lane can be for straight on and right), else directionToFollow
+        const list = (a) => (Array.isArray(a) ? a : []).map(str).filter((s) => s && s !== 'NONE');
+        let follows = list(l.directionsToFollow);
+        const one = str(l.directionToFollow) || 'NONE';
+        if (one !== 'NONE' && follows.indexOf(one) < 0) follows = [one].concat(follows);
+        const others = list(l.otherDirections).filter((s) => follows.indexOf(s) < 0);
+        return { follow: follows[0] || 'NONE', follows: follows, others: others, hi: l.isHighlighted === true, info: str(l.additionalLaneInfo) || 'NONE' };
     });
     const rec = Number(row.recommendedCarPositionLaneIndex);
     return {
