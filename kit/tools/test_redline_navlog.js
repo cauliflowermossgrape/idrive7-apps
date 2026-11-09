@@ -59,6 +59,15 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
     ok((text.match(/ events = /g) || []).length === 1, 'the same reply again is not logged again');
     ok(!/Example Street/.test(text) && /"text":"<14 chars>"/.test(text), 'street names logged as their length only');
     ok(logged.some((m) => /probe on/.test(m)), 'one line in redline.log');
+    // the HUD or its directions off (wanted false): nothing written to flash, the values still reach the directions
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-nav-off-')), tapped = [];
+    const off = NavLog.start({ signals: signals, dataDir: dir2 }, { info() {}, warn() {} }, (src, field) => tapped.push(src + '.' + field), { wanted: () => false });
+    await sleep(50);
+    H.Guidance.guidanceState('ACTIVE'); H.Guidance.conclusiveDart(dart(300));
+    await sleep(50);
+    ok(!fs.existsSync(path.join(dir2, 'redline-nav.log')), 'HUD or directions off: no nav log written');
+    ok(tapped.indexOf('guidance.guidanceState') >= 0 && tapped.indexOf('guidance.conclusiveDart') >= 0, 'HUD or directions off: the values still reach the directions (' + tapped.join(',') + ')');
+    off.stop();
     // no signals (the preview): nothing breaks
     const q = NavLog.start({ dataDir: dir }, null);
     ok(typeof q.stop === 'function' && typeof q.write === 'function', 'no signals: a quiet stub');

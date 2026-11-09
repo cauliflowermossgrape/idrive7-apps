@@ -102,8 +102,11 @@ function start(ctx, log, tap, opts) {
     // whether a route runs: the directions' own answer when given (it ends a route the provider alone keeps open)
     const routingNow = opts && typeof opts.routing === 'function' ? opts.routing : () => routingOf(route);
     const file = path.join(ctx.dataDir || '.', 'redline-nav.log');
+    // written only while wanted too: with the HUD or its directions off nothing goes to flash (the values still
+    // reach the directions through tap); before 2.0.1 it wrote every route, ~2 MB an hour with the HUD off
     const write = (msg) => {
         try {
+            if (!wanted()) return;
             const st = fs.existsSync(file) ? fs.statSync(file) : null;
             if (st && st.size > MAX_BYTES) fs.renameSync(file, file + '.1');
             fs.appendFileSync(file, new Date().toISOString() + ' nav: ' + msg + '\n');

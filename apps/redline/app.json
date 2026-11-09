@@ -190,7 +190,7 @@
     {"key": "hudShake", "label": "Shake on the limiter", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},
     {"key": "hudTyreWidget", "label": "Tyre widget (in the directions' corner; the directions come first)", "type": "choice", "default": "low", "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "options": [["low", "When a tyre is low"], ["always", "Always"], ["off", "Off"]], "group": "HUD: tyres"},
     {"key": "hudTyreCar", "label": "Tyre widget: the car", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
-    {"key": "hudTyreTarget", "label": "Tyre widget: each tyre's target", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
+    {"key": "hudTyreTarget", "label": "Tyre widget: each tyre's target", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
     {"key": "hudTyreTemp", "label": "Tyre widget: tyre temperatures", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
     {"key": "hudTyresSeen", "label": "This car sends tyre pressures (found by the app)", "type": "bool", "default": false, "hidden": true},
     {"key": "hudSize", "label": "Size", "type": "number", "unit": "%", "default": 100, "when": {"hud": ["on", "test"], "hudAll": [true]}, "steps": [70, 80, 90, 100, 110, 120, 130], "group": "HUD: place"},

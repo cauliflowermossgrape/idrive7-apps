@@ -263,7 +263,8 @@ below list them by what they do.
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
 | Tyres | off (default) / on: TYRES over the four pressures in a 2x2 block (front over rear), each coloured against its target; on Arc, Ramp and Dial the worst tyre (TYRE RR 2.1) ([Tyres](#tyres)) |
 | Tyre widget | when a tyre is low (default) / always / off: the four tyres in the directions' corner, when they have no turn ([Tyres](#tyres)) |
-| Tyre widget: the car, each tyre's target, tyre temperatures | on (default) / off each |
+| Tyre widget: the car, tyre temperatures | on (default) / off each |
+| Tyre widget: each tyre's target | off (default) / on: the target pressure small after each pressure, as "/2.5" |
 | 12 V battery charge, 12 V battery voltage | off (default) / on each, on every car ([Electrical](#electrical)) |
 | Hybrid battery charge, power, temperature, voltage | off (default) / on each; listed only on a plug-in hybrid ([Electrical](#electrical)) |
 | Temperatures | only when cold or hot / always |
@@ -542,9 +543,10 @@ tyre is green it is a plain readout, so with more than four on it gives way like
 **The tyre widget** is a second small picture beside the tach: the directions' (200×76, the glass's
 bottom right corner, the same layer and place). The directions come first: while they have a turn to
 show, the corner is theirs, and the tyres come back when it's done. In it: the car from above with the
-unit inside, a tyre at each corner, and beside each its pressure big with "/2.5" (its target) small after
-it, then the tyre's temperature under it. Each part can be switched off (the car, the targets, the
-temperatures); with no temperatures the pressures are bigger. Text that wouldn't fit its room (kPa,
+unit inside, a tyre at each corner, and beside each its pressure big, then the tyre's temperature under
+it. The colour says how each tyre is against its target, so the target itself is off by default; switched
+on (*Target*), it shows small after the pressure as "/2.5". The car and the temperatures can be switched
+off too; with no temperatures the pressures are bigger. Text that wouldn't fit its room (kPa,
 *Clearer* labels) is drawn smaller. It uses the HUD colours.
 
 It shows **when a tyre is low** (the default: red, under 85 % of its target; it goes when the tyre is

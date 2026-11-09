@@ -481,7 +481,7 @@ const labels = (items) => items.map((r) => r.label).join(',');
     // the widget (200 x 76, the directions' size): every part on and off, every unit, Normal and Clearer, °C and °F
     const W0 = HudTyres.widgetOf(settingsOf({})), WW = HudTyres.TW, WH = HudTyres.TH;
     ok(WW === 200 && WH === 76, 'the widget is the size of the directions');
-    ok(W0.show === 'low' && W0.car && W0.target && W0.temp && W0.unit === 'bar', 'widget defaults: when a tyre is low, every part, bar');
+    ok(W0.show === 'low' && W0.car && !W0.target && W0.temp && W0.unit === 'bar', 'widget defaults: when a tyre is low, the car and temperatures, no target, bar');
     const widget = (w, ty, pal) => { const cv = new Canvas(WW, WH); HudTyres.drawWidget(cv, ty, w, pal || 'colour'); return cv; };
     const litW = (cv, x0, y0, x1, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (cv.d[(y * WW + x) * 4 + 3]) n++; return n; };
     [false, true].forEach((car) => [false, true].forEach((tg) => [false, true].forEach((tp) => ['bar', 'psi', 'kpa'].forEach((un) => [false, true].forEach((cl) => {
@@ -494,7 +494,7 @@ const labels = (items) => items.map((r) => r.label).join(',');
     })))));
     // each part shows: switching it off changes the picture
     const wb = (o) => Buffer.from(widget(Object.assign({}, W0, o), v).d), base0 = wb({});
-    [['car', false], ['target', false], ['temp', false], ['unit', 'psi'], ['clear', true], ['fahrenheit', true]].forEach((c) => ok(Buffer.compare(wb({ [c[0]]: c[1] }), base0) !== 0, 'widget: ' + c[0] + ' changes it'));
+    [['car', false], ['target', true], ['temp', false], ['unit', 'psi'], ['clear', true], ['fahrenheit', true]].forEach((c) => ok(Buffer.compare(wb({ [c[0]]: c[1] }), base0) !== 0, 'widget: ' + c[0] + ' changes it'));
     ok(Buffer.compare(Buffer.from(widget(W0, v, 'amber').d), base0) !== 0, 'widget: the HUD colours apply');
     ok(litW(widget(W0, null), 0, 0, WW, WH) === 0, 'widget: nothing drawn without tyres');
     // when it shows: low (default) only while a tyre is red, always, off never; never without data

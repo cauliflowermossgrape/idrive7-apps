@@ -7,13 +7,13 @@
  * unit inside it, a tyre at each corner, and beside each its pressure (big, coloured against its target:
  * tyres.js toneOf) with "/2.5" (the target) small after it, then the tyre's temperature under it.
  *
- *    2.4/2.5 ▮┌──┐▮ 2.4/2.5
+ *        2.4 ▮┌──┐▮ 2.4          (with Target on: 2.4/2.5)
  *        59°  │bar│  61°
- *    2.5/2.7 ▮└──┘▮ 2.1/2.7
+ *        2.5 ▮└──┘▮ 2.1
  *        69°         70°
  *
- * Every part can be switched off (the car, the targets, the temperatures): with fewer parts the pressures are
- * drawn bigger. Text is fitted to its room, so kPa and Clearer labels never run into the car. A picture, never a
+ * The target is off by default (the colour already says how each tyre is against it); the car and the
+ * temperatures can be switched off too, and without temperatures the pressures are drawn bigger. Text is fitted to its room, so kPa and Clearer labels never run into the car. A picture, never a
  * shader. Black is see-through on the glass.
  */
 const { withAlpha } = require('./kit/canvas');
@@ -36,7 +36,7 @@ function widgetOf(settings) {
     const s = settings.get('hudTyreWidget');
     return {
         show: s === 'always' || s === 'off' ? s : 'low',
-        car: settings.get('hudTyreCar') !== false, target: settings.get('hudTyreTarget') !== false, temp: settings.get('hudTyreTemp') !== false,
+        car: settings.get('hudTyreCar') !== false, target: settings.get('hudTyreTarget') === true, temp: settings.get('hudTyreTemp') !== false,
         unit: ['psi', 'kpa'].indexOf(settings.get('hudTyreUnit')) >= 0 ? settings.get('hudTyreUnit') : 'bar',
         fahrenheit: settings.get('hudTempUnit') === 'f', clear: settings.get('hudLabels') === 'clear',
     };
