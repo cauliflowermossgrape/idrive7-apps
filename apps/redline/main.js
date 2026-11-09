@@ -27,6 +27,7 @@
  *                upshift rpm for each gear
  *   gearbox.js   gearbox oil temperature for the HUD (EGS over read-only UDS, or BasicDataSet)
  *   knock.js     knock retard from the engine unit for the HUD's knock warning and readout (read-only UDS)
+ *   electrical.js  12 V and hybrid battery readouts for the HUD (car signals and read-only UDS)
  *   cluster_render_client.js  vendored unchanged from robertnisipeanu/idrive-apps (MPL-2.0)
  *
  * The limits, first that has one:
@@ -51,6 +52,7 @@ const Hud = require('./hud');
 const HudDraw = require('./hud-draw');
 const GearboxTemp = require('./gearbox');
 const KnockWatch = require('./knock');
+const Electrical = require('./electrical');
 const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
@@ -100,6 +102,8 @@ mgu.run({
         const gearbox = new GearboxTemp(ctx);
         // knock from the engine unit, on the gearbox reader's diagnostics link; polled only while the HUD wants it
         const knock = new KnockWatch(ctx, () => gearbox.diag());
+        // 12 V and hybrid battery from the car (signals, and read-only UDS on the same link); hybrid ones only on a hybrid
+        const electrical = new Electrical(ctx, () => gearbox.diag());
         // engine torque for the shift map, with its time: put() keeps the last value when the signal
         // goes invalid, so a stale torque would be paired with new rpm and inflate the curve
         const torque = { v: null, t: 0 };
@@ -152,7 +156,7 @@ mgu.run({
                 if (gearMode.seen.indexOf(String(raw)) < 0 && gearMode.seen.length < 12) { gearMode.seen.push(String(raw)); log.info('gearbox programme: ' + JSON.stringify(raw) + ' -> ' + gearMode.v); }
             },
         } };
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), torqueWatch));
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), electrical.handlers(), torqueWatch));
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
@@ -524,7 +528,7 @@ mgu.run({
         const TILE_K = 0.45;            // the tiles' thumbnails: the HUD at 45 %
         // profile: the setup being edited, 'sport' or 'comfort' (on opening the page: the driving mode's own);
         // P: that profile as settings (Hud.profileView), so every control on the page reads and changes it
-        const studio = { cue: {}, t0: Date.now(), panel: 'look', profile: 'sport', drawnAt: 0 };
+        const studio = { cue: {}, t0: Date.now(), panel: 'look', profile: 'sport', drawnAt: 0, readouts: 'engine' };
         const studioP = () => Hud.profileView(settings, studio.profile);
         /** The preview's frame at now: what frameData would give the HUD for the scripted drive. */
         function studioFrame(now) {
@@ -626,7 +630,8 @@ mgu.run({
                 cv.target(tx - 16, 362, w + 32, 40, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 48;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside,
+                o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvTemp, o.hvVolt, o.eShare].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
             const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(P)) : {};
@@ -653,8 +658,26 @@ mgu.run({
                     ['Gear mode', o.mode, () => P.set('hudShowMode', !o.mode)],
                 ]);
                 choiceRow(cv, t, R2, 'UNLIT', 'hudUnlit', o.dim ? 'dim' : 'hidden', [['dim', 'Dim'], ['hidden', 'Hidden']], o.style === 'vfd', RX, 150);
+            } else if (studio.panel === 'readouts' && studio.readouts === 'electric') {
+                // the 12 V on every car; the hybrid battery only once the car has shown one (never on petrol / diesel)
+                switches(cv, t, R1, '12 V', [
+                    ['Charge', o.soc12, () => P.set('hudShowBattSoc', !o.soc12)],
+                    ['Voltage', o.volt12, () => P.set('hudShowBattVolt', !o.volt12)],
+                ]);
+                if (electrical.hybrid()) {
+                    const on = (k) => P.get(k) === true;
+                    switches(cv, t, R2, 'HYBRID', [
+                        ['Charge', o.hvSoc, () => P.set('hudShowHvSoc', !on('hudShowHvSoc'))],
+                        ['Power', o.hvPower, () => P.set('hudShowHvPower', !on('hudShowHvPower'))],
+                        ['Temp', o.hvTemp, () => P.set('hudShowHvTemp', !on('hudShowHvTemp'))],
+                        ['Voltage', o.hvVolt, () => P.set('hudShowHvVolt', !on('hudShowHvVolt'))],
+                        ['Electric share', o.eShare, () => P.set('hudShowEShare', !on('hudShowEShare'))],
+                    ]);
+                }
+                readoutsPick(cv, t);
             } else if (studio.panel === 'readouts') {
                 // the numbers under the bar, in this order; up to four show
+                readoutsPick(cv, t);
                 switches(cv, t, R1, 'ENGINE', [
                     ['RPM', o.rpm, () => P.set('hudShowRpm', !o.rpm)],
                     ['Boost', o.boost, () => P.set('hudBoost', !o.boost)],
@@ -691,6 +714,11 @@ mgu.run({
                 stepButtons(cv, t, 700, R2, 'hudY', [['Up', -1], ['Down', 1]], (v) => (v === 0 ? 'default' : (v > 0 ? '+' : '') + v + ' px'));
                 G.button(cv, t, 1200, R2, 160, 40, 'Reset', () => { P.set('hudSize', 100); P.set('hudX', 0); P.set('hudY', 0); return render(); }, { key: 'studio_place_reset' });
             }
+        }
+        /** READOUTS has two sets of switches: engine and temperatures, or electrical (12 V, hybrid battery). */
+        function readoutsPick(cv, t) {
+            segmented(cv, t, 1390, 416, [['engine', 'Engine'], ['electric', 'Electric']], studio.readouts === 'electric' ? 'electric' : 'engine',
+                (v) => { studio.readouts = v; }, 'studio_ro_');
         }
         const STUDIO_HINT = {
             look: 'Colours, gear font, labels and how the rpm reads',
@@ -850,7 +878,7 @@ mgu.run({
         if (moved && moved !== 'none') log.info('hud: In Comfort (' + moved + ') carried into the Comfort profile');
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
         hud = Hud.start(ctx, {
-            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, downshift,
+            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, electrical, downshift,
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
@@ -861,12 +889,12 @@ mgu.run({
             driveMode: () => (car.data().demo ? null : driveMode.v),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
-            extras: () => (car.data().demo ? null : {
+            extras: () => (car.data().demo ? null : Object.assign(electrical.value(), {
                 torque: Date.now() - torque.t < 2000 ? torque.v : null,
                 gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),
                 knock: knock.value().retard,
-            }),
+            })),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },

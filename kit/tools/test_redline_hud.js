@@ -7,7 +7,8 @@
 // - the readouts row: units, the four-item cap (a cold / hot warning keeps its place), missing data;
 // - the shift cue: counts in, flashes before the point by the lead, holds, ends on the upshift, a
 //   lift or the drop after a shift without a gear signal, and flags the limiter;
-// - the scripted demo drive stays in range; settings in the code exist in app.json and vice versa.
+// - the scripted demo drive stays in range; settings in the code exist in app.json and vice versa;
+// - 1.17's electrical readouts: a petrol / diesel car never shows the hybrid ones; electrical.js reads what eDrive reads.
 
 const fs = require('fs');
 const path = require('path');
@@ -342,7 +343,141 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         now += 15000; return poll(); }).then(() => { now += 6000; return poll(); }).then(() => {
         ok(g.value() !== 70, 'gearbox: 21 s after its last reading (two failed polls since) the old 70 is not served');
         Date.now = realNow;
+        return electricalChecks();
+    }).then(() => {
         console.log(fails ? fails + ' of ' + checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + checks + ').');
         process.exit(fails ? 1 : 0);
+    }).catch((e) => { console.log('FAIL electrical checks threw: ' + (e && e.stack || e)); process.exit(1); });
+}
+
+/* ---------- 1.17: the electrical readouts (12 V on every car, the hybrid battery only on a hybrid) ---------- */
+// x as electrical.js gives it on a plug-in hybrid
+const EX = { soc12: 82, v12: 14.23, hvSoc: 64.4, hvKw: -18.4, hvTemp: 27, hvVolt: 352.4, eShare: 70 };
+const ALL_ON = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false,
+    hudShowBattSoc: true, hudShowBattVolt: true, hudShowHvSoc: true, hudShowHvPower: true, hudShowHvTemp: true, hudShowHvVolt: true, hudShowEShare: true };
+const labels = (items) => items.map((r) => r.label).join(',');
+{
+    // off by default, on every car
+    ['soc12', 'volt12', 'hvSoc', 'hvPower', 'hvTemp', 'hvVolt', 'eShare'].forEach((k) => ok(optsDefault[k] === false, 'defaults: ' + k + ' readout is off'));
+    // a petrol / diesel car: every switch on, hybrid values even arriving - only the 12 V shows
+    const petrol = Hud.optsFrom(settingsOf(ALL_ON));
+    ok(!petrol.hvSoc && !petrol.hvPower && !petrol.hvTemp && !petrol.hvVolt && !petrol.eShare && petrol.soc12 && petrol.volt12, 'petrol car: hybrid switches stay off without hudHybridSeen');
+    const it = Hud.electricalItems(petrol, EX);
+    ok(labels(it) === '12V CHARGE,12V', 'petrol car: only the 12 V readouts (' + labels(it) + ')');
+    ok(labels(Hud.readoutsFor({ rpm: 3000 }, null, null, { rpm: 6000, cold: false }, petrol, EX)) === '12V CHARGE,12V', 'petrol car: readouts row has no hybrid item');
+    ok(Hud.electricalWants(petrol).hv === false && Hud.electricalWants(petrol).v12 === true, 'petrol car: no hybrid battery reads asked for');
+    // a hybrid: every one, in order, formatted
+    const hy = Hud.optsFrom(settingsOf(Object.assign({ hudHybridSeen: true }, ALL_ON)));
+    const all = Hud.electricalItems(hy, EX);
+    ok(labels(all) === '12V CHARGE,12V,HV CHARGE,HV KW,HV TEMP,HV VOLTS,ELECTRIC', 'hybrid: every electrical readout in order (' + labels(all) + ')');
+    ok(all.map((r) => r.value).join(' ') === '82% 14.2 64% -18 27° 352 70%', 'hybrid: values (' + all.map((r) => r.value).join(' ') + ')');
+    ok(Hud.electricalItems(hy, Object.assign({}, EX, { hvKw: 41.6 }))[3].value === '+42', 'hybrid: power while driving shows +');
+    ok(Hud.electricalItems(Object.assign({}, hy, { fahrenheit: true }), EX)[4].value === '81°', 'hybrid: battery temperature in °F');
+    ok(Hud.readoutsFor({ rpm: 3000 }, null, null, { rpm: 6000, cold: false }, hy, EX).length === Hud.MAX_READOUTS, 'hybrid: the row still holds four');
+    ok(Hud.electricalWants(hy).hv === true, 'hybrid: power / charge readouts ask for the battery unit');
+    // no data, no readout (a hybrid that doesn't send them, or a stale value)
+    ok(Hud.electricalItems(hy, {}).length === 0, 'no data: no electrical readout');
+    // tones: a weak 12 V battery is yellow, then red; overcharging red; a cold pack blue
+    const tone = (x, i) => Hud.electricalItems(hy, Object.assign({}, EX, x))[i].tone;
+    ok(tone({ soc12: 55 }, 0) === 'warm' && tone({ soc12: 30 }, 0) === 'hot' && tone({}, 0) === 'text', '12 V charge tones');
+    ok(tone({ v12: 11.9 }, 1) === 'warm' && tone({ v12: 11.2 }, 1) === 'hot' && tone({ v12: 15.4 }, 1) === 'hot' && tone({ v12: 12.5 }, 1) === 'text', '12 V voltage tones');
+    ok(tone({ hvTemp: 2 }, 4) === 'cold' && tone({ hvTemp: 50 }, 4) === 'hot', 'HV temperature tones');
+    // Comfort's "lights only" clears them; they are profile keys like the other readouts
+    ok(Hud.electricalItems(Hud.calmOpts(hy), EX).length === 0, 'calmOpts: no electrical readouts');
+    ['hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt', 'hudShowEShare'].forEach((k) => ok(Hud.PROFILE_KEYS.indexOf(k) >= 0, k + ' is a profile key'));
+    // Settings: the hybrid rows only once the car has a hybrid battery; hudHybridSeen itself never shows
+    spec.settings.filter((s) => /^hudShow(Hv|EShare)/.test(s.key)).forEach((s) => ok(s.when && s.when.hudHybridSeen && s.when.hudHybridSeen[0] === true && s.default === false, s.key + ' shows only on a hybrid, off by default'));
+    ok(declared.hudHybridSeen && declared.hudHybridSeen.hidden === true && declared.hudHybridSeen.default === false, 'hudHybridSeen is hidden and false by default');
+    // every new signal interface is optional (a unit without it still installs Redline)
+    ['de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'de.bmw.infotainment.lsc.LSCDataSink', 'de.bmw.infotainment.KombiIF'].forEach((i) => ok(spec.signals[i] && spec.signals[i]._optional, i + ' is _optional'));
+    ok(spec.signals['de.bmw.infotainment.vehicle.CDS'].statusBattery2 === 'rs', 'CDS.statusBattery2 subscribed');
+    // the HUD looks page: hybrid switches only behind electrical.hybrid()
+    const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
+    const el = main.slice(main.indexOf("studio.readouts === 'electric'"), main.indexOf("} else if (studio.panel === 'readouts') {"));
+    ok(/if \(electrical\.hybrid\(\)\)/.test(el) && el.indexOf('hudShowHvSoc') > el.indexOf('electrical.hybrid()'), 'HUD looks: hybrid switches only on a hybrid');
+}
+
+function electricalChecks() {
+    const Electrical = require(path.join(APP, 'electrical'));
+    const { DidReader } = require(path.join(ROOT, 'kit', 'runtime', 'dids'));
+    const edrive = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'edrive', 'app.json'), 'utf8')).config.battery;
+    // the same reads as eDrive (its config.battery): 12 V candidates in order, the HV charge, voltage and current
+    const same = (a, b, keys) => keys.every((k) => (a[k] == null ? null : a[k]) === (b[k] == null ? null : b[k]));
+    const ecuOf = (c) => (c.ecu == null ? edrive.ecu : c.ecu);
+    ok(Electrical.V12.length === edrive.v12.length && Electrical.V12.every((c, i) => c.ecu === ecuOf(edrive.v12[i]) && same(c, edrive.v12[i], ['did', 'obd', 'bytes', 'factor', 'offset', 'min', 'max']) && (c.at || 0) === (edrive.v12[i].at || 0)),
+        'electrical: 12 V candidates are eDrive\'s config.battery.v12');
+    ok(same(Electrical.HV_SOC[0], edrive.soc[0], ['did', 'bytes', 'factor', 'min', 'max']) && Electrical.HV_SOC[0].ecu === edrive.ecu, 'electrical: HV charge is eDrive\'s DDBC');
+    ok(Electrical.HV_V.map((c) => c.did).join() === edrive.fast.hvV.map((c) => c.did).join() && Electrical.HV_V.every((c, i) => c.factor === edrive.fast.hvV[i].fields.v.factor), 'electrical: pack voltage DIDs are eDrive\'s');
+    ok(Electrical.HV_A[0].did === edrive.fast.hvI[0].did && Electrical.HV_A[0].bytes === edrive.fast.hvI[0].fields.a.bytes && Electrical.HV_A[0].signed === true, 'electrical: pack current is eDrive\'s DD69');
+    // never another app's files: no /tmp, no file reads
+    const src = fs.readFileSync(path.join(APP, 'electrical.js'), 'utf8');
+    ok(!/\/tmp|require\('fs'\)|readFile/.test(src), 'electrical: reads the car, never another app\'s files');
+
+    // decoders
+    const D = Electrical.decode;
+    ok(D.soc12({ conditionBatteryChargingCondition: 87 }) === 87 && D.soc12({ conditionBatteryChargingCondition: 255 }) === null, 'decode: 12 V charge');
+    ok(D.hvTemp({ x: [{ actualValueTemperatureHighVoltageStorage: 76 }] }) === 26 && D.hvTemp({ actualValueTemperatureHighVoltageStorage: 255 }) === null, 'decode: HV temperature (-50, 255 none)');
+    ok(D.hvVolt({ actualValueVoltageHighVoltageStorage: 3524 }) === 352.4 && D.hvVolt({ actualValueVoltageHighVoltageStorage: 352 }) === 352 && D.hvVolt({ actualValueVoltageHighVoltageStorage: 0 }) === null, 'decode: pack voltage (V or 0.1 V)');
+    ok(D.eShare({ displayRepartitionDriveElectricPower: 70 }) === 70 && D.eShare({ displayRepartitionDriveElectricPower: 255 }) === null, 'decode: electric share');
+    ok(Math.abs(D.hvKw(352, -100) - 35.2) < 1e-9 && Math.abs(D.hvKw(352, 50) + 17.6) < 1e-9, 'decode: power + drive / - regen (eDrive powerSign -1)');
+
+    // a fake car: replies per 'ecu:DID' or 'ecu:obdPID' (bytes after the DID / PID), 'nrc', or nothing
+    const settingsFake = (v) => { const vals = Object.assign({ hudHybridSeen: false }, v); return { get: (k) => vals[k], set: (k, x) => { vals[k] = x; }, vals: vals }; };
+    const log = { info() {}, warn() {} };
+    const linkFor = (replies) => ({ asked: [], physical(ecu, sid, data) {
+        const key = ecu.toString(16) + ':' + (sid === 1 ? 'obd' : '') + data.map((b) => (b < 16 ? '0' : '') + b.toString(16)).join('').toUpperCase();
+        this.asked.push(key);
+        const r = replies[key];
+        if (r === undefined) return Promise.resolve(null);
+        if (r === 'nrc') return Promise.resolve([0x7F, sid, 0x31]);
+        return Promise.resolve((sid === 1 ? [0x41] : [0x62]).concat(data, r));
+    } });
+    const handle = (e, iface, f, v) => e.handlers()[iface][f](v);
+
+    // petrol car (no battery unit): one look for it, then nothing hybrid, ever - even with odd signals
+    const sP = settingsFake(), linkP = linkFor({ '12:F442': 'nrc', '12:obd42': [0x37, 0x6E] });
+    const p = new Electrical({ log: log, settings: sP }, () => linkP);
+    p.rd = new DidReader(linkP, { ecu: 7 });
+    p.want = { v12: true, hv: true };
+    handle(p, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 255 });
+    handle(p, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: 0 });
+    handle(p, 'de.bmw.infotainment.KombiIF', 'statusDisplayElectricalPowerDistribution', { displayRepartitionDriveElectricPower: 40 });
+    handle(p, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', { conditionBatteryChargingCondition: 81 });
+    return p._turn().then(() => {
+        ok(linkP.asked.join() === '7:DDBC', 'petrol: one look for a battery unit (' + linkP.asked.join() + ')');
+        ok(p.hybrid() === false && sP.vals.hudHybridSeen === false, 'petrol: not taken for a hybrid');
+        return p._turn();
+    }).then(() => {
+        const v = p.value();
+        ok(v.hvSoc === null && v.hvKw === null && v.hvTemp === null && v.hvVolt === null && v.eShare === null, 'petrol: no hybrid values (' + JSON.stringify(v) + ')');
+        ok(linkP.asked.filter((k) => /^7:DD/.test(k)).length === 1, 'petrol: the battery unit is not asked again');
+        ok(v.soc12 === 81 && Math.abs(v.v12 - 14.19) < 1e-9, 'petrol: 12 V charge and voltage (F442 refused, OBD 42 answers): ' + v.soc12 + ' ' + v.v12);
+        ok(p.vs.pick === 2, 'petrol: the 12 V source that answered is kept');
+        const n = linkP.asked.length;
+        p.v12T = 0;
+        return p._turn().then(() => ok(linkP.asked.slice(n).join() === '12:obd42', 'petrol: next time only the 12 V source that answered (' + linkP.asked.slice(n).join() + ')'));
+    }).then(() => {
+        // a plug-in hybrid: the battery unit answers; then power each turn, charge every 5 s
+        const sH = settingsFake(), linkH = linkFor({ '7:DDBC': [0x02, 0x84], '7:DDB4': [0x89, 0xA8], '7:DD69': [0xFF, 0xFF, 0xD8, 0xF0], '12:F442': [0x36, 0xB0] });
+        const h = new Electrical({ log: log, settings: sH }, () => linkH);
+        h.rd = new DidReader(linkH, { ecu: 7 });
+        h.want = { v12: false, hv: true };
+        return h._turn().then(() => {
+            ok(h.hybrid() === true && sH.vals.hudHybridSeen === true, 'hybrid: found from the battery unit and kept');
+            return h._turn();
+        }).then(() => {
+            const v = h.value();
+            ok(Math.abs(v.hvSoc - 64.4) < 1e-9, 'hybrid: charge 64.4 % (' + v.hvSoc + ')');
+            ok(Math.abs(v.hvVolt - 352.4) < 1e-9 && Math.abs(v.hvKw - 35.24) < 1e-9, 'hybrid: 352.4 V x -100 A = +35.2 kW drive (' + v.hvKw + ')');
+            ok(v.v12 === null, 'hybrid: 12 V not read while its readout is off');
+            // a hybrid found from its signals alone
+            const s2 = settingsFake(), e2 = new Electrical({ log: log, settings: s2 }, () => linkH);
+            handle(e2, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            ok(e2.hybrid() === true && e2.value().hvTemp === 26, 'hybrid: found from the pack temperature signal');
+            // a signal handler never throws
+            let threw = false;
+            try { handle(e2, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', undefined); handle(e2, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', null); } catch (e) { threw = true; }
+            ok(!threw, 'electrical: handlers never throw');
+        });
     });
 }

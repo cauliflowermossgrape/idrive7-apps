@@ -178,6 +178,7 @@ const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc
 const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hudRpmFormat', 'hudUnlit', 'hudLightStyle',
     'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
+    'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt', 'hudShowEShare',
     'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
 /** The profile a driving mode uses ('sport', 'comfort', 'eco' or null). */
 function profileOf(drive) { return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport'; }
@@ -263,6 +264,11 @@ function optsFrom(settings, drive) {
         // throttle: off until the accelerator pedal's scaling is checked on a car (readoutsFor keeps it)
         throttle: false, g: settings.get('hudShowG') === true,
         outside: settings.get('hudShowOutside') === true,
+        // electrical, off unless switched on: the 12 V on every car; the hybrid ones only once the car has shown a
+        // high-voltage battery (hudHybridSeen, electrical.js), so a petrol or diesel car never has them
+        soc12: settings.get('hudShowBattSoc') === true, volt12: settings.get('hudShowBattVolt') === true,
+        hvSoc: hybridOn(settings, 'hudShowHvSoc'), hvPower: hybridOn(settings, 'hudShowHvPower'), hvTemp: hybridOn(settings, 'hudShowHvTemp'),
+        hvVolt: hybridOn(settings, 'hudShowHvVolt'), eShare: hybridOn(settings, 'hudShowEShare'),
         torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
@@ -282,6 +288,11 @@ function optsFrom(settings, drive) {
         launch: settings.get('hudLaunch') !== false, mph: settings.get('speedUnit') === 'mph',
     };
 }
+
+/** A hybrid readout's switch: on only when switched on and the car has a high-voltage battery. */
+function hybridOn(settings, key) { return settings.get('hudHybridSeen') === true && settings.get(key) === true; }
+/** The electrical readouts that need UDS reads (electrical.js start()): { hv, v12 }. */
+function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower), v12: !!o.volt12 }; }
 
 /**
  * The car's driving mode (FES statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, a
@@ -306,7 +317,8 @@ function calmFor(drive, mode) {
 /** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
 function calmOpts(o) {
     return Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, limit: false,
-        oil: false, coolant: false, gearbox: false, outside: false, chip: 'off', peak: false, shake: false });
+        oil: false, coolant: false, gearbox: false, outside: false, soc12: false, volt12: false, hvSoc: false, hvPower: false, hvTemp: false,
+        hvVolt: false, eShare: false, chip: 'off', peak: false, shake: false });
 }
 
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
@@ -325,7 +337,8 @@ function rpmItem(rpm, f) {
 const roundTo = (v, step) => Math.round(v / step) * step;
 /**
  * The readouts row for o (optsFrom): d (rpm, oil, coolant), gearbox temperature, boost (bar), sp
- * ({ rpm, cold }), x (the extras: torque Nm, pedal %, gLat / gLong g, outside °C; any may be null).
+ * ({ rpm, cold }), x (the extras: torque Nm, pedal %, gLat / gLong g, outside °C, and electrical.js's
+ * soc12 %, v12 V, hvSoc %, hvKw, hvTemp °C, hvVolt V, eShare %; any may be null).
  * In the order of the switches; at most four. When more are on, the last plain ones give way first:
  * a cold, warming or hot temperature (and the cold limit) keeps its place.
  * Fast values are rounded (torque to 5, throttle to 5 %, g to 0.05) so the row doesn't flicker.
@@ -370,6 +383,7 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     });
     // outside: blue at 3 °C and below (ice is possible)
     if (o.outside && isNum(x.outside)) items.push({ label: 'OUTSIDE', value: Math.round(o.fahrenheit ? x.outside * 9 / 5 + 32 : x.outside) + '°', tone: x.outside <= 3 ? 'cold' : 'text' });
+    electricalItems(o, x).forEach((it) => items.push(it));
     // four fit the row legibly: the last plain readout gives way first, so a warning keeps its place
     // (on a cold start with boost, limit, oil, water and gearbox on, the gearbox goes)
     while (items.length > MAX_READOUTS) {
@@ -378,6 +392,23 @@ function readoutsFor(d, gb, boost, sp, o, x) {
         items.splice(i >= 0 ? i : items.length - 1, 1);
     }
     return items;
+}
+
+/**
+ * The electrical readouts (each only with a value): 12 V charge (yellow under 60 %, red under 40 %), 12 V voltage
+ * (to 0.1 V; yellow under 12.0, red under 11.5 or over 15.0), HV charge, HV power (+ drives, - regen; to 1 kW),
+ * HV temperature (blue under 5 °C, red over 45 °C), pack voltage, electric drive share.
+ */
+function electricalItems(o, x) {
+    const out = [];
+    if (o.soc12 && isNum(x.soc12)) out.push({ label: '12V CHARGE', value: Math.round(x.soc12) + '%', tone: x.soc12 < 40 ? 'hot' : x.soc12 < 60 ? 'warm' : 'text' });
+    if (o.volt12 && isNum(x.v12)) out.push({ label: '12V', value: x.v12.toFixed(1), tone: x.v12 < 11.5 || x.v12 > 15 ? 'hot' : x.v12 < 12 ? 'warm' : 'text' });
+    if (o.hvSoc && isNum(x.hvSoc)) out.push({ label: 'HV CHARGE', value: Math.round(clamp(x.hvSoc, 0, 100)) + '%', tone: 'text' });
+    if (o.hvPower && isNum(x.hvKw)) { const k = Math.round(x.hvKw); out.push({ label: 'HV KW', value: (k > 0 ? '+' : '') + k, tone: 'text' }); }
+    if (o.hvTemp && isNum(x.hvTemp)) out.push({ label: 'HV TEMP', value: Math.round(o.fahrenheit ? x.hvTemp * 9 / 5 + 32 : x.hvTemp) + '°', tone: x.hvTemp < 5 ? 'cold' : x.hvTemp > 45 ? 'hot' : 'text' });
+    if (o.hvVolt && isNum(x.hvVolt)) out.push({ label: 'HV VOLTS', value: String(Math.round(x.hvVolt)), tone: 'text' });
+    if (o.eShare && isNum(x.eShare)) out.push({ label: 'ELECTRIC', value: Math.round(clamp(x.eShare, 0, 100)) + '%', tone: 'text' });
+    return out;
 }
 
 /*
@@ -758,6 +789,7 @@ function start(ctx, src) {
                 }
                 if (src.gearbox) src.gearbox.stop();
                 if (src.knock) src.knock.stop();
+            if (src.electrical) src.electrical.stop();
                 claim.hold(false);          // nothing of Redline's on the HUD: the standing app may show
                 if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
@@ -773,12 +805,15 @@ function start(ctx, src) {
             first = true; lastKey = '';
             if (src.gearbox) src.gearbox.stop();
             if (src.knock) src.knock.stop();
+            if (src.electrical) src.electrical.stop();
             return;
         }
         // the gearbox unit is asked only while its readout is on
         // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
         const oNow = optsNow();
         if (src.gearbox) { if (oNow.gearbox) src.gearbox.start(); else src.gearbox.stop(); }
+        // the electrical reads only for the readouts that need them (and, until known, one look for a hybrid battery)
+        if (src.electrical) src.electrical.start(electricalWants(oNow));
         // the engine unit's knock values only while wanted and the engine runs
         if (src.knock) { const run = isNum(src.data().rpm) && src.data().rpm > 400; if ((oNow.knock || oNow.knockWarn) && run) src.knock.start(); else src.knock.stop(); }
         const f = frameData();
@@ -944,4 +979,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

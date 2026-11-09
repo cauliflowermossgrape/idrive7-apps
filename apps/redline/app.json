@@ -2,14 +2,15 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; HUD by @biscotit",
-  "version": "1.16.7",
+  "version": "1.17.0",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
-      "statusEngineTemperature": "rs"
+      "statusEngineTemperature": "rs",
+      "statusBattery2": "rs"
     },
     "de.bmw.infotainment.drivingexcitement.FES": {
       "_optional": "engine torque (per-gear shift points), boost and the driving mode (HUD)",
@@ -45,6 +46,18 @@
     "de.bmw.infrastructure.analytics.BasicDataSet": {
       "_optional": "gearbox oil temperature on the HUD when the gearbox unit doesn't answer",
       "basicDataSet": "s"
+    },
+    "de.bmw.infotainment.drivingexcitement.Efficiencytainment2": {
+      "_optional": "hybrid battery temperature on the HUD (plug-in hybrids)",
+      "statusBatteryTemperature": "rs"
+    },
+    "de.bmw.infotainment.lsc.LSCDataSink": {
+      "_optional": "hybrid battery voltage on the HUD (plug-in hybrids)",
+      "statusHighVoltageStorage": "s"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "electric share of the drive on the HUD (plug-in hybrids)",
+      "statusDisplayElectricalPowerDistribution": "rs"
     },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",
@@ -119,6 +132,14 @@
     {"key": "hudShowOutside", "label": "Outside (blue at 3 °C / 37 °F and below)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowLimit", "label": "Cold-engine shift limit", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudTempsMode", "label": "Temperatures shown", "type": "choice", "default": "smart", "when": {"hud": ["on", "test"], "hudAll": [true]}, "options": [["smart", "Only when cold or hot"], ["always", "Always"]], "group": "HUD: readouts"},
+    {"key": "hudShowBattSoc", "label": "12 V battery charge (%)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowBattVolt", "label": "12 V battery voltage", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowHvSoc", "label": "Hybrid battery charge (%)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowHvPower", "label": "Hybrid battery power (kW, + drive, - regen)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowHvTemp", "label": "Hybrid battery temperature", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowHvVolt", "label": "Hybrid battery voltage", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowEShare", "label": "Electric share of the drive (%)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
+    {"key": "hudHybridSeen", "label": "This car has a hybrid battery (found by the app)", "type": "bool", "default": false, "hidden": true},
     {"key": "hudChip", "label": "Shift grade after each upshift", "type": "choice", "default": "burst", "when": {"hud": ["on", "test"], "hudAll": [true]}, "aliases": {"true": "burst", "false": "off"}, "options": [["burst", "Burst (pops, ring)"], ["simple", "Simple"], ["off", "Off"]], "group": "HUD: alerts"},
     {"key": "hudKnockWarn", "label": "Knock warning (KNOCK when the engine pulls timing, experimental)", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},
     {"key": "hudLaunch", "label": "Launch time (0-100 km/h or 0-60 mph after a standing start, against your best)", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},

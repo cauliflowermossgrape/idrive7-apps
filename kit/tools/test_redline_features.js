@@ -48,6 +48,13 @@ const NOT_ON = {
     hudShowOutside: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowKnock: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowLimit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowBattSoc: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowBattVolt: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvSoc: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvPower: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvTemp: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvVolt: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowEShare: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudTempsMode: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudChip: { layouts: ['minimal', 'wings'], why: 'no grade drawn' },
     hudShowBar: { layouts: ['minimal', 'ramp', 'dial'], why: 'no bar (ramp, dial: the band is the shift lights too)' },
@@ -56,7 +63,8 @@ const NOT_ON = {
 
 // the data: revs counting in, a grade just made, temperatures hot / cold, every extra value there
 const D = { rpm: 5637, gear: 3, stage: 'D', oil: 95, coolant: 90 };
-const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3 };
+// (the electrical values too: a plug-in hybrid; test_redline_hud.js checks a petrol car shows none of the hybrid ones)
+const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3, soc12: 82, v12: 14.2, hvSoc: 64, hvKw: -18, hvTemp: 27, hvVolt: 352, eShare: 70 };
 function picture(over, style, state) {
     const settings = { get: (k) => (k in over ? over[k] : def[k]) };
     const o = Object.assign({}, Hud.optsFrom(settings), { style: style });
@@ -78,16 +86,20 @@ const shot = (over, style) => Buffer.concat(['count', 'shift', 'limiter', 'grade
 // a readout setting is checked with only its readout on (the row holds four), temperatures always shown
 const NONE = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false, hudShowOutside: false,
     hudShowTorque: false, hudShowPower: false, hudShowG: false, hudShowKnock: false, hudTempsMode: 'always' };
+// the hybrid readouts are checked on a car that has shown a hybrid battery
+const HY = { hudHybridSeen: true };
 const ALONE = {
     hudShowRpm: { hudShowRpm: true }, hudRpmFormat: { hudShowRpm: true }, hudBoost: { hudBoost: true }, hudBoostUnit: { hudBoost: true }, hudLabels: { hudBoost: true },
     hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
     hudShowOil: { hudShowOil: true }, hudShowWater: { hudShowWater: true }, hudShowGearbox: { hudShowGearbox: true }, hudTempUnit: { hudShowOil: true },
     hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' }, hudShowKnock: {},
+    hudShowBattSoc: {}, hudShowBattVolt: {}, hudShowHvSoc: HY, hudShowHvPower: HY, hudShowHvTemp: HY, hudShowHvVolt: HY, hudShowEShare: HY,
 };
 const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 
 // every option that isn't the default, of the settings that change the picture
-const SKIP = ['hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle'];
+// hudHybridSeen: found by the app, not a choice (it only lets the hybrid switches work: test_redline_hud.js)
+const SKIP = ['hudHybridSeen', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle'];
 const variants = [];
 spec.settings.filter((s) => s.key && (/^hud/.test(s.key) || s.key === 'lights') && SKIP.indexOf(s.key) < 0).forEach((s) => {
     if (s.type === 'bool') variants.push([s.key, !s.default]);
