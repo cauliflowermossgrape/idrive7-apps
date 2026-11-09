@@ -281,10 +281,19 @@ position don't move it.
 (50) ——— km/h                              Example Street     (or the lanes ▏↑▏↑▏↱▏ in its place)
 ```
 
-- **Arrow:** thick and white (the HUD colours' text colour; Night amber draws it amber): straight, slight / normal /
-  hard turn, U-turn, keep or fork (the road left behind dim), motorway exit and entry, lane change, roundabout (the
-  ring, the way round and the exit, its number inside), the destination flag, and a dot for anything else
-  ("follow the route").
+- **Arrow:** thick and white (the HUD colours' text colour; Night amber draws it amber), roads not taken dim. One
+  for every value in the car's catalog (`navigation.GuidingTypes`), each checked by the tests:
+  - turns (`TurnDirection`): straight, slight / normal / hard left and right, U-turns; `NONE`: a dot;
+  - branches (`BranchType`, 15): road branching off, two- and three-way forks, motorway exit (left, right, straight
+    on), motorway entry (left, right, straight on), over- and underpass;
+  - the exact junction shape (`detailedGeometry`, 31) when the car sends one: exit taken or passed, an exit that
+    forks again, two- and three-way forks with the leg taken (the drive only sent `UNDEFINED`);
+  - roundabouts: the way in, round (anticlockwise with the island on the left, clockwise on the right) and out at
+    the exit's angle (from its number when the car gives none), the number inside; U-turn exits too;
+  - keep left / right along the main road, lane change, the destination flag (with a pointer when it's on the left
+    or right), a stopover pin with its number, a ferry, a car train;
+  - not turns, and never shown in place of the next one: tunnels, borders, toll gates, speed cameras, dangerous
+    curves, school zones, traffic, points of interest, placeholders. A kind newer than the catalog: a dot.
 - **Distance** as the car formats it (`450 m`, `4.7 km`, `0.3 mi`); under it the **street** (accents dropped: the
   HUD's fonts are ASCII), or the **lanes** when there are some: in a lane to be in, the arrow to take is bright;
   everything else is dim. Right-aligned, so it hugs the corner.

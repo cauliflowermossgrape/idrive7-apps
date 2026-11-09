@@ -72,8 +72,9 @@ Object.keys(N.SAMPLES).forEach((k) => {
 // the arrow box (68 px) from where drawNav says it drew it
 const arrowBox = (m) => { const c = new Canvas(N.NW, N.NH), b = N.drawNav(c, m, { palette: 'colour' }); return { c: c, x0: b.x }; };
 const side = (m) => { const a = arrowBox(m); return lit(a.c, a.x0, a.x0 + 68).cx - (a.x0 + 34); };
-['LEFT', 'SLIGHT_LEFT', 'HARD_LEFT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) < -3, d + ': the arrow leans left (' + side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }).toFixed(1) + ')'));
-['RIGHT', 'SLIGHT_RIGHT', 'HARD_RIGHT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) > 3, d + ': the arrow leans right'));
+// (hard turns: their stem stands on the other side; where they point is checked below)
+['LEFT', 'SLIGHT_LEFT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) < -3, d + ': the arrow leans left (' + side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }).toFixed(1) + ')'));
+['RIGHT', 'SLIGHT_RIGHT'].forEach((d) => ok(side({ kind: 'turn', dir: d, dist: '100', unit: 'm' }) > 3, d + ': the arrow leans right'));
 ok(Math.abs(side({ kind: 'turn', dir: 'STRAIGHT_ON', dist: '100', unit: 'm' })) < 2, 'straight on: centred');
 ok(side({ kind: 'branch', dir: 'BRANCH_LEFT', dist: '1', unit: 'km' }) < -3 && side({ kind: 'branch', dir: 'HIGHWAY_OUT_RIGHT', dist: '1', unit: 'km' }) > 3, 'exits lean to their side');
 // the roundabout seen on the drive: first exit at 307 degrees with the island on the left: out to the upper right
@@ -109,6 +110,85 @@ ok(N.foldText('Example Straße') === 'Example Strasse' && N.foldText('Café Ély
 ok(N.navKey(N.SAMPLES.left, {}) !== N.navKey(Object.assign({}, N.SAMPLES.left, { dist: '400' }), {}) && N.navKey(N.SAMPLES.left, {}) === N.navKey(Object.assign({}, N.SAMPLES.left), {}), 'the key changes with the distance, not otherwise');
 ok(N.navKey(N.SAMPLES.left, { palette: 'amber' }) !== N.navKey(N.SAMPLES.left, { palette: 'colour' }), 'the key changes with the palette');
 ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).n > 300, 'Night amber: in amber, not white');
+
+// ---- every arrow the car's catalog can ask for ---------------------------------------------------------------------
+{
+    // the lists are the catalog's (reference/ is git-ignored: CI skips this cross-check)
+    const CAT = path.join(ROOT, 'reference', 'someip-interfaces.json');
+    if (fs.existsSync(CAT)) {
+        const D = JSON.parse(fs.readFileSync(CAT, 'utf8')).datatypes, T = (n) => Object.keys(D['de.bmw.infotainment.navigation.GuidingTypes.' + n].items).sort();
+        ok(JSON.stringify(T('TurnDirection')) === JSON.stringify(N.TURN_DIRECTIONS.slice().sort()), 'every TurnDirection in the catalog has an arrow');
+        ok(JSON.stringify(T('BranchType')) === JSON.stringify(N.BRANCH_TYPES.slice().sort()), 'every BranchType in the catalog has an arrow');
+        ok(JSON.stringify(T('ManeuverGeometry')) === JSON.stringify(N.GEOMETRIES.slice().sort()), 'every ManeuverGeometry in the catalog has an arrow');
+    } else console.log('(the car\'s catalog is not here: its cross-check skipped)');
+    ok(N.ALL_ARROWS.length >= 75, 'the arrows to check: ' + N.ALL_ARROWS.length);
+    // each one draws, inside its 80 px box (at 1.0, centred in 100x100)
+    N.ALL_ARROWS.forEach((m) => {
+        const c = new Canvas(100, 100);
+        N.drawArrow(c, m, 50, 50, 1, '#ffffff', [255, 255, 255, 89]);
+        const all = lit(c, 0, 100), edge = lit(c, 0, 100, 0, 6).n + lit(c, 0, 100, 94, 100).n + lit(c, 0, 6).n + lit(c, 94, 100).n;
+        ok(all.white > 150 && edge === 0, m.label + ': drawn, inside its box (' + all.white + ' px, ' + edge + ' outside)');
+    });
+    // where the bright path ends: left values left, right right, straight in the middle
+    const endX = (m) => { const s = N.shapeOf(m); const p = s.path[s.path.length - 1]; return p[0] * s.mir; };
+    const want = (name) => (/TAKE_(LEFT|RIGHT|CENTER)$/.test(name) ? null : /LEFT/.test(name) ? -1 : /RIGHT/.test(name) ? 1 : 0);
+    N.TURN_DIRECTIONS.filter((d) => d !== 'NONE').concat(N.BRANCH_TYPES).forEach((d) => {
+        const m = { kind: N.TURN_DIRECTIONS.indexOf(d) >= 0 ? 'turn' : 'branch', dir: d }, x = endX(m), w = want(d);
+        ok(w === 0 ? Math.abs(x) < 1 : x * w > 3, d + ': the arrow ends ' + (w < 0 ? 'left' : w > 0 ? 'right' : 'straight on') + ' (' + x.toFixed(1) + ')');
+    });
+    N.GEOMETRIES.forEach((g) => {
+        const r = /^EXIT_(LEFT|RIGHT)_TAKE_(LEFT|RIGHT)$/.exec(g), f = /^EXIT_(LEFT|RIGHT)_TWO_WAY/.exec(g);
+        // an exit taken: its side; not taken: straight on; an exit's fork: the exit's side; a fork: the leg taken
+        const w = r ? (r[1] === r[2] ? (r[1] === 'LEFT' ? -1 : 1) : 0) : f ? (f[1] === 'LEFT' ? -1 : 1) : /TAKE_LEFT$/.test(g) ? -1 : /TAKE_RIGHT$/.test(g) ? 1 : 0;
+        const x = endX({ kind: 'branch', dir: 'BRANCH_LEFT', geom: g });
+        ok(w === 0 ? Math.abs(x) < 1 : x * w > 3, g + ': the arrow ends on the right side (' + x.toFixed(1) + ')');
+    });
+    // the head sits on a straight run (a bend under its base bulged out on one side: that side looked smaller)
+    N.ALL_ARROWS.forEach((m) => {
+        const s = N.shapeOf(m);
+        if (!s.path) return;
+        const p = s.path, a = p[p.length - 2], b = p[p.length - 1], l = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+        ok(l >= N.HEAD_RUN, m.label + ': the head on a straight run of ' + l.toFixed(1) + ' (at least ' + N.HEAD_RUN + ')');
+    });
+    // U-turns and hard turns point back down
+    ['UTURN_LEFT', 'UTURN_RIGHT', 'HARD_LEFT', 'HARD_RIGHT'].forEach((d) => {
+        const s = N.shapeOf({ kind: 'turn', dir: d }), p = s.path, a = p[p.length - 2], b = p[p.length - 1];
+        ok(b[1] > a[1], d + ': the head points back down');
+    });
+    // left and right are mirror images, pixel for pixel, at the HUD's own size (no head bigger on one side)
+    const mirrorDiff = (m1, m2) => {
+        const a = new Canvas(N.NW, N.NH), b = new Canvas(N.NW, N.NH);
+        N.drawArrow(a, m1, 100, 38, 0.85, '#ffffff', [255, 255, 255, 89]); N.drawArrow(b, m2, 100, 38, 0.85, '#ffffff', [255, 255, 255, 89]);
+        let d = 0;
+        for (let y = 0; y < N.NH; y++) for (let x = 0; x < N.NW; x++) if (Math.abs(a.d[(y * N.NW + x) * 4 + 3] - b.d[(y * N.NW + (199 - x)) * 4 + 3]) > 8) d++;
+        return d;
+    };
+    const pairs = [];
+    N.ALL_ARROWS.forEach((m) => {
+        if (m.kind === 'roundabout' || m.kind === 'destination' || m.kind === 'transport') return;
+        const key = m.geom || m.dir, other = key.replace(/LEFT/g, '\u0001').replace(/RIGHT/g, 'LEFT').replace(/\u0001/g, 'RIGHT');
+        if (other !== key && /LEFT/.test(key.split('_').pop() + key)) pairs.push([m, Object.assign({}, m, m.geom ? { geom: other } : { dir: other })]);
+    });
+    pairs.forEach((p) => { const d = mirrorDiff(p[0], p[1]); ok(d === 0, (p[0].geom || p[0].dir) + ' mirrors ' + (p[1].geom || p[1].dir) + ' exactly (' + d + ' px differ)'); });
+    ok(pairs.length >= 20, pairs.length + ' left / right pairs checked');
+    // every roundabout exit, both traffic sides: the head leaves the ring at the exit's angle
+    [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].forEach((a) => ['left', 'right'].forEach((sd) => {
+        const c = new Canvas(100, 100);
+        N.drawArrow(c, { kind: 'roundabout', exit: 1, exitAngle: a, side: sd }, 50, 50, 1, '#ffffff', [255, 255, 255, 89]);
+        if (Math.abs(a - 180) <= 45) {
+            // back the way it came: in on the drive side, out straight down on the other, two strokes with a gap
+            const inX = sd === 'left' ? 1 : -1;            // the way in: right of the middle with the island on the left
+            // the strokes stand about 10.7 px either side of the middle; the gap is between them, above the head
+            const win = (x0, x1, y0, y1) => lit(c, Math.min(x0, x1), Math.max(x0, x1), y0, y1);
+            const inS = win(50 + inX * 6, 50 + inX * 16, 70, 92), outS = win(50 - inX * 6, 50 - inX * 16, 70, 92), gap = win(48, 53, 68, 76);
+            ok(inS.white > 20 && outS.white > 20 && gap.white === 0, 'roundabout exit at ' + a + ' (island ' + sd + '): in and back out side by side, apart (' + inS.white + ', ' + outS.white + ', gap ' + gap.white + ')');
+            return;
+        }
+        const t = a * Math.PI / 180, tx = Math.round(50 - Math.sin(t) * 38), ty = Math.round(48 - Math.cos(t) * 38);
+        const near = lit(c, tx - 7, tx + 8, Math.max(0, ty - 7), Math.min(100, ty + 8)).white;
+        ok(near > 15, 'roundabout exit at ' + a + ' (island ' + sd + '): the head out there (' + near + ' px)');
+    }));
+}
 
 // ---- the layer in hud.js -------------------------------------------------------------------------------------------
 (async () => {

@@ -18,12 +18,19 @@
  * is used here, the decoder is Redline's own, written from the replies this car sent.
  *
  * The object (null when there's nothing to show):
- *   { kind, dir, exit, exitAngle, side, dist: '450', unit: 'm', road, lanes, unreliable, t, src }
- *   kind: 'turn' (dir: STRAIGHT_ON, LEFT, SLIGHT_LEFT, HARD_LEFT, UTURN_LEFT and the right ones),
- *         'branch' (dir: BMW's branchType: BRANCH_LEFT, HIGHWAY_OUT_RIGHT, FORK_LEFT, ...),
+ *   { kind, dir, geom, exit, exitAngle, side, flag, stop, dist: '450', unit: 'm', road, lanes, unreliable, t, src }
+ *   kind: 'turn' (dir: TurnDirection: STRAIGHT_ON, LEFT, SLIGHT_LEFT, HARD_LEFT, UTURN_LEFT, the right ones, NONE),
+ *         'branch' (dir: BranchType: BRANCH_LEFT, FORK_RIGHT, TRIPLE_FORK_STRAIGHT, HIGHWAY_OUT_RIGHT, OVERPASS...),
+ *           both with geom: detailedGeometry (ManeuverGeometry: EXIT_RIGHT_TAKE_LEFT, THREE_WAY_FORK_TAKE_CENTER...)
+ *           when the car gives one (null for UNDEFINED, the only value seen yet),
  *         'roundabout' (exit: the exit's number, exitAngle in degrees, side: 'left' / 'right' the island is on),
  *         'keep' (dir LEFT / RIGHT: along the main road), 'lanechange' (dir LEFT / RIGHT),
- *         'destination' (dir LEFT / CENTER / RIGHT), 'follow' (anything else: "follow the route")
+ *         'destination' (dir: LEFT / CENTER / RIGHT / NOT_DIGITIZED; flag false: a stopover, stop its number),
+ *         'transport' (dir FERRY / CAR_TRAIN: onto a ferry or a car train),
+ *         'follow' (a kind not in the car's catalog: "follow the route")
+ *   Not turns, skipped, so they never stand in for the next turn: points of interest, lane rows, traffic, route
+ *   segments, tunnels, borders, toll gates, passive manoeuvres (straight through), speed cameras and limits,
+ *   dangerous curves, school zones, placeholders (GAP / LOADING_INDICATOR).
  *   dist, unit: as the car formats them ('1' 'km', '450' 'm'); null when it gives none
  *   lanes: { lanes: [{ follow, others: [], hi, info }], rec, markers } or null
  *
@@ -71,6 +78,16 @@ function metres(m) {
     return isFinite(v) ? v * UNIT_M[m.unit] : null;
 }
 
+/*
+ * Union members (GuidanceEventUnion, 22 in the car's catalog) that aren't a manoeuvre: skipped. Most aren't asked
+ * for (eventQuery's includedTypes), but if one comes it mustn't hide the turn after it.
+ */
+const SKIP = { pointOfInterest: 1, laneGuiding: 1, trafficEvent: 1, trafficFlowItem: 1, routeSegmentItem: 1, placeholderElement: 1,
+    tunnel: 1, border: 1, tollgate: 1, passiveManeuver: 1, speedLimitAssist: 1, speedLimit: 1, speedCamera: 1, speedSectionCamera: 1,
+    dangerousCurve: 1, schoolZone: 1 };
+/** detailedGeometry when it says something (not UNDEFINED / NONE / missing). */
+function geomOf(b) { const g = str(b.detailedGeometry); return g && g !== 'UNDEFINED' && g !== 'NONE' ? g : null; }
+
 const side = (s) => (/LEFT/.test(s) ? 'LEFT' : /RIGHT/.test(s) ? 'RIGHT' : null);
 
 /**
@@ -81,13 +98,14 @@ function decodeEvent(e) {
     const u = unionOf(e);
     if (!u) return null;
     const b = u.body, d = distOf(b);
-    const m = { kind: null, dir: null, exit: null, exitAngle: null, side: null, dist: d.dist, unit: d.unit, road: roadOf(b), unreliable: b.unreliable === true };
+    if (SKIP[u.kind]) return null;
+    const m = { kind: null, dir: null, geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: d.dist, unit: d.unit, road: roadOf(b), unreliable: b.unreliable === true };
     switch (u.kind) {
     case 'intersection':
-        m.kind = 'turn'; m.dir = str(b.direction) || 'STRAIGHT_ON';
+        m.kind = 'turn'; m.dir = str(b.direction) || 'STRAIGHT_ON'; m.geom = geomOf(b);
         break;
     case 'branch':
-        m.kind = 'branch'; m.dir = str(b.branchType) || 'BRANCH_STRAIGHT';
+        m.kind = 'branch'; m.dir = str(b.branchType) || 'BRANCH_STRAIGHT'; m.geom = geomOf(b);
         break;
     case 'roundabout': {
         m.kind = 'roundabout';
@@ -106,11 +124,15 @@ function decodeEvent(e) {
         break;
     case 'destinationManeuver':
         m.kind = 'destination'; m.dir = str(b.position) || 'CENTER';
+        // a stopover on the way: isCheckeredFlag false (the drive's destination: true)
+        m.flag = b.isCheckeredFlag !== false;
+        m.stop = isFinite(Number(b.stopOverNumber)) && Number(b.stopOverNumber) > 0 ? Math.round(Number(b.stopOverNumber)) : null;
         break;
-    case 'pointOfInterest': case 'laneGuiding': case 'trafficEvent': case 'speedLimit':
-        return null;
+    case 'vehicleTransportation':
+        m.kind = 'transport'; m.dir = str(b.type) || 'FERRY';
+        break;
     default:
-        // a manoeuvre we haven't seen yet: shown as "follow the route" if it has a distance, logged by kind
+        // a kind newer than the catalog: shown as "follow the route" (a dot) if it has a distance, logged by kind
         if (!b.formattedDistance) return null;
         m.kind = 'follow'; m.dir = u.kind;
     }
@@ -178,7 +200,8 @@ function routingOf(r) {
 /** One short log line for a manoeuvre, without the street (its length only). */
 function describe(m) {
     if (!m) return 'none';
-    const what = m.kind === 'roundabout' ? 'roundabout exit ' + m.exit + ' at ' + m.exitAngle + ' (' + m.side + ')' : m.kind + ' ' + m.dir;
+    const what = m.kind === 'roundabout' ? 'roundabout exit ' + m.exit + ' at ' + m.exitAngle + ' (' + m.side + ')'
+        : m.kind + ' ' + m.dir + (m.geom ? ' ' + m.geom : '') + (m.kind === 'destination' && m.flag === false ? ' stopover ' + (m.stop || '?') : '');
     return what + ' ' + (m.dist ? m.dist + ' ' + m.unit : '-') + (m.road ? ' <' + m.road.length + ' chars>' : '') +
         (m.lanes ? ' lanes ' + m.lanes.lanes.map((l) => (l.hi ? '*' : '') + l.follow).join(',') : '') + (m.unreliable ? ' unreliable' : '');
 }
@@ -288,4 +311,4 @@ function start(ctx, log, probe) {
     };
 }
 
-module.exports = { start, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS, NEAR_M };
+module.exports = { start, SKIP, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS, NEAR_M };

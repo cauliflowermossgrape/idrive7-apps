@@ -38,7 +38,7 @@ replies.forEach((r, i) => {
 eq(Object.keys(kinds).sort().map((k) => k + ' ' + kinds[k]), ['branch 41', 'destination 5', 'roundabout 13', 'turn 90'], 'the drive\'s next turns by kind');
 
 // the first reply: left in 1 km
-eq(Nav.decodeEvents(replies[0].v).events[0], { kind: 'turn', dir: 'LEFT', exit: null, exitAngle: null, side: null, dist: '1', unit: 'km', road: '<12 chars>', unreliable: false },
+eq(Nav.decodeEvents(replies[0].v).events[0], { kind: 'turn', dir: 'LEFT', geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: '1', unit: 'km', road: '<12 chars>', unreliable: false },
     'first reply: a left turn in 1 km (rawDistance 1 isn\'t metres)');
 // directions seen
 const dirs = {};
@@ -90,7 +90,7 @@ eq(Nav.decodeEvent({ alongMainRoad: { mainRoadDirection: 'LEFT', formattedDistan
 eq(Nav.decodeEvent({ laneChange: { changeSide: 'RIGHT', formattedDistance: fd('200', 'METER') } }).kind, 'lanechange', 'laneChange');
 eq(Nav.decodeEvent({ branch: { branchType: 'HIGHWAY_OUT_RIGHT', formattedDistance: fd('0.5', 'MILE_US') } }).unit, 'mi', 'miles');
 eq(Nav.decodeEvent({ intersection: { direction: 'HARD_RIGHT', formattedDistance: fd('800', 'FEET') } }).unit, 'ft', 'feet');
-eq(Nav.decodeEvent({ roundabout: { exitNumber: 3, exitAngle: -90, driveDirection: 'RIGHT', formattedDistance: fd('150', 'YARD') } }), { kind: 'roundabout', dir: null, exit: 3, exitAngle: 270, side: 'right', dist: '150', unit: 'yd', road: '', unreliable: false }, 'roundabout, left-hand traffic, angle wrapped');
+eq(Nav.decodeEvent({ roundabout: { exitNumber: 3, exitAngle: -90, driveDirection: 'RIGHT', formattedDistance: fd('150', 'YARD') } }), { kind: 'roundabout', dir: null, geom: null, exit: 3, exitAngle: 270, side: 'right', flag: null, stop: null, dist: '150', unit: 'yd', road: '', unreliable: false }, 'roundabout, left-hand traffic, angle wrapped');
 eq(Nav.decodeEvent({ ferry: { formattedDistance: fd('2', 'KM') } }).kind, 'follow', 'an unknown kind with a distance: follow the route');
 ok(Nav.decodeEvent({ pointOfInterest: { formattedDistance: fd('2', 'KM') } }) === null, 'a point of interest isn\'t a turn');
 ok(Nav.decodeEvent({ laneGuiding: { lanes: [] } }) === null && Nav.decodeEvent(null) === null && Nav.decodeEvent({ a: {}, b: {} }) === null, 'not a manoeuvre: null');
@@ -109,6 +109,43 @@ ok(Nav.decodeDart({ maneuver: { intersection: { direction: 'RIGHT', formattedDis
 // the log line never carries the street
 const named = Nav.decodeEvent({ intersection: { direction: 'LEFT', formattedDistance: fd('450', 'METER'), description: { elements: [{ text: 'Example' }, { text: 'Street' }] } } });
 ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <14 chars>', 'describe(): the road as its length (' + Nav.describe(named) + ')');
+
+// ---- every kind in the car's catalog (GuidanceEventUnion, 22 members) -------------------------------------------
+{
+    const ev = (kind, body) => { const e = {}; e[kind] = Object.assign({ formattedDistance: fd('500', 'METER') }, body || {}); return e; };
+    const TURNS = { intersection: 'turn', branch: 'branch', roundabout: 'roundabout', destinationManeuver: 'destination', laneChange: 'lanechange', alongMainRoad: 'keep', vehicleTransportation: 'transport' };
+    const MEMBERS = ['pointOfInterest', 'intersection', 'tunnel', 'branch', 'roundabout', 'destinationManeuver', 'placeholderElement', 'laneGuiding', 'trafficEvent',
+        'trafficFlowItem', 'routeSegmentItem', 'laneChange', 'tollgate', 'border', 'vehicleTransportation', 'passiveManeuver', 'speedLimitAssist', 'speedCamera',
+        'speedSectionCamera', 'dangerousCurve', 'schoolZone', 'alongMainRoad'];
+    MEMBERS.forEach((k) => {
+        const m = Nav.decodeEvent(ev(k));
+        if (TURNS[k]) ok(m && m.kind === TURNS[k], k + ': a manoeuvre (' + (m && m.kind) + ')');
+        else ok(m === null && Nav.SKIP[k], k + ': not a turn, skipped');
+    });
+    // an info event ahead of the turn doesn't hide it
+    const r = Nav.decodeEvents({ viewContent: [{ eventsInView: [ev('tunnel'), ev('tollgate', { tollGateType: 'TOLL_GATE' }), ev('placeholderElement', { type: 'LOADING_INDICATOR' }),
+        ev('intersection', { direction: 'RIGHT', formattedDistance: fd('900', 'METER') })] }] });
+    ok(r.events.length === 1 && r.events[0].dir === 'RIGHT' && r.events[0].dist === '900', 'a tunnel, a toll gate and a placeholder ahead: the turn after them is the next turn');
+    // a kind newer than the catalog, with a distance: the dot, not a guess
+    ok(Nav.decodeEvent(ev('hovercraft')).kind === 'follow', 'a kind newer than the catalog: follow the route');
+    // detailedGeometry carried when it says something
+    ok(Nav.decodeEvent(ev('branch', { branchType: 'HIGHWAY_OUT_RIGHT', detailedGeometry: 'EXIT_RIGHT_TWO_WAY_FORK_TAKE_RIGHT_LEFT' })).geom === 'EXIT_RIGHT_TWO_WAY_FORK_TAKE_RIGHT_LEFT', 'detailedGeometry kept');
+    ok(Nav.decodeEvent(ev('intersection', { direction: 'LEFT', detailedGeometry: 'UNDEFINED' })).geom === null, 'UNDEFINED geometry: none');
+    // stopovers, ferries, trains
+    const stop = Nav.decodeEvent(ev('destinationManeuver', { position: 'RIGHT', isCheckeredFlag: false, stopOverNumber: 2 }));
+    ok(stop.flag === false && stop.stop === 2 && /stopover 2/.test(Nav.describe(stop)), 'a stopover: no flag, its number (' + Nav.describe(stop) + ')');
+    ok(Nav.decodeEvent(ev('destinationManeuver', { position: 'NOT_DIGITIZED', isCheckeredFlag: true, stopOverNumber: 0 })).dir === 'NOT_DIGITIZED', 'a destination off the map');
+    ok(Nav.decodeEvent(ev('vehicleTransportation', { type: 'CAR_TRAIN' })).dir === 'CAR_TRAIN' && Nav.decodeEvent(ev('vehicleTransportation', { type: 'FERRY' })).dir === 'FERRY', 'ferry and car train');
+    ok(Nav.decodeEvent(ev('intersection', { direction: 'NONE' })).dir === 'NONE', 'TurnDirection NONE kept (drawn as follow the route)');
+    // the catalog itself, when it's here (reference/ is git-ignored: CI skips this)
+    const CAT = path.join(__dirname, '..', '..', 'reference', 'someip-interfaces.json');
+    if (fs.existsSync(CAT)) {
+        const D = JSON.parse(fs.readFileSync(CAT, 'utf8')).datatypes, T = (n) => D['de.bmw.infotainment.navigation.GuidingTypes.' + n];
+        eq(T('GuidanceEventUnion').members.map((x) => x.name).sort(), MEMBERS.slice().sort(), 'the catalog\'s union members are the ones checked');
+        eq(Object.keys(T('DestinationPosition').items).sort(), ['CENTER', 'LEFT', 'NOT_DIGITIZED', 'RIGHT'], 'destination positions');
+        eq(Object.keys(T('VehicleTransportationType').items).sort(), ['CAR_TRAIN', 'FERRY'], 'transport types');
+    } else console.log('(the car\'s catalog is not here: its cross-check skipped)');
+}
 
 // ---- the tracker on a driven clock ---------------------------------------------------------------------------------
 {

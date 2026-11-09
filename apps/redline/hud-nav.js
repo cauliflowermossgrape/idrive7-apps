@@ -17,7 +17,7 @@
  * and the exit bright, its number inside), destination flag, and a dot for anything else ("follow the route").
  * Black is see-through on the glass, like the tach.
  */
-const { withAlpha } = require('./kit/canvas');
+const { withAlpha, mix } = require('./kit/canvas');
 const { PALETTES } = require('./hud-draw');
 
 const NW = 200, NH = 76;
@@ -25,50 +25,117 @@ const isNum = (x) => typeof x === 'number' && isFinite(x);
 
 /*
  * Arrow geometry in a box of -40..40 (y down), drawn right-handed; mir -1 mirrors it for the left.
- * Each shape: { dim: [polylines], path: [points], head: true }; the path ends at the arrow's tip.
+ * A shape: { path: [points] (the way to go, bright, ending at the arrow's tip), dim: [[points]...] (roads not
+ * taken), mir, cut: [x, y, w, h] (an underpass: the bright road broken where the dim one crosses over it) }.
+ * path null: no arrow (a dot, "follow the route").
  */
-const TURN_DEG = { STRAIGHT_ON: 0, SLIGHT: 45, NORMAL: 90, HARD: 135, SHARP: 135 };
+const SIDE = (d) => (/LEFT/.test(d) ? -1 : 1);
+/** The angle of a turn direction name, degrees right of straight on (left ones: mirrored). */
+function turnDeg(d) { return /SLIGHT/.test(d) ? 45 : /HARD|SHARP/.test(d) ? 135 : /LEFT|RIGHT/.test(d) ? 90 : 0; }
 function turnPath(deg) {
     const a = deg * Math.PI / 180;
-    // a hard turn bends higher up, so the way back down has room
-    const py = deg >= 135 ? -14 : 2;
-    return deg === 0 ? [[0, 36], [0, -36]] : [[0, 36], [0, py], [Math.sin(a) * 30, py - Math.cos(a) * 30]];
+    if (deg === 0) return [[0, 36], [0, -36]];
+    // a hard turn: the stem on the other side and bending high, so the way back down stands clear of it
+    if (deg >= 135) return [[-15, 36], [-15, -22], [-15 + Math.sin(a) * 48, -22 - Math.cos(a) * 48]];
+    return [[0, 36], [0, 2], [Math.sin(a) * 30, 2 - Math.cos(a) * 30]];
 }
-/** The shape for a direction name (LEFT, SLIGHT_RIGHT, HARD_LEFT, UTURN_RIGHT, STRAIGHT_ON...): { path, mir }. */
+/** A turn by its direction name (TurnDirection: STRAIGHT_ON, LEFT, SLIGHT_RIGHT, HARD_LEFT, UTURN_RIGHT...). NONE: no arrow. */
 function turnShape(dir) {
     const d = String(dir || '');
-    const mir = /LEFT/.test(d) ? -1 : 1;
+    if (d === 'NONE' || d === '') return { path: null, mir: 1 };
+    const mir = SIDE(d);
     if (/UTURN|U_TURN/.test(d)) {
-        // up on the left, round over the top, down on the right (mirrored: the other way)
-        const p = [[-12, 36], [-12, -10]];
-        for (let i = 1; i <= 8; i++) { const a = Math.PI - i * Math.PI / 8; p.push([Math.cos(a) * 12, -10 - Math.sin(a) * 12]); }
-        p.push([12, 22]);
-        return { path: p, mir: mir };
+        // up on one side, round over the top, back down on the side it turns to (UTURN_LEFT: ends on the left)
+        const p = [[13, 36], [13, -8]];
+        for (let i = 1; i <= 10; i++) { const a = i * Math.PI / 10; p.push([13 * Math.cos(a), -8 - 13 * Math.sin(a)]); }
+        p.push([-13, 24]);
+        return { path: p, mir: -mir };
     }
-    const deg = /SLIGHT/.test(d) ? 45 : /HARD|SHARP/.test(d) ? 135 : /LEFT|RIGHT/.test(d) ? 90 : TURN_DEG.STRAIGHT_ON;
-    return { path: turnPath(deg), mir: mir };
+    return { path: turnPath(turnDeg(d)), mir: mir };
 }
-/** Keep / fork / exit to one side: the road it leaves dim, straight on. */
-function forkShape(mir) {
-    return { path: [[0, 36], [0, 6], [22, -16], [22, -36]], dim: [[[0, 6], [0, -32]]], mir: mir };
+
+/*
+ * Every bright path ends in a straight run at least HEAD_RUN long, so the head sits on a straight piece: with the
+ * bend under the head's base, the thick stroke coming into it bulged out on one side and that side of the head
+ * looked smaller (2026-11-09 review). The tests check it for every arrow.
+ */
+const HEAD_RUN = 28;
+// the legs of forks and branches, right-handed; the split is at y 10, the bend at y -6
+const STEM = [[0, 36], [0, 10]];
+const LEG = { left: [[0, 10], [-18, -6], [-18, -38]], right: [[0, 10], [18, -6], [18, -38]], center: [[0, 10], [0, -38]] };
+/** A fork into legs (names of LEG), the one taken bright. */
+function forkOf(legs, take) {
+    return { path: STEM.concat(LEG[take].slice(1)), dim: legs.filter((l) => l !== take).map((l) => LEG[l]), mir: 1 };
 }
-/** The shape for nav.js's object. */
+/** A motorway exit on side ('left' / 'right'): the main road straight on, the slip road peeling off. take: 'exit' / 'main'. */
+const EXIT_LEG = { right: [[0, 18], [8, 10], [20, -4], [20, -38]], left: [[0, 18], [-8, 10], [-20, -4], [-20, -38]] };
+function exitOf(side, take) {
+    const leg = EXIT_LEG[side];
+    return take === 'exit' ? { path: [[0, 36]].concat(leg), dim: [[[0, 18], [0, -34]]], mir: 1 } : { path: [[0, 36], [0, -38]], dim: [leg], mir: 1 };
+}
+/** An exit on side that forks in two after it; sub: 'left' / 'right' (the branch of the slip road taken). */
+function exitForkOf(side, sub) {
+    const sx = side === 'left' ? -1 : 1, split = [sx * 16, 4];
+    const leg = (t) => [split, [split[0] + (t === 'left' ? -9 : 9), -8], [split[0] + (t === 'left' ? -9 : 9), -38]];
+    return { path: [[0, 36], [0, 22], [sx * 6, 16], split].concat(leg(sub).slice(1)), dim: [[[0, 22], [0, -34]], leg(sub === 'left' ? 'right' : 'left')], mir: 1 };
+}
+/** Straight on, under (cut) or over a road crossing it. */
+function crossingOf(under) {
+    return { path: [[0, 36], [0, -36]], dim: [[[-34, 0], [34, 0]]], mir: 1, cut: under ? [-11, -9, 22, 18] : null };
+}
+
+/**
+ * detailedGeometry (ManeuverGeometry, 31 values in the car's catalog): the junction's exact shape when the car
+ * gives one (seen on the drive: UNDEFINED). Over- / underpass variants are drawn as the plain fork. null: no shape.
+ */
+function geometryShape(g) {
+    g = String(g || '');
+    let r = /^EXIT_(LEFT|RIGHT)_TAKE_(LEFT|RIGHT)$/.exec(g);
+    if (r) return exitOf(r[1].toLowerCase(), r[1] === r[2] ? 'exit' : 'main');
+    r = /^EXIT_(LEFT|RIGHT)_TWO_WAY_FORK_TAKE_(?:LEFT|RIGHT)_(LEFT|RIGHT)$/.exec(g);
+    if (r) return exitForkOf(r[1].toLowerCase(), r[2].toLowerCase());
+    r = /^THREE_WAY_FORK_.*TAKE_(LEFT|CENTER|RIGHT)$/.exec(g);
+    if (r) return forkOf(['left', 'center', 'right'], r[1].toLowerCase());
+    r = /^TWO_WAY_FORK_.*TAKE_(LEFT|RIGHT)$/.exec(g);
+    if (r) return forkOf(['left', 'right'], r[1].toLowerCase());
+    return null;
+}
+
+/** A road branching off to one side (BRANCH_*, keep left / right along the main road): the way on dim, straight. */
+function branchOf(side) { return { path: STEM.concat(LEG[side].slice(1)), dim: [LEG.center], mir: 1 }; }
+
+/** BranchType (15 values in the catalog) as a shape. */
+function branchShape(d) {
+    const side = /LEFT/.test(d) ? 'left' : 'right';
+    if (/^HIGHWAY_IN/.test(d)) {
+        // onto the motorway: the motorway dim, the slip road joining it from the other side
+        if (/STRAIGHT/.test(d)) return { path: [[0, 36], [0, -36]], dim: [[[-24, 36], [-6, 6]], [[24, 36], [6, 6]]], mir: 1 };
+        return { path: [[-16, 36], [-16, 16], [8, -8], [8, -36]], dim: [[[16, 36], [16, -36]]], mir: SIDE(d) };
+    }
+    if (/^HIGHWAY_OUT/.test(d)) {
+        // off the motorway; STRAIGHT: the motorway bends away on both sides, the way off goes on
+        if (/STRAIGHT/.test(d)) return { path: [[0, 36], [0, -36]], dim: [LEG.left, LEG.right], mir: 1 };
+        return exitOf(side, 'exit');
+    }
+    if (/^TRIPLE_FORK/.test(d)) return forkOf(['left', 'center', 'right'], /STRAIGHT/.test(d) ? 'center' : side);
+    if (/^FORK/.test(d)) return forkOf(['left', 'right'], side);
+    if (d === 'OVERPASS' || d === 'UNDERPASS') return crossingOf(d === 'UNDERPASS');
+    if (/^BRANCH_(LEFT|RIGHT)$/.test(d)) return branchOf(side);
+    return { path: [[0, 36], [0, -36]], mir: 1 };       // BRANCH_STRAIGHT and anything newer
+}
+
+/** The shape for nav.js's object (roundabouts, flags and transport are drawn by their own functions). */
 function shapeOf(m) {
     if (!m) return { path: null, mir: 1 };
-    const d = String(m.dir || ''), mir = /LEFT/.test(d) ? -1 : 1;
+    const d = String(m.dir || '');
+    // the exact shape first, when the car gives one
+    const g = (m.kind === 'turn' || m.kind === 'branch') && m.geom ? geometryShape(m.geom) : null;
+    if (g) return g;
     switch (m.kind) {
     case 'turn': return turnShape(d);
-    case 'keep': return /LEFT|RIGHT/.test(d) ? forkShape(mir) : turnShape('STRAIGHT_ON');
-    case 'lanechange': return { path: [[-12, 36], [-12, 12], [12, -10], [12, -36]], mir: mir };
-    case 'branch':
-        if (/HIGHWAY_IN/.test(d)) {
-            // onto the motorway: the motorway dim, the slip road joining it
-            if (/STRAIGHT/.test(d)) return turnShape('STRAIGHT_ON');
-            return { path: [[-16, 36], [-16, 14], [8, -10], [8, -36]], dim: [[[16, 36], [16, -36]]], mir: mir };
-        }
-        if (/TRIPLE_FORK/.test(d) && /STRAIGHT/.test(d)) return { path: [[0, 36], [0, -36]], dim: [[[0, 6], [-22, -16], [-22, -32]], [[0, 6], [22, -16], [22, -32]]], mir: 1 };
-        if (/LEFT|RIGHT/.test(d)) return forkShape(mir);
-        return turnShape('STRAIGHT_ON');         // BRANCH_STRAIGHT, HIGHWAY_OUT_STRAIGHT, OVERPASS, UNDERPASS
+    case 'keep': return /LEFT|RIGHT/.test(d) ? branchOf(/LEFT/.test(d) ? 'left' : 'right') : turnShape('STRAIGHT_ON');
+    case 'lanechange': return { path: [[-12, 36], [-12, 14], [12, -8], [12, -36]], dim: [[[-12, 14], [-12, -32]]], mir: SIDE(d) };
+    case 'branch': return branchShape(d);
     default: return { path: null, mir: 1 };
     }
 }
@@ -81,67 +148,115 @@ function exitAngleOf(m) {
     return m.side === 'right' ? ((90 - 90 * (n - 1)) % 360 + 360) % 360 : (270 + 90 * (n - 1)) % 360;
 }
 
-/** A polyline with round ends; the last segment stops short for the head. */
+/** A polyline with round joins and ends. */
 function stroke(cv, pts, X, Y, w, c) {
     for (let i = 1; i < pts.length; i++) cv.line(X(pts[i - 1]), Y(pts[i - 1]), X(pts[i]), Y(pts[i]), w, c);
 }
-/** The arrow head at the path's end, pointing along its last segment. */
-function head(cv, pts, X, Y, s, c) {
-    const a = pts[pts.length - 2], b = pts[pts.length - 1];
+/** The bright path and its head: the head's tip at the path's end, along the last segment; the shaft runs into its base. */
+function arrowPath(cv, path, X, Y, s, W, col) {
+    const p = path.slice(), a = p[p.length - 2], b = p[p.length - 1];
     const ax = X(a), ay = Y(a), bx = X(b), by = Y(b);
     const l = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
-    const L = 21 * s, W = 17 * s, tx = bx + ux * L * 0.35, ty = by + uy * L * 0.35;
-    cv.triangle([[tx, ty], [tx - ux * L - uy * W, ty - uy * L + ux * W], [tx - ux * L + uy * W, ty - uy * L - ux * W]], c);
+    const L = 20 * s, HW = 15 * s;
+    const back = Math.min(L * 0.7, l * 0.9) / l;
+    p[p.length - 1] = [b[0] + (a[0] - b[0]) * back, b[1] + (a[1] - b[1]) * back];
+    stroke(cv, p, X, Y, W, col);
+    const qx = bx - ux * L, qy = by - uy * L;
+    cv.triangle([[bx, by], [qx - uy * HW, qy + ux * HW], [qx + uy * HW, qy - ux * HW]], col);
 }
 
 /**
  * The arrow for m, centred at cx, cy, s: scale (1 = an 80 px box). col: bright, dim: the roads not taken.
- * Returns nothing; draws nothing for null.
+ * Draws nothing for null.
  */
 function drawArrow(cv, m, cx, cy, s, col, dim) {
     if (!m) return;
-    const W = 13 * s;
+    const W = 12 * s;
     if (m.kind === 'roundabout') { drawRoundabout(cv, m, cx, cy, s, col, dim); return; }
-    if (m.kind === 'destination') { drawFlag(cv, m, cx, cy, s, col, dim); return; }
+    if (m.kind === 'destination') { if (m.flag === false) drawStop(cv, m, cx, cy, s, col); else drawFlag(cv, m, cx, cy, s, col, dim); return; }
+    if (m.kind === 'transport') { drawTransport(cv, m, cx, cy, s, col, dim); return; }
     const sh = shapeOf(m);
-    if (!sh.path) { cv.circle(cx, cy, 11 * s, col); cv.arc(cx, cy, 17 * s, 20 * s, 0, 360, dim); return; }      // follow the route
+    // follow the route: a dot in a ring
+    if (!sh.path) { cv.circle(cx, cy, 10 * s, col); cv.arc(cx, cy, 17 * s, 21 * s, 0, 360, dim); return; }
     const X = (p) => cx + p[0] * sh.mir * s, Y = (p) => cy + p[1] * s;
-    (sh.dim || []).forEach((p) => stroke(cv, p, X, Y, W * 0.75, dim));
-    // the shaft ends where the head begins
-    const p = sh.path.slice(), a = p[p.length - 2], b = p[p.length - 1];
-    const l = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])) || 1, cut = Math.min(l * 0.8, 10);
-    p[p.length - 1] = [b[0] - (b[0] - a[0]) / l * cut, b[1] - (b[1] - a[1]) / l * cut];
-    stroke(cv, p, X, Y, W, col);
-    head(cv, [p[p.length - 2], b], X, Y, s, col);
+    const dims = () => (sh.dim || []).forEach((p) => stroke(cv, p, X, Y, W * 0.8, dim));
+    // an underpass: the bright road first, broken where the dim road passes over it
+    if (!sh.cut) dims();
+    arrowPath(cv, sh.path, X, Y, s, W, col);
+    if (sh.cut) { cv.fillRect(cx + sh.cut[0] * s, cy + sh.cut[1] * s, sh.cut[2] * s, sh.cut[3] * s, [0, 0, 0, 255]); dims(); }
 }
 
-/** The roundabout: the ring dim, the way in, round (the drive side's way) and out bright, the exit's number inside. */
+/**
+ * The roundabout: the ring dim; one bright path in from below, round the island's way and out at the exit's
+ * angle, with the head; the exit's number in the middle. side 'left' (island on the left, right-hand traffic):
+ * anticlockwise; 'right': clockwise.
+ * Back the way it came (a U-turn, exit at about 180): the way in comes up on the drive side of the bottom and the
+ * way out goes straight down beside it, two strokes apart, not one on the other (2026-11-09 review).
+ */
+const RB_IN = 42;            // the way in, degrees to the drive side of the bottom; exits closer to 180 than this: beside it
+const RB_BACK = 45;          // exits this close to 180 leave straight down, parallel to the way in
 function drawRoundabout(cv, m, cx, cy, s, col, dim) {
-    const R = 17 * s, oy = cy - 6 * s, W = 11 * s;
-    cv.arc(cx, oy, R - 3 * s, R + 3 * s, 0, 360, dim);
-    // the way in from below
-    cv.line(cx, cy + 36 * s, cx, oy + R, W, col);
-    // round: from the entry (anticlockwise angle 180) to the exit, the island on m.side
-    const a = exitAngleOf(m);
-    const to = m.side === 'right' ? (a < 180 ? a : a - 360) : (a > 180 ? a : a + 360);
-    // canvas angles are clockwise from 12 o'clock: anticlockwise a is 360 - a
-    const c0 = 180, c1 = 360 - to;
-    cv.arc(cx, oy, R - W / 2, R + W / 2, Math.min(c0, c1), Math.max(c0, c1), col, { round: true });
-    // out along the exit's direction
-    const r = to * Math.PI / 180, ux = -Math.sin(r), uy = -Math.cos(r);
-    const pts = [[ux * R / s, uy * R / s - 6], [ux * 31, uy * 31 - 6]];
+    const R = 16, oy = -2, W = 9 * s;
     const X = (p) => cx + p[0] * s, Y = (p) => cy + p[1] * s;
-    stroke(cv, [pts[0], [pts[0][0] + (pts[1][0] - pts[0][0]) * 0.6, pts[0][1] + (pts[1][1] - pts[0][1]) * 0.6]], X, Y, W, col);
-    head(cv, pts, X, Y, s * 0.9, col);
-    if (isNum(m.exit)) cv.text(String(m.exit), cx, oy + 6 * s, 17 * s, col, { align: 'center', font: 'bold', literal: true });
+    cv.arc(cx, cy + oy * s, (R - 4) * s, (R + 4) * s, 0, 360, dim);
+    const dir = m.side === 'right' ? -1 : 1;          // +1: angles grow (anticlockwise on the map)
+    const inA = 180 + dir * RB_IN;
+    let a = exitAngleOf(m);
+    // an exit in the way in's place: just past the bottom on the other side
+    if (Math.abs(a - 180) < RB_IN) a = 180 - dir * RB_IN;
+    let to = a;
+    while (dir > 0 ? to <= inA : to >= inA) to += dir * 360;
+    while (Math.abs(to - inA) > 360) to -= dir * 360;
+    const pt = (deg, r) => { const t = deg * Math.PI / 180; return [-Math.sin(t) * r, oy - Math.cos(t) * r]; };
+    const path = [[pt(inA, R)[0], 40], pt(inA, R)];
+    const n = Math.max(2, Math.ceil(Math.abs(to - inA) / 12));
+    for (let i = 1; i <= n; i++) path.push(pt(inA + (to - inA) * i / n, R));
+    // out: a spoke long enough that the head sits clear of the ring; backwards: straight down beside the way in
+    const end = pt(to, R);
+    if (Math.abs(a - 180) <= RB_BACK) path.push([end[0], end[1] + 4], [end[0], 40]);
+    else path.push(pt(to, R + 5), pt(to, R + 26));
+    arrowPath(cv, path, X, Y, s * 0.7, W, col);
+    if (isNum(m.exit)) cv.text(String(m.exit), cx, cy + (oy + 5.5) * s, 15 * s, col, { align: 'center', font: 'bold', literal: true });
 }
 
-/** Arrival: a chequered flag, on the side the destination is (centre: straight up). */
+/** Arrival: a chequered flag; LEFT / RIGHT: a small arrow on the ground towards that side (CENTER, NOT_DIGITIZED: none). */
 function drawFlag(cv, m, cx, cy, s, col, dim) {
-    const mir = /LEFT/.test(String(m.dir)) ? -1 : 1, px = cx - mir * 10 * s;
-    cv.line(px, cy + 34 * s, px, cy - 32 * s, 7 * s, col);
-    const fw = 30 * s, fh = 22 * s, cw = fw / 4, ch = fh / 2, x0 = mir > 0 ? px : px - fw, y0 = cy - 32 * s;
+    const d = String(m.dir || ''), mir = /LEFT/.test(d) ? -1 : /RIGHT/.test(d) ? 1 : 0;
+    const px = cx - (mir || 1) * 10 * s;
+    cv.line(px, cy + 26 * s, px, cy - 32 * s, 6 * s, col);
+    const fw = 32 * s, fh = 24 * s, cw = fw / 4, ch = fh / 2, x0 = mir < 0 ? px - fw : px, y0 = cy - 32 * s;
     for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) cv.fillRect(x0 + i * cw, y0 + j * ch, cw, ch, (i + j) % 2 ? dim : col);
+    if (mir) cv.triangle([[cx + mir * 32 * s, cy + 30 * s], [cx + mir * 16 * s, cy + 20 * s], [cx + mir * 16 * s, cy + 40 * s]], col);
+}
+
+/** A stopover on the way (isCheckeredFlag false): a pin with its number. */
+function drawStop(cv, m, cx, cy, s, col) {
+    const r = 18 * s, py = cy - 10 * s;
+    cv.circle(cx, py, r, col);
+    cv.triangle([[cx - r * 0.75, py + r * 0.65], [cx + r * 0.75, py + r * 0.65], [cx, cy + 34 * s]], col);
+    cv.circle(cx, py, r - 5 * s, [0, 0, 0, 255]);
+    if (isNum(m.stop) && m.stop > 0) cv.text(String(m.stop), cx, py + 7 * s, 20 * s, col, { align: 'center', font: 'bold', literal: true });
+}
+
+/** Onto a ferry or a car train (vehicleTransportation). */
+function drawTransport(cv, m, cx, cy, s, col, dim) {
+    const X = (x) => cx + x * s, Y = (y) => cy + y * s;
+    if (/TRAIN/.test(String(m.dir))) {
+        cv.roundRect(X(-24), Y(-30), 48 * s, 48 * s, 9 * s, col);
+        cv.fillRect(X(-17), Y(-22), 34 * s, 14 * s, [0, 0, 0, 255]);
+        cv.circle(X(-12), Y(6), 5 * s, [0, 0, 0, 255]); cv.circle(X(12), Y(6), 5 * s, [0, 0, 0, 255]);
+        cv.line(X(-14), Y(20), X(-24), Y(34), 5 * s, col); cv.line(X(14), Y(20), X(24), Y(34), 5 * s, col);
+        cv.line(X(-30), Y(30), X(30), Y(30), 3 * s, dim);
+        return;
+    }
+    // ferry: a cabin, the hull, two waves
+    cv.fillRect(X(-10), Y(-30), 20 * s, 14 * s, col);
+    cv.convex([[X(-32), Y(-12)], [X(32), Y(-12)], [X(22), Y(10)], [X(-22), Y(10)]], col);
+    [20, 32].forEach((y, i) => {
+        const pts = [];
+        for (let x = -34; x <= 34; x += 4) pts.push([X(x), Y(y + Math.sin(x / 6) * 3)]);
+        cv.polyline(pts, 4 * s, i ? dim : col);
+    });
 }
 
 /**
@@ -198,7 +313,8 @@ function drawNav(cv, m, opts) {
     cv.clear();
     if (!m) return null;
     const P = PALETTES[(opts && opts.palette) || 'colour'] || PALETTES.colour;
-    const col = P.text, dim = withAlpha(P.text, 0.35);
+    // dim: a solid dark shade, not a see-through one (overlapping strokes of a see-through colour add up at every bend)
+    const col = P.text, dim = mix('#000000', P.text, 0.35);
     const textMax = NW - AW - GAP - 2;
     const dist = m.dist ? String(m.dist) : '', unit = m.unit || '';
     const distW = dist ? cv.textWidth(dist, DIST, DOPTS) + 4 + cv.textWidth(unit, UNIT, UOPTS) : 0;
@@ -226,8 +342,41 @@ function drawNav(cv, m, opts) {
 function navKey(m, opts) {
     if (!m) return '';
     const L = m.lanes ? m.lanes.lanes.map((l) => (l.hi ? '*' : '') + l.follow + '/' + l.others.join('+')).join(',') + '|' + (m.lanes.markers || []).join(',') : '';
-    return [m.kind, m.dir, m.exit, m.exitAngle, m.side, m.dist, m.unit, m.road, L, opts && opts.palette].join('|');
+    return [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.side, m.flag, m.stop, m.dist, m.unit, m.road, L, opts && opts.palette].join('|');
 }
+
+/*
+ * Every value the car's catalog (someip-interfaces.json, navigation.GuidingTypes) has for what decides the arrow,
+ * so the tests and the review sheet draw them all: TurnDirection, BranchType, ManeuverGeometry, Side,
+ * DestinationPosition, MainRoadDirection, VehicleTransportationType.
+ */
+const TURN_DIRECTIONS = ['STRAIGHT_ON', 'SLIGHT_LEFT', 'LEFT', 'HARD_LEFT', 'UTURN_LEFT', 'SLIGHT_RIGHT', 'RIGHT', 'HARD_RIGHT', 'UTURN_RIGHT', 'NONE'];
+const BRANCH_TYPES = ['BRANCH_LEFT', 'BRANCH_RIGHT', 'FORK_LEFT', 'FORK_RIGHT', 'TRIPLE_FORK_LEFT', 'TRIPLE_FORK_STRAIGHT', 'TRIPLE_FORK_RIGHT',
+    'HIGHWAY_OUT_LEFT', 'HIGHWAY_OUT_STRAIGHT', 'HIGHWAY_OUT_RIGHT', 'HIGHWAY_IN_LEFT', 'HIGHWAY_IN_STRAIGHT', 'HIGHWAY_IN_RIGHT', 'OVERPASS', 'UNDERPASS'];
+const GEOMETRIES = ['EXIT_LEFT_TAKE_LEFT', 'EXIT_LEFT_TAKE_RIGHT', 'EXIT_RIGHT_TAKE_LEFT', 'EXIT_RIGHT_TAKE_RIGHT',
+    'EXIT_LEFT_TWO_WAY_FORK_TAKE_LEFT_LEFT', 'EXIT_LEFT_TWO_WAY_FORK_TAKE_LEFT_RIGHT', 'EXIT_RIGHT_TWO_WAY_FORK_TAKE_RIGHT_LEFT', 'EXIT_RIGHT_TWO_WAY_FORK_TAKE_RIGHT_RIGHT',
+    'THREE_WAY_FORK_TAKE_LEFT', 'THREE_WAY_FORK_TAKE_CENTER', 'THREE_WAY_FORK_TAKE_RIGHT',
+    'THREE_WAY_FORK_OVERPASS_CENTER_TAKE_LEFT', 'THREE_WAY_FORK_OVERPASS_CENTER_TAKE_CENTER', 'THREE_WAY_FORK_OVERPASS_CENTER_TAKE_RIGHT',
+    'THREE_WAY_FORK_UNDERPASS_CENTER_TAKE_LEFT', 'THREE_WAY_FORK_UNDERPASS_CENTER_TAKE_CENTER', 'THREE_WAY_FORK_UNDERPASS_CENTER_TAKE_RIGHT',
+    'TWO_WAY_FORK_TAKE_LEFT', 'TWO_WAY_FORK_TAKE_RIGHT',
+    'TWO_WAY_FORK_OVERPASS_LEFT_TAKE_LEFT', 'TWO_WAY_FORK_OVERPASS_LEFT_TAKE_RIGHT', 'TWO_WAY_FORK_OVERPASS_RIGHT_TAKE_LEFT', 'TWO_WAY_FORK_OVERPASS_RIGHT_TAKE_RIGHT',
+    'TWO_WAY_FORK_UNDERPASS_LEFT_TAKE_LEFT', 'TWO_WAY_FORK_UNDERPASS_LEFT_TAKE_RIGHT', 'TWO_WAY_FORK_UNDERPASS_RIGHT_TAKE_LEFT', 'TWO_WAY_FORK_UNDERPASS_RIGHT_TAKE_RIGHT',
+    'TWO_WAY_FORK_OVERPASS_LEFT_UNDERPASS_RIGHT_TAKE_LEFT', 'TWO_WAY_FORK_OVERPASS_LEFT_UNDERPASS_RIGHT_TAKE_RIGHT',
+    'TWO_WAY_FORK_UNDERPASS_LEFT_OVERPASS_RIGHT_TAKE_LEFT', 'TWO_WAY_FORK_UNDERPASS_LEFT_OVERPASS_RIGHT_TAKE_RIGHT'];
+/** One object per arrow the car can ask for (label: the value it stands for). */
+const ALL_ARROWS = [].concat(
+    TURN_DIRECTIONS.map((d) => ({ kind: 'turn', dir: d, label: d })),
+    BRANCH_TYPES.map((d) => ({ kind: 'branch', dir: d, label: d })),
+    GEOMETRIES.map((g) => ({ kind: 'branch', dir: 'BRANCH_LEFT', geom: g, label: g.replace('TWO_WAY_FORK', '2FORK').replace('THREE_WAY_FORK', '3FORK').replace(/DERPASS|ERPASS/g, '') })),
+    [270, 315, 0, 45, 90, 180, 307].map((a, i) => ({ kind: 'roundabout', exit: i + 1, exitAngle: a, side: 'left', label: 'RB left ' + a })),
+    [90, 0, 270, 180].map((a, i) => ({ kind: 'roundabout', exit: i + 1, exitAngle: a, side: 'right', label: 'RB right ' + a })),
+    [{ kind: 'roundabout', exit: 2, exitAngle: null, side: 'left', label: 'RB exit 2, no angle' }],
+    ['LEFT', 'CENTER', 'RIGHT', 'NOT_DIGITIZED'].map((d) => ({ kind: 'destination', dir: d, flag: true, label: 'DEST ' + d })),
+    [{ kind: 'destination', dir: 'RIGHT', flag: false, stop: 2, label: 'STOPOVER 2' }],
+    ['LEFT', 'RIGHT'].map((d) => ({ kind: 'keep', dir: d, label: 'ALONG MAIN ' + d })),
+    ['LEFT', 'RIGHT'].map((d) => ({ kind: 'lanechange', dir: d, label: 'LANE CHANGE ' + d })),
+    ['FERRY', 'CAR_TRAIN'].map((d) => ({ kind: 'transport', dir: d, label: d })),
+    [{ kind: 'follow', dir: 'unknown', label: 'FOLLOW (unknown)' }]);
 
 /** Sample turns for the test pattern, the previews and the tests. */
 const SAMPLES = {
@@ -249,4 +398,4 @@ const SAMPLES = {
         lanes: { lanes: [{ follow: 'NONE', others: ['LEFT'], hi: false, info: 'NONE' }, { follow: 'RIGHT', others: ['STRAIGHT_ON'], hi: true, info: 'NONE' }], rec: 1, markers: ['SOLID', 'DASHED', 'SOLID'] } },
 };
 
-module.exports = { drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, exitAngleOf, SAMPLES, NW, NH };
+module.exports = { HEAD_RUN, drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, geometryShape, exitAngleOf, SAMPLES, NW, NH, ALL_ARROWS, TURN_DIRECTIONS, BRANCH_TYPES, GEOMETRIES };
