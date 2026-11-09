@@ -27,6 +27,8 @@
  *                upshift rpm for each gear
  *   gearbox.js   gearbox oil temperature for the HUD (EGS over read-only UDS, or BasicDataSet)
  *   knock.js     knock retard from the engine unit for the HUD's knock warning and readout (read-only UDS)
+ *   fuel.js      fuel use from the engine unit for the HUD's fuel readout (read-only UDS / OBD)
+ *   powerlog.js  the car's own power and fuel displays, logged raw while those readouts are on (scale learning)
  *   electrical.js  12 V and hybrid battery readouts for the HUD (car signals and read-only UDS)
  *   tyres.js     tyre pressures, targets and temperatures from the car's signals (Redline's own reading)
  *   hud-tyres.js the tyre widget: the car from above with its four tyres, in the directions' corner
@@ -54,6 +56,8 @@ const Hud = require('./hud');
 const HudDraw = require('./hud-draw');
 const GearboxTemp = require('./gearbox');
 const KnockWatch = require('./knock');
+const FuelWatch = require('./fuel');
+const PowerLog = require('./powerlog');
 const Electrical = require('./electrical');
 const Tyres = require('./tyres');
 const QuietLog = require('./quietlog');
@@ -110,6 +114,8 @@ mgu.run({
         const gearbox = new GearboxTemp(ctx);
         // knock from the engine unit, on the gearbox reader's diagnostics link; polled only while the HUD wants it
         const knock = new KnockWatch(ctx, () => gearbox.diag());
+        // fuel use from the engine unit, the same link; polled only while the fuel readout is on and the engine runs
+        const fuel = new FuelWatch(ctx, () => gearbox.diag(), { diesel: engine.profile() === 'diesel' });
         // 12 V and hybrid battery from the car (signals, and read-only UDS on the same link); hybrid ones only on a hybrid
         const electrical = new Electrical(ctx, () => gearbox.diag());
         // tyre pressures, targets and temperatures from the car's own signals (no requests to any unit)
@@ -166,7 +172,20 @@ mgu.run({
                 if (gearMode.seen.indexOf(String(raw)) < 0 && gearMode.seen.length < 12) { gearMode.seen.push(String(raw)); log.info('gearbox programme: ' + JSON.stringify(raw) + ' -> ' + gearMode.v); }
             },
         } };
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), electrical.handlers(), tyres.handlers(), torqueWatch));
+        let car = null;
+        // the car's own power / fuel displays, logged raw for a drive while the readouts that would use them are on
+        const powerLog = PowerLog.start({
+            dataDir: ctx.dataDir,
+            wanted: () => settings.get('hudShowFuel') === true || (settings.get('hudHybridSeen') === true && settings.get('hudShowHvBar') === true),
+            now: () => ({ hvKw: electrical.value().hvKw, lph: fuel.value().lph, kmh: car ? car.data().speed : null }),
+        });
+        // one watch per interface: handler sets that share an interface are merged field by field (a plain
+        // Object.assign would drop one: electrical.js and the power log both listen to Efficiencytainment2)
+        const merged = {};
+        [{ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), electrical.handlers(), tyres.handlers(), torqueWatch, powerLog.handlers()].forEach((set) => {
+            Object.keys(set).forEach((iface) => { merged[iface] = Object.assign(merged[iface] || {}, set[iface]); });
+        });
+        car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], merged);
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
@@ -635,8 +654,8 @@ mgu.run({
                 cv.target(tx - 16, 362, w + 32, 40, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 48;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside, o.tyres,
-                o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvTemp, o.hvVolt].filter(Boolean).length;
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.fuel, o.oil, o.coolant, o.gearbox, o.outside, o.tyres,
+                o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvBar, o.hvTemp, o.hvVolt].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
             const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(P)) : {};
@@ -674,6 +693,7 @@ mgu.run({
                     switches(cv, t, R2, 'HYBRID', [
                         ['Charge', o.hvSoc, () => P.set('hudShowHvSoc', !on('hudShowHvSoc'))],
                         ['Power', o.hvPower, () => P.set('hudShowHvPower', !on('hudShowHvPower'))],
+                        ['Power bar', o.hvBar, () => P.set('hudShowHvBar', !on('hudShowHvBar'))],
                         ['Temp', o.hvTemp, () => P.set('hudShowHvTemp', !on('hudShowHvTemp'))],
                         ['Voltage', o.hvVolt, () => P.set('hudShowHvVolt', !on('hudShowHvVolt'))],
                     ]);
@@ -689,6 +709,7 @@ mgu.run({
                     ['Power', o.power, () => P.set('hudShowPower', !o.power)],
                     ['G-force', o.g, () => P.set('hudShowG', !o.g)],
                     ['Knock', o.knock, () => P.set('hudShowKnock', !o.knock)],
+                    ['Fuel', o.fuel, () => P.set('hudShowFuel', !o.fuel)],
                 ].concat(tyres.seen() ? [['Tyres', o.tyres, () => P.set('hudShowTyres', !o.tyres)]] : []));
                 switches(cv, t, R2, 'TEMPS', [
                     ['Oil', o.oil, () => P.set('hudShowOil', !o.oil)],
@@ -924,7 +945,7 @@ mgu.run({
         hud = Hud.start(ctx, {
             // the next turn and lanes while a route runs (null: none here)
             nav: nav,
-            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, electrical, tyres, downshift,
+            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, fuel, electrical, tyres, downshift,
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
@@ -940,6 +961,7 @@ mgu.run({
                 gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),
                 knock: knock.value().retard,
+                fuelLph: fuel.value().lph, kmh: car.data().speed,
             })),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));

@@ -494,6 +494,15 @@ degrees, only from 0.75°. A car whose engine unit doesn't answer `554C` shows n
 `knock: the engine unit gives no knock retard`). The threshold is from the catalogue's scaling and not
 yet checked on a car.
 
+### Fuel use
+
+*Fuel* (off by default, any car): the engine's fuel rate from the engine unit over read-only diagnostics, once a
+second while the readout is on and the engine runs (the gearbox reader's link), smoothed over about 2 s. First
+that answers: `5656` (fuel volume flow, ml/s), OBD `5E` (fuel rate, l/h), `4521` (fuel mass flow, over the
+fuel's density). Shown as **L/100KM** while moving (or **MPG**, **MPG US**, **KM/L**: *Fuel use unit* in
+Units), and as **L/H** (or **GAL/H**) under 5 km/h. Coasting with the fuel cut shows 0.0. A car whose engine
+unit answers none of them shows nothing (logged once). Not yet checked on a car.
+
 ## Electrical
 
 Read from the car itself, the way eDrive reads them (never from another app's files):
@@ -504,6 +513,7 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 | 12V | 12 V battery voltage, 0.1 V (yellow under 12.0, red under 11.5 or over 15.0) | UDS `F442` from the engine unit (`0x12`), else OBD `42`, a second engine unit, the gearbox unit (`0x18`) or the battery sensor (`402B`, `5853`): eDrive's list, the one that answers is kept |
 | HV CHARGE | hybrid battery charge, % | UDS `DDBC` from the battery unit (SME `0x07`), every 5 s |
 | HV KW | hybrid battery power, kW: + drives, − charging (regen) | pack voltage (`DDB4` / `DD68` / `DD66` / `DDEF`) × current (`DD69`) from the SME, twice a second |
+| POWER (bar) | the recovery / power bar, like BMW's hybrid power meter: regen fills green left of zero (to 40 kW), drive white right of it (to 80 kW, yellow near the end), with the kW; two columns wide when the row has room | the same as HV KW |
 | HV TEMP | hybrid battery temperature (blue under 5 °C, red over 45 °C) | `Efficiencytainment2.statusBatteryTemperature` |
 | HV VOLTS | pack voltage | `LSCDataSink.statusHighVoltageStorage` (or the SME's when it is read for power) |
 
@@ -589,6 +599,7 @@ Everything lives in the app's `data/` folder on the head unit
 |---|---|---|---|
 | `redline.log`, `redline.log.1` | the app's log: at 256 KB it is renamed to `.1` over the older one | ≤ ~512 KB | on events, never per frame; the same kind of line at most every 10 min (`quietlog.js`) |
 | `redline-nav.log`, `redline-nav.log.1` | the navigation probe: the same, at 256 KB | ≤ ~512 KB | only while the HUD shows directions (and 10 s after) |
+| `redline-power.log`, `redline-power.log.1` | the car's own power meter and fuel-use displays, raw, with Redline's kW, l/h and speed beside them (to learn their scales) | ≤ ~512 KB | only while *Fuel* or the power bar is on, each value at most every 3 s, the first 30 min after each start |
 | `settings.json` | settings | small | when a setting changes |
 | `limiter.json` | learned redline | < 50 B | when it rises |
 | `shiftmap.json` | torque bins and gear ratios | ~0.5–10 KB | at most every 5 min while learning, at most once a minute when a shift point moves |
@@ -646,6 +657,8 @@ Useful lines:
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
 | `files.js` | `writeAtomic`: the learned files written whole or not at all (temp file, then rename) |
+| `fuel.js` | Fuel use: the engine unit's fuel rate (read-only UDS / OBD), smoothed; the readout in l/100 km, mpg or km/l |
+| `powerlog.js` | The car's own power meter and fuel-use displays logged raw to `redline-power.log` (scale learning) |
 | `quietlog.js` | keeps redline.log small: the same kind of line at most every 10 minutes, with a count of the ones held back |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |
 | `knock.js` | Knock retard from the engine unit (read-only UDS 22) |

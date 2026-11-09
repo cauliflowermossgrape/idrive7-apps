@@ -39,6 +39,7 @@ const Draw = require('./hud-draw');
 // Redline's own directions (the next turn, its distance, the street, the lanes), a picture in the bottom right corner
 const HudNav = require('./hud-nav');
 const TyresMod = require('./tyres');
+const Fuel = require('./fuel');
 const HudTyres = require('./hud-tyres');
 const { HudClaim } = require('./kit/hud_claim');
 // files written whole or not at all (the learned reaction lead)
@@ -223,7 +224,7 @@ const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc
 const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hudRpmFormat', 'hudUnlit', 'hudLightStyle',
     'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
-    'hudShowTyres', 'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt',
+    'hudShowTyres', 'hudShowFuel', 'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvBar', 'hudShowHvTemp', 'hudShowHvVolt',
     'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
 /** The profile a driving mode uses ('sport', 'comfort', 'eco' or null). */
 function profileOf(drive) { return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport'; }
@@ -318,6 +319,11 @@ function optsFrom(settings, drive) {
         soc12: settings.get('hudShowBattSoc') === true, volt12: settings.get('hudShowBattVolt') === true,
         hvSoc: hybridOn(settings, 'hudShowHvSoc'), hvPower: hybridOn(settings, 'hudShowHvPower'), hvTemp: hybridOn(settings, 'hudShowHvTemp'),
         hvVolt: hybridOn(settings, 'hudShowHvVolt'),
+        // the recovery / power bar (BMW's hybrid power meter): hybrids only, like the readouts above
+        hvBar: hybridOn(settings, 'hudShowHvBar'),
+        // fuel use from the engine unit (fuel.js), off unless switched on; l/100 km, mpg (UK / US) or km/l
+        fuel: settings.get('hudShowFuel') === true,
+        fuelUnit: ['mpguk', 'mpgus', 'kml'].indexOf(settings.get('hudFuelUnit')) >= 0 ? settings.get('hudFuelUnit') : 'l100',
         torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
@@ -341,7 +347,7 @@ function optsFrom(settings, drive) {
 /** A hybrid readout's switch: on only when switched on and the car has a high-voltage battery. */
 function hybridOn(settings, key) { return settings.get('hudHybridSeen') === true && settings.get(key) === true; }
 /** The electrical readouts that need UDS reads (electrical.js start()): { hv, v12 }. */
-function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower), hvSoc: !!o.hvSoc, hvKw: !!o.hvPower, v12: !!o.volt12 }; }
+function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower || o.hvBar), hvSoc: !!o.hvSoc, hvKw: !!(o.hvPower || o.hvBar), v12: !!o.volt12 }; }
 
 /**
  * The car's driving mode (FES statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, a
@@ -366,7 +372,7 @@ function calmFor(drive, mode) {
 /** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
 function calmOpts(o) {
     return Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, limit: false,
-        oil: false, coolant: false, gearbox: false, outside: false, tyres: false, soc12: false, volt12: false, hvSoc: false, hvPower: false, hvTemp: false,
+        oil: false, coolant: false, gearbox: false, outside: false, tyres: false, fuel: false, soc12: false, volt12: false, hvSoc: false, hvPower: false, hvBar: false, hvTemp: false,
         hvVolt: false, chip: 'off', peak: false, shake: false });
 }
 
@@ -377,6 +383,9 @@ const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa:
 const TORQUE_UNITS = { nm: [1, 'TORQUE'], lbft: [0.737562, 'LB-FT'] };
 const POWER_UNITS = { hp: [1.34102, 'HP'], kw: [1, 'KW'], ps: [1.35962, 'PS'] };
 const MAX_READOUTS = 4;
+// the recovery / power bar's ends, kW: regen to 40, drive to 80 (a 330e's e-motor gives about 80 with XtraBoost);
+// not yet checked on a car: the log of BMW's own power meter (powerlog.js) will tell
+const HV_BAR_KW = [40, 80];
 /** The RPM readout for format f: '10' (to 10, the default), '50', or 'k' (thousands, 4.5). */
 function rpmItem(rpm, f) {
     const r = Math.max(0, rpm), step = f === '50' ? 50 : 10;
@@ -420,6 +429,8 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     if (o.limit && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
     // knock: the ignition retard knock control takes, only while it takes some (0.75 degrees and up)
     if (o.knock && isNum(x.knock) && x.knock >= 0.75) items.push({ label: 'KNOCK', value: x.knock.toFixed(1) + '°', tone: x.knock >= 2.25 ? 'hot' : 'warm' });
+    // fuel use (fuel.js): per 100 km / mpg / km per litre while moving, per hour under 5 km/h
+    if (o.fuel) { const it = Fuel.fuelItem(x.fuelLph, x.kmh, o.fuelUnit); if (it) items.push(it); }
     TEMPS.forEach((t) => {
         if (!o[t[1]]) return;
         const v = t[1] === 'gearbox' ? gb : d[t[1]];
@@ -456,6 +467,8 @@ function electricalItems(o, x) {
     if (o.volt12 && isNum(x.v12)) out.push({ label: '12V', value: x.v12.toFixed(1), tone: x.v12 < 11.5 || x.v12 > 15 ? 'hot' : x.v12 < 12 ? 'warm' : 'text' });
     if (o.hvSoc && isNum(x.hvSoc)) out.push({ label: 'HV CHARGE', value: Math.round(clamp(x.hvSoc, 0, 100)) + '%', tone: 'text' });
     if (o.hvPower && isNum(x.hvKw)) { const k = Math.round(x.hvKw); out.push({ label: 'HV KW', value: (k > 0 ? '+' : '') + k, tone: 'text' }); }
+    // the recovery / power bar (hud-draw.js): regen left of zero, drive right, two columns wide when there's room
+    if (o.hvBar && isNum(x.hvKw)) { const k = Math.round(x.hvKw); out.push({ label: 'POWER', value: (k > 0 ? '+' : '') + k, tone: 'text', bar: { v: x.hvKw, lo: -HV_BAR_KW[0], hi: HV_BAR_KW[1] }, wide: true }); }
     if (o.hvTemp && isNum(x.hvTemp)) out.push({ label: 'HV TEMP', value: Math.round(o.fahrenheit ? x.hvTemp * 9 / 5 + 32 : x.hvTemp) + '°', tone: x.hvTemp < 5 ? 'cold' : x.hvTemp > 45 ? 'hot' : 'text' });
     if (o.hvVolt && isNum(x.hvVolt)) out.push({ label: 'HV VOLTS', value: String(Math.round(x.hvVolt)), tone: 'text' });
     return out;
@@ -716,7 +729,7 @@ function start(ctx, src) {
     });
 
     // the UDS readers (gearbox, knock, electrical): stopped together whenever the tach isn't drawing
-    const stopReads = () => { [src.gearbox, src.knock, src.electrical].forEach((r) => { if (r) r.stop(); }); };
+    const stopReads = () => { [src.gearbox, src.knock, src.fuel, src.electrical].forEach((r) => { if (r) r.stop(); }); };
     const stopTimer = () => { if (timer) clearInterval(timer); timer = null; stopReads(); };
 
     const dropLayer = safe('drop', () => { stopTimer(); dropNav(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; navGiving = false; });
@@ -955,6 +968,8 @@ function start(ctx, src) {
         if (src.electrical) src.electrical.start(electricalWants(oNow));
         // the engine unit's knock values only while wanted and the engine runs
         if (src.knock) { const run = isNum(src.data().rpm) && src.data().rpm > 400; if ((oNow.knock || oNow.knockWarn) && run) src.knock.start(); else src.knock.stop(); }
+        // and its fuel rate only while the fuel readout is on and the engine runs
+        if (src.fuel) { const run = isNum(src.data().rpm) && src.data().rpm > 400; if (oNow.fuel && run) src.fuel.start(); else src.fuel.stop(); }
         const f = frameData();
         // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
         const key = frameKey(f);

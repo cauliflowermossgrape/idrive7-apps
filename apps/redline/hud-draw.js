@@ -211,12 +211,21 @@ function drawDown(cv, cx, y, n, k, col) {
  * The readouts row from x0 to x1 at y: items [{ label, value, tone }] (tone: 'text' | 'cold' | 'warm' |
  * 'hot'), as many columns as items (4 at most: hud.js keeps it there), slightly smaller beyond 3. Labels
  * are bg, values fg.
+ * The Recovery / Power meter: an item with bar = { v, lo, hi } (kW: + the battery drives, - it recovers) draws
+ * its value over a centre-zero bar (hud-m.js powerBar: outline and zero tick bg, the fill fg) and REC at the
+ * bar's left end (bg) when there's room beside the value. wide: true makes it take two columns' width when the
+ * row still has room for that, i.e. its items with the wide ones counted twice come to 4 or fewer (the other
+ * columns then as narrow as in a row of that many); in a full row (4 items) it keeps one column.
  */
 function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
     if (!items.length) return;
-    const n = items.length, colw = (x1 - x0) / Math.max(3, n), k = Math.min(1, colw / 70);
+    const n = items.length, nWide = items.filter((it) => it.bar && it.wide).length, widen = nWide > 0 && n + nWide <= 4;
+    const slots = widen ? n + nWide : n, colw = (x1 - x0) / Math.max(3, slots), k = Math.min(1, colw / 70);
+    let at = 0;
     items.forEach((it, i) => {
-        const cx = x0 + colw * (i + 0.5);
+        const span = widen && it.bar && it.wide ? 2 : 1, cx = x0 + colw * (at + span / 2), cw = colw * span;
+        at += span;
+        if (it.bar) { drawPowerReadout(cv, cx, cw, y, it, P, layer, clear, k); return; }
         // labels: Normal 14 px nearly full brightness, Clearer 18 px full (12 px at 75 % read as specks on the
         // glass); either made smaller to fit its column, so four readouts never run into each other
         // the Tyres readout: TYRES over its four pressures in a 2x2 block (front over rear) when the column holds
@@ -236,6 +245,24 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
         }
         cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), Theme.toneCol(it.tone, P, P.text), { align: 'center', font: 'bold' });
     });
+}
+/**
+ * The power meter's column (centre cx, cw wide): its label as the others', the value where theirs is (made smaller
+ * to fit), under it the bar (y + 47 .. y + 57: inside the image in every layout's row), REC over the bar's left end.
+ * What goes on bg (label, REC, outline, zero tick) depends on the column only, so the cached static layer holds.
+ */
+function drawPowerReadout(cv, cx, cw, y, it, P, layer, clear, k) {
+    const bx = cx - cw / 2 + 6, bw = cw - 12, vo = { align: 'center', font: 'bold' };
+    // the value's size fitted for the widest it shows (+888), so where REC fits doesn't change with the value
+    const vs = Theme.fitSize(cv, '+888', 26 * Math.max(0.8, k), cw - 10, vo), vw = cv.textWidth ? cv.textWidth('+888', vs, vo) : cw;
+    if (layer !== 'fg') {
+        const lo = { align: 'center', font: 'bold', spacing: (clear ? 1.5 : 1.2) * k };
+        cv.text(it.label, cx, y + (clear ? 15 : 13), Theme.fitSize(cv, it.label, (clear ? 18 : 14) * k, cw - 14, lo), clear ? P.text : withAlpha(P.text, 0.9), lo);
+        const ro = { font: 'bold', spacing: 1 }, rs = clear ? 13 : 11;
+        if (cv.textWidth && cv.textWidth('REC', rs, ro) + 4 <= (cw - vw) / 2 - 6) cv.text('REC', bx, y + 43, rs, P.low, ro);
+    }
+    M.powerBar(cv, bx, y + 47, bw, 10, it.bar, P, P.text, layer);
+    if (layer !== 'bg') cv.text(it.value, cx, y + 40, Theme.fitSize(cv, it.value, vs, cw - 10, vo), Theme.toneCol(it.tone, P, P.text), vo);
 }
 
 /**
@@ -354,7 +381,8 @@ function drawLayer(cv, f, layer) {
 function bgKey(f) {
     const o = f.opts, c = f.cue;
     return [o.style, o.style === 'vfd' ? 'vfd' : o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, f.redline, f.max, c.shift || c.limiter, c.limiter,
-        f.chip ? 'chip' : (f.readouts || []).map((r) => r.label).join(',')].join('|');
+        // the power meter's bar: its wideness and range (where the zero tick is) are static too
+        f.chip ? 'chip' : (f.readouts || []).map((r) => r.label + (r.bar ? '~' + (r.wide ? 'w' : '') + r.bar.lo + '~' + r.bar.hi : '')).join(',')].join('|');
 }
 
 const bgCache = { key: '', cv: null };

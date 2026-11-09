@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; HUD by @biscotit",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -48,8 +48,25 @@
       "basicDataSet": "s"
     },
     "de.bmw.infotainment.drivingexcitement.Efficiencytainment2": {
-      "_optional": "hybrid battery temperature on the HUD (plug-in hybrids)",
-      "statusBatteryTemperature": "rs"
+      "_optional": "hybrid battery temperature on the HUD (plug-in hybrids); the car's power meter logged raw (scale learning)",
+      "statusBatteryTemperature": "rs",
+      "statusPowerRelativHybrid": "rs",
+      "statusChargeOfBatteryHybrid": "rs",
+      "displayPowerDrive": "s",
+      "displayPowerDrive2": "s"
+    },
+    "de.bmw.infotainment.drivingexcitement.Efficiencytainment": {
+      "_optional": "the car's recuperation display, logged raw (scale learning)",
+      "statusPowerRelativRecuperation": "rs"
+    },
+    "de.bmw.infotainment.resetlogic.ResetLogic": {
+      "_optional": "the car's own fuel use, logged raw (scale learning)",
+      "currentConsumption": "rs",
+      "averageConsumption": "rs"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "the car's power distribution display, logged raw (scale learning)",
+      "statusDisplayElectricalPowerDistribution": "rs"
     },
     "de.bmw.infotainment.lsc.LSCDataSink": {
       "_optional": "hybrid battery voltage on the HUD (plug-in hybrids)",
@@ -153,6 +170,7 @@
     {"key": "hudTorqueUnit", "label": "Torque unit", "type": "choice", "default": "nm", "options": [["nm", "Nm"], ["lbft", "lb-ft"]], "group": "Units"},
     {"key": "hudPowerUnit", "label": "Power unit", "type": "choice", "default": "hp", "options": [["hp", "hp"], ["ps", "PS"], ["kw", "kW"]], "group": "Units"},
     {"key": "hudBoostUnit", "label": "Boost unit", "type": "choice", "default": "bar", "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]], "group": "Units"},
+    {"key": "hudFuelUnit", "label": "Fuel use unit", "type": "choice", "default": "l100", "options": [["l100", "l/100 km"], ["mpguk", "mpg (UK)"], ["mpgus", "mpg (US)"], ["kml", "km/l"]], "group": "Units"},
     {"key": "hudTyreUnit", "label": "Tyre pressure unit", "type": "choice", "default": "bar", "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]], "when": {"hudTyresSeen": [true]}, "group": "Units"},
     {"key": "hudPalette", "label": "HUD colours", "type": "choice", "default": "colour", "when": {"hud": ["on", "test"], "hudStyle": ["standard", "minimal", "wings", "digital", "vector"], "hudAll": [true]}, "options": [["colour", "Colour"], ["amber", "Night amber"], ["ice", "Ice white"]], "group": "HUD: look"},
     {"key": "hudGearFont", "label": "Gear font", "type": "choice", "default": "auto", "when": {"hud": ["on", "test"], "hudStyle": ["standard", "minimal", "wings", "arc", "ramp", "dial"], "hudAll": [true]}, "options": [["auto", "Auto (Barlow on Arc, Ramp and Dial)"], ["ubuntu", "Ubuntu"], ["barlow", "Barlow"]], "group": "HUD: look"},
@@ -169,6 +187,7 @@
     {"key": "hudShowPower", "label": "Power (from torque and rpm)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowG", "label": "G-force (sideways and braking / accelerating together)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowKnock", "label": "Knock retard (degrees, only while it retards)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowFuel", "label": "Fuel use (from the engine unit, experimental)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowOil", "label": "Oil", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowWater", "label": "Water", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowGearbox", "label": "Gearbox", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
@@ -180,6 +199,7 @@
     {"key": "hudShowBattVolt", "label": "12 V battery voltage", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowHvSoc", "label": "Hybrid battery charge (%)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowHvPower", "label": "Hybrid battery power (kW, + drive, - regen)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowHvBar", "label": "Recovery / power bar (regen left, drive right)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowHvTemp", "label": "Hybrid battery temperature", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowHvVolt", "label": "Hybrid battery voltage", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudHybridSeen", "label": "This car has a hybrid battery (found by the app)", "type": "bool", "default": false, "hidden": true},

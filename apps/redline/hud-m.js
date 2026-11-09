@@ -32,6 +32,26 @@ function fitLabel(cv, text, x, y, size, col, room, opts) {
     const lo = Object.assign({ font: 'bold', spacing: 1 }, opts || {});
     cv.text(text, x, y, room ? Theme.fitSize(cv, text, size, room, lo) : size, col, lo);
 }
+/**
+ * The Recovery / Power meter's bar (a readout with .bar = { v, lo, hi }: kW, + the battery drives, - it recovers):
+ * a centre-zero track from x, w wide, th tall at y, its zero where lo..hi maps 0. layer 'bg': the outline and the
+ * zero tick; 'fg': the fill, from zero leftwards in the palette's low colour (recovery) or rightwards in base
+ * (warm from 85 % of hi); neither: both. v beyond lo / hi fills to the end; v 0 (or not a number) fills nothing.
+ * Shared with hud-draw.js's readouts row.
+ */
+function powerBar(cv, x, y, w, th, bar, P, base, layer) {
+    const lo = isNum(bar.lo) ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > lo ? bar.hi : lo + 1;
+    const at = (v) => x + w * clamp((v - lo) / (hi - lo), 0, 1), z = at(0), big = th >= 9;
+    const ins = big ? 2 : 1.5, tick = big ? 3 : 2;
+    if (layer !== 'fg') {
+        cv.strokeRoundRect(x, y, w, th, 2, 1.3, withAlpha(base, 0.75));
+        cv.fillRect(z - 1, y - tick, 2, th + 2 * tick, base);
+    }
+    if (layer === 'bg' || !isNum(bar.v)) return;
+    const vx = at(bar.v);
+    if (vx < z - 1.5) cv.fillRect(Math.max(x + ins, vx), y + ins, z - 1 - Math.max(x + ins, vx), th - 2 * ins, P.low);
+    else if (vx > z + 1.5) cv.fillRect(z + 1, y + ins, Math.min(x + w - ins, vx) - z - 1, th - 2 * ins, hi > 0 && bar.v >= 0.85 * hi ? P.warm : base);
+}
 /** A small readout: label then value on one line (row) or label over value (stack); align 'left' | 'right' | 'center'. */
 function small(cv, x, y, it, P, o, base, mode, align, vsize) {
     const vs = vsize || 19;
@@ -43,10 +63,16 @@ function small(cv, x, y, it, P, o, base, mode, align, vsize) {
         const ls = cv.textWidth ? Theme.fitSize(cv, it.label, lab.s, w - cv.textWidth(it.value, vs, { font: 'bold' }) - 4, lo) : lab.s;
         cv.text(it.label, x, y, ls, lab.c, lo);
         cv.text(it.value, x + w, y + 1, vs, toneCol(it, P, base), { align: 'right', font: 'bold' });
+        // the power meter: a thin bar under the row where the image has room (not under the bottom row of arc)
+        if (it.bar && y + 10 <= 129) powerBar(cv, x, y + 4, w, 6, it.bar, P, base);
         return;
     }
     cv.text(it.label, x, y, lab.s, lab.c, { align: align, font: 'bold', spacing: 1 });
     cv.text(it.value, x, y + 21, 20, toneCol(it, P, base), { align: align, font: 'bold' });
+    if (it.bar && y + 31 <= 129) {
+        const w = 60, bx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+        powerBar(cv, bx, y + 25, w, 6, it.bar, P, base);
+    }
 }
 /** The shift grade at (x, y): pops in (burst), holds, fades over its last 300 ms. */
 function grade(cv, x, y, chip, P, size, align) {
@@ -281,4 +307,4 @@ function drawM(cv, f, layer, h) {
     const st = f.opts.style;
     if (st === 'arc') drawArc(cv, f, layer, h); else if (st === 'ramp') drawRamp(cv, f, layer, h); else drawDial(cv, f, layer, h);
 }
-module.exports = { drawM };
+module.exports = { drawM, powerBar };

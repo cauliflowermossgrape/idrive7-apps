@@ -16,7 +16,8 @@
  *                    + the battery drives, - it is charged (regen)
  *     HV temperature Efficiencytainment2.statusBatteryTemperature (raw - 50 °C, 255 = none)
  *     pack voltage   LSCDataSink.statusHighVoltageStorage (V, or 0.1 V above 1500)
- *   (left out: KombiIF's power distribution, whose scale nobody knows yet; eDrive doesn't show it either)
+ *   (not shown: KombiIF's power distribution, whose scale nobody knows yet; eDrive doesn't show it either.
+ *   powerlog.js logs it raw, with BMW's own power meter, so a drive can settle it)
  *
  * Petrol and diesel cars: hybrid() stays false, so nothing hybrid shows anywhere (HUD, HUD looks page,
  * Settings). It turns true, and is kept (setting hudHybridSeen), once the car shows a high-voltage battery:

@@ -402,8 +402,27 @@ const labels = (items) => items.map((r) => r.label).join(',');
     ok(declared.hudHybridSeen && declared.hudHybridSeen.hidden === true && declared.hudHybridSeen.default === false, 'hudHybridSeen is hidden and false by default');
     // every new signal interface is optional (a unit without it still installs Redline)
     ['de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'de.bmw.infotainment.lsc.LSCDataSink'].forEach((i) => ok(spec.signals[i] && spec.signals[i]._optional, i + ' is _optional'));
-    // the electric share is left out until its scale is known (eDrive doesn't show it either)
-    ok(!spec.signals['de.bmw.infotainment.KombiIF'] && !declared.hudShowEShare && !/eShare|ELECTRIC'/.test(fs.readFileSync(path.join(APP, 'hud.js'), 'utf8')), 'no electric-share readout');
+    // the electric share isn't shown until its scale is known (eDrive doesn't show it either): only logged raw
+    // (powerlog.js) so a drive can settle it, on an optional interface
+    const kombi = spec.signals['de.bmw.infotainment.KombiIF'];
+    ok(kombi && kombi._optional && Object.keys(kombi).filter((k) => k[0] !== '_').join() === 'statusDisplayElectricalPowerDistribution', 'KombiIF: the power distribution only, optional');
+    ok(!declared.hudShowEShare && !/eShare|ELECTRIC'|PowerDistribution/.test(fs.readFileSync(path.join(APP, 'hud.js'), 'utf8')), 'no electric-share readout');
+    // the recovery / power bar: hybrids only; fuel use on any car (2026-11-10)
+    {
+        const st = (o) => settingsOf(o);
+        const pet = Hud.optsFrom(st({ hudShowHvBar: true })), hyb = Hud.optsFrom(st({ hudShowHvBar: true, hudHybridSeen: true }));
+        ok(!pet.hvBar && hyb.hvBar, 'power bar: never on a petrol / diesel car, on a hybrid when switched on');
+        ok(Hud.electricalWants(hyb).hvKw && Hud.electricalWants(hyb).hv && !Hud.electricalWants(pet).hvKw, 'power bar: the HV kW read only when it shows');
+        const bar = Hud.electricalItems(hyb, { hvKw: -18.4 }).filter((i) => i.bar)[0];
+        ok(bar && bar.label === 'POWER' && bar.value === '-18' && bar.bar.v === -18.4 && bar.bar.lo < 0 && bar.bar.hi > 0 && bar.wide, 'power bar item: signed kW, regen below zero');
+        ok(Hud.electricalItems(Hud.calmOpts(hyb), { hvKw: 10 }).length === 0, 'calmOpts: no power bar');
+        const fo = Object.assign({}, Hud.optsFrom(st({ hudShowFuel: true, hudFuelUnit: 'mpguk' })));
+        const fr = Hud.readoutsFor({}, null, null, null, fo, { fuelLph: 9.6, kmh: 80 }).filter((i) => i.label === 'MPG')[0];
+        ok(fr && fr.value === String(Math.round(282.481 / 12)), 'fuel readout: 9.6 l/h at 80 km/h = 12 l/100 km = 24 mpg (' + (fr && fr.value) + ')');
+        ok(Hud.readoutsFor({}, null, null, null, fo, { fuelLph: null, kmh: 80 }).every((i) => !/MPG|L\//.test(i.label)), 'fuel readout: none without a fuel rate');
+        ok(!Hud.calmOpts(fo).fuel, 'calmOpts: no fuel readout');
+        ['hudShowFuel', 'hudShowHvBar'].forEach((k) => ok(Hud.PROFILE_KEYS.indexOf(k) >= 0, k + ' is a profile key'));
+    }
     ok(spec.signals['de.bmw.infotainment.vehicle.CDS'].statusBattery2 === 'rs', 'CDS.statusBattery2 subscribed');
     // the HUD looks page: hybrid switches only behind electrical.hybrid()
     const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
