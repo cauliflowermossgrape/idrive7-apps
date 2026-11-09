@@ -13,22 +13,17 @@
 
 const fs = require('fs');
 const path = require('path');
-const Module = require('module');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const ROOT = TH.ROOT;
 const APP = path.join(ROOT, 'apps', 'redline');
 
 // the app requires the kit as './kit/...' (where the build puts it)
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit();
 const Hud = require(path.join(APP, 'hud'));
 const Draw = require(path.join(APP, 'hud-draw'));
 const { Canvas } = require(path.join(ROOT, 'kit', 'runtime', 'canvas'));
 
-let fails = 0, checks = 0;
-const ok = (cond, msg) => { checks++; if (!cond) { fails++; console.log('FAIL ' + msg); } };
+const tally = TH.counter(), ok = tally.ok;
 
 /* ---------- settings: every key the HUD code reads is declared, with the default it expects ---------- */
 const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
@@ -346,8 +341,8 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         Date.now = realNow;
         return electricalChecks();
     }).then(() => {
-        console.log(fails ? fails + ' of ' + checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + checks + ').');
-        process.exit(fails ? 1 : 0);
+        console.log(tally.fails ? tally.fails + ' of ' + tally.checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + tally.checks + ').');
+        process.exit(tally.fails ? 1 : 0);
     }).catch((e) => { console.log('FAIL electrical checks threw: ' + (e && e.stack || e)); process.exit(1); });
 }
 

@@ -6,22 +6,15 @@
 // row is hidden there, or the README says the layout keeps its own look).
 //   node kit/tools/test_redline_features.js          (--table: print the whole matrix)
 
-const fs = require('fs');
 const path = require('path');
-const Module = require('module');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const ROOT = TH.ROOT;
 const APP = path.join(ROOT, 'apps', 'redline');
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit();
 const Hud = require(path.join(APP, 'hud'));
 const Draw = require(path.join(APP, 'hud-draw'));
 const { Canvas } = require(path.join(ROOT, 'kit', 'runtime', 'canvas'));
-const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
-const def = {};
-spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
+const { spec, def } = TH.redlineDefaults();
 
 const LAYOUTS = spec.settings.find((s) => s.key === 'hudStyle').options.map((o) => o[0]);
 const SEG7 = ['digital', 'vfd'], M = ['arc', 'ramp', 'dial'];
@@ -114,7 +107,7 @@ spec.settings.filter((s) => s.key && (/^hud/.test(s.key) || s.key === 'lights') 
     else if (s.options) s.options.forEach((op) => { if (String(op[0]) !== String(s.default)) variants.push([s.key, op[0]]); });
 });
 
-let fails = 0, checks = 0;
+const tally = TH.counter();
 const table = [];
 const base = {};
 LAYOUTS.forEach((st) => { base[st] = shot({}, st); });
@@ -128,12 +121,11 @@ variants.forEach(([key, value]) => {
         const autoIs = key === 'hudGearFont' && Hud.gearFontOf('auto', st) === Hud.gearFontOf(value, st);
         const excused = autoIs || (n && n.layouts.indexOf(st) >= 0 && (!n.only || n.only === String(value)));
         row[st] = same ? (excused ? '-' : 'NO CHANGE') : 'ok';
-        checks++;
-        if (same && !excused) { fails++; console.log('FAIL ' + key + '=' + value + ' changes nothing on ' + st); }
+        tally.ok(!same || excused, key + '=' + value + ' changes nothing on ' + st);
     });
     table.push(row);
 });
 // the app-wide shift light style must change every layout's lights (the old Race-colours bug)
 if (process.argv.indexOf('--table') >= 0) console.table(table);
-console.log('Redline HUD features: ' + checks + ' setting x layout checks, ' + fails + ' with no change where there should be one');
-process.exit(fails ? 1 : 0);
+console.log('Redline HUD features: ' + tally.checks + ' setting x layout checks, ' + tally.fails + ' with no change where there should be one');
+process.exit(tally.fails ? 1 : 0);

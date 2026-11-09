@@ -8,6 +8,7 @@ on:
       - 'apps/**'                 # test_zh.py checks every app.json and the text in every app
       - 'kit/runtime/**'
       - 'kit/tools/test_*'
+      - 'kit/tools/redline_*.js' # the tests' shared harness and sample turns
       - 'kit/localization/**'
       - 'kit/tools/build.py'
       - 'kit/tools/pack_data.py'
@@ -23,6 +24,7 @@ on:
       - 'apps/**'                 # test_zh.py checks every app.json and the text in every app
       - 'kit/runtime/**'
       - 'kit/tools/test_*'
+      - 'kit/tools/redline_*.js' # the tests' shared harness and sample turns
       - 'kit/localization/**'
       - 'kit/tools/build.py'
       - 'kit/tools/pack_data.py'

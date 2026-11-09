@@ -11,44 +11,20 @@
 // - the HUD off stops every UDS reader (the electrical one too).
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const Module = require('module');
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-running-'));
-const SHM = process.env.MGU_HUD_CLAIMS = path.join(TMP, 'shm');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const { TMP, SHM } = TH.claimsDir('redline-running-');
+const ROOT = TH.ROOT;
 
 // a stand-in cluster-render: ready at once; records layers and pixels
 let cr = null;
-class FakeCr {
-    constructor() { cr = this; this.ready = true; this.backend = 'test'; this.targets = 'hud'; this.n = 0; this.layers = {}; this.frames = []; this.h = {}; this.effects = 0; }
-    on(ev, fn) { this.h[ev] = fn; }
-    connect() {} close() {} removeAllListeners() {} set() {}
-    _add(kind, o) { this.n++; this.layers[this.n] = Object.assign({ kind: kind }, o); return this.n; }
-    image(o) { return this._add('image', o); }
-    effect(o) { this.effects++; return this._add('effect', o); }
-    uniform() {}
-    pixels(ref, rects, px) { this.frames.push({ ref: ref, rects: rects, px: Buffer.from(px) }); return true; }
-    drop(r) { delete this.layers[r]; }
-    status() { this.asked = (this.asked || 0) + 1; }
-    of(kind) { return Object.keys(this.layers).map(Number).filter((r) => this.layers[r].kind === kind); }
-}
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    if (req === './cluster_render_client') return { ClusterRender: FakeCr };
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit({ clusterRender: TH.fakeClusterRender({ onCreate: (c) => { cr = c; } }) });
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
 const HudNav = require(path.join(ROOT, 'apps', 'redline', 'hud-nav'));
-const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8'));
-const def = {};
-spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
+const def = TH.redlineDefaults().def;
 
-let fails = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
+const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
 const log = { info() {}, warn() {}, error() {} };
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 (async () => {
     // a claim from this boot, so the HUD stays on at start
@@ -168,7 +144,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     ok(corners().length === 0 && h.corner() === '', 'HUD off: the tyre widget gone too');
 
     h.stop();
-    fs.rmdirSync && (function rm(p) { if (fs.statSync(p).isDirectory()) { fs.readdirSync(p).forEach((n) => rm(path.join(p, n))); fs.rmdirSync(p); } else fs.unlinkSync(p); })(TMP);
-    console.log('redline running: ' + checks + ' checks, ' + fails + ' failed');
-    process.exit(fails ? 1 : 0);
+    TH.rmTree(TMP);
+    console.log('redline running: ' + tally.checks + ' checks, ' + tally.fails + ' failed');
+    process.exit(tally.fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

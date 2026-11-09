@@ -4,9 +4,8 @@
 const fs = require('fs'), os = require('os'), path = require('path');
 const NavLog = require(path.join(__dirname, '..', '..', 'apps', 'redline', 'navlog'));
 
-let fails = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const TH = require('./redline_test_harness');
+const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
 
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-nav-'));
@@ -64,6 +63,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const q = NavLog.start({ dataDir: dir }, null);
     ok(typeof q.stop === 'function' && typeof q.write === 'function', 'no signals: a quiet stub');
     p.stop();
-    console.log('redline nav probe: ' + checks + ' checks, ' + fails + ' failed');
-    process.exit(fails ? 1 : 0);
+    console.log('redline nav probe: ' + tally.checks + ' checks, ' + tally.fails + ' failed');
+    process.exit(tally.fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e.stack || e)); process.exit(1); });
