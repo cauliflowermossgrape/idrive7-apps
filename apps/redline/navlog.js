@@ -21,7 +21,7 @@
  */
 const fs = require('fs');
 // the same "is a route running" as the directions use
-const { routingOf } = require('./nav');
+const { routingOf, mono } = require('./nav');
 const path = require('path');
 
 const SOURCES = [
@@ -44,7 +44,7 @@ const MAX_BYTES = 512 * 1024, LINE = 3000, DIST_MS = 5000;
  */
 const EVENT_LIST = { iface: 'de.bmw.infotainment.navigation.guiding.GuidanceEventList', inst: 'Main_Instance', method: 'queryContent' };
 // once a second: nav.js shows a turn for 3 s after its last reply
-const QUERY_MS = 1000, PROXY_RETRY_MS = 30000, CALL_BACKOFF_MS = 5000;
+const QUERY_MS = 1000, PROXY_RETRY_MS = 30000, CALL_BACKOFF_MS = 2000;
 /** The request: one view from the car's position (CCP), six events, turns, lanes, keep-left/right and destinations. */
 function eventQuery() {
     return { viewConfigs: [{
@@ -99,6 +99,8 @@ function withoutDistance(v) {
 function start(ctx, log, tap, opts) {
     // asked only while wanted (main.js: the HUD on and its directions on); the subscriptions themselves are passive
     const wanted = opts && typeof opts.wanted === 'function' ? opts.wanted : () => true;
+    // whether a route runs: the directions' own answer when given (it ends a route the provider alone keeps open)
+    const routingNow = opts && typeof opts.routing === 'function' ? opts.routing : () => routingOf(route);
     const file = path.join(ctx.dataDir || '.', 'redline-nav.log');
     const write = (msg) => {
         try {
@@ -111,7 +113,7 @@ function start(ctx, log, tap, opts) {
     let lastDist = 0;
     // is a route running? (BMW's own, or the phone's)
     const route = { state: null, provider: null, carplay: false, aa: false };
-    const routing = () => routingOf(route);
+    const routing = () => { try { return routingNow(); } catch (e) { return false; } };
     const tapped = (src, field, v, askedAt) => { if (tap) { try { tap(src, field, v, askedAt); } catch (e) { write('tap error: ' + e); } } };
     const got = (src, field, v) => {
         tapped(src, field, v);
@@ -144,8 +146,10 @@ function start(ctx, log, tap, opts) {
             if (res.error) { write(S.name + ' not here: ' + String(res.error).slice(0, 200)); return; }
             write(S.name + ' connected' + (res.available ? ', available' : ', waiting for the provider'));
             // availability changes, logged
+            // availability changes, logged and handed on (a source gone takes its route flags with it)
             let was = res.available;
-            const t = setInterval(() => { if (res.available !== was) { was = res.available; write(S.name + (was ? ' available' : ' not available')); } }, 2000);
+            if (!was) tapped(S.name, 'available', false);
+            const t = setInterval(() => { if (res.available !== was) { was = res.available; write(S.name + (was ? ' available' : ' not available')); tapped(S.name, 'available', was); } }, 2000);
             if (t.unref) t.unref();
             res.timer = t;
         }).catch((e) => write(S.name + ' error: ' + e));
@@ -155,7 +159,7 @@ function start(ctx, log, tap, opts) {
     // after a failed call the next waits CALL_BACKOFF_MS (a provider that doesn't answer holds the shared native queue)
     let elProxy = null, proxyFailedAt = -Infinity, callFailedAt = -Infinity, asking = false, lastEl = '', lastElCore = '', lastElAt = 0, elErr = '';
     const ask = () => {
-        const now = Date.now();
+        const now = mono();
         if (asking || !routing() || !wanted() || !ctx.signals.proxy || !ctx.signals.call || now - callFailedAt < CALL_BACKOFF_MS) return;
         if (!elProxy && now - proxyFailedAt < PROXY_RETRY_MS) return;
         asking = true;
@@ -163,7 +167,7 @@ function start(ctx, log, tap, opts) {
         Promise.resolve().then(() => {
             if (elProxy) return elProxy;
             return ctx.signals.proxy(EVENT_LIST.iface, EVENT_LIST.inst).then((p) => { elProxy = p; write('events connected'); return p; },
-                (e) => { proxyFailedAt = Date.now(); throw e; });
+                (e) => { proxyFailedAt = mono(); throw e; });
         }).then((p) => ctx.signals.call(p, EVENT_LIST.method, eventQuery(), 900)).then((reply) => {
             elErr = '';
             tapped('events', 'reply', reply, askedAt);
@@ -179,7 +183,7 @@ function start(ctx, log, tap, opts) {
             write('events = ' + s);
         }).catch((e) => {
             const m = String(e && e.message || e).slice(0, 200);
-            if (elProxy) callFailedAt = Date.now();
+            if (elProxy) callFailedAt = mono();
             tapped('events', 'error', m);
             if (m !== elErr) { elErr = m; write('events error: ' + m); }
         }).then(() => { asking = false; });

@@ -855,7 +855,7 @@ mgu.run({
             let tracker = null;
             // the event list is asked only while the HUD and its directions are on (the probe's other lines are passive)
             const probe = require('./navlog').start(ctx, log, (s, f, v, at) => { if (tracker) tracker.tap(s, f, v, at); },
-                { wanted: () => settings.get('hud') !== 'off' && settings.get('hudNav') !== 'off' });
+                { wanted: () => settings.get('hud') !== 'off' && settings.get('hudNav') !== 'off', routing: () => !!tracker && tracker.routing() });
             tracker = Nav.start(ctx, log, probe);
             nav = tracker;
         } catch (e) { log.warn('nav: directions not started: ' + e); }

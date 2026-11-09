@@ -577,13 +577,19 @@ function start(ctx, src) {
     let navLayer = 0, navCur = null, navPrev = null, navFirst = true, navLast = '', navGiving = false;
     const dropNav = () => { if (cr && navLayer) cr.drop(navLayer); navLayer = 0; navLast = ''; };
     /** What the directions do now: { show, giveWay } (nothing while the demo plays or without the source). */
+    // a directions layer the renderer refused or failed: made again after NAV_RETRY_MS (dropNav; the next tick)
+    let navRefusedLogged = false, navFailedAt = -Infinity;
+    const NAV_RETRY_MS = 5000;
+    const navFailed = (why) => { log.warn('hud: directions layer ' + why + ', made again in ' + NAV_RETRY_MS / 1000 + ' s'); dropNav(); navFailedAt = Date.now(); };
     const navNow = (playing) => (src.nav && !playing ? src.nav.view(navModeOf(settings)) : { show: null, giveWay: false });
     const drawNavLayer = (m) => {
         if (!m) { dropNav(); return; }
         if (!navLayer) {
+            if (Date.now() - navFailedAt < NAV_RETRY_MS) return;
             const r = navPlaceOf(settings);
             navLayer = cr.image({ target: 'hud', klass: 'overlay', z: 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: HudNav.NW, ih: HudNav.NH, fps: 5, sampling: 'bilinear' });
-            if (!navLayer) { log.warn('hud: directions layer refused by the client'); return; }
+            if (!navLayer) { if (!navRefusedLogged) { navRefusedLogged = true; log.warn('hud: directions layer refused by the client'); } return; }
+            navRefusedLogged = false;
             navCur = new Canvas(HudNav.NW, HudNav.NH); navPrev = new Canvas(HudNav.NW, HudNav.NH); navFirst = true; navLast = '';
         }
         const o = optsNow(), no = { palette: o.style === 'vfd' ? 'vfd' : o.palette };
@@ -634,8 +640,15 @@ function start(ctx, src) {
         }));
         cr.on('layer', safe('layer', (ref, state, reason) => {
             if (ref === layer) log.info('hud: layer ' + state + (reason ? ' (' + reason + ')' : ''));
+            else if (navLayer && ref === navLayer) {
+                log.info('hud: directions layer ' + state + (reason ? ' (' + reason + ')' : ''));
+                if (state === 'error') navFailed('failed');
+            }
         }));
-        cr.on('refused', safe('refused', (op, ref, reason) => log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason)));
+        cr.on('refused', safe('refused', (op, ref, reason) => {
+            log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason);
+            if (navLayer && ref === navLayer) navFailed('refused');
+        }));
         cr.on('status', safe('status', onSlots));
         cr.connect();
         log.info('hud: connecting to cluster-render');
@@ -844,7 +857,9 @@ function start(ctx, src) {
                 }
                 if (src.gearbox) src.gearbox.stop();
                 if (src.knock) src.knock.stop();
-                claim.hold(false);          // nothing of Redline's on the HUD: the standing app may show
+                // nothing of Redline's on the HUD. Comfort's hide: the standing app (Cluster functions) may show. Giving
+                // way: keep the claim, so it's BMW's card that shows, not Cluster functions' map over it (2026-11-09 review)
+                claim.hold(!!nv.giveWay);
                 if (!hiddenLogged && !nv.giveWay) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }

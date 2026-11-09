@@ -26,7 +26,7 @@ const GEOMETRIES = ['EXIT_LEFT_TAKE_LEFT', 'EXIT_LEFT_TAKE_RIGHT', 'EXIT_RIGHT_T
 const ALL_ARROWS = [].concat(
     TURN_DIRECTIONS.map((d) => ({ kind: 'turn', dir: d, label: d })),
     BRANCH_TYPES.map((d) => ({ kind: 'branch', dir: d, label: d })),
-    GEOMETRIES.map((g) => ({ kind: 'branch', dir: 'BRANCH_LEFT', geom: g, label: g.replace('TWO_WAY_FORK', '2FORK').replace('THREE_WAY_FORK', '3FORK').replace(/DERPASS|ERPASS/g, '') })),
+    GEOMETRIES.map((g) => ({ kind: 'branch', dir: 'NONE', geom: g, label: g.replace('TWO_WAY_FORK', '2FORK').replace('THREE_WAY_FORK', '3FORK').replace(/DERPASS|ERPASS/g, '') })),
     [270, 315, 0, 45, 90, 180, 307].map((a, i) => ({ kind: 'roundabout', exit: i + 1, exitAngle: a, side: 'left', label: 'RB left ' + a })),
     [90, 0, 270, 180].map((a, i) => ({ kind: 'roundabout', exit: i + 1, exitAngle: a, side: 'right', label: 'RB right ' + a })),
     [{ kind: 'roundabout', exit: 2, exitAngle: null, side: 'left', label: 'RB exit 2, no angle' }],

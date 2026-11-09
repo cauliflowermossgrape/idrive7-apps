@@ -134,13 +134,20 @@ function branchShape(d) {
     return { path: null, mir: 1 };                      // NONE or anything newer: the dot, not a guessed arrow
 }
 
+/** Whether a shape goes the way a direction name says: its end left / right / straight of its start. */
+function agrees(sh, d) {
+    const side = /LEFT/.test(d) ? -1 : /RIGHT/.test(d) ? 1 : 0;
+    if (!side) return true;                 // STRAIGHT_ON, NONE, OVERPASS...: any shape will do
+    const dx = (sh.path[sh.path.length - 1][0] - sh.path[0][0]) * sh.mir;
+    return dx * side > 3;
+}
 /** The shape for nav.js's object (roundabouts, flags and transport are drawn by their own functions). */
 function shapeOf(m) {
     if (!m) return { path: null, mir: 1 };
     const d = String(m.dir || '');
-    // the exact shape first, when the car gives one
+    // the exact shape first, when the car gives one and it goes the direction's way (the direction wins otherwise)
     const g = (m.kind === 'turn' || m.kind === 'branch') && m.geom ? geometryShape(m.geom) : null;
-    if (g) return g;
+    if (g && agrees(g, d)) return g;
     switch (m.kind) {
     case 'turn': return turnShape(d);
     case 'keep': return d === 'LEFT' || d === 'RIGHT' ? branchOf(d === 'LEFT' ? 'left' : 'right') : { path: null, mir: 1 };
@@ -240,7 +247,7 @@ function drawRoundabout(cv, m, cx, cy, s, col, dim) {
     if (P.back) path.push([end[0], end[1] + 4], [end[0], 40]);
     else path.push(pt(ang(P.tOut), R + 5), pt(ang(P.tOut), R + 22));
     arrowPath(cv, path, X, Y, s * 0.7, W, col);
-    if (isNum(m.exit)) cv.text(String(m.exit), cx, cy + (oy + 5.5) * s, 15 * s, col, { align: 'center', font: 'bold', literal: true });
+    if (isNum(m.exit) && s >= 0.5) cv.text(String(m.exit), cx, cy + (oy + 5.5) * s, 15 * s, col, { align: 'center', font: 'bold', literal: true });
 }
 
 /** Arrival: a chequered flag; LEFT / RIGHT: a small arrow on the ground towards that side (CENTER, NOT_DIGITIZED: none). */
@@ -334,9 +341,14 @@ function laneWindow(L) {
     if (n <= LANES_MAX) return L;
     const hi = [];
     L.lanes.forEach((l, i) => { if (l.hi) hi.push(i); });
-    const mid = hi.length ? (hi[0] + hi[hi.length - 1]) / 2 : isNum(L.rec) ? L.rec : (n - 1) / 2;
+    // the highlighted lanes if they fit; else round the recommended one (or the nearest highlighted one to it)
+    let mid;
+    if (hi.length && hi[hi.length - 1] - hi[0] < LANES_MAX) mid = (hi[0] + hi[hi.length - 1]) / 2;
+    else if (isNum(L.rec)) mid = hi.length ? hi.reduce((b, i) => (Math.abs(i - L.rec) < Math.abs(b - L.rec) ? i : b), hi[0]) : L.rec;
+    else mid = hi.length ? hi[0] : (n - 1) / 2;
     const from = Math.max(0, Math.min(n - LANES_MAX, Math.round(mid - (LANES_MAX - 1) / 2)));
-    return { lanes: L.lanes.slice(from, from + LANES_MAX), rec: L.rec, markers: (L.markers || []).slice(from, from + LANES_MAX + 1) };
+    return { lanes: L.lanes.slice(from, from + LANES_MAX), rec: L.rec, markers: (L.markers || []).slice(from, from + LANES_MAX + 1),
+        cutL: from > 0, cutR: from + LANES_MAX < n };
 }
 function drawLanes(cv, L, x, cy, w, col, dim) {
     if (!L || !L.lanes || !L.lanes.length) return 0;
@@ -348,14 +360,18 @@ function drawLanes(cv, L, x, cy, w, col, dim) {
         else for (let j = 0; j < 3; j++) cv.line(lx, y0 + j * h / 3 + 2, lx, y0 + j * h / 3 + h / 6 + 2, 1.5, dim);
     }
     for (let i = 0; i < n; i++) drawLaneArrows(cv, L.lanes[i], x + (i + 0.5) * w, cy, Math.min(1, k), col, dim);
+    // more lanes than shown on a side: two dots outside its edge line (counting "the 2nd from the left" stays honest)
+    [[L.cutL, x - 4], [L.cutR, x + n * w + 4]].forEach((c) => { if (c[0]) { cv.circle(c[1], cy - 4, 1.6, dim); cv.circle(c[1], cy + 4, 1.6, dim); } });
     return n * w;
 }
 
 /** Street names in the HUD's fonts (ASCII and a few signs): accents taken off, others left out. */
 const FOLD = { 'ß': 'ss', 'ẞ': 'SS', 'æ': 'ae', 'Æ': 'AE', 'ø': 'o', 'Ø': 'O', 'œ': 'oe', 'Œ': 'OE', 'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D', 'ı': 'i' };
 function foldText(s) {
-    let t = String(s || '');
+    let t = String(s || '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, '').replace(/[\s\u00a0\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
     try { t = t.normalize('NFD'); } catch (e) { /* no ICU: left as it is */ }
+    // letters of another script (Cyrillic, Greek, CJK, Hebrew, Arabic...): no fragments, no name
+    if (/[\u0370-\u03ff\u0400-\u052f\u0590-\u06ff\u0e00-\u0e7f\u1100-\u11ff\u3040-\u30ff\u3130-\u318f\u3400-\u9fff\uac00-\ud7af]/.test(t)) return '';
     t = t.replace(/[̀-ͯ]/g, '').replace(/[^\u0000-~]/g, (ch) => FOLD[ch] || (ch === '…' || ch === '–' || ch === '·' ? ch : ''));
     return t.replace(/\s+/g, ' ').trim();
 }
@@ -374,10 +390,11 @@ const AW = 68, GAP = 6, TEXT_MIN = 92;
 // "then": its words, its small arrow (box, scale)
 const THEN_T = 16, THEN_A = 26, THEN_S = 0.3;
 /** How far after the next turn, as the next turn's distance reads (metric: to 10 m; else feet, to 50 ft); '' unknown. */
-function gapText(gap, unit) {
+function gapText(gap, unit, uk) {
     if (gap === null || gap === undefined || !isFinite(gap)) return '';
-    return unit === 'mi' || unit === 'ft' || unit === 'yd' ? Math.max(50, Math.round(gap / 0.3048 / 50) * 50) + ' ft' : Math.max(10, Math.round(gap / 10) * 10) + ' m';
-}          // the arrow's box, the gap after it
+    if (uk || unit === 'yd') return Math.max(10, Math.round(gap / 0.9144 / 10) * 10) + ' yd';
+    return unit === 'mi' || unit === 'ft' ? Math.max(50, Math.round(gap / 0.3048 / 50) * 50) + ' ft' : Math.max(10, Math.round(gap / 10) * 10) + ' m';
+}
 
 /**
  * The directions picture: cv a NW x NH Canvas (cleared here). m: nav.js's object (null: left empty).
@@ -392,13 +409,13 @@ function drawNav(cv, m, opts) {
     // dim: a solid dark shade, not a see-through one (overlapping strokes of a see-through colour add up at every bend)
     const col = P.text, dim = mix('#000000', P.text, 0.42);
     const textMax = NW - AW - GAP - 2;
-    const dist = m.dist ? String(m.dist) : '', unit = m.unit || '';
+    const unit = m.unit || '', dist = m.dist ? fit(cv, String(m.dist), DIST, textMax - 4 - cv.textWidth(unit, UNIT, UOPTS), DOPTS) : '';
     const distW = dist ? cv.textWidth(dist, DIST, DOPTS) + 4 + cv.textWidth(unit, UNIT, UOPTS) : 0;
     const nL = m.lanes ? laneWindow(m.lanes).lanes.length : 0, lw = nL ? laneW(nL, textMax) : 0;
     // the street only without lanes or "then" (they don't all fit)
     // "then" (the turn close behind): the second line, in the street's place; with lanes there, a small arrow after
     // the distance instead
-    const th = m.then || null, thLine = th && !nL, thGap = th ? gapText(th.gap, unit) : '';
+    const th = m.then || null, thLine = th && !nL, thGap = th ? gapText(th.gap, unit, m.uk) : '';
     const thW = thLine ? cv.textWidth('then', THEN_T, ROPTS) + 4 + THEN_A + (thGap ? 4 + cv.textWidth(thGap, THEN_T, ROPTS) : 0) : 0;
     const road = !nL && !th && m.road ? fit(cv, foldText(m.road), ROAD, textMax, ROPTS) : '';
     const roadW = road ? cv.textWidth(road, ROAD, ROPTS) : 0;
@@ -432,8 +449,8 @@ function drawNav(cv, m, opts) {
 /** Everything the picture depends on (the same key: the same picture). */
 function navKey(m, opts) {
     if (!m) return '';
-    const L = m.lanes ? m.lanes.lanes.map((l) => (l.hi ? '*' : '') + (l.follows || [l.follow]).join('+') + '/' + l.others.join('+') + '/' + l.info).join(',') + '|' + (m.lanes.markers || []).join(',') : '';
-    const T = m.then ? [m.then.kind, m.then.dir, m.then.geom, m.then.exit, m.then.exitAngle, m.then.side, m.then.flag, gapText(m.then.gap, m.unit)].join('/') : '';
+    const L = m.lanes ? m.lanes.lanes.map((l) => (l.hi ? '*' : '') + (l.follows || [l.follow]).join('+') + '/' + l.others.join('+') + '/' + l.info).join(',') + '|' + (m.lanes.markers || []).join(',') + '|' + m.lanes.rec : '';
+    const T = m.then ? [m.then.kind, m.then.dir, m.then.geom, m.then.exit, m.then.exitAngle, m.then.side, m.then.flag, m.then.stop, gapText(m.then.gap, m.unit, m.uk)].join('/') : '';
     return [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.side, m.flag, m.stop, m.dist, m.unit, m.road, L, T, opts && opts.palette].join('|');
 }
 

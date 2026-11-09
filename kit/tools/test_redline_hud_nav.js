@@ -119,7 +119,10 @@ ok(lit(draw(Object.assign({}, C.SAMPLES.left, { dist: null, unit: null, road: ''
     ok(b.x >= 0 && lit(c, 0, b.x).n === 0, 'a long street is cut, the arrow stays in the picture (at ' + b.x + ')');
 }
 // text
-ok(N.foldText('Example Straße') === 'Example Strasse' && N.foldText('Café Élysée') === 'Cafe Elysee' && N.foldText('Øster­gade 東京') === 'Ostergade', 'street names folded to the HUD\'s fonts (' + N.foldText('Øster­gade 東京') + ')');
+ok(N.foldText('Example Straße') === 'Example Strasse' && N.foldText('Café Élysée') === 'Cafe Elysee' && N.foldText('Øster­gade') === 'Ostergade', 'street names folded to the HUD\'s fonts (' + N.foldText('Øster­gade') + ')');
+// another script in it: no fragments ("ul. Lenina 5" came out ". 5"), no name; control characters and odd spaces cleaned
+ok(N.foldText('ул. Ленина 5') === '' && N.foldText('国道1号 Route 1') === '' && N.foldText('רחוב 12') === '', 'a name in another script: left out, not fragments');
+ok(N.foldText('King\u0007 St\u001b[31m') === 'King St[31m' && N.foldText('King St') === 'King St' && N.foldText('King​St') === 'KingSt', 'control characters out, odd spaces plain (' + N.foldText('King St') + ')');
 ok(N.navKey(C.SAMPLES.left, {}) !== N.navKey(Object.assign({}, C.SAMPLES.left, { dist: '400' }), {}) && N.navKey(C.SAMPLES.left, {}) === N.navKey(Object.assign({}, C.SAMPLES.left), {}), 'the key changes with the distance, not otherwise');
 ok(N.navKey(C.SAMPLES.left, { palette: 'amber' }) !== N.navKey(C.SAMPLES.left, { palette: 'colour' }), 'the key changes with the palette');
 ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).n > 300, 'Night amber: in amber, not white');
@@ -154,7 +157,7 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
         const r = /^EXIT_(LEFT|RIGHT)_TAKE_(LEFT|RIGHT)$/.exec(g), f = /^EXIT_(LEFT|RIGHT)_TWO_WAY/.exec(g);
         // an exit taken: its side; not taken: straight on; an exit's fork: the exit's side; a fork: the leg taken
         const w = r ? (r[1] === r[2] ? (r[1] === 'LEFT' ? -1 : 1) : 0) : f ? (f[1] === 'LEFT' ? -1 : 1) : /TAKE_LEFT$/.test(g) ? -1 : /TAKE_RIGHT$/.test(g) ? 1 : 0;
-        const x = endX({ kind: 'branch', dir: 'BRANCH_LEFT', geom: g });
+        const x = endX({ kind: 'branch', dir: 'NONE', geom: g });
         ok(w === 0 ? Math.abs(x) < 1 : x * w > 3, g + ': the arrow ends on the right side (' + x.toFixed(1) + ')');
     });
     // the head sits on a straight run (a bend under its base bulged out on one side: that side looked smaller)
@@ -211,6 +214,33 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
     [165, 150, 135].forEach((a) => { const P = N.roundaboutPlan({ exitAngle: a, side: 'right' }); ok(!P.back && P.tOut - P.tIn <= 90, 'right traffic, exit at ' + a + ': a short way round (' + (P.tOut - P.tIn) + ' degrees)'); });
     // straight back (180) and just short of it on the far side: the U-turn
     ok(N.roundaboutPlan({ exitAngle: 180, side: 'left' }).back && N.roundaboutPlan({ exitAngle: 165, side: 'left' }).back, 'left traffic, 180 and 165: the U-turn');
+}
+
+// ---- from the 2026-11-09 data review --------------------------------------------------------------------------------
+{
+    const endSide = (m) => { const s = N.shapeOf(m); return Math.sign((s.path[s.path.length - 1][0] - s.path[0][0]) * s.mir); };
+    // a junction shape that contradicts the direction: the direction wins
+    ok(endSide({ kind: 'turn', dir: 'LEFT', geom: 'EXIT_RIGHT_TAKE_RIGHT' }) === -1, 'LEFT with a right exit shape: drawn left');
+    ok(endSide({ kind: 'branch', dir: 'BRANCH_RIGHT', geom: 'TWO_WAY_FORK_TAKE_LEFT' }) === 1, 'BRANCH_RIGHT with a left fork shape: drawn right');
+    ok(N.shapeOf({ kind: 'branch', dir: 'BRANCH_RIGHT', geom: 'TWO_WAY_FORK_TAKE_RIGHT' }).dim.length === 1, 'an agreeing shape is used (the fork, its other leg dim)');
+    // wide roads: the lanes to take always in the window; cut edges marked
+    const L9 = (his, rec) => ({ lanes: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ follow: his.indexOf(i) >= 0 ? 'STRAIGHT_ON' : 'NONE', follows: his.indexOf(i) >= 0 ? ['STRAIGHT_ON'] : [], others: his.indexOf(i) >= 0 ? [] : ['STRAIGHT_ON'], hi: his.indexOf(i) >= 0, info: 'NONE' })), rec: rec, markers: [] });
+    ok(N.laneWindow(L9([1, 8], 8)).lanes.some((l) => l.hi), '9 lanes, the lanes to take 1 and 8: one of them shown (round the recommended)');
+    ok(N.laneWindow(L9([1, 8], null)).lanes.some((l) => l.hi), '... and with no recommended lane');
+    const w = N.laneWindow(L9([4], 4));
+    ok(w.cutL && w.cutR, 'lanes cut off on both sides: marked');
+    // the picture key: the recommended lane decides the window when none is highlighted
+    const k = (rec) => N.navKey({ kind: 'turn', dir: 'LEFT', dist: '1', unit: 'km', road: '', lanes: L9([], rec) }, {});
+    ok(k(0) !== k(7), 'the key changes with the recommended lane');
+    ok(N.navKey({ kind: 'turn', dir: 'LEFT', then: { kind: 'destination', dir: 'LEFT', flag: false, stop: 1, gap: null } }, {}) !==
+        N.navKey({ kind: 'turn', dir: 'LEFT', then: { kind: 'destination', dir: 'LEFT', flag: false, stop: 2, gap: null } }, {}), 'and with the "then" stopover\'s number');
+    // the "then" gap in the next turn's units: UK in yards, US in feet, metric in metres
+    ok(N.gapText(100, 'mi', true) === '110 yd' && N.gapText(100, 'mi', false) === '350 ft' && N.gapText(100, 'm', false) === '100 m' && N.gapText(null, 'm') === '', 'gap text: yd / ft / m (' + N.gapText(100, 'mi', true) + ')');
+    // an absurd distance text is cut, its unit kept, nothing past the edge
+    const c = new Canvas(N.NW, N.NH);
+    N.drawNav(c, { kind: 'turn', dir: 'LEFT', dist: '123456789012345', unit: 'km', road: '' }, { palette: 'colour' });
+    let r = N.NW - 1; while (r > 0 && lit(c, r, r + 1).n === 0) r--;
+    ok(r < N.NW - 1, 'a very long distance text: cut, inside the picture (last column ' + r + ')');
 }
 
 // ---- lanes: their own glyphs, one stem, turns leaving low --------------------------------------------------------
@@ -322,11 +352,20 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
     await sleep(120);
     ok(cr.images().length === 0 && h.status() === 'HUD: giving way to BMW\'s directions', 'giving way: no layers (' + h.status() + ')');
     const claim = JSON.parse(fs.readFileSync(path.join(SHM, 'redline'), 'utf8'));
-    ok(claim.held === false, 'giving way: the HUD claim let go');
+    // kept: with it let go, Cluster functions' map would take the HUD instead of BMW's card (2026-11-09 review)
+    ok(claim.held === true, 'giving way: the HUD claim kept, so the card from BMW shows, not another app');
     ok(!lines.some((l) => /hidden in/.test(l)), 'giving way isn\'t logged as a driving-mode hide');
     view = { show: C.SAMPLES.exit, giveWay: false };
     await sleep(150);
     ok(cr.images().length === 2, 'a turn again: the tach and the directions back');
+
+    // the renderer fails the directions layer: dropped, made again after 5 s (not left dead for the whole route)
+    const navRef = cr.images()[1];
+    cr.h.layer(navRef, 'error', 'test');
+    await sleep(120);
+    ok(cr.images().length === 1 && lines.some((l) => /directions layer failed, made again in 5 s/.test(l)), 'a failed directions layer: dropped and logged');
+    await sleep(5000);
+    ok(cr.images().length === 2 && cr.images()[1] !== navRef, 'made again after 5 s');
 
     // paused behind BMW's content: nothing sent; after it, sent whole
     const before = cr.frames.length;

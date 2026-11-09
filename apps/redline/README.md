@@ -311,15 +311,28 @@ glass's edge. Checked for every size and position the settings allow.
   the lanes (`currentLaneGuiding`) and, for BMW's navigation, `conclusiveDart`. Proven on a G21 with CarPlay /
   Apple Maps; BMW navigation and Android Auto not yet. The interfaces are the ones jaimeen77's Cluster Redline
   (jaimeen77-cmyk/apps, MPL-2.0) reads; Redline's decoder and drawing are its own (`nav.js`, `hud-nav.js`).
-- **Safety:** a turn older than 3 s isn't shown. When a route certainly runs (BMW's guidance active, or CarPlay /
-  Android Auto guiding) and Redline has had no readable turn for 4 s, Redline leaves the HUD (tach included) so
-  BMW's own card shows; it comes back with the next readable turn. The 4 s count from the last readable turn, so
-  one reply without a turn doesn't hide the HUD. An old turn never comes back after a route ends or changes hands:
-  a reply asked before that is dropped. A direction the car sends that isn't in its catalog (by name or number)
-  draws no arrow, only the "follow the route" dot. Lanes stay with the turn they came with.
+- **Safety:** a turn older than 3 s isn't shown: a slow or failed reply, a reply without a turn or a busy head unit
+  shows the tach without an arrow, never a stale one. An old turn never comes back after a route ends or changes
+  hands (a reply asked before that is dropped); a route ends when CarPlay / Android Auto stop guiding, BMW's
+  guidance stops, the provider changes or a source reports itself gone. A direction the car sends that isn't in its
+  catalog (by name or number) draws no arrow, only the "follow the route" dot; a junction shape that contradicts the
+  direction is ignored. Lanes stay with the turn they came with and go with it.
+- **Giving way to BMW's card:** only when a route certainly runs and Redline has had no readable turn for 15 s
+  (from the route's start, the last turn, or the directions coming back on). Redline then leaves the HUD (tach
+  included) for the rest of the route. It's for the route because of how the HUD slot works (cluster-render's
+  README): when Redline lets go, the slot stays empty for about 3 s, then BMW's card is shown, and Redline asking
+  again is only parked behind it until the card goes at the route's end. Coming back sooner would only blank the
+  HUD again and again. Redline comes back when the route ends, or when nothing has answered for 60 s (a phone gone
+  with its "guiding" flag left on); behind BMW's card if it's still there. While giving way Redline keeps its claim
+  on the HUD, so Cluster functions doesn't put its map over BMW's card.
 - **Load:** BMW's event list is asked once a second only while a route runs and the HUD and its directions are on;
-  after a failed call the next waits 5 s, and a failed connection is tried again every 30 s. A picture is about
-  0.1 ms to draw and is redrawn only when what it shows changes.
+  after a failed call the next waits 2 s, and a failed connection is tried again every 30 s. The timings use a
+  clock that doesn't jump when the head unit sets its time. A picture is about 0.1 ms to draw and is redrawn only
+  when what it shows changes. A directions layer the renderer fails is made again after 5 s.
+- **Then:** a turn close behind the next one is shown as "then" + a small arrow on the second line (the street's
+  place), so you can pick the lane for both. CarPlay sends it only when Apple Maps shows its own "Then", without a
+  distance; with BMW's own navigation, when the gap is 150 m or less, with the gap ("then <- 50 m", in yards for UK
+  units). With lanes on the second line, the small arrow sits after the distance.
 - **Settings:** *Directions on the HUD*: **While a route runs** (default) / **Near turns** (under 1 km, and
   whenever there are lanes) / **Off** (as before 1.17: Redline keeps the HUD, BMW's card stays hidden).
   Under *Advanced*: *Directions left / right* and *up / down* (px from the corner). The test pattern shows a sample
