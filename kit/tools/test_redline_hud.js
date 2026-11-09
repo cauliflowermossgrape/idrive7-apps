@@ -8,7 +8,7 @@
 // - the shift cue: counts in, flashes before the point by the lead, holds, ends on the upshift, a
 //   lift or the drop after a shift without a gear signal, and flags the limiter;
 // - the scripted demo drive stays in range; settings in the code exist in app.json and vice versa;
-// - 1.17's electrical readouts: a petrol / diesel car never shows the hybrid ones; electrical.js reads what eDrive reads.
+// - 2.0's electrical readouts: a petrol / diesel car never shows the hybrid ones; electrical.js reads what eDrive reads.
 
 const fs = require('fs');
 const path = require('path');
@@ -350,7 +350,7 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     }).catch((e) => { console.log('FAIL electrical checks threw: ' + (e && e.stack || e)); process.exit(1); });
 }
 
-/* ---------- 1.17: the electrical readouts (12 V on every car, the hybrid battery only on a hybrid) ---------- */
+/* ---------- 2.0: the electrical readouts (12 V on every car, the hybrid battery only on a hybrid) ---------- */
 // x as electrical.js gives it on a plug-in hybrid
 const EX = { soc12: 82, v12: 14.23, hvSoc: 64.4, hvKw: -18.4, hvTemp: 27, hvVolt: 352.4 };
 const ALL_ON = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false,
