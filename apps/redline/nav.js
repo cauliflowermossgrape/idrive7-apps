@@ -64,6 +64,7 @@ const ENUMS = {
     AdditionalLaneInfo: ['NONE', 'ELLIPSIS', 'BUS', 'HOV', 'SCOOTER', 'BIKE', 'TOLL_ETC', 'TOLL_CASH', 'TOLL_ETC_CASH', 'BLOCKED'],
     LaneMarker: [null, 'SOLID', 'DASHED'],
     DistanceUnit: ['NONE', 'KM', 'MILE_UK', 'MILE_US', 'METER', 'YARD', 'FEET'],
+    ProjectedModeGuidingProvider: ['NONE', 'CAR_PLAY', 'ANDROID_AUTO', 'CAR_LIFE', 'OTHER'],
     ManeuverGeometry: [null, 'TWO_WAY_FORK_TAKE_LEFT', 'TWO_WAY_FORK_TAKE_RIGHT', 'THREE_WAY_FORK_TAKE_LEFT', 'THREE_WAY_FORK_TAKE_CENTER',
         'THREE_WAY_FORK_TAKE_RIGHT', 'EXIT_LEFT_TAKE_LEFT', 'EXIT_LEFT_TAKE_RIGHT', 'EXIT_RIGHT_TAKE_LEFT', 'EXIT_RIGHT_TAKE_RIGHT',
         'EXIT_LEFT_TWO_WAY_FORK_TAKE_LEFT_LEFT', 'EXIT_LEFT_TWO_WAY_FORK_TAKE_LEFT_RIGHT', 'EXIT_RIGHT_TWO_WAY_FORK_TAKE_RIGHT_LEFT',
@@ -249,6 +250,15 @@ function decodeLanes(v) {
 
 /** A route for certain: BMW's guidance active, or the phone's (CarPlay / Android Auto) guiding. */
 function routeSure(r) { return r.state === 'ACTIVE' || r.state === 2 || r.carplay === true || r.aa === true; }
+/**
+ * Two phones and no telling whose turns these are: both say they're guiding, or BMW names one as the provider while
+ * the other says it's guiding (the check jaimeen77's Cluster Redline makes: "navigation_provider_mismatch").
+ * No arrow then (it could be the other phone's route), and no giving way either: the tach stays.
+ */
+function phonesMismatch(r) {
+    if (r.carplay === true && r.aa === true) return true;
+    return (r.provider === 'CAR_PLAY' && r.aa === true && r.carplay !== true) || (r.provider === 'ANDROID_AUTO' && r.carplay === true && r.aa !== true);
+}
 /** True while some navigation runs: BMW's own, or the phone's (CarPlay / Android Auto). */
 function routingOf(r) {
     return r.state === 'ACTIVE' || r.state === 2 || r.carplay === true || r.aa === true ||
@@ -343,7 +353,8 @@ function Tracker() {
                 else if (src === 'androidauto') route.aa = false;
                 else if (src === 'guidance') { route.state = null; route.provider = null; dart = null; }
             } else if (src === 'guidance' && name === 'guidanceState') route.state = v;
-            else if (src === 'guidance' && name === 'guidingProvider') route.provider = v;
+            // by name or number (the catalog's ProjectedModeGuidingProvider); something else kept as it came
+            else if (src === 'guidance' && name === 'guidingProvider') route.provider = v === null || v === undefined ? null : enumOf('ProjectedModeGuidingProvider', v) || String(v);
             else if (name === 'projectedGuidanceActive') route[src === 'carplay' ? 'carplay' : 'aa'] = v === true;
             else if (name === 'conclusiveDart') { dart = decodeDart(v); dartAt = now; seen(dart, now); }
             else if (name === 'currentLaneGuiding') { lanes = decodeLanes(v); lanesAt = now; }
@@ -398,6 +409,7 @@ function Tracker() {
             lastViewAt = now;
             if (mode === 'off') return { show: null, giveWay: false };
             if (!routing()) { gaveWay = false; return { show: null, giveWay: false }; }
+            if (phonesMismatch(route)) return { show: null, giveWay: false, mismatch: true };
             if (gaveWay) {
                 // out for the route; back when nothing has answered for BACK_MS (a flag left on by a phone that's gone)
                 if (now - Math.max(lastDataAt, route.sureSince, resumedAt) < BACK_MS) return { show: null, giveWay: true };
@@ -447,7 +459,7 @@ function start(ctx, log, probe) {
         view(mode) {
             try {
                 const v = T.view(mode, mono());
-                const line = v.show ? describe(v.show) : v.giveWay ? 'giving way to BMW (no turn data)' : 'none';
+                const line = v.show ? describe(v.show) : v.giveWay ? 'giving way to BMW (no turn data)' : v.mismatch ? 'two phones, no telling whose route: no arrow' : 'none';
                 // the distance counting down isn't a new line: what changed apart from it
                 const core = line.replace(/ [\d.,]+ (km|m|mi|yd|ft)\b/, '');
                 if (core !== lastLine) { lastLine = core; note('dir: ' + line); }
@@ -459,4 +471,4 @@ function start(ctx, log, probe) {
     };
 }
 
-module.exports = { start, mono, BACK_MS, thenOf, THEN_M, SKIP, ENUMS, enumOf, routeSure, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, safeLog, STALE_MS, GIVE_WAY_MS, NEAR_M };
+module.exports = { start, mono, phonesMismatch, BACK_MS, thenOf, THEN_M, SKIP, ENUMS, enumOf, routeSure, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, safeLog, STALE_MS, GIVE_WAY_MS, NEAR_M };

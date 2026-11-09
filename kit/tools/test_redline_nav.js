@@ -242,6 +242,21 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
     ok(drive(T, t0 + 90200, t0 + 90200).show.src === 'events', 'the event list wins over conclusiveDart');
 }
 
+// ---- two phones: no telling whose route (the check from jaimeen77's Cluster Redline) -----------------------------
+{
+    const mk = (provider, cp, aa) => { const T = Nav.Tracker(); if (provider !== undefined) T.field('guidance', 'guidingProvider', provider, 0); if (cp) T.field('carplay', 'projectedGuidanceActive', true, 0); if (aa) T.field('androidauto', 'projectedGuidanceActive', true, 0); T.events(replies[0].v, 500, 400); return T; };
+    const at = (T, t) => drive(T, 0, t || 1000);
+    ok(at(mk('CAR_PLAY', true, false)).show !== null, 'CarPlay named, CarPlay guiding: shown');
+    ok(at(mk('ANDROID_AUTO', false, true)).show !== null, 'Android Auto named, Android Auto guiding: shown');
+    const both = at(mk('CAR_PLAY', true, true));
+    ok(both.show === null && both.mismatch && !both.giveWay, 'both phones guiding: no arrow, no giving way (the tach stays)');
+    ok(at(mk('CAR_PLAY', false, true)).mismatch === true, 'CarPlay named, only Android Auto guiding: no arrow');
+    ok(at(mk('ANDROID_AUTO', true, false)).mismatch === true, 'Android Auto named, only CarPlay guiding: no arrow');
+    ok(at(mk(2, false, true)).show !== null && at(mk(1, false, true)).mismatch === true, 'providers by number (1 CarPlay, 2 Android Auto)');
+    ok(!drive(mk('CAR_PLAY', true, true), 0, 1000 + Nav.GIVE_WAY_MS + 5000).giveWay, 'two phones for longer than ' + Nav.GIVE_WAY_MS + ' ms: still not giving way');
+    ok(at(mk(undefined, true, false)).show !== null, 'no provider sent, CarPlay guiding: shown');
+}
+
 // ---- giving way: rare, and for the route (the HUD slot: 3 s blank, then BMW's card until the route ends) ---------
 {
     const T = Nav.Tracker(), t0 = 2000000;
@@ -315,6 +330,9 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
     // the same after the provider changes
     T.field('carplay', 'projectedGuidanceActive', true, t0 + 30000);
     T.events(replies[0].v, t0 + 30500, t0 + 30400);
+    // the phone switched: Android Auto guiding, CarPlay stopped, BMW naming Android Auto
+    T.field('androidauto', 'projectedGuidanceActive', true, t0 + 31000);
+    T.field('carplay', 'projectedGuidanceActive', false, t0 + 31000);
     T.field('guidance', 'guidingProvider', 'ANDROID_AUTO', t0 + 31000);
     ok(T.events(replies[0].v, t0 + 31200, t0 + 30900).stale && T.view('route', t0 + 31200).show === null, 'a reply asked before the provider changed: dropped');
     ok(!T.events(replies[0].v, t0 + 32200, t0 + 31900).stale && T.view('route', t0 + 32200).show !== null, 'one asked after it: shown');

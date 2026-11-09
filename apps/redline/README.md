@@ -317,6 +317,8 @@ glass's edge. Checked for every size and position the settings allow.
   guidance stops, the provider changes or a source reports itself gone. A direction the car sends that isn't in its
   catalog (by name or number) draws no arrow, only the "follow the route" dot; a junction shape that contradicts the
   direction is ignored. Lanes stay with the turn they came with and go with it.
+  Two phones and no telling whose route (both say they're guiding, or BMW names one while the other is guiding): no
+  arrow and no giving way, the tach stays (the check jaimeen77's Cluster Redline makes).
 - **Giving way to BMW's card:** only when a route certainly runs and Redline has had no readable turn for 15 s
   (from the route's start, the last turn, or the directions coming back on). Redline then leaves the HUD (tach
   included) for the rest of the route. It's for the route because of how the HUD slot works (cluster-render's
