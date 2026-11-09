@@ -13,7 +13,8 @@
  *   nav: shape <kind>: <key paths>      once per kind of manoeuvre: every key it has
  * Lanes: Guidance.currentLaneGuiding and ProjectedModeGuiding.currentLaneGuiding (rows of lanes: the arrow to follow,
  * the other arrows, highlighted, bus / HOV / toll, markers, the recommended lane, the car's lane). Road names
- * (currentRoad) are not read, so a log shared doesn't say where the car drove.
+ * (currentRoad) are not read, and the turns' descriptions (street names) are logged as their length only, so a log
+ * shared doesn't say where the car drove.
  *   nav: <source> available | not available | error ...
  * Keys that look like coordinates are dropped. Never throws: everything is caught and logged.
  */
@@ -56,7 +57,12 @@ function clean(v, depth) {
     if (Array.isArray(v)) return v.slice(0, 40).map((x) => clean(x, depth + 1));
     if (v && typeof v === 'object') {
         const o = {};
-        Object.keys(v).forEach((k) => { if (!COORD.test(k) && typeof v[k] !== 'function') o[k] = clean(v[k], depth + 1); });
+        Object.keys(v).forEach((k) => {
+            if (COORD.test(k) || typeof v[k] === 'function') return;
+            // street and place names (a turn's description): only their length, so a log shared doesn't say where the car was
+            if (k === 'text' && typeof v[k] === 'string') { o[k] = '<' + v[k].length + ' chars>'; return; }
+            o[k] = clean(v[k], depth + 1);
+        });
         return o;
     }
     if (typeof v === 'number' && !isFinite(v)) return String(v);

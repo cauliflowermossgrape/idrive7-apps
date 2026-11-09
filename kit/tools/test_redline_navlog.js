@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         call: (px, method, params) => {
             calls++; lastQuery = { method: method, params: params };
             return Promise.resolve({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [
-                { maneuver: { intersection: { direction: 'SLIGHT_LEFT', formattedDistance: { distance: '799', unit: 'METER' } } } },
+                { maneuver: { intersection: { direction: 'SLIGHT_LEFT', formattedDistance: { distance: '799', unit: 'METER' }, description: { elements: [{ text: 'Example Street' }] } } } },
                 { laneGuiding: { lanes: [{ directionToFollow: 'SLIGHT_LEFT', isHighlighted: true }] } }] }] });
         },
         watch(iface, inst, handlers) {
@@ -58,6 +58,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(/guidance currentLaneGuiding = .*"directionToFollow":"LEFT"/.test(text) && /phone currentLaneGuiding = /.test(text), 'lanes logged, from BMW and the phone');
     ok(/events connected/.test(text) && /events = .*SLIGHT_LEFT.*799/.test(text) && /shape event intersection: /.test(text), 'the route events logged with their shape');
     ok((text.match(/ events = /g) || []).length === 1, 'the same reply again is not logged again');
+    ok(!/Example Street/.test(text) && /"text":"<14 chars>"/.test(text), 'street names logged as their length only');
     ok(logged.some((m) => /probe on/.test(m)), 'one line in redline.log');
     ok(/NAV: \d+ updates, last (event )?intersection/.test(p.status()), 'status: ' + p.status());
     // no signals (the preview): nothing breaks
