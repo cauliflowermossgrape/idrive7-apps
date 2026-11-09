@@ -13,16 +13,15 @@
  *         a readout bottom right in the dial's orange-red
  */
 const { withAlpha } = require('./kit/canvas');
+const Theme = require('./hud-theme');
 const IW = 400;
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const flashing = (cue) => cue.shift || cue.limiter;
 
 /* ---------- shared: readouts, the shift grade, the burst ---------- */
-const GRADE = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold', KNOCK: 'limit' };
-/** A chip's colour: its own tone (the launch time), else its grade's. */
-const chipCol = (chip, P) => P[chip.tone || GRADE[chip.verdict]] || P.text;
-const toneCol = (it, P, base) => (it.tone && it.tone !== 'text' ? P[it.tone] || base : base);
+const chipCol = Theme.chipCol;
+const toneCol = (it, P, base) => Theme.toneCol(it.tone, P, base);
 /**
  * A readout's label size and colour: Normal 13 px nearly full brightness, Clearer 16 px full (10 / 12 px
  * read as specks on the glass, 2026-11-09 drive).
@@ -31,9 +30,7 @@ const labelOf = (o, base) => (o.clearLabels ? { s: 16, c: base } : { s: 13, c: w
 /** A label at (x, y), made smaller (down to 8 px) when it would be wider than room. */
 function fitLabel(cv, text, x, y, size, col, room, opts) {
     const lo = Object.assign({ font: 'bold', spacing: 1 }, opts || {});
-    let s = size;
-    if (cv.textWidth && room) { const w = cv.textWidth(text, s, lo); if (w > room) s = Math.max(8, s * room / w); }
-    cv.text(text, x, y, s, col, lo);
+    cv.text(text, x, y, room ? Theme.fitSize(cv, text, size, room, lo) : size, col, lo);
 }
 /** A small readout: label then value on one line (row) or label over value (stack); align 'left' | 'right' | 'center'. */
 function small(cv, x, y, it, P, o, base, mode, align, vsize) {
@@ -41,13 +38,9 @@ function small(cv, x, y, it, P, o, base, mode, align, vsize) {
     const lab = labelOf(o, base);
     if (mode === 'row') {
         // label at x, value right-aligned at the row's right edge (x + w); a label too long for the room the
-        // value leaves (GEARBOX 120°, BOOST in kPa) is drawn smaller, down to 7 px, rather than run into it
+        // value leaves (GEARBOX 120°, BOOST in kPa) is drawn smaller, down to 8 px, rather than run into it
         const w = align, lo = { font: 'bold', spacing: 1 };
-        let ls = lab.s;
-        if (cv.textWidth) {
-            const room = w - cv.textWidth(it.value, vs, { font: 'bold' }) - 4, lw = cv.textWidth(it.label, ls, lo);
-            if (lw > room) ls = Math.max(8, ls * room / lw);
-        }
+        const ls = cv.textWidth ? Theme.fitSize(cv, it.label, lab.s, w - cv.textWidth(it.value, vs, { font: 'bold' }) - 4, lo) : lab.s;
         cv.text(it.label, x, y, ls, lab.c, lo);
         cv.text(it.value, x + w, y + 1, vs, toneCol(it, P, base), { align: 'right', font: 'bold' });
         return;
@@ -58,15 +51,15 @@ function small(cv, x, y, it, P, o, base, mode, align, vsize) {
 /** The shift grade at (x, y): pops in (burst), holds, fades over its last 300 ms. */
 function grade(cv, x, y, chip, P, size, align) {
     const a = chip.age || 0, c = chipCol(chip, P);
-    const alpha = a > 1200 ? clamp(1 - (a - 1200) / 300, 0, 1) : 1;
-    const s = chip.burst && a < 150 ? size * (1.3 - 0.3 * a / 150) : size;
+    const alpha = Theme.burstAlpha(a);
+    const s = chip.burst && a < Theme.BURST.pop ? size * (1.3 - 0.3 * a / Theme.BURST.pop) : size;
     if (alpha > 0) cv.text(chip.text || chip.verdict, x, y, s, withAlpha(c, alpha), { align: align || 'center', font: 'bold', spacing: 1 });
 }
 /** Burst: a ring grows from (cx, cy) radius r0 to r1 over 500 ms and fades. */
 function ring(cv, cx, cy, r0, r1, chip, P) {
-    const a = chip.age || 0;
-    if (!chip.burst || a >= 500) return;
-    const k = a / 500, r = r0 + (r1 - r0) * k;
+    const k = Theme.burstRing(chip.age || 0);
+    if (!chip.burst || k < 0) return;
+    const r = r0 + (r1 - r0) * k;
     cv.arc(cx, cy, r - 2.5, r, 0, 360, withAlpha(chipCol(chip, P), 0.85 * (1 - k)));
 }
 const burstOn = (chip, ms) => chip && chip.burst && (chip.age || 0) < ms;
@@ -226,7 +219,7 @@ function drawRamp(cv, f, layer, h) {
     else {
         const it = items[0];
         if (it) {
-            cv.text(it.value, gx, 124, 24, it.tone && it.tone !== 'text' ? h.P[it.tone] : RC.text, { align: 'center', font: o.valFont || 'bold' });
+            cv.text(it.value, gx, 124, 24, toneCol(it, h.P, RC.text), { align: 'center', font: o.valFont || 'bold' });
             fitLabel(cv, it.label.toLowerCase(), gx + 32, 102, labelOf(o, RC.text).s, RC.text, 284 - gx - 36, { spacing: 0 });
         }
     }
@@ -278,7 +271,7 @@ function drawDial(cv, f, layer, h) {
     else {
         const it = items[0];
         if (it) {
-            cv.text(it.value, 300, 122, 26, it.tone && it.tone !== 'text' ? h.P[it.tone] : DC.speed, { align: 'right', font: o.valFont || 'bold' });
+            cv.text(it.value, 300, 122, 26, toneCol(it, h.P, DC.speed), { align: 'right', font: o.valFont || 'bold' });
             fitLabel(cv, it.label.toLowerCase(), 304, 122, labelOf(o, DC.speed).s, DC.speed, 94, { spacing: 0 });
         }
     }

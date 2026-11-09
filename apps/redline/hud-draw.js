@@ -33,6 +33,7 @@
 const { Canvas, withAlpha } = require('./kit/canvas');
 const fonts = require('./kit/fonts');
 const M = require('./hud-m');
+const Theme = require('./hud-theme');
 
 const IW = 400, IH = 130;
 const TEMP_X = 150;          // the readouts start here: BMW draws its assistance graphic under the left of the bar
@@ -46,7 +47,6 @@ const PALETTES = {
     vfd: { low: '#3ef0d0', mid: '#a8fff0', high: '#ff6a3a', flash: '#ff6a3a', limit: '#ff4a2a', text: '#5ff6dc', cold: '#46b4ff', warm: '#ffd34a', hot: '#ff5a3a', arrow: '#5ff6dc', peak: '#d8fff8' },
     ice: { low: '#8fcfff', mid: '#e6f4ff', high: '#ff3a3a', flash: '#ff3a3a', limit: '#ff3a3a', text: '#ffffff', cold: '#5aa8ff', warm: '#e6f4ff', hot: '#ff3a3a', arrow: '#8fcfff', peak: '#ffffff' },
 };
-const VERDICT = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold', KNOCK: 'limit' };
 const palette = (name) => PALETTES[name] || PALETTES.colour;
 const VERDICT_TEXT = { 'SPOT ON': 'PERFECT SHIFT', EARLY: 'EARLY', LATE: 'LATE', LIMITER: 'LIMITER', 'COLD REV': 'COLD REV', KNOCK: 'KNOCK' };
 
@@ -225,17 +225,16 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
         const label = block ? it.block : it.label;
         if (layer !== 'fg') {
             const lo = { align: 'center', font: 'bold', spacing: (clear ? 1.5 : 1.2) * k };
-            let s = (clear ? 18 : 14) * k;
-            if (cv.textWidth) { const w = cv.textWidth(label, s, lo); if (w > colw - 14) s = Math.max(8, s * (colw - 14) / w); }
+            const s = Theme.fitSize(cv, label, (clear ? 18 : 14) * k, colw - 14, lo);
             cv.text(label, cx, y + (clear ? 15 : 13), s, clear ? P.text : withAlpha(P.text, 0.9), lo);
         }
         if (layer === 'bg') return;
         if (block) {
             const dx = Math.min(colw / 4, 22), vs = 17, top = y + (clear ? 34 : 32);
-            it.tyres.forEach((c, j) => cv.text(c[0], cx + (j % 2 ? dx : -dx), top + Math.floor(j / 2) * 19, vs, P[c[1]] || P.text, { align: 'center', font: 'bold' }));
+            it.tyres.forEach((c, j) => cv.text(c[0], cx + (j % 2 ? dx : -dx), top + Math.floor(j / 2) * 19, vs, Theme.toneCol(c[1], P, P.text), { align: 'center', font: 'bold' }));
             return;
         }
-        cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), P[it.tone] || P.text, { align: 'center', font: 'bold' });
+        cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), Theme.toneCol(it.tone, P, P.text), { align: 'center', font: 'bold' });
     });
 }
 
@@ -246,14 +245,14 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
  */
 function drawChip(cv, x0, x1, y, chip, P) {
     // a chip may carry its own text and colour (the launch time: { text, tone }); the grades go by the verdict
-    const c = P[chip.tone || VERDICT[chip.verdict] || 'text'] || P.text, cx = (x0 + x1) / 2;
+    const c = Theme.chipCol(chip, P), cx = (x0 + x1) / 2;
     if (!chip.burst) { cv.text(chip.text || chip.verdict, cx, y + 36, 28, c, { align: 'center', font: 'bold', spacing: 2 }); return; }
-    const a = chip.age || 0;
-    const size = a < 150 ? 34 - 8 * (a / 150) : 26, alpha = a > 1200 ? clamp(1 - (a - 1200) / 300, 0, 1) : 1;
-    if (a < 500) {
+    const a = chip.age || 0, k = Theme.burstRing(a);
+    const size = a < Theme.BURST.pop ? 34 - 8 * (a / Theme.BURST.pop) : 26, alpha = Theme.burstAlpha(a);
+    if (k >= 0) {
         // round the word, inside the image (the screen's 2x preview doesn't clip)
-        const rr = Math.min(30 + 36 * (a / 500), IH - (y + 26) - 2);
-        cv.arc(cx, y + 26, rr - 2, rr, 0, 360, withAlpha(c, 0.8 * (1 - a / 500)));
+        const rr = Math.min(30 + 36 * k, IH - (y + 26) - 2);
+        cv.arc(cx, y + 26, rr - 2, rr, 0, 360, withAlpha(c, 0.8 * (1 - k)));
     }
     if (alpha > 0) cv.text(chip.text || VERDICT_TEXT[chip.verdict] || chip.verdict, cx, y + 36, size, withAlpha(c, alpha), { align: 'center', font: 'bold', spacing: 1.5 });
 }

@@ -18,6 +18,7 @@
  */
 const { withAlpha } = require('./kit/canvas');
 const { PALETTES } = require('./hud-draw');
+const Theme = require('./hud-theme');
 const Tyres = require('./tyres');
 
 const TW = 200, TH = 76;
@@ -93,7 +94,7 @@ function drawWidget(cv, ty, w, palette) {
         if (ts) cv.text(ts, px + pw + 1, r[0], ss, w.clear ? P.text : withAlpha(P.text, 0.75), { align: 'left', font: 'bold' });
         if (two && isNum(temp)) {
             const s = Math.round(w.fahrenheit ? temp * 9 / 5 + 32 : temp) + '°';
-            cv.text(s, edge, r[1], sub, P[tempTone(temp)] || P.text, { align: left ? 'right' : 'left', font: 'bold' });
+            cv.text(s, edge, r[1], sub, Theme.toneCol(tempTone(temp), P, P.text), { align: left ? 'right' : 'left', font: 'bold' });
         }
     });
 }
