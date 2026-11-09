@@ -370,7 +370,14 @@ function fit(cv, s, size, w, opts) {
 /** Text sizes: the distance (its unit smaller), the street. */
 const DIST = 34, UNIT = 20, ROAD = 18;
 const DOPTS = { font: 'bold', literal: true }, UOPTS = { font: 'bold', literal: true }, ROPTS = { font: 'label', literal: true };
-const AW = 68, GAP = 6, TEXT_MIN = 92;          // the arrow's box, the gap after it
+const AW = 68, GAP = 6, TEXT_MIN = 92;
+// "then": its words, its small arrow (box, scale)
+const THEN_T = 16, THEN_A = 26, THEN_S = 0.3;
+/** How far after the next turn, as the next turn's distance reads (metric: to 10 m; else feet, to 50 ft); '' unknown. */
+function gapText(gap, unit) {
+    if (gap === null || gap === undefined || !isFinite(gap)) return '';
+    return unit === 'mi' || unit === 'ft' || unit === 'yd' ? Math.max(50, Math.round(gap / 0.3048 / 50) * 50) + ' ft' : Math.max(10, Math.round(gap / 10) * 10) + ' m';
+}          // the arrow's box, the gap after it
 
 /**
  * The directions picture: cv a NW x NH Canvas (cleared here). m: nav.js's object (null: left empty).
@@ -388,22 +395,36 @@ function drawNav(cv, m, opts) {
     const dist = m.dist ? String(m.dist) : '', unit = m.unit || '';
     const distW = dist ? cv.textWidth(dist, DIST, DOPTS) + 4 + cv.textWidth(unit, UNIT, UOPTS) : 0;
     const nL = m.lanes ? laneWindow(m.lanes).lanes.length : 0, lw = nL ? laneW(nL, textMax) : 0;
-    // the street only without lanes (both don't fit)
-    const road = !nL && m.road ? fit(cv, foldText(m.road), ROAD, textMax, ROPTS) : '';
+    // the street only without lanes or "then" (they don't all fit)
+    // "then" (the turn close behind): the second line, in the street's place; with lanes there, a small arrow after
+    // the distance instead
+    const th = m.then || null, thLine = th && !nL, thGap = th ? gapText(th.gap, unit) : '';
+    const thW = thLine ? cv.textWidth('then', THEN_T, ROPTS) + 4 + THEN_A + (thGap ? 4 + cv.textWidth(thGap, THEN_T, ROPTS) : 0) : 0;
+    const road = !nL && !th && m.road ? fit(cv, foldText(m.road), ROAD, textMax, ROPTS) : '';
     const roadW = road ? cv.textWidth(road, ROAD, ROPTS) : 0;
     // at least TEXT_MIN wide, so the arrow stays put while the distance counts down (800 m, 50 m, 1.2 km)
-    const tw = Math.min(textMax, Math.max(distW, roadW, nL * lw, dist ? TEXT_MIN : 0));
+    const tw = Math.min(textMax, Math.max(distW + (th && nL ? 4 + THEN_A : 0), roadW, nL * lw, thW, dist ? TEXT_MIN : 0));
     let x = Math.round(NW - 2 - tw - (tw ? GAP : 0) - AW);
     const out = { x: x, lanes: null };
     drawArrow(cv, m, x + AW / 2, NH / 2, 0.85, col, dim);
     x += AW + GAP;
-    // the distance on top, the street or the lanes under it; alone: in the middle
-    const under = !!(road || nL);
+    // the distance on top, the street, "then" or the lanes under it; alone: in the middle
+    const under = !!(road || nL || thLine);
+    let dEnd = x;
     if (dist) {
         const dw = cv.text(dist, x, under ? 32 : 50, DIST, col, DOPTS);
-        cv.text(unit, x + dw + 4, under ? 32 : 50, UNIT, col, UOPTS);
+        dEnd = x + dw + 4 + cv.text(unit, x + dw + 4, under ? 32 : 50, UNIT, col, UOPTS);
     }
     if (road) cv.text(road, x, dist ? 60 : 46, ROAD, withAlpha(col, 0.85), ROPTS);
+    if (thLine) {
+        const y = dist ? 60 : 46, tx = x + cv.text('then', x, y, THEN_T, withAlpha(col, 0.85), ROPTS) + 4;
+        drawArrow(cv, th, tx + THEN_A / 2, y - 7, THEN_S, col, dim);
+        if (thGap) cv.text(thGap, tx + THEN_A + 4, y, THEN_T, withAlpha(col, 0.85), ROPTS);
+        out.then = { x: tx, w: THEN_A };
+    } else if (th && nL) {
+        drawArrow(cv, th, dEnd + 4 + THEN_A / 2, 20, THEN_S, col, dim);
+        out.then = { x: dEnd + 4, w: THEN_A };
+    }
     if (nL) { drawLanes(cv, m.lanes, x, dist ? 57 : NH / 2, lw, col, dim); out.lanes = { x: x, w: lw }; }
     return out;
 }
@@ -412,7 +433,8 @@ function drawNav(cv, m, opts) {
 function navKey(m, opts) {
     if (!m) return '';
     const L = m.lanes ? m.lanes.lanes.map((l) => (l.hi ? '*' : '') + (l.follows || [l.follow]).join('+') + '/' + l.others.join('+') + '/' + l.info).join(',') + '|' + (m.lanes.markers || []).join(',') : '';
-    return [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.side, m.flag, m.stop, m.dist, m.unit, m.road, L, opts && opts.palette].join('|');
+    const T = m.then ? [m.then.kind, m.then.dir, m.then.geom, m.then.exit, m.then.exitAngle, m.then.side, m.then.flag, gapText(m.then.gap, m.unit)].join('/') : '';
+    return [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.side, m.flag, m.stop, m.dist, m.unit, m.road, L, T, opts && opts.palette].join('|');
 }
 
 /** TurnDirection's names (the car's catalog, navigation.GuidingTypes): a lane glyph is drawn only for these. */
@@ -421,4 +443,4 @@ const TURN_DIRECTIONS = ['STRAIGHT_ON', 'SLIGHT_LEFT', 'LEFT', 'HARD_LEFT', 'UTU
 const SAMPLE = { kind: 'turn', dir: 'STRAIGHT_ON', dist: '700', unit: 'm', road: 'Example Road',
         lanes: { lanes: [{ follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'NONE', others: ['RIGHT'], hi: false, info: 'NONE' }], rec: 1, markers: ['SOLID', 'DASHED', 'DASHED', 'SOLID'] } };
 
-module.exports = { roundaboutPlan, laneWindow, HEAD_RUN, lanePath, drawLaneArrows, drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, geometryShape, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };
+module.exports = { gapText, roundaboutPlan, laneWindow, HEAD_RUN, lanePath, drawLaneArrows, drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, geometryShape, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };

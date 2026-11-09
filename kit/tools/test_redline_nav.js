@@ -38,7 +38,7 @@ replies.forEach((r, i) => {
 eq(Object.keys(kinds).sort().map((k) => k + ' ' + kinds[k]), ['branch 41', 'destination 5', 'roundabout 13', 'turn 90'], 'the drive\'s next turns by kind');
 
 // the first reply: left in 1 km
-eq(Nav.decodeEvents(replies[0].v).events[0], { kind: 'turn', dir: 'LEFT', geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: '1', unit: 'km', road: '<12 chars>', unreliable: false },
+eq(Nav.decodeEvents(replies[0].v).events[0], { kind: 'turn', dir: 'LEFT', geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: '1', unit: 'km', road: '<12 chars>', unreliable: false, dtd: 8985 },
     'first reply: a left turn in 1 km (rawDistance 1 isn\'t metres)');
 // directions seen
 const dirs = {};
@@ -91,7 +91,7 @@ eq(Nav.decodeEvent({ alongMainRoad: { mainRoadDirection: 'LEFT', formattedDistan
 eq(Nav.decodeEvent({ laneChange: { changeSide: 'RIGHT', formattedDistance: fd('200', 'METER') } }).kind, 'lanechange', 'laneChange');
 eq(Nav.decodeEvent({ branch: { branchType: 'HIGHWAY_OUT_RIGHT', formattedDistance: fd('0.5', 'MILE_US') } }).unit, 'mi', 'miles');
 eq(Nav.decodeEvent({ intersection: { direction: 'HARD_RIGHT', formattedDistance: fd('800', 'FEET') } }).unit, 'ft', 'feet');
-eq(Nav.decodeEvent({ roundabout: { exitNumber: 3, exitAngle: -90, driveDirection: 'RIGHT', formattedDistance: fd('150', 'YARD') } }), { kind: 'roundabout', dir: null, geom: null, exit: 3, exitAngle: 270, side: 'right', flag: null, stop: null, dist: '150', unit: 'yd', road: '', unreliable: false }, 'roundabout, left-hand traffic, angle wrapped');
+eq(Nav.decodeEvent({ roundabout: { exitNumber: 3, exitAngle: -90, driveDirection: 'RIGHT', formattedDistance: fd('150', 'YARD') } }), { kind: 'roundabout', dir: null, geom: null, exit: 3, exitAngle: 270, side: 'right', flag: null, stop: null, dist: '150', unit: 'yd', road: '', unreliable: false, dtd: null }, 'roundabout, left-hand traffic, angle wrapped');
 eq(Nav.decodeEvent({ ferry: { formattedDistance: fd('2', 'KM') } }).kind, 'follow', 'an unknown kind with a distance: follow the route');
 ok(Nav.decodeEvent({ pointOfInterest: { formattedDistance: fd('2', 'KM') } }) === null, 'a point of interest isn\'t a turn');
 ok(Nav.decodeEvent({ laneGuiding: { lanes: [] } }) === null && Nav.decodeEvent(null) === null && Nav.decodeEvent({ a: {}, b: {} }) === null, 'not a manoeuvre: null');
@@ -154,6 +154,31 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
         eq(Object.keys(T('DestinationPosition').items).sort(), ['CENTER', 'LEFT', 'NOT_DIGITIZED', 'RIGHT'], 'destination positions');
         eq(Object.keys(T('VehicleTransportationType').items).sort(), ['CAR_TRAIN', 'FERRY'], 'transport types');
     } else console.log('(the car\'s catalog is not here: its cross-check skipped)');
+}
+
+// ---- "then": the turn close behind the next one -------------------------------------------------------------------
+{
+    // the drive (CarPlay): a second turn comes only when Apple Maps shows its "Then", with no distance: shown as it comes
+    const two = replies.filter((r) => r.v.viewContent[0].eventsInView.length === 2);
+    const T = Nav.Tracker();
+    T.field('carplay', 'projectedGuidanceActive', true, 0);
+    let withThen = 0;
+    two.forEach((r) => { T.events(r.v, r.t); const v = T.view('route', r.t); if (v.show && v.show.then && v.show.then.gap === null) withThen++; });
+    ok(two.length > 30 && withThen === two.length, 'the drive: every reply with a second turn shows "then" (' + withThen + '/' + two.length + ')');
+    const one = replies.filter((r) => r.v.viewContent[0].eventsInView.length === 1)[0];
+    T.events(one.v, one.t);
+    ok(T.view('route', one.t).show.then === null, 'one turn only: no "then"');
+    const exitThenRight = two.map((r) => Nav.decodeEvents(r.v).events).filter((e) => e[0].kind === 'branch' && e[1].dir === 'RIGHT')[0];
+    ok(exitThenRight && Nav.thenOf(exitThenRight[0], exitThenRight[1]).dir === 'RIGHT', 'the motorway exit, then right');
+    ok(/then turn RIGHT$/.test(Nav.describe(Object.assign({}, exitThenRight[0], { lanes: null, then: Nav.thenOf(exitThenRight[0], exitThenRight[1]) }))), 'logged: "... then turn RIGHT"');
+    // with distances (BMW's own navigation): only within THEN_M of the next turn
+    const ev = (dir, d, dtd) => ({ kind: 'turn', dir: dir, dist: String(d), unit: 'm', dtd: dtd, road: '' });
+    ok(Nav.thenOf(ev('RIGHT', 300, 5000), ev('LEFT', 350, 4950)).gap === 50, '50 m after: "then", 50 m (from the distances to the destination)');
+    ok(Nav.thenOf(ev('RIGHT', 300, null), ev('LEFT', 420, null)).gap === 120, '120 m after (from the turns\' own distances): "then"');
+    ok(Nav.thenOf(ev('RIGHT', 300, 5000), ev('LEFT', 700, 4600)) === null, '400 m after: no "then"');
+    ok(Nav.thenOf(ev('RIGHT', 300, 5000), ev('LEFT', 300 + Nav.THEN_M, 5000 - Nav.THEN_M)) !== null, 'exactly ' + Nav.THEN_M + ' m: still "then"');
+    ok(Nav.thenOf(ev('RIGHT', 300, null), { kind: 'turn', dir: 'LEFT', dist: '2', unit: 'km', dtd: null, road: '' }) === null, 'a later turn with a distance but no gap known: no "then"');
+    ok(Nav.thenOf(ev('RIGHT', 300, 5000), { kind: 'follow', dir: 'x', dist: null, unit: null, dtd: null }) === null, 'an unknown kind after: no "then"');
 }
 
 // ---- the tracker on a driven clock ---------------------------------------------------------------------------------

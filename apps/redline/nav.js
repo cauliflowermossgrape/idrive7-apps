@@ -124,7 +124,9 @@ function decodeEvent(e) {
     if (!u) return null;
     const b = u.body, d = distOf(b);
     if (SKIP[u.kind]) return null;
-    const m = { kind: null, dir: null, geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: d.dist, unit: d.unit, road: roadOf(b), unreliable: b.unreliable === true };
+    const dtd = Number(b.distanceToDestination);
+    const m = { kind: null, dir: null, geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: d.dist, unit: d.unit, road: roadOf(b), unreliable: b.unreliable === true,
+        dtd: isFinite(dtd) && dtd >= 0 ? dtd : null };
     switch (u.kind) {
     case 'intersection':
         m.kind = 'turn'; m.dir = enumOf('TurnDirection', b.direction) || 'NONE'; m.geom = geomOf(b);
@@ -230,13 +232,33 @@ function routingOf(r) {
         (r.provider !== null && r.provider !== undefined && r.provider !== 'NONE' && r.provider !== 0);
 }
 
+/*
+ * "Then": the turn after the next, when it comes close behind it (to be in the right lane for both: two lanes turn
+ * right and the next turn is left: the left one of them). CarPlay sends a second turn only when Apple Maps shows
+ * its own "Then" (the 2026-11-09 drive: a motorway exit then a right turn, straight on then right, a roundabout then
+ * the destination), with no distance (unit NONE, rawDistance a fixed 500, the same distance to the destination):
+ * shown as it comes. With a distance (BMW's own navigation lists every turn), shown only within THEN_M.
+ */
+const THEN_M = 150;          // 11 s at 50 km/h: time to pick the lane for both turns
+/** The hint for the turn after a: { kind, dir, ..., gap: metres between them or null }, or null (none, or too far). */
+function thenOf(a, b) {
+    if (!a || !b || b.kind === 'follow') return null;
+    let gap = null;
+    if (a.dtd !== null && b.dtd !== null && a.dtd - b.dtd > 0) gap = a.dtd - b.dtd;
+    else if (metres(a) !== null && metres(b) !== null && metres(b) >= metres(a)) gap = metres(b) - metres(a);
+    // no distance at all: the phone decided it's close (it sends a second turn only then)
+    if (gap === null) return b.dist === null ? Object.assign({}, b, { gap: null }) : null;
+    return gap <= THEN_M ? Object.assign({}, b, { gap: gap }) : null;
+}
+
 /** One short log line for a manoeuvre, without the street (its length only). */
 function describe(m) {
     if (!m) return 'none';
     const what = m.kind === 'roundabout' ? 'roundabout exit ' + m.exit + ' at ' + m.exitAngle + ' (' + m.side + ')'
         : m.kind + ' ' + m.dir + (m.geom ? ' ' + m.geom : '') + (m.kind === 'destination' && m.flag === false ? ' stopover ' + (m.stop || '?') : '');
     return what + ' ' + (m.dist ? m.dist + ' ' + m.unit : '-') + (m.road ? ' <' + m.road.length + ' chars>' : '') +
-        (m.lanes ? ' lanes ' + m.lanes.lanes.map((l) => (l.hi ? '*' : '') + l.follow).join(',') : '') + (m.unreliable ? ' unreliable' : '');
+        (m.lanes ? ' lanes ' + m.lanes.lanes.map((l) => (l.hi ? '*' : '') + l.follow).join(',') : '') + (m.unreliable ? ' unreliable' : '') +
+        (m.then ? ' then ' + (m.then.kind === 'roundabout' ? 'roundabout exit ' + m.then.exit : m.then.kind + ' ' + m.then.dir) + (m.then.gap !== null ? ' after ' + Math.round(m.then.gap) + ' m' : '') : '');
 }
 
 /**
@@ -281,7 +303,7 @@ function Tracker() {
             const r = decodeEvents(reply);
             if (!r.ok) { lastErr = r.error; return r; }
             lastErr = null;
-            turn = r.events[0] || null; turnAt = now;
+            turn = r.events[0] ? Object.assign({}, r.events[0], { then: thenOf(r.events[0], r.events[1]) }) : null; turnAt = now;
             seen(turn, now);
             return r;
         },
@@ -360,4 +382,4 @@ function start(ctx, log, probe) {
     };
 }
 
-module.exports = { start, SKIP, ENUMS, enumOf, routeSure, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS, NEAR_M };
+module.exports = { start, thenOf, THEN_M, SKIP, ENUMS, enumOf, routeSure, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS, NEAR_M };
