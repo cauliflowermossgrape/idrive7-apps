@@ -70,5 +70,4 @@ class KnockWatch {
     }
 }
 
-KnockWatch.WARN_DEG = WARN_DEG;
 module.exports = KnockWatch;

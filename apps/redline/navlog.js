@@ -196,4 +196,4 @@ function start(ctx, log, tap, opts) {
     };
 }
 
-module.exports = { start, clean, paths, kindOf, SOURCES, eventQuery, EVENT_LIST };
+module.exports = { start };

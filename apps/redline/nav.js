@@ -471,4 +471,4 @@ function start(ctx, log, probe) {
     };
 }
 
-module.exports = { start, mono, phonesMismatch, BACK_MS, thenOf, THEN_M, SKIP, ENUMS, enumOf, routeSure, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, safeLog, STALE_MS, GIVE_WAY_MS, NEAR_M };
+module.exports = { start, mono, BACK_MS, thenOf, THEN_M, SKIP, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS };

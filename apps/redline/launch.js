@@ -77,5 +77,4 @@ class LaunchScore {
     }
 }
 
-LaunchScore.SHOW_MS = SHOW_MS;
 module.exports = LaunchScore;

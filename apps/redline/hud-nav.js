@@ -460,4 +460,4 @@ const TURN_DIRECTIONS = ['STRAIGHT_ON', 'SLIGHT_LEFT', 'LEFT', 'HARD_LEFT', 'UTU
 const SAMPLE = { kind: 'turn', dir: 'STRAIGHT_ON', dist: '700', unit: 'm', road: 'Example Road',
         lanes: { lanes: [{ follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'NONE', others: ['RIGHT'], hi: false, info: 'NONE' }], rec: 1, markers: ['SOLID', 'DASHED', 'DASHED', 'SOLID'] } };
 
-module.exports = { gapText, roundaboutPlan, laneWindow, HEAD_RUN, lanePath, drawLaneArrows, drawNav, drawArrow, drawLanes, navKey, foldText, shapeOf, geometryShape, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };
+module.exports = { gapText, roundaboutPlan, laneWindow, HEAD_RUN, drawLaneArrows, drawNav, drawArrow, navKey, foldText, shapeOf, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };

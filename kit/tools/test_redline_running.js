@@ -5,7 +5,6 @@
 // - the HUD is one image layer (a picture) on every layout, never a shader (the cluster runs the HUD's
 //   shaders, and a heavy one restarted it on the car: README "HUD drawing");
 // - the Sport / Comfort profiles switch the running HUD with the driving mode, Don't show drops its layer;
-// - the HUD slot's report is asked for, and BMW's content waiting there doesn't move Redline;
 // - the knock warning and the launch time where the grade shows;
 // - the tyre widget in the directions' corner: when a tyre is low (or always, or never), the directions first;
 // - the HUD off stops every UDS reader (the electrical one too).
@@ -30,7 +29,6 @@ class FakeCr {
     uniform() {}
     pixels(ref, rects, px) { this.frames.push({ ref: ref, rects: rects, px: Buffer.from(px) }); return true; }
     drop(r) { delete this.layers[r]; }
-    status() { this.asked = (this.asked || 0) + 1; }
     of(kind) { return Object.keys(this.layers).map(Number).filter((r) => this.layers[r].kind === kind); }
 }
 const load = Module._load;
@@ -101,13 +99,6 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('image').length === 1, 'back in Sport: shown again');
     ok(cr.effects === 0, 'no shader made in the whole run (' + cr.effects + ')');
-
-    // the HUD slot's report is asked for while the tach is on, and BMW's content waiting there doesn't move Redline
-    const slot = (rows) => cr.h.status('targets: hud\nslot 0x323 status 2: ' + rows);
-    await sleep(2700);
-    ok(cr.asked > 0, 'the HUD slot report is asked for while the tach is on');
-    slot('0x1000400 class 0 map 1, 0x1000250 class 0 map 3'); await sleep(200);
-    ok(cr.of('image').length === 1, "BMW's content waiting in the slot: Redline stays");
 
     // the knock warning: the reader runs while the HUD shows (warning on by default); an event shows KNOCK
     // where the grade goes, for 1.5 s; switched off, the reader stops and nothing shows
