@@ -53,6 +53,10 @@ const rm = (p) => {
     // each app runs as its own user: the folder is open to all (sticky) whatever the umask (no modes on Windows)
     if (process.platform !== 'win32') ok((fs.statSync(SHM).mode & 0o7777) === 0o1777, 'the claims folder is 1777, not ' + (fs.statSync(SHM).mode & 0o7777).toString(8));
     ok(HudClaim.others('b').join() === 'a' && HudClaim.others('a').length === 0, 'a held claim is seen by the others');
+    // claims are written whole (a temp file renamed over it): one caught mid-write is not another app's claim
+    fs.writeFileSync(path.join(SHM, 'a.123.tmp'), JSON.stringify({ held: true, at: Date.now() }) + '\n');
+    ok(HudClaim.others('b').join() === 'a' && fs.readdirSync(SHM).filter((n) => n.endsWith('.tmp') && n !== 'a.123.tmp').length === 0, 'a claim being written is not a claim; no temp files left over');
+    fs.unlinkSync(path.join(SHM, 'a.123.tmp'));
     a.hold(false);
     ok(HudClaim.others('b').length === 0 && a.thisBoot(), 'given back: not seen, still known for this boot');
 
@@ -62,7 +66,7 @@ const rm = (p) => {
     ok(HudClaim.others('x').indexOf('robertn_waze_cluster.standing') < 0, 'a standing marker is no claim');
 
     const settings = (over) => {
-        const v = Object.assign({ hud: 'on', hudHandBack: true, hudComfort: 'all' }, over), fns = [];
+        const v = Object.assign({ hud: 'on', hudHandBack: true, hudComfortMode: 'same' }, over), fns = [];
         return { v, get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
     };
     let cond, drive = 'sport';
@@ -105,14 +109,22 @@ const rm = (p) => {
     s.set('hud', 'on');
     ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'turned on: Redline holds the HUD');
     // hidden in Comfort: given back while hidden
-    s.v.hudComfort = 'hide'; drive = 'comfort';
+    s.v.hudComfortMode = 'hide'; drive = 'comfort';
     await until(() => HudClaim.others('robertn_waze_cluster').length === 0, 3000);
     ok(HudClaim.others('robertn_waze_cluster').length === 0, 'tach hidden in Comfort: the claim given back');
     drive = 'sport';
     await until(() => HudClaim.others('robertn_waze_cluster').length === 1, 3000);
     ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'back in Sport: held again');
+    // Don't show in Comfort (Redline only in Sport): the switch-off keeps Redline's HUD on, nothing handed back
     cond = 10;
     await sleep(4500);       // the 2 s check has seen the car on (twice)
+    cond = 5;
+    await sleep(4500);
+    ok(s.v.hud === 'on', 'Sport-only setup: switched off, Redline\'s HUD stays on (the next drive starts in Comfort)');
+    // Same as Sport in Comfort: handed back at the switch-off
+    s.v.hudComfortMode = 'same';
+    cond = 10;
+    await sleep(4500);
     ok(s.v.hud === 'on', 'still on while driving');
     cond = 5;
     await until(() => s.v.hud === 'off', 8000);

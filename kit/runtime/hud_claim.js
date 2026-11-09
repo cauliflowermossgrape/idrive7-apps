@@ -24,6 +24,13 @@
 const fs = require('fs');
 const path = require('path');
 
+/** Write a file whole or not at all: a temp file renamed over it (a reader or a power cut never sees half). */
+function writeWhole(file, text) {
+    const tmp = file + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+}
+
 const DIR = process.env.MGU_HUD_CLAIMS || '/dev/shm/mgu-hud';
 const TOUCH_MS = 2000, FRESH_MS = 6000;
 const STANDING = '.standing';
@@ -61,7 +68,7 @@ class HudClaim {
         } else {
             clearInterval(this.timer);
             this.timer = null;
-            try { fs.writeFileSync(this.file, JSON.stringify({ held: false, at: Date.now() }) + '\n'); } catch (e) { /* tmpfs gone */ }
+            try { writeWhole(this.file, JSON.stringify({ held: false, at: Date.now() }) + '\n'); } catch (e) { /* tmpfs gone */ }
         }
     }
 
@@ -75,7 +82,7 @@ class HudClaim {
     _touch() {
         try {
             folder();
-            fs.writeFileSync(this.file, JSON.stringify({ held: true, at: Date.now() }) + '\n');
+            writeWhole(this.file, JSON.stringify({ held: true, at: Date.now() }) + '\n');
             this.failed = false;
         } catch (e) {
             if (!this.failed && this.log) this.log.warn('HUD claim: ' + e.message);
@@ -88,7 +95,7 @@ class HudClaim {
         try { names = fs.readdirSync(DIR); } catch (e) { return []; }
         const now = Date.now();
         return names.filter((n) => {
-            if (n === id || n.endsWith(STANDING)) return false;
+            if (n === id || n.endsWith(STANDING) || n.endsWith('.tmp')) return false;     // .tmp: a claim being written
             try {
                 const f = path.join(DIR, n);
                 return now - fs.statSync(f).mtimeMs < FRESH_MS && JSON.parse(fs.readFileSync(f, 'utf8')).held === true;
@@ -101,7 +108,7 @@ class HudClaim {
         try {
             if (JSON.parse(fs.readFileSync(f, 'utf8')).on === !!on) return;
         } catch (e) { /* not written yet */ }
-        try { folder(); fs.writeFileSync(f, JSON.stringify({ on: !!on }) + '\n'); } catch (e) { /* tmpfs gone */ }
+        try { folder(); writeWhole(f, JSON.stringify({ on: !!on }) + '\n'); } catch (e) { /* tmpfs gone */ }
     }
 
     static standingOn(id) {

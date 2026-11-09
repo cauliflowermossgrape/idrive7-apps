@@ -23,6 +23,8 @@ cars with a HUD, but nobody has checked yet.
 
 ## Head-up display
 
+The HUD output is by [@biscotit](https://github.com/biscotit).
+
 ### What you need
 
 - **cluster-render**, installed from the MGU Store (Store page, *Cluster renderer*, from the
@@ -42,10 +44,14 @@ cars with a HUD, but nobody has checked yet.
 ### With Cluster functions
 
 Cluster functions (the HUD map, turn signals and gear) stands on the HUD whenever it is on. Turning
-Redline's HUD on takes the HUD over: Cluster functions gives way, except while Redline's tach is hidden in
-Comfort / Eco Pro. With *HUD position and size* → *Give the HUD back to Cluster functions at switch-off* (on by
-default in this fork), Redline's *Show on HUD* goes back to *Off* when the car is switched off or the head unit
-starts again, and Cluster functions has the HUD again; turned off, Redline's HUD stays on from drive to drive.
+Redline's HUD on takes the HUD over: Cluster functions gives way, except while Redline's tach is hidden.
+
+In this fork *In Comfort / Eco Pro* is *Don't show* by default: Redline's HUD shows only in Sport (and
+XtraBoost); in Comfort, Eco Pro, Adaptive and a plug-in hybrid's Hybrid and Electric it is hidden, and Cluster
+functions has the HUD. A drive starts in Comfort, so it starts with Cluster functions, and Sport brings Redline's
+tach up. *Give the HUD back to Cluster functions at switch-off* (on by default here) matters only when Redline
+shows in Comfort too: then Redline's *Show on HUD* goes back to *Off* when the car is switched off or the head unit
+starts again; turned off, Redline's HUD stays on from drive to drive.
 Without Cluster functions installed, Redline's HUD stays on either way.
 Both apps keep their state in `/dev/shm/mgu-hud` (`kit/runtime/hud_claim.js`), cleared at each head-unit start;
 where it cannot be written, nothing is handed back. Cluster functions' side: TheoneLT83/Cluster-apps
@@ -69,6 +75,59 @@ where it cannot be written, nothing is handed back. Cluster functions' side: The
 - **Vector arcade:** the standard layout drawn in outlines only: rings, outlined segments and an
   outlined 7-segment gear.
 
+Three layouts after BMW M's own head-up displays, in their colours (*Colours* doesn't change them):
+
+- **Arc** (after the F80 / F82 M3 and M4): 8 curved shift lights (6 amber, 2 red; *Shift light
+  style* Race or one colour uses those instead) over a curved band with a white rim and a tick per
+  1000 rpm, ending in a yellow then red zone; the gear big under it. Readouts: the first beside the
+  gear, two more at the far right, a fourth high on the left.
+- **Ramp** (after the G80 / G82 M3 and M4): the band climbs from the bottom left, then runs flat
+  along the top in slanted fields, with a 0–8 scale under it. The fields fill warm white, turn
+  yellow as the shift nears and red at it; a red strip marks the redline. The gear sits over a line
+  with the first readout under it (where the car shows the speed) and the others listed on the right.
+- **Dial** (after the E60 M5): a ¾ dial round the gear: yellow-green, then an orange advance
+  warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
+  dial's orange; the first readout bottom right (where the car shows the speed).
+
+*Shift light style* (Settings) works on all three as on the other layouts: M is the cars' own colours,
+Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
+lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
+right make no difference here: Arc fills left to right like the F80, Ramp and Dial along their band.
+On Ramp and Dial the band is the shift lights too, so it stays with *Rev bar* off.
+
+On all three the shift grade takes the first readout's place; with *Burst* a ring grows from the gear
+(or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
+on the limiter, as in the cars.
+
+**HUD drawing: a picture, not a shader.** The HUD is a 400x130 picture sent to cluster-render, only the
+part that changed and only when it changes. Drawing the moving parts with a shader (a cluster-render effect
+layer) was tried in 1.16 and left out, because of where the shader runs:
+
+- The HUD is drawn by the **instrument cluster**, not the head unit. cluster-render hands it the HUD's
+  content, shaders included, and the cluster's own graphics chip runs them.
+- A shader for every layout (the lights, bar, digits and bands, with arrays of up to 40 colours and
+  loops of up to 80 steps a pixel) **restarted the instrument cluster twice** within seconds on a G21
+  (2026-11-09, cluster-render log: "Dcsm2 not available" 5 s and 2 s after the HUD was shown). The car
+  showed brake, ABS and stability warnings and "Driver assistance restricted" until it had slept, and
+  cluster-render's guard turned the HUD off.
+- The likely cause is the cluster's GPU limits: OpenGL ES 2 only promises 16 uniform vectors a shader
+  and many embedded chips stop at 64; this shader used about 70, and a lot of work a pixel. A desktop
+  GPU (where it was checked, in WebGL) allows over 1000, so nothing showed there.
+- A cluster restart while driving is a safety risk (speedometer, warning lights and driver assistance
+  gone or limited for seconds), and a shader is sent whenever its layer is made: at start, after a
+  cluster-render restart, or on a Sport / Comfort switch to another layout.
+- What it would have saved is small: the picture path sends about 100 KB/s, where the cluster map sends
+  about 3.8 MB/s. A smaller shader for the Arc alone (8 colours, ~22 uniform vectors) ran without trouble,
+  but its shift lights felt slightly late next to the picture.
+
+So every layout is a picture. A GPU path would need shaders kept well inside what the cluster takes, made
+only while parked, and tested parked first.
+
+**Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
+Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
+font closest to the BMW Type digits these HUDs use; BMW's own font can't be shipped. A font that is
+missing falls back to Ubuntu.
+
 **Palettes** (*Colours*): Colour (green / yellow / red), Night amber, Ice white.
 
 **Choosing a look: the HUD looks tab.**
@@ -77,25 +136,29 @@ where it cannot be written, nothing is handed back. Cluster functions' side: The
   It counts in, flashes, shifts (graded spot on, early or late in turn), hits the limiter, then
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
-- **Picking:** on the right, the six layouts; tap one to use it.
-- **Editing:** under the preview, five tabs, each showing its changes in the preview at once.
+- **Picking:** on the right, the nine layouts; tap one to use it.
+- **Sport or Comfort:** under the preview, **SPORT** and **COMFORT / ECO PRO** pick the setup you're
+  looking at and changing; with Comfort picked, *Same as Sport*, *Its own* or *Don't show* beside it.
+  Everything on the page then shows and changes that setup (size and position are shared).
+- **Editing:** under that, five tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
-  - **Look:** colours, what the HUD does in Comfort / Eco Pro, and temperatures hidden at
-    operating temperature (only blue, yellow or red ones show) or always shown.
-  - **Gauge:** Rev bar (the main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M), and the
-    shift light style (GT3, filling from the outside in, or left to right). Every part can be
-    turned off, so the HUD can be, say, the VFD shift lights alone.
-  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, G-force. *Temps*: Oil,
-    Water, Gearbox, Outside, and the cold-engine limit. Up to four show, in this order; when more
-    are on, the last plain ones give way, so a cold or hot reading keeps its place.
-  - **Effects:** the shift grade (Burst / Simple / Off), downshift arrows (When braking /
-    Always / Off), the peak marker and the limiter shake.
-- **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Reset puts
+  - **Look:** HUD colours (not on VFD and the M layouts, which keep their own), gear font, label
+    size, and how the rpm reads (exact, steady, thousands).
+  - **Gauge:** the shift lights (GT3, left to right, or off) and their colours (M, Race, one
+    colour: the centre screen's too), which parts show (rev bar, gear, gear mode) and unlit
+    segments (dim or hidden). Every part can be turned off, so the HUD can be, say, the lights alone.
+  - **Readouts:** *Engine*: RPM, Boost, Torque, Power, G-force, Knock. *Temps*: Oil, Water,
+    Gearbox, Outside, the cold-engine limit, and *Only when cold or hot*. Up to four show, in this
+    order; when more are on, the last plain ones give way, so a cold or hot reading keeps its place.
+  - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
+    peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
+    gear or the best one).
+  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass. Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
   you're parked. Nothing is learned from it.
-- Units (boost bar / psi / kPa, °C / °F) and "temperatures only when cold or hot" are in
-  *Settings → HUD readouts*; everything above is also in *Settings*.
+- Units (speed, temperature, torque, power, boost) are in *Settings → Units*. Everything above is
+  also in Settings with *All HUD options here* on.
 
 **Effects:**
 
@@ -105,17 +168,24 @@ where it cannot be written, nothing is handed back. Cluster functions' side: The
 - **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
   the bar, lights and gear flash red.
 
-**By driving mode** (*In Comfort / Eco Pro*): the car's driving mode (FES
-`statusFESVehicleDynamicSwitchHMI`, as Live Data shows it) picks how much the HUD shows.
-- *Show all* (the default): the same in every mode.
-- *Shift lights and gear only*: in Comfort and Eco Pro, the shift lights, rev bar and gear, with
-  no readouts, grade, peak marker or shake.
-- *Hide*: in Comfort and Eco Pro the image is dropped, so BMW's own HUD shows; it comes back as
-  soon as the mode is Sport.
+**Sport and Comfort** (two HUD setups): the car's driving mode (FES `statusFESVehicleDynamicSwitchHMI`,
+as Live Data shows it) picks which one shows.
 
-Sport, Sport+ and Sport Individual always show everything. Adaptive, a mode it doesn't know, or
-a car that doesn't send the mode count as Sport, so the HUD never disappears for lack of a signal.
-*Play on HUD* and the HUD looks preview ignore the mode.
+- **Sport** is used in Sport, Sport+ and Sport Individual, and also in Adaptive, a mode it doesn't
+  know, or when the car doesn't send the mode, so the HUD never disappears for lack of a signal.
+- **Comfort / Eco Pro** is one of three (*In Comfort / Eco Pro*, in Settings and on HUD looks):
+  - *Same HUD as Sport* (the default): one HUD for every mode.
+  - *Its own HUD*: a setup of its own: layout, colours, readouts, alerts, everything on HUD looks.
+    It starts as a copy of Sport's. On HUD looks, with **COMFORT / ECO PRO** picked, changing
+    anything makes Comfort its own, so nothing needs switching on first.
+  - *Don't show*: Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as soon as the mode
+    is Sport. Comfort's own setup, if it has one, is kept for later.
+- Shared by both: size and position, units, the light colours and the downshift
+  arrows (the centre screen uses those too).
+- From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
+  becomes Comfort's own setup without readouts or alerts.
+
+HUD looks opens on the setup of the mode the car is in; *Play on HUD* plays the one picked there.
 
 **The readouts row** (standard layout), left to right:
 
@@ -149,20 +219,27 @@ normal and red is hot. A reading with no data is left out.
 
 ### HUD settings (shown while the HUD is on)
 
-Three rows in Settings. Every change shows on the HUD at once. The **HUD looks** tab picks the
-layout and colours by picture.
+Settings keeps the HUD short: **Show on HUD**, **HUD layout**, **In Comfort / Eco Pro** and **All HUD
+options here**. Everything
+else is on the **HUD looks** page, by picture and with a live preview. Switch *All HUD options here*
+on to also list them in Settings, as five groups (*HUD: look*, *gauge*, *readouts*, *alerts*, *place*);
+they set the Sport HUD (Comfort's own is set up on HUD looks). The rest of Settings is grouped too: *Shift point*, *Engine*, *Learning*, *Units* (all
+five units, app-wide), *Screen*, and behind *Advanced settings*, the renderer and the HUD's frame
+rate, readout refresh and hand-back. Every change shows on the HUD at once. The tables
+below list them by what they do.
 
 **HUD style:** how it looks.
 
 | Setting | Values |
 |---|---|
-| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade |
-| Colours | Colour / Night amber / Ice white (not for VFD, which has its own) |
+| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
+| Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
+| Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
-| In Comfort / Eco Pro | Show all / Shift lights and gear only / Hide (BMW's own HUD) |
+| In Comfort / Eco Pro | Same HUD as Sport / Its own HUD (set up on HUD looks) / Don't show (BMW's own HUD) |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.
@@ -178,6 +255,9 @@ layout and colours by picture.
 | Boost unit | bar / psi / kPa |
 | Oil, Water, Gearbox temperature | on / off each |
 | Cold-engine shift limit | on / off (the LIMIT readout while the cold guard holds the shift point down) |
+| Launch time | on (default) / off: after a standing start, the 0-100 km/h (0-60 mph) time and its difference to your best, for 3 s ([Launch score](#launch-score)) |
+| Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
+| Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
 | Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
@@ -189,7 +269,7 @@ At most four readouts fit the row; past that the last one gives way.
 | Setting | Values |
 |---|---|
 | Size | 70–130 %, scaled about the top centre |
-| Position left / right, up / down | px; moves the layer only |
+| Position left / right, up / down | px; moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
 ### What it does with BMW's content
@@ -285,8 +365,10 @@ log lists the raw values (`gearbox programme: …`), so the detection can be che
 
 With *Shift lights early by* on **Auto**, each upshift after a flash you could see (HUD shown,
 lights on) checks how late it came: (shift rpm − shift point) ÷ climb rate. The lead then moves
-30 % of the way to what would have hit the point, within 0–600 ms. A shift that comes more than
-700 ms after the revs started falling (you lifted first) is not used.
+30 % of the way to what would have hit the point, within 0–600 ms. On a fast climb the flash can
+come at most 800 rpm early, so the lead it really had is used (not the one asked for); otherwise
+quick shifts in 1st and 2nd would push the lead up and make higher gears flash too early. A shift that
+comes more than 700 ms after the revs started falling (you lifted first) is not used.
 
 ## Downshift cue
 
@@ -302,6 +384,34 @@ ratios are learned.
 - **Always**.
 - **Off**.
 
+*Downshift arrows show*:
+
+- **Every gear you can drop** (default): as above.
+- **Best gear**: only as far as the power band, the lowest rpm where the engine makes 90 % of its
+  peak power on the learned torque curve. No arrows when you're already in it; the fewest drops that
+  reach it; all you can drop when none does. Until the curve is learned, the same as Every gear.
+
+## Knock
+
+The engine unit's knock control, the same values Live Data shows (*Ignition and knock*): its ignition
+retard (DID `554C`, the cylinders' mean, 0.375° steps) and knock detected (`4A36`), read twice a second
+over read-only diagnostics while the HUD shows and the engine runs (the gearbox reader's link).
+**KNOCK** shows where the grade goes when the retard reaches 2.25° or the engine flags knock, and stays
+while it does; it goes before a grade or launch time. On Minimal and Split wings, which show no grades,
+the gear turns red (Minimal also writes KNOCK under its lights). The *Knock retard* readout shows the
+degrees, only from 0.75°. A car whose engine unit doesn't answer `554C` shows nothing (logged once:
+`knock: the engine unit gives no knock retard`). The threshold is from the catalogue's scaling and not
+yet checked on a car.
+
+## Launch score
+
+Each standing start is timed 0-100 km/h and 0-60 mph by the run timer Drag Timer uses
+(`kit/run_timer.js`: the launch found from a standstill, crossings interpolated between speed samples).
+On the HUD, for 3 s, the time in your speed unit and its difference to your best before it: green for a
+new best, yellow within 0.1 s, red further off; it goes after knock and a shift grade. Bests are kept
+in `launch.json` and forgotten with *Reset all* on the Learned page. Times outside 1.8-30 s (1.7-28 s
+for 0-60) aren't counted.
+
 ## Files and logs
 
 Everything lives in the app's `data/` folder on the head unit
@@ -315,6 +425,7 @@ Everything lives in the app's `data/` folder on the head unit
 | `shiftmap.json` | torque bins and gear ratios | ~0.5–10 KB | at most every 5 min while learning, at most once a minute when a shift point moves |
 | `hudlead.json` | learned reaction time | < 50 B | when it moves |
 | `engine.json` | detected engine type | tiny | once |
+| `launch.json` | best launch times (0-100 km/h, 0-60 mph) | < 100 B | on a new best |
 
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.
@@ -328,6 +439,8 @@ ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox' /var/opt/pub
 Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
+- `hud: target hud: slot 0x323 …`: cluster-render's report on the HUD's slot (each change): whether Redline
+  or BMW's content (its navigation, with CarPlay) holds it.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
 - `limiter: learned …`
 - `shiftmap: 3>4 at 5550`

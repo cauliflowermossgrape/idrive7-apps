@@ -17,11 +17,28 @@ function positive(reply, sid, prefix) {
     return reply;
 }
 
+function binaryMarkerTag(data) {
+    // MG1 markers put a 64-byte binary block between BM3_ and ~|~.
+    if (data.length !== MARKER_SIZE || data.subarray(0, 4).toString('latin1') !== 'BM3_' ||
+        data.subarray(68, 71).toString('latin1') !== '~|~') return null;
+    const match = /^_+#([A-Z0-9]+)\x00/.exec(data.subarray(71).toString('latin1'));
+    return match ? match[1] : null;
+}
+
 function markerRom(reply, profiles) {
     positive(reply, 0x22, [0xF3, 0x01]);
     const data = Buffer.from(reply.slice(3));
-    if (data.indexOf(Buffer.from('BM3_R')) < 0) throw new Error('BM3 CustomROM marker absent');
+    if (data.length !== MARKER_SIZE) throw new Error('marker length ' + data.length + '/' + MARKER_SIZE);
     const text = data.toString('latin1');
+    const tag = binaryMarkerTag(data);
+    if (tag) {
+        // The captured MG1 token appends five build characters: R4C9H5V02OKLX0.
+        const keys = Object.keys(profiles || {}).filter((key) => tag.indexOf(key) === 0 &&
+            /^[A-Z0-9]{5}$/.test(tag.slice(key.length)));
+        if (keys.length !== 1) throw new Error('BM3 ROM key not uniquely matched in binary marker');
+        return keys[0];
+    }
+    if (data.indexOf(Buffer.from('BM3_R')) < 0) throw new Error('BM3 CustomROM marker absent');
     const keys = Object.keys(profiles || {}).filter((key) => text.includes('#' + key));
     if (keys.length !== 1) throw new Error('BM3 ROM key not uniquely matched in marker');
     return keys[0];
@@ -57,6 +74,8 @@ class Bm3Protocol {
         this.profile = null;
         this.rom = null;
         const addr = addressBytes(this.config.bm3MarkerAddress);
+        // Defining an existing dynamic DID appends entries; clear F301 before replacing it.
+        await this.request(0x2C, [0x03, 0xF3, 0x01], [0x03, 0xF3, 0x01]);
         await this.request(0x2C, [0x02, 0xF3, 0x01, 0x24].concat(addr, [0, MARKER_SIZE]), [0x02, 0xF3, 0x01]);
         const marker = await this.request(0x22, [0xF3, 0x01], [0xF3, 0x01]);
         const rom = markerRom(marker, this.profiles);
