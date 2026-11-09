@@ -522,7 +522,7 @@ mgu.run({
             ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade'],
             ['arc', 'Arc (F80 M3/M4)'], ['ramp', 'Ramp (G80 M3/M4)'], ['dial', 'Dial (E60 M5)']];
         const TILE_K = 0.45;            // the tiles' thumbnails: the HUD at 45 %
-        const studio = { cue: {}, t0: Date.now(), panel: 'readouts' };
+        const studio = { cue: {}, t0: Date.now(), panel: 'look' };
         /** The preview's frame at now: what frameData would give the HUD for the scripted drive. */
         function studioFrame(now) {
             const o = Hud.optsFrom(settings), t = now - studio.t0, dm = Hud.demoAt(t);
@@ -554,9 +554,9 @@ mgu.run({
             });
         }
         /** One row of choice buttons: label, then [value, text] options; the current one filled. */
-        function choiceRow(cv, t, y, label, key, cur, options, disabled, x0) {
+        function choiceRow(cv, t, y, label, key, cur, options, disabled, x0, lw) {
             cv.text(label, x0 ? x0 : 40, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-            let x = x0 ? x0 + 120 : 200;
+            let x = (x0 || 40) + (lw || (x0 ? 120 : 160));
             options.forEach((op) => {
                 const w = G.button(cv, t, x, y, 0, 40, op[1], () => { settings.set(key, op[0]); return render(); },
                     { key: 'studio_' + key + '_' + op[0], primary: op[0] === cur, busy: disabled });
@@ -592,7 +592,7 @@ mgu.run({
             // the editor under the preview: tabs, then that panel's buttons
             // category tabs: text with an underline on a divider (like the page tabs), not pills, so they
             // read as categories and the pills below as the things you change
-            const panels = [['look', 'LOOK'], ['gauge', 'GAUGE'], ['readouts', 'READOUTS'], ['effects', 'EFFECTS'], ['place', 'PLACE']];
+            const panels = [['look', 'LOOK'], ['gauge', 'GAUGE'], ['readouts', 'READOUTS'], ['alerts', 'ALERTS'], ['modes', 'MODES'], ['place', 'PLACE']];
             cv.fillRect(24, 398, 1552, 1, withAlpha(t.tick, 0.6));
             let tx = 40;
             panels.forEach((pn) => {
@@ -600,86 +600,109 @@ mgu.run({
                 cv.text(pn[1], tx, 388, 20, sel ? t.text : t.dim, { font: 'bold', spacing: 2 });
                 if (sel) cv.fillRect(tx - 4, 395, w + 8, 4, t.accent);
                 cv.target(tx - 16, 356, w + 32, 46, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
-                tx += w + 56;
+                tx += w + 48;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
             const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(settings)) : {};
             const offText = Object.keys(off).map((k) => k + ' ' + off[k] + ' px').join(', ');
-            const hint = over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show (temperatures only when cold or hot)'
-                : offText ? 'Partly outside the windshield (' + offText + '), as measured on one car: check it from your seat' : STUDIO_HINT[studio.panel];
+            const hint = over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show'
+                : offText ? 'Partly outside the windshield (' + offText + '), as measured on one car' : STUDIO_HINT[studio.panel];
             cv.text(hint, 1576, 388, 16, over || offText ? t.warn : t.dim, { align: 'right' });
+            // two columns of controls: the left one's label at 40, the right one's at RX
+            const RX = 840, R1 = 414, R2 = 462;
+            const isM = Hud.M_STYLES.indexOf(o.style) >= 0, seg7 = o.style === 'digital' || o.style === 'vfd' || o.style === 'vector';
             if (studio.panel === 'look') {
-                // the M layouts keep the originals' colours: their row picks the gear's font instead
-                if (Hud.M_STYLES.indexOf(o.style) >= 0) choiceRow(cv, t, 414, 'GEAR FONT', 'hudGearFont', settings.get('hudGearFont') || 'auto', [['auto', 'Auto (Barlow)'], ['ubuntu', 'Ubuntu'], ['barlow', 'Barlow']]);
-                else choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
-                // temperatures only while cold, warming or hot (invisible at operating temperature), or always
-                // what the HUD does in Comfort and Eco Pro (Sport always shows all of it)
-                choiceRow(cv, t, 414, 'COMFORT', 'hudComfort', settings.get('hudComfort') || 'all', [['all', 'Show all'], ['lights', 'Lights + gear'], ['hide', 'Hide']], false, 720);
-                choiceRow(cv, t, 462, 'TEMPS', 'hudTempsMode', o.smartTemps ? 'smart' : 'always', [['smart', 'Hide at operating temp'], ['always', 'Always show']]);
-                choiceRow(cv, t, 462, 'LABELS', 'hudLabels', o.clearLabels ? 'clear' : 'normal', [['normal', 'Normal'], ['clear', 'Clearer']], false, 720);
+                // the HUD's colours (the M layouts and VFD have their own) and the gear's font (not on the 7-segment gears)
+                choiceRow(cv, t, R1, 'HUD COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd' || isM);
+                choiceRow(cv, t, R1, 'GEAR FONT', 'hudGearFont', settings.get('hudGearFont') || 'auto', [['auto', 'Auto'], ['ubuntu', 'Ubuntu'], ['barlow', 'Barlow']], seg7, RX, 150);
+                choiceRow(cv, t, R2, 'LABELS', 'hudLabels', o.clearLabels ? 'clear' : 'normal', [['normal', 'Normal'], ['clear', 'Clearer']]);
+                choiceRow(cv, t, R2, 'RPM AS', 'hudRpmFormat', o.rpmFormat, [['10', 'Exact'], ['50', 'Steady'], ['k', 'Thousands']], !o.rpm, RX, 150);
             } else if (studio.panel === 'gauge') {
-                // the gauge's parts; tap to add or remove
-                switches(cv, t, 414, 'GAUGE', [
+                // the shift lights: how they fill, their colours (the app's: the screen's too); then the gauge's parts
+                choiceRow(cv, t, R1, 'LIGHTS', 'hudLightStyle', o.lights ? (o.gt3 ? 'gt3' : 'bar') : 'off', [['gt3', 'GT3'], ['bar', 'Left to right'], ['off', 'Off']]);
+                choiceRow(cv, t, R1, 'COLOURS', 'lights', settings.get('lights') || 'm', [['m', 'M'], ['f1', 'Race'], ['mono', 'One colour']], !o.lights, RX, 150);
+                switches(cv, t, R2, 'SHOW', [
                     ['Rev bar', o.bar, () => settings.set('hudShowBar', !o.bar)],
-                    ['Shift lights', o.lights, () => settings.set('hudLightStyle', o.lights ? 'off' : 'gt3')],
                     ['Gear', o.gear, () => settings.set('hudShowGear', !o.gear)],
-                    ['Gear mode (D/S/M)', o.mode, () => settings.set('hudShowMode', !o.mode)],
+                    ['Gear mode', o.mode, () => settings.set('hudShowMode', !o.mode)],
                 ]);
-                choiceRow(cv, t, 462, 'LIGHTS', 'hudLightStyle', o.lights ? (o.gt3 ? 'gt3' : 'bar') : 'off', [['gt3', 'GT3 (outside in)'], ['bar', 'Left to right']], !o.lights);
+                choiceRow(cv, t, R2, 'UNLIT', 'hudUnlit', o.dim ? 'dim' : 'hidden', [['dim', 'Dim'], ['hidden', 'Hidden']], o.style === 'vfd', RX, 150);
             } else if (studio.panel === 'readouts') {
                 // the numbers under the bar, in this order; up to four show
-                switches(cv, t, 414, 'ENGINE', [
-                    ['RPM readout', o.rpm, () => settings.set('hudShowRpm', !o.rpm)],
+                switches(cv, t, R1, 'ENGINE', [
+                    ['RPM', o.rpm, () => settings.set('hudShowRpm', !o.rpm)],
                     ['Boost', o.boost, () => settings.set('hudBoost', !o.boost)],
                     ['Torque', o.torque, () => settings.set('hudShowTorque', !o.torque)],
                     ['Power', o.power, () => settings.set('hudShowPower', !o.power)],
                     ['G-force', o.g, () => settings.set('hudShowG', !o.g)],
+                    ['Knock', o.knock, () => settings.set('hudShowKnock', !o.knock)],
                 ]);
-                switches(cv, t, 462, 'TEMPS', [
-                    ['Oil temp', o.oil, () => settings.set('hudShowOil', !o.oil)],
-                    ['Water temp', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
-                    ['Gearbox temp', o.gearbox, () => settings.set('hudShowGearbox', !o.gearbox)],
-                    ['Outside temp', o.outside, () => settings.set('hudShowOutside', !o.outside)],
-                    ['Cold-engine limit', o.limit, () => settings.set('hudShowLimit', !o.limit)],
+                switches(cv, t, R2, 'TEMPS', [
+                    ['Oil', o.oil, () => settings.set('hudShowOil', !o.oil)],
+                    ['Water', o.coolant, () => settings.set('hudShowWater', !o.coolant)],
+                    ['Gearbox', o.gearbox, () => settings.set('hudShowGearbox', !o.gearbox)],
+                    ['Outside', o.outside, () => settings.set('hudShowOutside', !o.outside)],
+                    ['Cold limit', o.limit, () => settings.set('hudShowLimit', !o.limit)],
+                    ['Only when cold or hot', o.smartTemps, () => settings.set('hudTempsMode', o.smartTemps ? 'always' : 'smart')],
                 ]);
-            } else if (studio.panel === 'effects') {
-                // what happens on the HUD around a shift: the grade, the peak line, the arrows, the shake
-                choiceRow(cv, t, 414, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
-                choiceRow(cv, t, 414, 'ARROWS', 'downCue', settings.get('downCue') || 'slowing', [['slowing', 'When braking'], ['always', 'Always'], ['off', 'Off']], false, 720);
-                switches(cv, t, 462, 'MORE', [
-                    ['Peak marker', o.peak, () => settings.set('hudPeak', !o.peak)],
-                    ['Limiter shake', o.shake, () => settings.set('hudShake', !o.shake)],
+            } else if (studio.panel === 'alerts') {
+                // what the HUD tells you: the shift grade, knock, the launch time, the downshift arrows
+                choiceRow(cv, t, R1, 'GRADE', 'hudChip', o.chip, [['burst', 'Burst'], ['simple', 'Simple'], ['off', 'Off']]);
+                choiceRow(cv, t, R1, 'ARROWS', 'downCue', settings.get('downCue') || 'slowing', [['slowing', 'When braking'], ['always', 'Always'], ['off', 'Off']], false, RX, 150);
+                switches(cv, t, R2, 'ALSO', [
+                    ['Knock warning', o.knockWarn, () => settings.set('hudKnockWarn', !o.knockWarn)],
+                    ['Launch time', o.launch, () => settings.set('hudLaunch', !o.launch)],
+                    ['Peak', o.peak, () => settings.set('hudPeak', !o.peak)],
+                    ['Shake', o.shake, () => settings.set('hudShake', !o.shake)],
                 ]);
-                // the arrows: every gear you can drop, or only as far as the power band
-                choiceRow(cv, t, 462, 'ARROWS TO', 'downTarget', settings.get('downTarget') || 'all', [['all', 'Every gear'], ['best', 'Best gear']], (settings.get('downCue') || 'slowing') === 'off', 720);
+                choiceRow(cv, t, R2, 'ARROWS TO', 'downTarget', settings.get('downTarget') || 'all', [['all', 'Every gear'], ['best', 'Best gear']], (settings.get('downCue') || 'slowing') === 'off', RX, 150);
+            } else if (studio.panel === 'modes') {
+                // a layout of its own per driving mode, and what Comfort / Eco Pro shows
+                cycleRow(cv, t, R1, 'SPORT', 'hudStyleSport', MODE_LOOKS);
+                cycleRow(cv, t, R1, 'COMFORT', 'hudStyleComfort', MODE_LOOKS, RX, 150);
+                choiceRow(cv, t, R2, 'IN COMFORT', 'hudComfort', settings.get('hudComfort') || 'all', [['all', 'Everything'], ['lights', 'Lights + gear'], ['hide', 'Nothing']]);
             } else {
                 // size and position, a step at a time through each setting's own steps (live on the glass)
-                cv.text('SIZE', 40, 414 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-                stepButtons(cv, t, 200, 414, 'hudSize', [['Smaller', -1], ['Bigger', 1]], (v) => v + ' %');
-                cv.text('MOVE', 40, 462 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-                stepButtons(cv, t, 200, 462, 'hudX', [['Left', -1], ['Right', 1]], (v) => (v === 0 ? 'centre' : (v > 0 ? '+' : '') + v + ' px'));
-                stepButtons(cv, t, 700, 462, 'hudY', [['Up', -1], ['Down', 1]], (v) => (v === 0 ? 'default' : (v > 0 ? '+' : '') + v + ' px'));
-                G.button(cv, t, 1200, 462, 160, 40, 'Reset', () => { settings.set('hudSize', 100); settings.set('hudX', 0); settings.set('hudY', 0); return render(); }, { key: 'studio_place_reset' });
+                cv.text('SIZE', 40, R1 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+                stepButtons(cv, t, 200, R1, 'hudSize', [['Smaller', -1], ['Bigger', 1]], (v) => v + ' %');
+                // the Arc can be drawn by the GPU (experimental)
+                choiceRow(cv, t, R1, 'DRAWING', 'hudRenderer', settings.get('hudRenderer') || 'image', [['image', 'Picture'], ['gpu', 'GPU (test)']], o.style !== 'arc', RX, 150);
+                cv.text('MOVE', 40, R2 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+                stepButtons(cv, t, 200, R2, 'hudX', [['Left', -1], ['Right', 1]], (v) => (v === 0 ? 'centre' : (v > 0 ? '+' : '') + v + ' px'));
+                stepButtons(cv, t, 700, R2, 'hudY', [['Up', -1], ['Down', 1]], (v) => (v === 0 ? 'default' : (v > 0 ? '+' : '') + v + ' px'));
+                G.button(cv, t, 1200, R2, 160, 40, 'Reset', () => { settings.set('hudSize', 100); settings.set('hudX', 0); settings.set('hudY', 0); return render(); }, { key: 'studio_place_reset' });
             }
         }
+        const MODE_LOOKS = [['same', 'Same as Layout']].concat(LOOKS);
         const STUDIO_HINT = {
-            look: 'Comfort / Eco Pro: all, only lights + gear, or hidden; Sport always shows all',
-            gauge: 'Tap to add or remove; turn everything else off for just the lights',
+            look: 'Colours, gear font, labels and how the rpm reads',
+            gauge: 'The shift lights and their colours (the screen uses them too); tap a part to show or hide it',
             readouts: 'Up to four show, in this order; a cold or hot one keeps its place. Units: Settings',
-            effects: 'Grade after an upshift, downshift arrows, peak line, limiter shake',
+            alerts: 'After an upshift, on knock, after a standing start; Shake: on the limiter. And the downshift arrows',
+            modes: 'A layout of its own in Sport and in Comfort / Eco Pro; Play on HUD shows the main one',
             place: 'Moves the HUD on the glass at once',
         };
+        /** A setting with many values as < value >: each press steps through options ([value, text]). */
+        function cycleRow(cv, t, y, label, key, options, x0, lw) {
+            const lx = x0 || 40, bx = lx + (lw || 160), cur = settings.get(key);
+            const i = Math.max(0, options.findIndex((op) => op[0] === cur));
+            const go = (d) => { settings.set(key, options[(i + d + options.length) % options.length][0]); return render(); };
+            cv.text(label, lx, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+            const w0 = G.button(cv, t, bx, y, 60, 40, '<', () => go(-1), { key: 'studio_cyc_' + key + '_a' }) || 60;
+            cv.text(options[i][1], bx + w0 + 130, y + 27, 18, t.text, { align: 'center', font: 'bold' });
+            G.button(cv, t, bx + w0 + 260, y, 60, 40, '>', () => go(1), { key: 'studio_cyc_' + key + '_b' });
+        }
         /**
          * On / off switches at y, after a section label: [label, on, flip]. Drawn as switches, not like
          * the choice buttons: a green LED dot lit when on (an empty ring when off), the chip tinted and
          * outlined bright when on, dim when off, so on / off reads at a glance.
          */
         const SWITCH_ON = '#2ee66b';
-        function switches(cv, t, y, label, list) {
-            cv.text(label, 40, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
-            let x = 200;
+        function switches(cv, t, y, label, list, x0) {
+            if (label) cv.text(label, x0 || 40, y + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+            let x = x0 ? x0 + (label ? 150 : 0) : 200;
             list.forEach((c, i) => {
                 const on = !!c[1], txt = c[0], w = cv.textWidth(txt, 18, { font: 'bold' }) + 64, h = 40;
                 if (on) cv.roundRect(x, y, w, h, h / 2, withAlpha(t.accent, 0.16));

@@ -118,26 +118,28 @@ missing falls back to Ubuntu.
   It counts in, flashes, shifts (graded spot on, early or late in turn), hits the limiter, then
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
-- **Picking:** on the right, the nine layouts; tap one to use it. On Arc, Ramp and Dial the Look tab's
-  *Colours* row picks the *Gear font* instead.
-- **Editing:** under the preview, five tabs, each showing its changes in the preview at once.
+- **Picking:** on the right, the nine layouts; tap one to use it.
+- **Editing:** under the preview, six tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
-  - **Look:** colours, what the HUD does in Comfort / Eco Pro, and temperatures hidden at
-    operating temperature (only blue, yellow or red ones show) or always shown.
-  - **Gauge:** Rev bar (the main bar-graph tach), Shift lights, Gear, Gear mode (D/S/M), and the
-    shift light style (GT3, filling from the outside in, or left to right). Every part can be
-    turned off, so the HUD can be, say, the VFD shift lights alone.
-  - **Readouts:** *Engine*: RPM readout, Boost, Torque, Power, G-force. *Temps*: Oil,
-    Water, Gearbox, Outside, and the cold-engine limit. Up to four show, in this order; when more
-    are on, the last plain ones give way, so a cold or hot reading keeps its place.
-  - **Effects:** the shift grade (Burst / Simple / Off), downshift arrows (When braking /
-    Always / Off), the peak marker and the limiter shake.
-- **Place:** smaller / bigger, and move left / right / up / down, live on the glass; Reset puts
+  - **Look:** HUD colours (not on VFD and the M layouts, which keep their own), gear font, label
+    size, and how the rpm reads (exact, steady, thousands).
+  - **Gauge:** the shift lights (GT3, left to right, or off) and their colours (M, Race, one
+    colour: the centre screen's too), which parts show (rev bar, gear, gear mode) and unlit
+    segments (dim or hidden). Every part can be turned off, so the HUD can be, say, the lights alone.
+  - **Readouts:** *Engine*: RPM, Boost, Torque, Power, G-force, Knock. *Temps*: Oil, Water,
+    Gearbox, Outside, the cold-engine limit, and *Only when cold or hot*. Up to four show, in this
+    order; when more are on, the last plain ones give way, so a cold or hot reading keeps its place.
+  - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
+    peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
+    gear or the best one).
+  - **Modes:** a layout of its own in Sport / Sport+ and in Comfort / Eco Pro (< and > step
+    through them), and what Comfort / Eco Pro shows (everything, lights and gear, nothing).
+  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; on Arc, the GPU drawing (test). Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
   you're parked. Nothing is learned from it.
-- Units (boost bar / psi / kPa, °C / °F) and "temperatures only when cold or hot" are in
-  *Settings → HUD readouts*; everything above is also in *Settings*.
+- Units (speed, temperature, torque, power, boost) are in *Settings → Units*. Everything above is
+  also in Settings with *All HUD options here* on.
 
 **Effects:**
 
@@ -191,8 +193,13 @@ normal and red is hot. A reading with no data is left out.
 
 ### HUD settings (shown while the HUD is on)
 
-Three rows in Settings. Every change shows on the HUD at once. The **HUD looks** tab picks the
-layout and colours by picture.
+Settings keeps the HUD short: **Show on HUD**, **HUD layout**, and **All HUD options here**. Everything
+else is on the **HUD looks** page, by picture and with a live preview. Switch *All HUD options here*
+on to also list them in Settings, as six groups (*HUD: look*, *gauge*, *readouts*, *alerts*, *modes*,
+*place*). The rest of Settings is grouped too: *Shift point*, *Engine*, *Learning*, *Units* (all
+five units, app-wide), *Screen*, and behind *Advanced settings*, the renderer and the HUD's frame
+rate, readout refresh, GPU edges and hand-back. Every change shows on the HUD at once. The tables
+below list them by what they do.
 
 **HUD style:** how it looks.
 

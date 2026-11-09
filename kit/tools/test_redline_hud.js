@@ -37,7 +37,7 @@ const used = {};
 src.replace(/settings\.(?:get|set)\('(hud[A-Za-z]*)'/g, (m, k) => { used[k] = true; return m; });
 src.replace(/on\('(hud[A-Za-z]*)'\)/g, (m, k) => { used[k] = true; return m; });
 Object.keys(used).forEach((k) => ok(declared[k], 'setting ' + k + ' is used but not in app.json'));
-Object.keys(declared).filter((k) => /^hud/.test(k)).forEach((k) => ok(used[k] || /hudLead|hudFps|hudSize|hudX|hudY|hudUnlit|hudStyle|hudPalette|hudChip|hudPeak|hudShake|hudLightStyle|hudTempsMode|hudTempUnit|hudBoostUnit|hudTorqueUnit|hudPowerUnit/.test(k) && src.indexOf("'" + k + "'") >= 0,
+Object.keys(declared).filter((k) => /^hud/.test(k)).forEach((k) => ok(used[k] || k === 'hudAll' || /hudLead|hudFps|hudSize|hudX|hudY|hudUnlit|hudStyle|hudPalette|hudChip|hudPeak|hudShake|hudLightStyle|hudTempsMode|hudTempUnit|hudBoostUnit|hudTorqueUnit|hudPowerUnit/.test(k) && src.indexOf("'" + k + "'") >= 0,
     'setting ' + k + ' is in app.json but never read'));
 
 const settingsOf = (over) => ({
@@ -170,6 +170,19 @@ ok(optsDefault.rpmFormat === '10' && optsDefault.readoutMs === 250 && !optsDefau
 for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     const d = Hud.demoAt(t);
     if (!(d.rpm >= 0 && d.rpm <= 8000 && d.gear >= 1 && d.gear <= 8 && d.pedal >= 0 && d.pedal <= 100)) { ok(false, 'demo out of range at ' + t + ': ' + JSON.stringify(d)); break; }
+}
+
+/* ---------- the HUD looks page has every HUD setting (Settings shows them only with "All HUD options here") ---------- */
+{
+    const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
+    const page = main.slice(main.indexOf('function drawLooks('), main.indexOf('function cycleRow('));
+    const onPage = {};
+    page.replace(/'([a-zA-Z]+)'/g, (m, k) => { onPage[k] = true; return m; });
+    spec.settings.filter((s) => /^HUD: /.test(s.group || '') || s.key === 'hudStyle').forEach((s) => ok(onPage[s.key], 'setting ' + s.key + ' (' + s.group + ') is not on the HUD looks page'));
+    // and Settings' top level is short: the HUD's details are behind "All HUD options here"
+    const top = spec.settings.filter((s) => !s.group);
+    ok(top.length <= 6, 'Settings top level has ' + top.length + ' rows besides the groups: ' + top.map((s) => s.key).join(', '));
+    spec.settings.filter((s) => /^HUD: /.test(s.group || '')).forEach((s) => ok(s.when && s.when.hudAll && s.when.hudAll[0] === true, s.key + ' shows in Settings without "All HUD options here"'));
 }
 
 /* ---------- 1.16: M layouts, gear font, placement, the reaction time, the test pattern ---------- */
