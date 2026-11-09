@@ -477,6 +477,7 @@ const labels = (items) => items.map((r) => r.label).join(',');
     // the HUD looks page: the TYRES tab and the Tyres readout switch only with tyres
     const mainSrc = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
     ok(/tyres\.seen\(\) \? \[\['tyres', 'TYRES'\]\]/.test(mainSrc) && /tyres\.seen\(\) \? \[\['Tyres', o\.tyres/.test(mainSrc), 'HUD looks: TYRES tab and Tyres switch only once tyres came');
+    ok(/tyres\.seen\(\) \? 'Tyre sensors' : 'No tyre sensors'/.test(mainSrc) && /electrical\.hybrid\(\) \? ' hybrid' : ' car'/.test(mainSrc), 'Learned page: the car (Petrol car, Diesel hybrid ...) and whether it has tyre sensors');
 
     // the widget (200 x 76, the directions' size): every part on and off, every unit, Normal and Clearer, °C and °F
     const W0 = HudTyres.widgetOf(settingsOf({})), WW = HudTyres.TW, WH = HudTyres.TH;
@@ -518,6 +519,16 @@ const labels = (items) => items.map((r) => r.label).join(',');
     const pic = (cells) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'standard' }), { readouts: [Object.assign({}, item, { tyres: cells })], chip: null }), 'fg'); return Buffer.from(cv.d); };
     ok(Buffer.compare(pic(item.tyres), pic(item.tyres.slice(0, 3).concat([['199', 'hot']]))) !== 0, '2x2 block: each tyre\'s number is drawn');
     ok(HudTyres.tempTone(10) === 'cold' && HudTyres.tempTone(95) === 'warm' && HudTyres.tempTone(110) === 'hot' && HudTyres.tempTone(60) === 'text', 'tyre temperature colours');
+    // warm-up: blue cold, green warm; the widget's "Warming up" keeps it up until all four are warm
+    ok(HudTyres.warmth(HudTyres.COLD_C - 5) === 0 && HudTyres.warmth(HudTyres.WARM_C + 5) === 1 && HudTyres.warmth(30) > 0 && HudTyres.warmth(30) < 1 && HudTyres.warmth(null) === null, 'warm-up: 0 cold, 1 warm, between in between');
+    const warmT = (c) => ({ p: fineT.p, tgt: fineT.tgt, t: { FL: c, FR: 60, RL: 60, RR: 60 } }), WW0 = Object.assign({}, W0, { show: 'warm' });
+    ok(HudTyres.widgetShows(WW0, warmT(25)) && !HudTyres.widgetShows(WW0, warmT(50)) && HudTyres.widgetShows(WW0, v) === HudTyres.widgetShows(W0, v), 'widget "warming up": while a tyre is cold, gone once all are warm, and still when one is low');
+    ok(!HudTyres.widgetShows(W0, warmT(25)) && !HudTyres.widgetShows(WW0, fineT), 'widget "when low" ignores cold tyres; no temperatures: not warming up');
+    ok(HudTyres.widgetOf(settingsOf({ hudTyreWidget: 'warm' })).show === 'warm', 'the "warm" setting is read');
+    // a cold front-left tyre is drawn blue, a warm one green (the tyre in the car, left of the body)
+    const tyreCol = (c) => { const cv = widget(W0, warmT(c)), i = ((6 + 8) * WW + (100 - 13 - 2 - 3)) * 4; return [cv.d[i], cv.d[i + 1], cv.d[i + 2]]; };
+    const cold = tyreCol(10), warm = tyreCol(50);
+    ok(cold[2] > cold[1] && warm[1] > warm[2] && warm[1] > warm[0], 'warm-up: the cold tyre blue (' + cold + '), the warm one green (' + warm + ')');
     // the demo drive has tyres for the previews
     ok(Hud.demoAt(0).tyres && Tyres.lowCorners(Hud.demoAt(0).tyres).join() === 'RR', 'demo: tyres, the rear right low');
 }

@@ -262,7 +262,7 @@ below list them by what they do.
 | Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
 | Tyres | off (default) / on: TYRES over the four pressures in a 2x2 block (front over rear), each coloured against its target; on Arc, Ramp and Dial the worst tyre (TYRE RR 2.1) ([Tyres](#tyres)) |
-| Tyre widget | when a tyre is low (default) / always / off: the four tyres in the directions' corner, when they have no turn ([Tyres](#tyres)) |
+| Tyre widget | when a tyre is low (default) / low or warming up / always / off: the four tyres in the directions' corner, when they have no turn ([Tyres](#tyres)) |
 | Tyre widget: the car, tyre temperatures | on (default) / off each |
 | Tyre widget: each tyre's target | off (default) / on: the target pressure small after each pressure, as "/2.5" |
 | 12 V battery charge, 12 V battery voltage | off (default) / on each, on every car ([Electrical](#electrical)) |
@@ -396,6 +396,9 @@ climb about 3000 rpm/s, so a 240 ms reaction means a flash about 700 rpm early.
 All of it is on by default and can be frozen with **Learning (experimental) → Learn from
 driving**. Values learned before stay in use. Nothing is ever learned from the demo drive. The
 **Learned** page (third tab) shows everything, each with a Reset that you press and then confirm.
+Its last row, CAR, says what Redline found the car to be: *Petrol car*, *Diesel car* or a hybrid (once
+it has shown a high-voltage battery), and *Tyre sensors* or *No tyre sensors* (the tyre options appear
+only with them).
 On the software renderer, where the page has no buttons, the bar button *Reset learned* (pressed
 twice within 5 s) resets them all.
 
@@ -549,8 +552,13 @@ on (*Target*), it shows small after the pressure as "/2.5". The car and the temp
 off too; with no temperatures the pressures are bigger. Text that wouldn't fit its room (kPa,
 *Clearer* labels) is drawn smaller. It uses the HUD colours.
 
+**Warm-up:** each tyre in the car is blue while cold (20 °C and under) and turns green as it warms up,
+green from 40 °C; orange and red when it runs hot, as above. The temperature under each pressure follows
+it until the tyre is warm. The sensors measure the air in the tyre, which runs cooler than the tread.
+
 It shows **when a tyre is low** (the default: red, under 85 % of its target; it goes when the tyre is
-pumped up), **always**, or **never**. Set it up on *HUD looks → TYRES*; its corner moves with *MOVE*
+pumped up), **when low or warming up** (for a track day: up while any tyre is under 40 °C, gone once all
+four are warm), **always**, or **never**. Set it up on *HUD looks → TYRES*; its corner moves with *MOVE*
 there, which moves the directions too (*Directions left / right*, *up / down*). The TYRES tab, the Tyres
 readout switch and these settings show only once the car has sent a tyre pressure, so a car without
 tyre data never sees them. Logged `hud: low tyre RR: the tyre widget shows`.

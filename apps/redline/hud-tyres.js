@@ -12,11 +12,13 @@
  *        2.5 ▮└──┘▮ 2.1
  *        69°         70°
  *
+ * Each tyre in the car is blue while cold and turns green as it warms up (warmCol); "Show: Warming up" keeps the
+ * widget up until all four are warm.
  * The target is off by default (the colour already says how each tyre is against it); the car and the
  * temperatures can be switched off too, and without temperatures the pressures are drawn bigger. Text is fitted to its room, so kPa and Clearer labels never run into the car. A picture, never a
  * shader. Black is see-through on the glass.
  */
-const { withAlpha } = require('./kit/canvas');
+const { withAlpha, ramp } = require('./kit/canvas');
 const { PALETTES } = require('./hud-draw');
 const Theme = require('./hud-theme');
 const Tyres = require('./tyres');
@@ -29,13 +31,33 @@ const isNum = (v) => typeof v === 'number' && isFinite(v);
 function tempTone(c) { return !isNum(c) ? null : c < 20 ? 'cold' : c > 105 ? 'hot' : c > 90 ? 'warm' : 'text'; }
 
 /**
- * The widget's options from the settings: { show ('low' | 'always' | 'off'), car, target, temp, unit, fahrenheit }.
- * show 'low': only while a tyre is well under its target (red).
+ * Warm-up: a tyre is cold (blue) at COLD_C and under, warm (green) at WARM_C and over, blended between. The
+ * sensors measure the air in the tyre, which runs cooler than the tread: 40 °C there is a tyre that has
+ * done some hard laps, not a tyre at its best.
+ */
+const COLD_C = 20, WARM_C = 40;
+/** How far a tyre is warmed up, 0 (cold) to 1 (warm); null without a temperature. */
+function warmth(c) { return !isNum(c) ? null : Math.max(0, Math.min(1, (c - COLD_C) / (WARM_C - COLD_C))); }
+/** A tyre's colour: blue to green as it warms up, then orange or red when it runs hot (tempTone); null without one. */
+function warmCol(c, P) {
+    if (!isNum(c)) return null;
+    if (c > 90) return Theme.toneCol(tempTone(c), P, P.text);
+    return ramp([P.cold, P.low], warmth(c));
+}
+/** The corners still warming up (a temperature under WARM_C), e.g. ['FL', 'FR']. */
+function coldCorners(ty) {
+    return ty ? Tyres.CORNERS.filter((c) => isNum(ty.t[c]) && ty.t[c] < WARM_C) : [];
+}
+
+/**
+ * The widget's options from the settings: { show ('low' | 'warm' | 'always' | 'off'), car, target, temp, unit,
+ * fahrenheit }. show 'low': only while a tyre is well under its target (red); 'warm': that, and while a tyre
+ * is still warming up (for a track day: it goes once all four are warm).
  */
 function widgetOf(settings) {
     const s = settings.get('hudTyreWidget');
     return {
-        show: s === 'always' || s === 'off' ? s : 'low',
+        show: s === 'always' || s === 'off' || s === 'warm' ? s : 'low',
         car: settings.get('hudTyreCar') !== false, target: settings.get('hudTyreTarget') === true, temp: settings.get('hudTyreTemp') !== false,
         unit: ['psi', 'kpa'].indexOf(settings.get('hudTyreUnit')) >= 0 ? settings.get('hudTyreUnit') : 'bar',
         fahrenheit: settings.get('hudTempUnit') === 'f', clear: settings.get('hudLabels') === 'clear',
@@ -45,7 +67,7 @@ function widgetOf(settings) {
 /** Whether the widget shows for these tyres (null: no data, never). */
 function widgetShows(w, ty) {
     if (!ty || w.show === 'off') return false;
-    return w.show === 'always' || Tyres.lowCorners(ty).length > 0;
+    return w.show === 'always' || Tyres.lowCorners(ty).length > 0 || (w.show === 'warm' && coldCorners(ty).length > 0);
 }
 
 /** Everything the picture depends on (the numbers as drawn). */
@@ -68,9 +90,10 @@ function drawWidget(cv, ty, w, palette) {
         cv.strokeRoundRect(x0, BODY_Y, BODY_W, BODY_H, 10, 1.5, withAlpha(P.text, 0.5));
         cv.roundRect(x0 + 4, BODY_Y + 14, BODY_W - 8, 7, 3, withAlpha(P.text, 0.3));
         cv.roundRect(x0 + 5, BODY_Y + BODY_H - 18, BODY_W - 10, 5, 2, withAlpha(P.text, 0.22));
-        [[6, -1], [6, 1], [TH - 6 - TYRE_H, -1], [TH - 6 - TYRE_H, 1]].forEach((t) => {
+        // each tyre coloured by its warm-up (blue cold, green warm), white without a temperature
+        [[6, -1, 'FL'], [6, 1, 'FR'], [TH - 6 - TYRE_H, -1, 'RL'], [TH - 6 - TYRE_H, 1, 'RR']].forEach((t) => {
             const tx = t[1] < 0 ? x0 - 2 - TYRE_W : x1 + 2;
-            cv.roundRect(tx, t[0], TYRE_W, TYRE_H, 2, withAlpha(P.text, 0.85));
+            cv.roundRect(tx, t[0], TYRE_W, TYRE_H, 2, warmCol(ty.t[t[2]], P) || withAlpha(P.text, 0.85));
         });
     }
     const us = w.clear ? 13 : 11;
@@ -94,7 +117,9 @@ function drawWidget(cv, ty, w, palette) {
         if (ts) cv.text(ts, px + pw + 1, r[0], ss, w.clear ? P.text : withAlpha(P.text, 0.75), { align: 'left', font: 'bold' });
         if (two && isNum(temp)) {
             const s = Math.round(w.fahrenheit ? temp * 9 / 5 + 32 : temp) + '°';
-            cv.text(s, edge, r[1], sub, Theme.toneCol(tempTone(temp), P, P.text), { align: left ? 'right' : 'left', font: 'bold' });
+            // white once warm, like any value; blue to green while warming up, orange or red when hot
+            const col = temp >= WARM_C && temp <= 90 ? P.text : warmCol(temp, P);
+            cv.text(s, edge, r[1], sub, col, { align: left ? 'right' : 'left', font: 'bold' });
         }
     });
 }
@@ -102,4 +127,4 @@ function drawWidget(cv, ty, w, palette) {
 /** Sample tyres for the previews (one a little under its target, one well under). */
 const SAMPLE = { p: { FL: 2.4, FR: 2.4, RL: 2.5, RR: 2.1 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: { FL: 59, FR: 61, RL: 69, RR: 70 } };
 
-module.exports = { drawWidget, widgetKey, widgetOf, widgetShows, tempTone, SAMPLE, TW, TH };
+module.exports = { drawWidget, widgetKey, widgetOf, widgetShows, tempTone, warmth, coldCorners, COLD_C, WARM_C, SAMPLE, TW, TH };

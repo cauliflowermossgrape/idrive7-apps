@@ -708,7 +708,7 @@ mgu.run({
             } else if (studio.panel === 'tyres') {
                 // the tyre widget: when it shows, its unit, its parts, and its corner (the directions' too)
                 const w = HudTyres.widgetOf(settings);
-                choiceRow(cv, t, R1, 'SHOW', 'hudTyreWidget', w.show, [['low', 'When a tyre is low'], ['always', 'Always'], ['off', 'Off']]);
+                choiceRow(cv, t, R1, 'SHOW', 'hudTyreWidget', w.show, [['low', 'When low'], ['warm', 'Warming up'], ['always', 'Always'], ['off', 'Off']]);
                 choiceRow(cv, t, R1, 'UNIT', 'hudTyreUnit', w.unit, [['bar', 'bar'], ['psi', 'psi'], ['kpa', 'kPa']], w.show === 'off', RX, 120);
                 switches(cv, t, R2, 'PARTS', [
                     ['Car', w.car, () => settings.set('hudTyreCar', !w.car)],
@@ -792,6 +792,11 @@ mgu.run({
         }
 
         let learnedView = null;
+        /** 'Petrol car', 'Diesel hybrid' ...: the engine profile (the car's or the setting's), hybrid once seen. */
+        const carKind = () => {
+            const fuel = engine.profile() === 'diesel' ? 'Diesel' : 'Petrol', hand = ['diesel', 'petrol'].indexOf(settings.get('engine')) >= 0;
+            return fuel + (electrical.hybrid() ? ' hybrid' : ' car') + (hand ? '  ·  set by hand' : '');
+        };
         function drawLearned(cv, t) {
             // torque curve (full load), from the car's torque signal
             const cp = G.panel(cv, t, 24, 44, 760, 468, 'Torque curve (full load)');
@@ -816,7 +821,7 @@ mgu.run({
             cv.text('SHIFT AT', 1080, y, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
             cv.text('RPM PER KM/H', 1300, y, 18, t.dim, { align: 'right', font: 'bold', spacing: 1 });
             for (let g = 1; g <= 7; g++) {
-                y += 32;
+                y += 28;
                 const k = shiftMap.ratio(g), pr = shiftMap.ratioProgress(g), at = table[g];
                 cv.text(g + ' > ' + (g + 1), 836, y, 22, t.text, { font: 'bold' });
                 // the point in use: learned, held under the redline and over the minimum (warm oil)
@@ -826,7 +831,7 @@ mgu.run({
             // no shift point yet though ratios are known: the curve has to reach the redline
             if (!Object.keys(table).length && shiftMap.ratio(1)) { cv.text('Shift points need full-throttle pulls up to the redline (' + redline() + ')', 836, y + 26, 15, t.dim); y += 18; }
             const lim = limiter.value(), lead = hud ? hud.learned() : null;
-            y += 46;
+            y += 42;
             cv.fillRect(836, y - 30, 712, 1, withAlpha(t.tick, 0.6));
             cv.text('REDLINE', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
             cv.text(redline() + ' rpm  ·  ' + redlineSource(), 990, y, 20, t.text, { font: 'bold' });
@@ -836,16 +841,22 @@ mgu.run({
                     : 'learns after two hits of the limiter, each held half a second, oil warm', 990, y + 20, 15, p ? t.text : t.dim);
             }
             G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { limiter.forget(); return render(); }, { key: 'resetRedline', confirm: true, color: t.warn });
-            y += 46;
+            y += 42;
             cv.text('REACTION', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
             cv.text(lead ? lead.ms + ' ms early  ·  ' + (lead.auto ? 'learned from ' + lead.shifts + ' shifts' : 'set by hand') : '--', 990, y, 20, t.text, { font: 'bold' });
 
             G.button(cv, t, 1576 - 20 - 120, y - 28, 120, 36, 'Reset', () => { if (hud) hud.resetLead(); return render(); }, { key: 'resetLead', confirm: true, color: t.warn });
+            // what Redline has found this car to be: its engine (hybrid once it has shown a high-voltage
+            // battery) and whether it sends tyre pressures (the HUD's tyre options only appear then)
+            y += 42;
+            cv.text('CAR', 836, y, 20, t.dim, { font: 'bold', spacing: 1 });
+            cv.text(carKind(), 990, y, 20, t.text, { font: 'bold' });
+            cv.text(tyres.seen() ? 'Tyre sensors' : 'No tyre sensors', 990, y + 20, 15, tyres.seen() ? t.text : t.dim);
             // what the head-up display is doing (while it is switched on), and frozen learning
             const hs = hud ? hud.status() : '';
             // one line under the rows: a pressed bar reset, the HUD, frozen learning
             const notes = [resetArmed() ? 'Press Reset learned again to forget it all' : '', hs, learning() ? '' : 'Learning off: values kept'].filter(Boolean);
-            if (notes.length) cv.text(notes.join('   ·   '), 836, Math.min(500, y + 32), 16, notes.some((n) => /off|not|again/i.test(n)) ? t.warn : t.dim, { font: 'bold' });
+            if (notes.length) cv.text(notes.join('   ·   '), 836, Math.min(506, y + 40), 16, notes.some((n) => /off|not|again/i.test(n)) ? t.warn : t.dim, { font: 'bold' });
         }
 
         /** G20-style frame: tab bar with the page names along the top. */
