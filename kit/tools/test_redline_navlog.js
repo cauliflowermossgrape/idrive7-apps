@@ -11,7 +11,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-nav-'));
     const H = {};
+    let calls = 0, lastQuery = null;
     const signals = {
+        proxy: () => Promise.resolve({ fake: true }),
+        call: (px, method, params) => {
+            calls++; lastQuery = { method: method, params: params };
+            return Promise.resolve({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [
+                { maneuver: { intersection: { direction: 'SLIGHT_LEFT', formattedDistance: { distance: '799', unit: 'METER' } } } },
+                { laneGuiding: { lanes: [{ directionToFollow: 'SLIGHT_LEFT', isHighlighted: true }] } }] }] });
+        },
         watch(iface, inst, handlers) {
             if (/AndroidAuto/.test(iface)) return Promise.resolve({ error: 'no SOME/IP config for ' + iface, available: false, shutdown() {} });
             H[iface.split('.').pop()] = handlers;
@@ -20,7 +28,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     };
     const logged = [];
     const p = NavLog.start({ signals: signals, dataDir: dir }, { info: (m) => logged.push(m), warn: (m) => logged.push(m) });
-    await sleep(50);
+    await sleep(2200);
+    ok(calls === 0, 'no route: the event list is not asked (' + calls + ')');
     const dart = (dist, dir2) => ({ timeStamp: { date: {}, time: {} }, position: { latitude: 37.5, longitude: 127.0 },
         maneuver: { intersection: { direction: dir2 || 'LEFT', formattedDistance: { distance: String(dist), unit: 'METER', rawDistance: dist }, lanes: [{ arrows: ['LEFT'], recommended: true }] } } });
     H.Guidance.guidanceState('ACTIVE');
@@ -30,6 +39,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     H.Guidance.conclusiveDart(dart(380));            // nearer, same turn, within 5 s: not logged
     H.Guidance.conclusiveDart(dart(380, 'RIGHT'));   // a new turn: logged at once
     H.Guidance.guidanceState('ACTIVE');              // the same value again: not logged
+    await sleep(2300);
+    ok(calls >= 1 && lastQuery.method === 'queryContent' && lastQuery.params.viewConfigs[0].viewport.includedTypes.indexOf('INCLUDE_LANE_GUIDINGS') >= 0, 'CarPlay routing: queryContent asked, lanes included (' + calls + ')');
     H.Guidance.currentLaneGuiding({ rows: [{ lanes: [{ directionToFollow: 'LEFT', isHighlighted: true }, { directionToFollow: 'STRAIGHT_ON', isHighlighted: false }] }], carPositionLaneIndex: 1 });
     H.ProjectedModeGuiding.currentLaneGuiding({ rows: [], carPositionLaneIndex: 0 });
     const text = fs.readFileSync(path.join(dir, 'redline-nav.log'), 'utf8');
@@ -45,8 +56,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(darts.length === 2 && /"distance":"400"/.test(darts[0]) && /RIGHT/.test(darts[1]), 'the same turn nearer is held back for 5 s, a new turn logged at once (' + darts.length + ')');
     ok(!/latitude|longitude|37\.5|127/.test(text), 'no coordinates in the log');
     ok(/guidance currentLaneGuiding = .*"directionToFollow":"LEFT"/.test(text) && /phone currentLaneGuiding = /.test(text), 'lanes logged, from BMW and the phone');
+    ok(/events connected/.test(text) && /events = .*SLIGHT_LEFT.*799/.test(text) && /shape event intersection: /.test(text), 'the route events logged with their shape');
+    ok((text.match(/ events = /g) || []).length === 1, 'the same reply again is not logged again');
     ok(logged.some((m) => /probe on/.test(m)), 'one line in redline.log');
-    ok(/NAV: \d+ updates, last intersection/.test(p.status()), 'status: ' + p.status());
+    ok(/NAV: \d+ updates, last (event )?intersection/.test(p.status()), 'status: ' + p.status());
     // no signals (the preview): nothing breaks
     const q = NavLog.start({ dataDir: dir }, null);
     ok(q.status() === '', 'no signals: a quiet stub');

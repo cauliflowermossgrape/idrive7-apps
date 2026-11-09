@@ -539,8 +539,8 @@ function start(ctx, src) {
      */
     let lastSlot = '';
     function onSlots(text) {
-        const line = String(text || '').split(/\r?\n/).filter((l) => /slot 0x323\b/i.test(l))[0];
-        const s = line ? line.trim() : 'slot 0x323 not in the report';
+        const rows = String(text || '').split(/\r?\n/).filter((l) => /0x323\b/i.test(l)).map((l) => l.trim());
+        const s = rows.length ? rows.join(' | ') : 'slot 0x323 not in the report';
         if (s !== lastSlot) { lastSlot = s; log.info('hud: ' + s); }
     }
     // the slot report, while the tach is on

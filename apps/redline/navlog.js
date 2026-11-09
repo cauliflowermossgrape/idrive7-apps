@@ -32,6 +32,22 @@ const SOURCES = [
         fields: ['projectedGuidanceActive', 'projectedGuidanceMetadataAvailable'] },
 ];
 const MAX_BYTES = 512 * 1024, LINE = 3000, DIST_MS = 5000;
+/*
+ * Phone navigation: CarPlay hands BMW its turns (ProjectedModeGuiding.updateEventsOnRoute) and they don't reach
+ * Guidance.conclusiveDart (2026-11-09 drive: provider CAR_PLAY, conclusiveDart still empty). BMW lists them in
+ * GuidanceEventList, read with queryContent (service 64283 v5, instance 128, method 4 in the car's catalog): the
+ * events from the car's position on, turns and lanes included. Asked every 2 s while a route runs.
+ */
+const EVENT_LIST = { iface: 'de.bmw.infotainment.navigation.guiding.GuidanceEventList', inst: 'Main_Instance', method: 'queryContent' };
+const QUERY_MS = 2000;
+/** The request: one view from the car's position (CCP), six events, turns, lanes, keep-left/right and destinations. */
+function eventQuery() {
+    return { viewConfigs: [{
+        viewport: { startPoint: { anchorPoint: { standardReferencePoint: 'CCP' }, offsets: [] }, maxElementCount: 6, endPoints: [],
+            includedTypes: ['INCLUDE_ACTIVE_MANEUVERS', 'INCLUDE_LANE_GUIDINGS', 'INCLUDE_ALONG_MAIN_ROAD', 'INCLUDE_DESTINATIONS'] },
+        options: [], minimumUpdateIntervalMs: 1000, segmentItemRasterLength: 100,
+    }] };
+}
 const COORD = /^(lat|lon|lng|latitude|longitude|wgs84|geo|coordinate|coordinates|position2d|geoPosition)$/i;
 
 /** value without coordinate-like keys, functions or huge arrays. */
@@ -53,7 +69,7 @@ function paths(v, pre, out) {
     out.push(pre);
     return out;
 }
-const json = (v) => { try { const s = JSON.stringify(clean(v, 0)); return s.length > LINE ? s.slice(0, LINE) + '…(' + s.length + ' chars)' : s; } catch (e) { return '"(' + e + ')"'; } };
+const json = (v, max) => { try { const s = JSON.stringify(clean(v, 0)), n = max || LINE; return s.length > n ? s.slice(0, n) + '…(' + s.length + ' chars)' : s; } catch (e) { return '"(' + e + ')"'; } };
 /** The manoeuvre's kind (the union's one key), and the value with its distance taken out (to tell a new turn from a nearer one). */
 function kindOf(dart) {
     const m = dart && typeof dart === 'object' ? dart.maneuver : null;
@@ -79,9 +95,15 @@ function start(ctx, log) {
     };
     const last = {}, shapes = {}, subs = [];
     let lastDist = 0, lines = 0, latest = '';
+    // is a route running? (BMW's own, or the phone's)
+    const route = { state: null, provider: null, carplay: false, aa: false };
+    const routing = () => route.state === 'ACTIVE' || route.state === 2 || route.carplay || route.aa || (route.provider && route.provider !== 'NONE' && route.provider !== 0);
     const got = (src, field, v) => {
         try {
             const key = src + '.' + field;
+            if (src === 'guidance' && field === 'guidanceState') route.state = v;
+            if (src === 'guidance' && field === 'guidingProvider') route.provider = v;
+            if (field === 'projectedGuidanceActive') route[src === 'carplay' ? 'carplay' : 'aa'] = v === true;
             if (field === 'conclusiveDart') {
                 const kind = kindOf(v), core = withoutDistance(v);
                 if (!shapes[kind]) { shapes[kind] = true; write('shape ' + kind + ': ' + paths(clean(v, 0), '', []).join(' ')); }
@@ -114,10 +136,40 @@ function start(ctx, log) {
             res.timer = t;
         }).catch((e) => write(S.name + ' error: ' + e));
     });
+    // the event list, asked while a route runs; each new reply logged (the same events nearer: at most every 5 s)
+    let elProxy = null, elTried = false, asking = false, lastEl = '', lastElCore = '', lastElAt = 0, elErr = '', elCount = 0;
+    const ask = () => {
+        if (asking || !routing() || !ctx.signals.proxy || !ctx.signals.call) return;
+        asking = true;
+        Promise.resolve().then(() => {
+            if (elProxy) return elProxy;
+            if (elTried) throw new Error('no event list proxy');
+            elTried = true;
+            return ctx.signals.proxy(EVENT_LIST.iface, EVENT_LIST.inst).then((p) => { elProxy = p; write('events connected'); return p; });
+        }).then((p) => ctx.signals.call(p, EVENT_LIST.method, eventQuery(), 1500)).then((reply) => {
+            elErr = '';
+            const views = reply && reply.viewContent, events = views && views[0] && views[0].eventsInView;
+            if (Array.isArray(events)) events.forEach((e) => {
+                const k = kindOf({ maneuver: e && (e.maneuver || e) });
+                if (!shapes['event ' + k]) { shapes['event ' + k] = true; write('shape event ' + k + ': ' + paths(clean(e, 0), '', []).join(' ')); }
+            });
+            const s = json(reply, 8000), core = withoutDistance(reply);
+            if (s === lastEl) return;
+            if (core === lastElCore && Date.now() - lastElAt < DIST_MS) return;
+            lastEl = s; lastElCore = core; lastElAt = Date.now(); elCount++; lines++;
+            if (Array.isArray(events) && events[0]) latest = 'event ' + kindOf({ maneuver: events[0].maneuver || events[0] });
+            write('events = ' + s);
+        }).catch((e) => {
+            const m = String(e && e.message || e).slice(0, 200);
+            if (m !== elErr) { elErr = m; write('events error: ' + m); }
+        }).then(() => { asking = false; });
+    };
+    const elTimer = setInterval(ask, QUERY_MS);
+    if (elTimer.unref) elTimer.unref();
     return {
-        stop() { subs.forEach((s) => { try { if (s.timer) clearInterval(s.timer); s.shutdown(); } catch (e) { /* gone */ } }); },
+        stop() { clearInterval(elTimer); subs.forEach((s) => { try { if (s.timer) clearInterval(s.timer); s.shutdown(); } catch (e) { /* gone */ } }); },
         status: () => (lines ? 'NAV: ' + lines + ' updates' + (latest ? ', last ' + latest : '') : ''),
     };
 }
 
-module.exports = { start, clean, paths, kindOf, SOURCES };
+module.exports = { start, clean, paths, kindOf, SOURCES, eventQuery, EVENT_LIST };

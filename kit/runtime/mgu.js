@@ -457,7 +457,8 @@ class Widget {
 /* ---------------- generic settings screen ---------------- */
 function wireSettings(ctx) {
     const { ui, settings } = ctx;
-    const schema = settings.schema;
+    // hidden settings (kept by the app itself, never on a screen) have no component to look up
+    const schema = settings.schema.filter((s) => !s.hidden);
     // the settings screen, or an app's own menu screen that shows them ("settings": true)
     if (!schema.length || !schema.some((s) => ui.comp('SET_' + s.key.toUpperCase()))) return;
     // choice / number settings are drop-downs (kit/tools/build.py): their rows are the values in this order
