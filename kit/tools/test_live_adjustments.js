@@ -20,8 +20,12 @@ function dme(kind) {
         inflight--;
         const addr = () => Buffer.from(data.slice(1, 5)).toString('hex').toUpperCase();
         if (kind === 'bm3') {
-            if (sid === 0x2C) return [0x6C, 0x02, 0xF3, 0x01];
-            if (sid === 0x22) return [0x62, 0xF3, 0x01].concat(Array.from(Buffer.from('BM3_R#011000#')));
+            if (sid === 0x2C) return [0x6C, data[0], 0xF3, 0x01];
+            if (sid === 0x22) {
+                const marker = Buffer.alloc(255);
+                marker.write('BM3_R#011000#');
+                return [0x62, 0xF3, 0x01].concat(Array.from(marker));
+            }
             if (sid === 0x23) return [0x63].concat(memory[addr()].slice(0, data[5]));
             if (sid === 0x3D) { memory[addr()] = data.slice(6); return [0x7D]; }
             if (sid === 0x2E) return [0x6E].concat(data.slice(0, 2));
@@ -641,7 +645,8 @@ async function xdriveChecks() {
     s.d.calls.length = 0; s.d.maxInflight = 0;
     await Promise.all([s.tune.refresh(), s.tune.refresh()]);
     assert.strictEqual(s.d.maxInflight, 1, 'two refreshes overlapped');
-    assert.strictEqual(s.d.calls.filter((c) => c.startsWith('2c')).length, 1);
+    assert.strictEqual(s.d.calls.filter((c) => c === '2c 03 f3 01').length, 1);
+    assert.strictEqual(s.d.calls.filter((c) => c.startsWith('2c 02')).length, 1);
     const pending = s.tune.refresh();
     assert.strictEqual(s.tune.view().busy, true);
     await s.tune.applyBurbles(false);
