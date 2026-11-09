@@ -169,13 +169,21 @@ function drawArc(cv, f, layer, h) {
 
 /* ---------- ramp (G80) ---------- */
 // the band's lower edge: from bottom left up to the knee, then flat; rpm runs along it by length
-const RP = { x0: 34, y0: 74, kx: 104, ky: 30, x1: 372, t: 11, slant: 4 };
+const RP = { x0: 34, y0: 74, kx: 104, ky: 30, x1: 372, t: 11, t0: 3, slant: 4 };
 const RC = { line: '#f4f1e6', fill: '#f4f1e6', yellow: '#ffc21a', red: '#ff2b1c', text: '#f4f1e6' };
 const rLen = (() => { const a = Math.hypot(RP.kx - RP.x0, RP.ky - RP.y0); return { a: a, all: a + (RP.x1 - RP.kx) }; })();
 function rAt(rpm, max) {
     const s = clamp(rpm / max, 0, 1) * rLen.all;
     if (s <= rLen.a) { const k = s / rLen.a; return [RP.x0 + (RP.kx - RP.x0) * k, RP.y0 + (RP.ky - RP.y0) * k]; }
     return [RP.kx + (s - rLen.a), RP.ky];
+}
+/**
+ * The band's thickness at rpm: thin at the start (t0), widening up the climb to t at the knee, then the same along
+ * the flat (2026-11-10: like a ramp that grows). Its slant grows with it, so the fields keep their angle.
+ */
+function rT(rpm, max) {
+    const s = clamp(rpm / max, 0, 1) * rLen.all;
+    return s >= rLen.a ? RP.t : RP.t0 + (RP.t - RP.t0) * s / rLen.a;
 }
 /** The band between rpm a and b (gaps g px at each end), as quads split at the knee. */
 function rSeg(cv, a, b, max, c, g, outline) {
@@ -185,8 +193,8 @@ function rSeg(cv, a, b, max, c, g, outline) {
         const ga = i === 0 ? g : 0, gb = i === parts.length - 1 ? g : 0;
         const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) || 1, ux = (pb[0] - pa[0]) / L, uy = (pb[1] - pa[1]) / L;
         const A0 = [pa[0] + ux * ga, pa[1] + uy * ga], B0 = [pb[0] - ux * gb, pb[1] - uy * gb];
-        const sl = RP.slant;
-        const q = [[A0[0] + sl, A0[1] - RP.t], [B0[0] + sl, B0[1] - RP.t], B0, A0];
+        const ta = rT(p[0], max), tb = rT(p[1], max), sa = RP.slant * ta / RP.t, sb = RP.slant * tb / RP.t;
+        const q = [[A0[0] + sa, A0[1] - ta], [B0[0] + sb, B0[1] - tb], B0, A0];
         if (outline) cv.polyline(q.concat([q[0]]), outline, c); else cv.quad(q, c);
     });
 }
@@ -228,8 +236,8 @@ function drawRamp(cv, f, layer, h) {
             }
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) {
-            const p = rAt(Math.min(f.peak, max), max), sl = RP.slant;
-            cv.line(p[0], p[1], p[0] + sl, p[1] - RP.t, 2.2, '#ffffff');
+            const pk = Math.min(f.peak, max), p = rAt(pk, max), t = rT(pk, max);
+            cv.line(p[0], p[1], p[0] + RP.slant * t / RP.t, p[1] - t, 2.2, '#ffffff');
         }
     }
     if (!fg) return;
