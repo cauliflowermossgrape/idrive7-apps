@@ -273,19 +273,22 @@ function drawRamp(cv, f, layer, h) {
     if (meter) rampMeter(cv, meter.bar, h.P, layer);
     if (!fg) return;
     const gx = 222, items = (f.readouts || []).filter((it) => !it.bar);
-    if (f.chip) ring(cv, gx, 74, 22, 58, f.chip, h.P);
+    // with the meter under the band, everything below it 4 px lower (and the list's rows 1 px closer) so the gear,
+    // its mode letter and the list's first row keep a gap to it
+    const dn = meter ? 4 : 0, pitch = meter ? 25 : 26;
+    if (f.chip) ring(cv, gx, 74 + dn, 22, 58, f.chip, h.P);
     // readouts 2-4: a list on the right, label left and value right
-    [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 284, 66 + k * 26, items[i], h.P, o, RC.text, 'row', 112); });
-    if (o.gear) cv.text(h.gearText(d), gx, 90, 44, cue.limiter && f.blink ? RC.red : RC.text, { align: 'center', font: h.gearFont(o) });
-    if (f.mode && o.gear) cv.text(f.mode, gx + 22, 66, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
-    cv.fillRect(gx - 30, 96, 60, 1.6, RC.text);
-    h.drawDown(cv, gx - 50, 62, f.down || 0, 1, h.P.arrow);
-    if (f.chip) grade(cv, gx, 124, f.chip, h.P, 22);
+    [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 284, 66 + dn + k * pitch, items[i], h.P, o, RC.text, 'row', 112); });
+    if (o.gear) cv.text(h.gearText(d), gx, 90 + dn, 44, cue.limiter && f.blink ? RC.red : RC.text, { align: 'center', font: h.gearFont(o) });
+    if (f.mode && o.gear) cv.text(f.mode, gx + 22, 66 + dn, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
+    cv.fillRect(gx - 30, 96 + dn, 60, 1.6, RC.text);
+    h.drawDown(cv, gx - 50, 62 + dn, f.down || 0, 1, h.P.arrow);
+    if (f.chip) grade(cv, gx, 124 + Math.min(dn, 3), f.chip, h.P, 22);
     else {
         const it = items[0];
         if (it) {
-            cv.text(it.value, gx, 124, 24, toneCol(it, h.P, RC.text), { align: 'center', font: o.valFont || 'bold' });
-            fitLabel(cv, it.label.toLowerCase(), gx + 32, 102, labelOf(o, RC.text).s, RC.text, 284 - gx - 36, { spacing: 0 });
+            cv.text(it.value, gx, 124 + Math.min(dn, 3), 24, toneCol(it, h.P, RC.text), { align: 'center', font: o.valFont || 'bold' });
+            fitLabel(cv, it.label.toLowerCase(), gx + 32, 102 + dn, labelOf(o, RC.text).s, RC.text, 284 - gx - 36, { spacing: 0 });
         }
     }
 }

@@ -162,11 +162,16 @@ ok(!same(layer(frame('arc', [OIL, BO, WAT, pw(-20)]), 'both'), layer(frame('arc'
 /* ---------- ramp: the meter under the band, the ramp's shape (2026-11-10 sketch) ---------- */
 {
     // the list draws as if the power item weren't there (it takes no place in it)
-    ['bg', 'fg'].forEach((l) => {
-        const a = layer(frame('ramp', [BO, pw(-20), OIL]), l), b = layer(frame('ramp', [BO, OIL]), l);
+    {
+        const a = layer(frame('ramp', [BO, pw(-20), OIL]), 'bg'), b = layer(frame('ramp', [BO, OIL]), 'bg');
         const d = diff(a, b, 0, 129);
-        ok(d.n > 0 && d.maxX <= 375, 'ramp ' + l + ': only the meter under the band differs, the list as without it (x ' + d.minX + '..' + d.maxX + ')');
-    });
+        ok(d.n > 0 && d.maxX <= 375, 'ramp bg: only the meter track differs (x ' + d.minX + '..' + d.maxX + ')');
+        // fg: the gear and the list move 4 px down with the meter, clear of it
+        const top = (cv, x0, x1) => { for (let y = 0; y < cv.h; y++) for (let x = x0; x < x1; x++) if (y > 58 - 10 && cv.d[(y * cv.w + x) * 4 + 3] > 128) return y; return -1; };
+        const fa = layer(frame('ramp', [BO, pw(0), OIL]), 'fg'), fb = layer(frame('ramp', [BO, OIL]), 'fg');
+        ok(top(fa, 284, 396) - top(fb, 284, 396) === 4 && top(fa, 196, 250) - top(fb, 196, 250) === 4, 'ramp fg: with the meter the list and the gear sit 4 px lower (' + top(fb, 284, 396) + ' -> ' + top(fa, 284, 396) + ')');
+        ok(top(fa, 196, 372) >= 59, 'ramp fg: a gap of 3 px or more under the meter (first row ' + top(fa, 196, 372) + ', meter ends at 56)');
+    }
     const fill = (v) => diff(layer(frame('ramp', [BO, pw(v), OIL]), 'both'), layer(frame('ramp', [BO, pw(0), OIL]), 'both'), 0, 129);
     const rec = fill(-20), pwr = fill(40), full = fill(80), none = fill(0);
     ok(none.n === 0, 'ramp: 0 kW fills nothing');
