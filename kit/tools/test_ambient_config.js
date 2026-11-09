@@ -26,7 +26,7 @@ const signals = {
     watch: async (iface, inst, h) => { subs[iface] = h; return { proxy: {}, error: null }; },
     set: async (p, field, v) => { writes.push(slotOf(v.controlMenuAmbientePanoramicRoofInteriorLighting)); },
 };
-const values = { carKind: 'ice', follow: true, sport: 3, comfort: 0, eco: 5, adaptive: 0, hybrid: 0, electric: 9, adaptiveSeen: false, restore: true };
+const values = { carKind: 'ice', follow: true, sport: 3, comfort: 0, eco: 5, adaptive: 0, hybrid: 0, electric: 9, restore: true };
 const settings = { get: (k) => values[k], set: (k, v) => { values[k] = v; } };
 const a = new Ambient({ settings, signals, log, now: () => t });
 const colour = (n) => subs['de.bmw.infotainment.misc.ComfortFunctionIuK'].statusAmbientLightInteriorColour({ statusMenuAmbientePanoramicRoofInteriorLighting: 'FARBAUSWAHL_' + n });
@@ -70,15 +70,16 @@ const tick = () => new Promise((res) => setImmediate(res));
     t += 2000;
     mode('ECO_PRO_EFFICIENT'); await tick();
     ok(writes.length === 5, 'not following: the mode changes nothing');
-    ok(a.modes().join() === 'sport,comfort,eco', 'a petrol or diesel car\'s modes, no Adaptive before it is seen');
+    ok(a.modes().join() === 'sport,comfort,eco,adaptive', 'a petrol or diesel car\'s modes');
     values.follow = true;
     t += 2000;
     mode('PHEV_ELECTRIC_STANDARD'); await tick();
-    ok(values.carKind === 'hybrid' && a.modes().join() === 'sport,hybrid,electric,eco', 'a PHEV mode: the hybrid\'s modes (no Comfort)');
+    ok(values.carKind === 'hybrid' && a.modes().join() === 'sport,hybrid,electric,adaptive', 'a PHEV mode: the hybrid\'s modes (no Comfort, Eco Pro in Hybrid)');
     ok(writes[writes.length - 1] === 9, 'Electric: its colour');
     t += 2000;
     mode('ADAPTIVE'); await tick();
-    ok(values.adaptiveSeen === true && a.modes().join() === 'sport,hybrid,electric,eco,adaptive', 'Adaptive seen: shown from then');
+    ok(a.mode() === 'adaptive', 'Adaptive');
+    ok(mo('PHEV_ADAPTIVE_NEW') === 'adaptive' && mo('SOMETHING_ELSE') === null, 'an unknown name by its words');
     a.stop();
     console.log('ambient config: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
