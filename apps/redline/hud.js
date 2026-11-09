@@ -667,7 +667,7 @@ function start(ctx, src) {
         if (navModeOf(settings) !== 'off') {
             const nr = navPlaceOf(settings);
             cv.strokeRoundRect(nr.x, nr.y, nr.w, nr.h, 6, 1, withAlpha(CYAN, 0.6));
-            if (nr.w === HudNav.NW) { const t = new Canvas(HudNav.NW, HudNav.NH); HudNav.drawNav(t, HudNav.SAMPLES.lanes, { palette: 'colour' }); cv.blit(t, nr.x, nr.y); }
+            if (nr.w === HudNav.NW) { const t = new Canvas(HudNav.NW, HudNav.NH); HudNav.drawNav(t, HudNav.SAMPLE, { palette: 'colour' }); cv.blit(t, nr.x, nr.y); }
         }
         if (!cr.pixels(layer, null, asBuffer(cv.d))) log.warn('hud: test pattern pixels refused');
         shown = 'test';

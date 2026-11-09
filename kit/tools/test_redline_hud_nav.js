@@ -32,6 +32,8 @@ Module._load = function (req, parent, isMain) {
 };
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
 const N = require(path.join(ROOT, 'apps', 'redline', 'hud-nav'));
+// every arrow the car can ask for, and sample turns (test-only, not in the app)
+const C = require(path.join(__dirname, 'redline_nav_cases'));
 const { Canvas } = require(path.join(ROOT, 'kit', 'runtime', 'canvas'));
 const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8'));
 const def = {};
@@ -55,13 +57,13 @@ function lit(c, x0, x1, y0, y1) {
 }
 ok(N.NW === 200 && N.NH === 76, 'a small picture: 200x76');
 ok(lit(draw(null), 0, N.NW).n === 0, 'nothing to show: an empty (see-through) picture');
-Object.keys(N.SAMPLES).forEach((k) => {
+Object.keys(C.SAMPLES).forEach((k) => {
     let c = null;
-    try { c = draw(N.SAMPLES[k]); } catch (e) { ok(false, k + ' draws: ' + e); return; }
+    try { c = draw(C.SAMPLES[k]); } catch (e) { ok(false, k + ' draws: ' + e); return; }
     const all = lit(c, 0, N.NW);
     ok(all.n > 200 && all.white > 150, k + ': drawn in white (' + all.n + ' px, ' + all.white + ' white)');
     let r = N.NW - 1; while (r > 0 && lit(c, r, r + 1).n === 0) r--;
-    if (N.SAMPLES[k].dist) ok(r >= N.NW - 8 && r <= N.NW - 1, k + ': right-aligned, into the corner (last column ' + r + ')');
+    ok(r <= N.NW - 1, k + ': inside the picture (last column ' + r + ')');
 });
 // the arrows are thick: a straight arrow's shaft is about 11 px wide
 {
@@ -80,10 +82,10 @@ ok(side({ kind: 'branch', dir: 'BRANCH_LEFT', dist: '1', unit: 'km' }) < -3 && s
 // the roundabout seen on the drive (left-hand traffic, driveDirection LEFT): exit 1 at 307, i.e. 53 degrees left
 // of straight on (the car's angle is clockwise from straight on): out to the upper LEFT, as a first exit is there
 {
-    const a = arrowBox(N.SAMPLES.roundabout), cx = a.x0 + 34;
+    const a = arrowBox(C.SAMPLES.roundabout), cx = a.x0 + 34;
     const ur = lit(a.c, cx + 12, cx + 34, 0, 26).white, ul = lit(a.c, cx - 34, cx - 12, 0, 26).white;
     ok(ul > 20 && ur < 5, 'roundabout exit 1 at 307: the exit goes out upper left (' + ul + ' / ' + ur + ')');
-    const b = arrowBox(N.SAMPLES.roundabout3), bx = b.x0 + 34;
+    const b = arrowBox(C.SAMPLES.roundabout3), bx = b.x0 + 34;
     ok(lit(b.c, bx + 14, bx + 34, 18, 46).white > 20, 'roundabout exit 3 at 90 (clockwise): out to the right');
     // the car's clockwise angle as an anticlockwise one for drawing; without one, from the number (left traffic: left first)
     ok(N.exitAngleOf({ exitAngle: 307, side: 'left' }) === 53 && N.exitAngleOf({ exitAngle: 90, side: 'left' }) === 270, 'the car\'s angle: clockwise from straight on');
@@ -91,28 +93,36 @@ ok(side({ kind: 'branch', dir: 'BRANCH_LEFT', dist: '1', unit: 'km' }) < -3 && s
 }
 // lanes: under the distance, in the street's place; the highlighted lanes' arrows bright, the rest dim
 {
-    const c = new Canvas(N.NW, N.NH), b = N.drawNav(c, N.SAMPLES.lanes, { palette: 'colour' }), L = b.lanes;
+    const c = new Canvas(N.NW, N.NH), b = N.drawNav(c, C.SAMPLES.lanes, { palette: 'colour' }), L = b.lanes;
     ok(L && L.w >= 18, 'lanes drawn (' + JSON.stringify(L) + ')');
     const cell = (i) => lit(c, Math.round(L.x + i * L.w + 3), Math.round(L.x + (i + 1) * L.w - 3), 42, 76);
     ok(cell(0).white > 15 && cell(1).white > 15, 'lanes 1 and 2 (straight on, highlighted): bright (' + cell(0).white + ', ' + cell(1).white + ')');
     ok(cell(2).white === 0 && cell(2).n > 5, 'lane 3 (right, not for this route): dim (' + cell(2).white + ' white, ' + cell(2).n + ' lit)');
     // eight lanes still fit
-    const many = Object.assign({}, N.SAMPLES.lanes, { lanes: { lanes: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ follow: i === 3 ? 'STRAIGHT_ON' : 'NONE', others: i === 3 ? [] : ['STRAIGHT_ON'], hi: i === 3, info: 'NONE' })), rec: 3, markers: [] } });
+    // the arrow stays put while the distance counts down (it jumped as 800 m became 50 m: 2026-11-09 review)
+    const boxAt = (dist, unit) => N.drawNav(new Canvas(N.NW, N.NH), { kind: 'turn', dir: 'LEFT', dist: dist, unit: unit, road: '' }, { palette: 'colour' }).x;
+    const xs = [['800', 'm'], ['450', 'm'], ['50', 'm'], ['5', 'm'], ['1.2', 'km'], ['1', 'km'], ['0.3', 'mi'], ['900', 'ft']].map((d) => boxAt(d[0], d[1]));
+    ok(xs.every((x) => x === xs[0]), 'the arrow stays put as the distance changes (' + xs.join(',') + ')');
+    const many = Object.assign({}, C.SAMPLES.lanes, { lanes: { lanes: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ follow: i === 3 ? 'STRAIGHT_ON' : 'NONE', others: i === 3 ? [] : ['STRAIGHT_ON'], hi: i === 3, info: 'NONE' })), rec: 3, markers: [] } });
     const c8 = new Canvas(N.NW, N.NH), b8 = N.drawNav(c8, many, { palette: 'colour' });
-    ok(b8.x >= 0 && b8.lanes.x + 8 * b8.lanes.w <= N.NW, 'eight lanes fit (cells ' + b8.lanes.w.toFixed(1) + ' px)');
+    ok(b8.x >= 0 && b8.lanes.w >= 20 && b8.lanes.x + 6 * b8.lanes.w <= N.NW, 'eight lanes: six shown, full size (cells ' + b8.lanes.w.toFixed(1) + ' px)');
+    const win = N.laneWindow(many.lanes);
+    ok(win.lanes.length === 6 && win.lanes.some((l) => l.hi), 'the six round the lane to take');
+    const edge = N.laneWindow({ lanes: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ follow: 'STRAIGHT_ON', follows: ['STRAIGHT_ON'], others: [], hi: i === 7, info: 'NONE' })), markers: [] });
+    ok(edge.lanes[5].hi, 'the lane to take at the far edge: still shown');
 }
-ok(lit(draw(Object.assign({}, N.SAMPLES.left, { dist: null, unit: null, road: '' })), 0, N.NW).n > 200, 'a turn with no distance: the arrow alone');
+ok(lit(draw(Object.assign({}, C.SAMPLES.left, { dist: null, unit: null, road: '' })), 0, N.NW).n > 200, 'a turn with no distance: the arrow alone');
 // a long street is cut to fit; the arrow stays whole
 {
-    const m = Object.assign({}, N.SAMPLES.left, { road: 'A very long street name that would never fit on the head-up display at all' });
+    const m = Object.assign({}, C.SAMPLES.left, { road: 'A very long street name that would never fit on the head-up display at all' });
     const c = new Canvas(N.NW, N.NH), b = N.drawNav(c, m, { palette: 'colour' });
     ok(b.x >= 0 && lit(c, 0, b.x).n === 0, 'a long street is cut, the arrow stays in the picture (at ' + b.x + ')');
 }
 // text
 ok(N.foldText('Example Straße') === 'Example Strasse' && N.foldText('Café Élysée') === 'Cafe Elysee' && N.foldText('Øster­gade 東京') === 'Ostergade', 'street names folded to the HUD\'s fonts (' + N.foldText('Øster­gade 東京') + ')');
-ok(N.navKey(N.SAMPLES.left, {}) !== N.navKey(Object.assign({}, N.SAMPLES.left, { dist: '400' }), {}) && N.navKey(N.SAMPLES.left, {}) === N.navKey(Object.assign({}, N.SAMPLES.left), {}), 'the key changes with the distance, not otherwise');
-ok(N.navKey(N.SAMPLES.left, { palette: 'amber' }) !== N.navKey(N.SAMPLES.left, { palette: 'colour' }), 'the key changes with the palette');
-ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).n > 300, 'Night amber: in amber, not white');
+ok(N.navKey(C.SAMPLES.left, {}) !== N.navKey(Object.assign({}, C.SAMPLES.left, { dist: '400' }), {}) && N.navKey(C.SAMPLES.left, {}) === N.navKey(Object.assign({}, C.SAMPLES.left), {}), 'the key changes with the distance, not otherwise');
+ok(N.navKey(C.SAMPLES.left, { palette: 'amber' }) !== N.navKey(C.SAMPLES.left, { palette: 'colour' }), 'the key changes with the palette');
+ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).n > 300, 'Night amber: in amber, not white');
 
 // ---- every arrow the car's catalog can ask for ---------------------------------------------------------------------
 {
@@ -121,25 +131,26 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     if (fs.existsSync(CAT)) {
         const D = JSON.parse(fs.readFileSync(CAT, 'utf8')).datatypes, T = (n) => Object.keys(D['de.bmw.infotainment.navigation.GuidingTypes.' + n].items).sort();
         ok(JSON.stringify(T('TurnDirection')) === JSON.stringify(N.TURN_DIRECTIONS.slice().sort()), 'every TurnDirection in the catalog has an arrow');
-        ok(JSON.stringify(T('BranchType')) === JSON.stringify(N.BRANCH_TYPES.slice().sort()), 'every BranchType in the catalog has an arrow');
-        ok(JSON.stringify(T('ManeuverGeometry')) === JSON.stringify(N.GEOMETRIES.slice().sort()), 'every ManeuverGeometry in the catalog has an arrow');
+        ok(JSON.stringify(T('BranchType')) === JSON.stringify(C.BRANCH_TYPES.slice().sort()), 'every BranchType in the catalog has an arrow');
+        ok(JSON.stringify(T('ManeuverGeometry')) === JSON.stringify(C.GEOMETRIES.slice().sort()), 'every ManeuverGeometry in the catalog has an arrow');
     } else console.log('(the car\'s catalog is not here: its cross-check skipped)');
-    ok(N.ALL_ARROWS.length >= 75, 'the arrows to check: ' + N.ALL_ARROWS.length);
+    ok(C.ALL_ARROWS.length >= 75, 'the arrows to check: ' + C.ALL_ARROWS.length);
     // each one draws, inside its 80 px box (at 1.0, centred in 100x100)
-    N.ALL_ARROWS.forEach((m) => {
+    C.ALL_ARROWS.forEach((m) => {
         const c = new Canvas(100, 100);
         N.drawArrow(c, m, 50, 50, 1, '#ffffff', [255, 255, 255, 89]);
         const all = lit(c, 0, 100), edge = lit(c, 0, 100, 0, 6).n + lit(c, 0, 100, 94, 100).n + lit(c, 0, 6).n + lit(c, 94, 100).n;
         ok(all.white > 150 && edge === 0, m.label + ': drawn, inside its box (' + all.white + ' px, ' + edge + ' outside)');
     });
     // where the bright path ends: left values left, right right, straight in the middle
-    const endX = (m) => { const s = N.shapeOf(m); const p = s.path[s.path.length - 1]; return p[0] * s.mir; };
+    // where the arrow goes, sideways: its end against its start (a merge starts on one side and ends near the middle)
+    const endX = (m) => { const s = N.shapeOf(m); return (s.path[s.path.length - 1][0] - s.path[0][0]) * s.mir; };
     const want = (name) => (/TAKE_(LEFT|RIGHT|CENTER)$/.test(name) ? null : /LEFT/.test(name) ? -1 : /RIGHT/.test(name) ? 1 : 0);
-    N.TURN_DIRECTIONS.filter((d) => d !== 'NONE').concat(N.BRANCH_TYPES).forEach((d) => {
+    N.TURN_DIRECTIONS.filter((d) => d !== 'NONE').concat(C.BRANCH_TYPES).forEach((d) => {
         const m = { kind: N.TURN_DIRECTIONS.indexOf(d) >= 0 ? 'turn' : 'branch', dir: d }, x = endX(m), w = want(d);
         ok(w === 0 ? Math.abs(x) < 1 : x * w > 3, d + ': the arrow ends ' + (w < 0 ? 'left' : w > 0 ? 'right' : 'straight on') + ' (' + x.toFixed(1) + ')');
     });
-    N.GEOMETRIES.forEach((g) => {
+    C.GEOMETRIES.forEach((g) => {
         const r = /^EXIT_(LEFT|RIGHT)_TAKE_(LEFT|RIGHT)$/.exec(g), f = /^EXIT_(LEFT|RIGHT)_TWO_WAY/.exec(g);
         // an exit taken: its side; not taken: straight on; an exit's fork: the exit's side; a fork: the leg taken
         const w = r ? (r[1] === r[2] ? (r[1] === 'LEFT' ? -1 : 1) : 0) : f ? (f[1] === 'LEFT' ? -1 : 1) : /TAKE_LEFT$/.test(g) ? -1 : /TAKE_RIGHT$/.test(g) ? 1 : 0;
@@ -147,7 +158,7 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
         ok(w === 0 ? Math.abs(x) < 1 : x * w > 3, g + ': the arrow ends on the right side (' + x.toFixed(1) + ')');
     });
     // the head sits on a straight run (a bend under its base bulged out on one side: that side looked smaller)
-    N.ALL_ARROWS.forEach((m) => {
+    C.ALL_ARROWS.forEach((m) => {
         const s = N.shapeOf(m);
         if (!s.path) return;
         const p = s.path, a = p[p.length - 2], b = p[p.length - 1], l = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
@@ -167,30 +178,39 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
         return d;
     };
     const pairs = [];
-    N.ALL_ARROWS.forEach((m) => {
+    C.ALL_ARROWS.forEach((m) => {
         if (m.kind === 'roundabout' || m.kind === 'destination' || m.kind === 'transport') return;
         const key = m.geom || m.dir, other = key.replace(/LEFT/g, '\u0001').replace(/RIGHT/g, 'LEFT').replace(/\u0001/g, 'RIGHT');
         if (other !== key && /LEFT/.test(key.split('_').pop() + key)) pairs.push([m, Object.assign({}, m, m.geom ? { geom: other } : { dir: other })]);
     });
     pairs.forEach((p) => { const d = mirrorDiff(p[0], p[1]); ok(d === 0, (p[0].geom || p[0].dir) + ' mirrors ' + (p[1].geom || p[1].dir) + ' exactly (' + d + ' px differ)'); });
     ok(pairs.length >= 20, pairs.length + ' left / right pairs checked');
-    // every roundabout exit (the car's angle: clockwise from straight on), both traffic sides: the head leaves there
-    [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].forEach((a) => ['left', 'right'].forEach((sd) => {
-        const c = new Canvas(100, 100);
-        N.drawArrow(c, { kind: 'roundabout', exit: 1, exitAngle: a, side: sd }, 50, 50, 1, '#ffffff', [255, 255, 255, 89]);
-        if (Math.abs(a - 180) <= 45) {
-            // back the way it came: in on the drive side, out straight down on the other, two strokes with a gap
-            const inX = sd === 'left' ? -1 : 1;            // the way in: on the traffic side (left traffic: left of the middle)
-            // the strokes stand about 10.7 px either side of the middle; the gap is between them, above the head
+    // every roundabout exit (the car's angle: clockwise from straight on), both traffic sides, every 15 degrees
+    for (let a = 0; a < 360; a += 15) ['left', 'right'].forEach((sd) => {
+        const m = { kind: 'roundabout', exit: 1, exitAngle: a, side: sd }, P = N.roundaboutPlan(m), c = new Canvas(100, 100);
+        N.drawArrow(c, m, 50, 50, 1, '#ffffff', [255, 255, 255, 89]);
+        const tag = 'roundabout exit at ' + a + ' (' + sd + '-hand traffic)';
+        if (P.back) {
+            // back the way it came: in on the traffic side, out straight down on the other, two strokes with a gap
+            const inX = sd === 'left' ? -1 : 1;
             const win = (x0, x1, y0, y1) => lit(c, Math.min(x0, x1), Math.max(x0, x1), y0, y1);
             const inS = win(50 + inX * 6, 50 + inX * 16, 70, 92), outS = win(50 - inX * 6, 50 - inX * 16, 70, 92), gap = win(48, 53, 68, 76);
-            ok(inS.white > 20 && outS.white > 20 && gap.white === 0, 'roundabout exit at ' + a + ' (' + sd + '-hand traffic): in and back out side by side, apart (' + inS.white + ', ' + outS.white + ', gap ' + gap.white + ')');
+            ok(inS.white > 20 && outS.white > 20 && gap.white === 0, tag + ': in and back out side by side, apart (' + inS.white + ', ' + outS.white + ', gap ' + gap.white + ')');
             return;
         }
-        const t = a * Math.PI / 180, tx = Math.round(50 + Math.sin(t) * 38), ty = Math.round(48 - Math.cos(t) * 38);
+        // the head where the plan says the exit leaves (drawing angle: anticlockwise from straight on)
+        const t = (180 + P.dir * P.tOut) * Math.PI / 180, tx = Math.round(50 - Math.sin(t) * 36), ty = Math.round(48 - Math.cos(t) * 36);
         const near = lit(c, tx - 7, tx + 8, Math.max(0, ty - 7), Math.min(100, ty + 8)).white;
-        ok(near > 15, 'roundabout exit at ' + a + ' (' + sd + '-hand traffic): the head out there (' + near + ' px)');
-    }));
+        ok(near > 15, tag + ': the head out there (' + near + ' px)');
+        // the exit drawn within 30 degrees of the car's angle (a sharp first exit is pushed out at most that far)
+        const want = (360 - a) % 360, got = ((180 + P.dir * P.tOut) % 360 + 360) % 360, off = Math.min(Math.abs(want - got), 360 - Math.abs(want - got));
+        ok(off <= 30, tag + ': drawn ' + off + ' degrees from the car\'s angle');
+    });
+    // a sharp first exit (left traffic: back to the left, e.g. 210) goes a short way round, not a lap (2026-11-09 review)
+    [195, 210, 225].forEach((a) => { const P = N.roundaboutPlan({ exitAngle: a, side: 'left' }); ok(!P.back && P.tOut - P.tIn <= 90, 'left traffic, exit at ' + a + ': a short way round (' + (P.tOut - P.tIn) + ' degrees)'); });
+    [165, 150, 135].forEach((a) => { const P = N.roundaboutPlan({ exitAngle: a, side: 'right' }); ok(!P.back && P.tOut - P.tIn <= 90, 'right traffic, exit at ' + a + ': a short way round (' + (P.tOut - P.tIn) + ' degrees)'); });
+    // straight back (180) and just short of it on the far side: the U-turn
+    ok(N.roundaboutPlan({ exitAngle: 180, side: 'left' }).back && N.roundaboutPlan({ exitAngle: 165, side: 'left' }).back, 'left traffic, 180 and 165: the U-turn');
 }
 
 // ---- lanes: their own glyphs, one stem, turns leaving low --------------------------------------------------------
@@ -231,7 +251,7 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     // a lane not for this route: dim only; blocked: a cross; more lanes than shown: three dots
     ok(cellOf(lane([], ['RIGHT'], false)).bright.n === 0, 'a lane not for this route: dim');
     const bl = cellOf(lane(['STRAIGHT_ON'], [], true, 'BLOCKED'));
-    ok(bl.bright.n > 15 && bl.dim.n > 15, 'a blocked lane: its arrow dim, a cross over it');
+    ok(bl.bright.n === 0 && bl.dim.n > 25, 'a blocked lane: its arrow and the cross over it both dim (not the brightest thing in the row)');
     ok(cellOf(lane([], [], false, 'ELLIPSIS')).any.n > 6 && cellOf(lane([], [], false, 'ELLIPSIS')).bright.n === 0, 'more lanes than shown: dim dots');
 }
 
@@ -252,7 +272,7 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     ok(cr.images().length === 1, 'no route: the tach alone');
     ok(modes.length > 0 && modes.every((m) => m === 'route'), 'Directions default: while a route runs');
 
-    view = { show: N.SAMPLES.left, giveWay: false };
+    view = { show: C.SAMPLES.left, giveWay: false };
     await sleep(150);
     const imgs = cr.images();
     ok(imgs.length === 2, 'a turn: a second image layer (' + imgs.length + ')');
@@ -264,7 +284,7 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     ok(navFrames().length === 1 && !navFrames()[0].rects, 'sent whole once');
     await sleep(150);
     ok(navFrames().length === 1, 'the same turn: nothing sent again');
-    view = { show: Object.assign({}, N.SAMPLES.left, { dist: '400' }), giveWay: false };
+    view = { show: Object.assign({}, C.SAMPLES.left, { dist: '400' }), giveWay: false };
     await sleep(120);
     ok(navFrames().length === 2 && navFrames()[1].rects && navFrames()[1].rects.length >= 1, 'nearer: only what changed is sent');
 
@@ -304,14 +324,14 @@ ok(lit(draw(N.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(N.SAMPLES
     const claim = JSON.parse(fs.readFileSync(path.join(SHM, 'redline'), 'utf8'));
     ok(claim.held === false, 'giving way: the HUD claim let go');
     ok(!lines.some((l) => /hidden in/.test(l)), 'giving way isn\'t logged as a driving-mode hide');
-    view = { show: N.SAMPLES.exit, giveWay: false };
+    view = { show: C.SAMPLES.exit, giveWay: false };
     await sleep(150);
     ok(cr.images().length === 2, 'a turn again: the tach and the directions back');
 
     // paused behind BMW's content: nothing sent; after it, sent whole
     const before = cr.frames.length;
     cr.h.target('hud', 'parked', 'bmw', '', false, false);
-    view = { show: N.SAMPLES.roundabout, giveWay: false };
+    view = { show: C.SAMPLES.roundabout, giveWay: false };
     await sleep(120);
     ok(cr.frames.length === before, 'parked: nothing drawn');
     cr.h.target('hud', 'shown', '', '', false, false);

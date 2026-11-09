@@ -311,9 +311,15 @@ glass's edge. Checked for every size and position the settings allow.
   the lanes (`currentLaneGuiding`) and, for BMW's navigation, `conclusiveDart`. Proven on a G21 with CarPlay /
   Apple Maps; BMW navigation and Android Auto not yet. The interfaces are the ones jaimeen77's Cluster Redline
   (jaimeen77-cmyk/apps, MPL-2.0) reads; Redline's decoder and drawing are its own (`nav.js`, `hud-nav.js`).
-- **Safety:** a turn older than 3 s isn't shown. When a route runs but Redline has no turn it can read for 4 s,
-  Redline leaves the HUD (tach included) so BMW's own card shows; it comes back with the next readable turn.
-  An old turn never comes back after a route ends or changes hands.
+- **Safety:** a turn older than 3 s isn't shown. When a route certainly runs (BMW's guidance active, or CarPlay /
+  Android Auto guiding) and Redline has had no readable turn for 4 s, Redline leaves the HUD (tach included) so
+  BMW's own card shows; it comes back with the next readable turn. The 4 s count from the last readable turn, so
+  one reply without a turn doesn't hide the HUD. An old turn never comes back after a route ends or changes hands:
+  a reply asked before that is dropped. A direction the car sends that isn't in its catalog (by name or number)
+  draws no arrow, only the "follow the route" dot. Lanes stay with the turn they came with.
+- **Load:** BMW's event list is asked once a second only while a route runs and the HUD and its directions are on;
+  after a failed call the next waits 5 s, and a failed connection is tried again every 30 s. A picture is about
+  0.1 ms to draw and is redrawn only when what it shows changes.
 - **Settings:** *Directions on the HUD*: **While a route runs** (default) / **Near turns** (under 1 km, and
   whenever there are lanes) / **Off** (as before 1.17: Redline keeps the HUD, BMW's card stays hidden).
   Under *Advanced*: *Directions left / right* and *up / down* (px from the corner). The test pattern shows a sample

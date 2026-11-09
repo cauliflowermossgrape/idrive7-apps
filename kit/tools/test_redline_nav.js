@@ -63,6 +63,7 @@ for (let i = 1; i < firsts.length; i++) {
 }
 ok(rises <= 2, 'distances count down per turn (' + rises + ' rises)');
 // metres() from the car's text
+ok(Nav.metres({ dist: '1,234', unit: 'ft' }) === 1234 * 0.3048 && Nav.metres({ dist: '1,5', unit: 'km' }) === 1500, 'metres(): "1,234 ft" is thousands, "1,5 km" a decimal comma');
 ok(Nav.metres({ dist: '450', unit: 'm' }) === 450 && Nav.metres({ dist: '0,5', unit: 'km' }) === 500 && Nav.metres({ dist: null, unit: null }) === null, 'metres() reads 450 m, 0,5 km, none');
 
 // ---- lanes ---------------------------------------------------------------------------------------------------------
@@ -101,7 +102,15 @@ eq(Nav.decodeEvents({ GuidanceEventListError: 'NO_ERROR', viewContent: [] }).err
 eq(Nav.decodeEvents({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [] }] }), { ok: true, error: null, events: [], raw: 0 }, 'no events: ok, no turn');
 ok(Nav.decodeEvents('x').ok === false && Nav.decodeEvents(null).ok === false, 'nonsense: not ok');
 // enum values as numbers (another firmware): the turn still shows, with the number as its direction
-ok(Nav.decodeEvent({ intersection: { direction: 2, formattedDistance: fd('100', 'METER') } }).dir === '2', 'a numeric enum is kept as text');
+ok(Nav.decodeEvent({ intersection: { direction: 2, formattedDistance: fd('100', 4) } }).dir === 'LEFT' && Nav.decodeEvent({ intersection: { direction: 2, formattedDistance: fd('100', 4) } }).unit === 'm', 'numeric enums: the catalog\'s numbers (direction 2 = LEFT, unit 4 = METER)');
+// anything not a direction gives no arrow (the dot), never a guess (2026-11-09 bug review: these drew straight on)
+ok(Nav.decodeEvent({ intersection: { formattedDistance: fd('100', 'METER') } }).dir === 'NONE', 'an intersection with no direction: NONE');
+ok(Nav.decodeEvent({ intersection: { direction: 'WIGGLE', formattedDistance: fd('100', 'METER') } }).dir === 'NONE' && Nav.decodeEvent({ intersection: { direction: 42, formattedDistance: fd('100', 'METER') } }).dir === 'NONE', 'an unknown direction (name or number): NONE');
+ok(Nav.decodeEvent({ branch: { formattedDistance: fd('100', 'METER') } }).dir === 'NONE', 'a branch with no type: NONE');
+ok(Nav.decodeEvent({ roundabout: { exitNumber: 1, exitAngle: 90, driveDirection: 2, formattedDistance: fd('100', 'METER') } }).side === 'right', 'driveDirection 2 = RIGHT');
+ok(Nav.decodeLanes({ rows: [{ lanes: [{ directionToFollow: 5, otherDirections: [1, 99], isHighlighted: true, additionalLaneInfo: 9 }] }] }).lanes[0].follow === 'RIGHT' &&
+    Nav.decodeLanes({ rows: [{ lanes: [{ directionToFollow: 5, otherDirections: [1, 99], isHighlighted: true, additionalLaneInfo: 9 }] }] }).lanes[0].others.join() === 'STRAIGHT_ON' &&
+    Nav.decodeLanes({ rows: [{ lanes: [{ directionToFollow: 5, otherDirections: [1, 99], isHighlighted: true, additionalLaneInfo: 9 }] }] }).lanes[0].info === 'BLOCKED', 'lanes with numbers: 5 = RIGHT, 1 = STRAIGHT_ON, 99 dropped, info 9 = BLOCKED');
 // the wrapped form ({ maneuver: { ... } }) and conclusiveDart
 ok(Nav.decodeEvents({ viewContent: [{ eventsInView: [{ maneuver: { intersection: { direction: 'SLIGHT_LEFT', formattedDistance: fd('799', 'METER') } } }] }] }).events[0].dir === 'SLIGHT_LEFT', 'events wrapped in maneuver');
 ok(Nav.decodeDart({ maneuver: { pointOfInterest: {} } }) === null && Nav.decodeDart({}) === null, 'CarPlay\'s empty conclusiveDart: nothing');
@@ -153,7 +162,8 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
     const t0 = 1000000;
     ok(T.view('route', t0).show === null && !T.view('route', t0).giveWay, 'nothing running: nothing, no giving way');
     T.field('guidance', 'guidingProvider', 'CAR_PLAY', t0);
-    ok(T.routing(), 'CarPlay as provider: routing');
+    ok(T.routing() && !T.view('route', t0 + 10000).giveWay, 'CarPlay as provider alone: routing, but never giving way on it (it may stay CAR_PLAY with no route)');
+    T.field('carplay', 'projectedGuidanceActive', true, t0);
     ok(!T.view('route', t0 + 1000).giveWay, 'routing, no turn yet: wait');
     ok(T.view('route', t0 + Nav.GIVE_WAY_MS).giveWay, 'routing, no readable turn for ' + Nav.GIVE_WAY_MS + ' ms: give way to BMW');
     T.events(replies[0].v, t0 + 5000);
@@ -165,13 +175,17 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
     ok(T.view('near', t0 + 6000).show !== null, '"Near turns" at 300 m: shown');
     ok(T.view('route', t0 + 6000 + Nav.STALE_MS).show !== null, 'still fresh at ' + Nav.STALE_MS + ' ms');
     ok(T.view('route', t0 + 6001 + Nav.STALE_MS).show === null, 'stale after ' + Nav.STALE_MS + ' ms: not shown');
-    ok(T.view('route', t0 + 6001 + Nav.STALE_MS).giveWay, 'stale while routing: give way');
+    ok(!T.view('route', t0 + 6001 + Nav.STALE_MS).giveWay, 'stale, but a turn only ' + (1 + Nav.STALE_MS) + ' ms ago: not giving way yet');
+    ok(T.view('route', t0 + 6000 + Nav.GIVE_WAY_MS).giveWay, Nav.GIVE_WAY_MS + ' ms since the last readable turn: give way');
     // lanes ride along while fresh
     T.events(replies[0].v, t0 + 20000);
     T.field('guidance', 'currentLaneGuiding', laneRows[0].v, t0 + 20000);
     ok(T.view('route', t0 + 20500).show.lanes.lanes.length === 3, 'fresh lanes ride with the turn');
     T.events(replies[0].v, t0 + 24000);
-    ok(T.view('route', t0 + 24000).show.lanes === null, 'stale lanes are dropped');
+    ok(T.view('route', t0 + 24000).show.lanes !== null, 'lanes stay with their turn (the car may send them only when they change)');
+    const other = replies.filter((r) => /"direction":"RIGHT"/.test(JSON.stringify(r.v.viewContent[0].eventsInView[0])))[0].v;
+    T.events(other, t0 + 24050);
+    ok(T.view('route', t0 + 24050).show.lanes === null, 'a new turn after ' + Nav.STALE_MS + ' ms: the old lanes are dropped');
     T.field('guidance', 'currentLaneGuiding', { rows: [], carPositionLaneIndex: 255 }, t0 + 24100);
     ok(T.view('route', t0 + 24100).show.lanes === null, 'rows: [] clears the lanes');
     // "Near turns": lanes always show
@@ -183,6 +197,7 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
     ok(T.view('route', t0 + 30500).show !== null && T.error() === 'timeout', 'a failed query: the turn stays until stale');
     // the route ends: nothing old comes back
     T.field('guidance', 'guidingProvider', 'NONE', t0 + 31000);
+    T.field('carplay', 'projectedGuidanceActive', false, t0 + 31000);
     ok(!T.routing() && T.view('route', t0 + 31000).show === null && !T.view('route', t0 + 31000).giveWay, 'the route ended: nothing, no giving way');
     // BMW's own navigation: conclusiveDart
     T.field('guidance', 'guidanceState', 'ACTIVE', t0 + 40000);
@@ -202,9 +217,31 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
     ok(!T2.routing() && !T2.view('route', 5000).giveWay, 'CarPlay guidance over: back');
 }
 
+// ---- from the 2026-11-09 bug review ------------------------------------------------------------------------------
+{
+    const T = Nav.Tracker(), t0 = 5000000;
+    T.field('carplay', 'projectedGuidanceActive', true, t0);
+    T.events(replies[0].v, t0 + 1000, t0 + 900);
+    // one reply with no turn in it (lane rows only) mustn't hide the HUD at once
+    T.events(replies[0].v, t0 + 8000, t0 + 7900);
+    T.events({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [{ laneGuiding: { lanes: [] } }] }] }, t0 + 9000, t0 + 8900);
+    ok(!T.view('route', t0 + 9000).giveWay, 'a route running 9 s, one reply without a turn: not giving way at once');
+    // a reply asked before the route ended lands after it: dropped, no old arrow
+    T.field('carplay', 'projectedGuidanceActive', false, t0 + 20000);
+    const late = T.events(replies[0].v, t0 + 20300, t0 + 19800);
+    ok(late.stale && T.view('route', t0 + 20300).show === null, 'a reply asked before the route ended: dropped, no old arrow');
+    // the same after the provider changes
+    T.field('carplay', 'projectedGuidanceActive', true, t0 + 30000);
+    T.events(replies[0].v, t0 + 30500, t0 + 30400);
+    T.field('guidance', 'guidingProvider', 'ANDROID_AUTO', t0 + 31000);
+    ok(T.events(replies[0].v, t0 + 31200, t0 + 30900).stale && T.view('route', t0 + 31200).show === null, 'a reply asked before the provider changed: dropped');
+    ok(!T.events(replies[0].v, t0 + 32200, t0 + 31900).stale && T.view('route', t0 + 32200).show !== null, 'one asked after it: shown');
+}
+
 // ---- the drive replayed: what the HUD would have shown --------------------------------------------------------
 {
     const T = Nav.Tracker();
+    T.field('carplay', 'projectedGuidanceActive', true, replies[0].t - 1000);
     let shown = 0, gaps = 0;
     replies.forEach((r) => {
         T.events(r.v, r.t);

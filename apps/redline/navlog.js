@@ -20,6 +20,8 @@
  * Keys that look like coordinates are dropped. Never throws: everything is caught and logged.
  */
 const fs = require('fs');
+// the same "is a route running" as the directions use
+const { routingOf } = require('./nav');
 const path = require('path');
 
 const SOURCES = [
@@ -42,7 +44,7 @@ const MAX_BYTES = 512 * 1024, LINE = 3000, DIST_MS = 5000;
  */
 const EVENT_LIST = { iface: 'de.bmw.infotainment.navigation.guiding.GuidanceEventList', inst: 'Main_Instance', method: 'queryContent' };
 // once a second: nav.js shows a turn for 3 s after its last reply
-const QUERY_MS = 1000;
+const QUERY_MS = 1000, PROXY_RETRY_MS = 30000, CALL_BACKOFF_MS = 5000;
 /** The request: one view from the car's position (CCP), six events, turns, lanes, keep-left/right and destinations. */
 function eventQuery() {
     return { viewConfigs: [{
@@ -94,7 +96,9 @@ function withoutDistance(v) {
  * and errors. tap(source, field, value): every value as it comes, before the log's own filtering (nav.js);
  * tap('events', 'reply', reply) for each queryContent reply, tap('events', 'error', message) for each failure.
  */
-function start(ctx, log, tap) {
+function start(ctx, log, tap, opts) {
+    // asked only while wanted (main.js: the HUD on and its directions on); the subscriptions themselves are passive
+    const wanted = opts && typeof opts.wanted === 'function' ? opts.wanted : () => true;
     const file = path.join(ctx.dataDir || '.', 'redline-nav.log');
     const write = (msg) => {
         try {
@@ -104,11 +108,11 @@ function start(ctx, log, tap) {
         } catch (e) { /* the log is best effort */ }
     };
     const last = {}, shapes = {}, subs = [];
-    let lastDist = 0, lines = 0, latest = '';
+    let lastDist = 0;
     // is a route running? (BMW's own, or the phone's)
     const route = { state: null, provider: null, carplay: false, aa: false };
-    const routing = () => route.state === 'ACTIVE' || route.state === 2 || route.carplay || route.aa || (route.provider && route.provider !== 'NONE' && route.provider !== 0);
-    const tapped = (src, field, v) => { if (tap) { try { tap(src, field, v); } catch (e) { write('tap error: ' + e); } } };
+    const routing = () => routingOf(route);
+    const tapped = (src, field, v, askedAt) => { if (tap) { try { tap(src, field, v, askedAt); } catch (e) { write('tap error: ' + e); } } };
     const got = (src, field, v) => {
         tapped(src, field, v);
         try {
@@ -122,16 +126,14 @@ function start(ctx, log, tap) {
                 // the same manoeuvre getting nearer: at most every 5 s
                 if (last[key + ':core'] === core && Date.now() - lastDist < DIST_MS) return;
                 last[key + ':core'] = core; lastDist = Date.now();
-                latest = kind;
             }
             const s = json(v);
             if (last[key] === s) return;
             last[key] = s;
-            lines++;
             write(src + ' ' + field + ' = ' + s);
         } catch (e) { write('error reading ' + src + '.' + field + ': ' + e); }
     };
-    if (!ctx.signals || !ctx.signals.watch) { write('no signals here (preview)'); return { stop() {}, status: () => '', write: write }; }
+    if (!ctx.signals || !ctx.signals.watch) { write('no signals here (preview)'); return { stop() {}, write: write }; }
     write('probe started (' + new Date().toISOString() + ')');
     if (log) log.info('nav: probe on, writing redline-nav.log');
     SOURCES.forEach((S) => {
@@ -149,18 +151,22 @@ function start(ctx, log, tap) {
         }).catch((e) => write(S.name + ' error: ' + e));
     });
     // the event list, asked while a route runs; each new reply logged (the same events nearer: at most every 5 s)
-    let elProxy = null, elTried = false, asking = false, lastEl = '', lastElCore = '', lastElAt = 0, elErr = '', elCount = 0;
+    // a failed connection is tried again after PROXY_RETRY_MS (once at start-up would turn directions off for good);
+    // after a failed call the next waits CALL_BACKOFF_MS (a provider that doesn't answer holds the shared native queue)
+    let elProxy = null, proxyFailedAt = -Infinity, callFailedAt = -Infinity, asking = false, lastEl = '', lastElCore = '', lastElAt = 0, elErr = '';
     const ask = () => {
-        if (asking || !routing() || !ctx.signals.proxy || !ctx.signals.call) return;
+        const now = Date.now();
+        if (asking || !routing() || !wanted() || !ctx.signals.proxy || !ctx.signals.call || now - callFailedAt < CALL_BACKOFF_MS) return;
+        if (!elProxy && now - proxyFailedAt < PROXY_RETRY_MS) return;
         asking = true;
+        const askedAt = now;
         Promise.resolve().then(() => {
             if (elProxy) return elProxy;
-            if (elTried) throw new Error('no event list proxy');
-            elTried = true;
-            return ctx.signals.proxy(EVENT_LIST.iface, EVENT_LIST.inst).then((p) => { elProxy = p; write('events connected'); return p; });
+            return ctx.signals.proxy(EVENT_LIST.iface, EVENT_LIST.inst).then((p) => { elProxy = p; write('events connected'); return p; },
+                (e) => { proxyFailedAt = Date.now(); throw e; });
         }).then((p) => ctx.signals.call(p, EVENT_LIST.method, eventQuery(), 900)).then((reply) => {
             elErr = '';
-            tapped('events', 'reply', reply);
+            tapped('events', 'reply', reply, askedAt);
             const views = reply && reply.viewContent, events = views && views[0] && views[0].eventsInView;
             if (Array.isArray(events)) events.forEach((e) => {
                 const k = kindOf({ maneuver: e && (e.maneuver || e) });
@@ -169,11 +175,11 @@ function start(ctx, log, tap) {
             const s = json(reply, 8000), core = withoutDistance(reply);
             if (s === lastEl) return;
             if (core === lastElCore && Date.now() - lastElAt < DIST_MS) return;
-            lastEl = s; lastElCore = core; lastElAt = Date.now(); elCount++; lines++;
-            if (Array.isArray(events) && events[0]) latest = 'event ' + kindOf({ maneuver: events[0].maneuver || events[0] });
+            lastEl = s; lastElCore = core; lastElAt = Date.now();
             write('events = ' + s);
         }).catch((e) => {
             const m = String(e && e.message || e).slice(0, 200);
+            if (elProxy) callFailedAt = Date.now();
             tapped('events', 'error', m);
             if (m !== elErr) { elErr = m; write('events error: ' + m); }
         }).then(() => { asking = false; });
@@ -182,7 +188,6 @@ function start(ctx, log, tap) {
     if (elTimer.unref) elTimer.unref();
     return {
         stop() { clearInterval(elTimer); subs.forEach((s) => { try { if (s.timer) clearInterval(s.timer); s.shutdown(); } catch (e) { /* gone */ } }); },
-        status: () => (lines ? 'NAV: ' + lines + ' updates' + (latest ? ', last ' + latest : '') : ''),
         write: write,
     };
 }

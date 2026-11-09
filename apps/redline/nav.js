@@ -43,11 +43,36 @@ const STALE_MS = 3000;       // a turn or lanes older than this aren't shown
 const GIVE_WAY_MS = 4000;    // routing without a readable turn this long: BMW's own card instead
 const NEAR_M = 1000;         // "Near turns": under this ("1 km" is not yet; lanes always)
 
-const UNITS = { KM: 'km', KILOMETER: 'km', METER: 'm', METRE: 'm', MILE: 'mi', MILE_UK: 'mi', MILE_US: 'mi', YARD: 'yd', FEET: 'ft', FOOT: 'ft' };
+const UNITS = { KM: 'km', METER: 'm', MILE_UK: 'mi', MILE_US: 'mi', YARD: 'yd', FEET: 'ft' };
 const UNIT_M = { km: 1000, m: 1, mi: 1609.344, yd: 0.9144, ft: 0.3048 };
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : typeof v === 'number' && isFinite(v) ? String(v) : null);
+
+/*
+ * The enums that decide an arrow, from the car's catalog (navigation.GuidingTypes, CommonTypes.DistanceUnit):
+ * index = the number a firmware might send instead of the name. A value that is neither a name nor one of these
+ * numbers gives no direction (the "follow the route" dot), never a guessed arrow.
+ */
+const ENUMS = {
+    TurnDirection: ['NONE', 'STRAIGHT_ON', 'LEFT', 'SLIGHT_LEFT', 'HARD_LEFT', 'RIGHT', 'SLIGHT_RIGHT', 'HARD_RIGHT', 'UTURN_RIGHT', 'UTURN_LEFT'],
+    BranchType: [null, 'BRANCH_LEFT', 'BRANCH_RIGHT', 'HIGHWAY_IN_LEFT', 'HIGHWAY_IN_RIGHT', 'HIGHWAY_IN_STRAIGHT', 'HIGHWAY_OUT_LEFT', 'HIGHWAY_OUT_RIGHT',
+        'HIGHWAY_OUT_STRAIGHT', 'FORK_LEFT', 'FORK_RIGHT', 'TRIPLE_FORK_LEFT', 'TRIPLE_FORK_RIGHT', 'TRIPLE_FORK_STRAIGHT', 'OVERPASS', 'UNDERPASS'],
+    Side: [null, 'LEFT', 'RIGHT'],
+    DestinationPosition: [null, 'LEFT', 'CENTER', 'RIGHT', 'NOT_DIGITIZED'],
+    MainRoadDirection: ['LEFT', 'RIGHT'],
+    VehicleTransportationType: ['FERRY', 'CAR_TRAIN'],
+    AdditionalLaneInfo: ['NONE', 'ELLIPSIS', 'BUS', 'HOV', 'SCOOTER', 'BIKE', 'TOLL_ETC', 'TOLL_CASH', 'TOLL_ETC_CASH', 'BLOCKED'],
+    LaneMarker: [null, 'SOLID', 'DASHED'],
+    DistanceUnit: ['NONE', 'KM', 'MILE_UK', 'MILE_US', 'METER', 'YARD', 'FEET'],
+};
+/** An enum value as its catalog name, or null (not a name or number of that enum). */
+function enumOf(type, v) {
+    const names = ENUMS[type];
+    if (typeof v === 'string') return names.indexOf(v) >= 0 ? v : null;
+    if (typeof v === 'number' && v >= 0 && v < names.length && v === Math.floor(v)) return names[v];
+    return null;
+}
 
 /** The union's kind and its body: { kind, body } for { intersection: {...} } (null / undefined members ignored). */
 function unionOf(e) {
@@ -66,7 +91,7 @@ function roadOf(b) {
 /** formattedDistance as the car gives it: { dist: '450', unit: 'm' }; unit NONE (or unknown): no distance. */
 function distOf(b) {
     const f = b && b.formattedDistance;
-    const d = f ? str(f.distance) : null, u = f ? UNITS[String(f.unit).toUpperCase()] : null;
+    const d = f ? str(f.distance) : null, u = f ? UNITS[enumOf('DistanceUnit', f.unit) || ''] : null;
     if (!d || !u || !/\d/.test(d)) return { dist: null, unit: null };
     return { dist: d.trim(), unit: u };
 }
@@ -74,7 +99,8 @@ function distOf(b) {
 /** About how far, in metres, from the car's own text ('0,5' km = 500 m); null if it can't be read. */
 function metres(m) {
     if (!m || !m.dist || !m.unit) return null;
-    const v = parseFloat(String(m.dist).replace(',', '.'));
+    // "1,234" (thousands) is 1234, "1,5" (a decimal comma) is 1.5
+    const t = String(m.dist).trim(), v = parseFloat(/^\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g, '') : t.replace(',', '.'));
     return isFinite(v) ? v * UNIT_M[m.unit] : null;
 }
 
@@ -88,7 +114,6 @@ const SKIP = { pointOfInterest: 1, laneGuiding: 1, trafficEvent: 1, trafficFlowI
 /** detailedGeometry when it says something (not UNDEFINED / NONE / missing). */
 function geomOf(b) { const g = str(b.detailedGeometry); return g && g !== 'UNDEFINED' && g !== 'NONE' ? g : null; }
 
-const side = (s) => (/LEFT/.test(s) ? 'LEFT' : /RIGHT/.test(s) ? 'RIGHT' : null);
 
 /**
  * One route event (an eventsInView item, or conclusiveDart.maneuver) as Redline's object, without t / src / lanes.
@@ -102,10 +127,10 @@ function decodeEvent(e) {
     const m = { kind: null, dir: null, geom: null, exit: null, exitAngle: null, side: null, flag: null, stop: null, dist: d.dist, unit: d.unit, road: roadOf(b), unreliable: b.unreliable === true };
     switch (u.kind) {
     case 'intersection':
-        m.kind = 'turn'; m.dir = str(b.direction) || 'STRAIGHT_ON'; m.geom = geomOf(b);
+        m.kind = 'turn'; m.dir = enumOf('TurnDirection', b.direction) || 'NONE'; m.geom = geomOf(b);
         break;
     case 'branch':
-        m.kind = 'branch'; m.dir = str(b.branchType) || 'BRANCH_STRAIGHT'; m.geom = geomOf(b);
+        m.kind = 'branch'; m.dir = enumOf('BranchType', b.branchType) || 'NONE'; m.geom = geomOf(b);
         break;
     case 'roundabout': {
         m.kind = 'roundabout';
@@ -114,23 +139,24 @@ function decodeEvent(e) {
         m.exitAngle = isFinite(a) ? ((a % 360) + 360) % 360 : null;
         // driveDirection: the traffic side (LEFT: drive on the left, clockwise roundabouts; seen: LEFT on the drive, in
         // Australia, with a lane for right turns and U-turns). exitAngle: degrees clockwise from straight on (hud-nav.js)
-        m.side = str(b.driveDirection) === 'RIGHT' ? 'right' : 'left';
+        // missing or unknown: left (the only side seen on a car yet; the arrow still points at the exit's angle)
+        m.side = enumOf('Side', b.driveDirection) === 'RIGHT' ? 'right' : 'left';
         break;
     }
     case 'alongMainRoad':
-        m.kind = 'keep'; m.dir = side(str(b.mainRoadDirection) || '') || 'STRAIGHT_ON';
+        m.kind = 'keep'; m.dir = enumOf('MainRoadDirection', b.mainRoadDirection) || 'NONE';
         break;
     case 'laneChange':
-        m.kind = 'lanechange'; m.dir = side(str(b.changeSide) || '') || 'LEFT';
+        m.kind = 'lanechange'; m.dir = enumOf('Side', b.changeSide) || 'NONE';
         break;
     case 'destinationManeuver':
-        m.kind = 'destination'; m.dir = str(b.position) || 'CENTER';
+        m.kind = 'destination'; m.dir = enumOf('DestinationPosition', b.position) || 'CENTER';
         // a stopover on the way: isCheckeredFlag false (the drive's destination: true)
         m.flag = b.isCheckeredFlag !== false;
         m.stop = isFinite(Number(b.stopOverNumber)) && Number(b.stopOverNumber) > 0 ? Math.round(Number(b.stopOverNumber)) : null;
         break;
     case 'vehicleTransportation':
-        m.kind = 'transport'; m.dir = str(b.type) || 'FERRY';
+        m.kind = 'transport'; m.dir = enumOf('VehicleTransportationType', b.type) || 'FERRY';
         break;
     default:
         // a kind newer than the catalog: shown as "follow the route" (a dot) if it has a distance, logged by kind
@@ -181,21 +207,23 @@ function decodeLanes(v) {
     const lanes = row.lanes.slice(0, 12).map((l) => {
         l = isObj(l) ? l : {};
         // the arrows to take: directionsToFollow (a lane can be for straight on and right), else directionToFollow
-        const list = (a) => (Array.isArray(a) ? a : []).map(str).filter((s) => s && s !== 'NONE');
+        const list = (a) => (Array.isArray(a) ? a : []).map((x) => enumOf('TurnDirection', x)).filter((s) => s && s !== 'NONE');
         let follows = list(l.directionsToFollow);
-        const one = str(l.directionToFollow) || 'NONE';
+        const one = enumOf('TurnDirection', l.directionToFollow) || 'NONE';
         if (one !== 'NONE' && follows.indexOf(one) < 0) follows = [one].concat(follows);
         const others = list(l.otherDirections).filter((s) => follows.indexOf(s) < 0);
-        return { follow: follows[0] || 'NONE', follows: follows, others: others, hi: l.isHighlighted === true, info: str(l.additionalLaneInfo) || 'NONE' };
+        return { follow: follows[0] || 'NONE', follows: follows, others: others, hi: l.isHighlighted === true, info: enumOf('AdditionalLaneInfo', l.additionalLaneInfo) || 'NONE' };
     });
     const rec = Number(row.recommendedCarPositionLaneIndex);
     return {
         lanes: lanes,
         rec: isFinite(rec) && rec >= 0 && rec < lanes.length ? rec : null,
-        markers: Array.isArray(row.laneMarkers) ? row.laneMarkers.map(str) : [],
+        markers: Array.isArray(row.laneMarkers) ? row.laneMarkers.map((x) => enumOf('LaneMarker', x)) : [],
     };
 }
 
+/** A route for certain: BMW's guidance active, or the phone's (CarPlay / Android Auto) guiding. */
+function routeSure(r) { return r.state === 'ACTIVE' || r.state === 2 || r.carplay === true || r.aa === true; }
 /** True while some navigation runs: BMW's own, or the phone's (CarPlay / Android Auto). */
 function routingOf(r) {
     return r.state === 'ACTIVE' || r.state === 2 || r.carplay === true || r.aa === true ||
@@ -216,8 +244,17 @@ function describe(m) {
  * now() is a parameter everywhere so the tests can drive the clock.
  */
 function Tracker() {
-    const route = { state: null, provider: null, carplay: false, aa: false, since: null };
+    const route = { state: null, provider: null, carplay: false, aa: false, since: null, resetAt: -Infinity };
     let turn = null, turnAt = 0, dart = null, dartAt = 0, lanes = null, lanesAt = 0, lastErr = null;
+    // the last time a turn could be read (giving way counts from it); the current turn's identity and since when
+    let lastTurnAt = -Infinity, turnKey = '', turnSince = 0;
+    const keyOf = (m) => (m ? [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.road].join('|') : '');
+    const seen = (m, now) => {
+        if (!m) return;
+        lastTurnAt = now;
+        const k = keyOf(m);
+        if (k !== turnKey) { turnKey = k; turnSince = now; }
+    };
     const self = {
         /** A field of one of the sources (navlog.js's names): guidance / phone / carplay / androidauto. */
         field(src, name, v, now) {
@@ -225,21 +262,27 @@ function Tracker() {
             if (src === 'guidance' && name === 'guidanceState') route.state = v;
             else if (src === 'guidance' && name === 'guidingProvider') route.provider = v;
             else if (name === 'projectedGuidanceActive') route[src === 'carplay' ? 'carplay' : 'aa'] = v === true;
-            else if (name === 'conclusiveDart') { dart = decodeDart(v); dartAt = now; }
+            else if (name === 'conclusiveDart') { dart = decodeDart(v); dartAt = now; seen(dart, now); }
             else if (name === 'currentLaneGuiding') { lanes = decodeLanes(v); lanesAt = now; }
             const is = routingOf(route);
             if (is && !was) route.since = now;
-            // a route ended or changed hands: nothing old comes back
-            if (was && !is) { turn = null; dart = null; lanes = null; route.since = null; }
-            if (src === 'guidance' && name === 'guidingProvider') { turn = null; dart = null; }
+            // a route ended or changed hands: nothing old comes back, nor a reply asked for before it
+            if ((was && !is) || (src === 'guidance' && name === 'guidingProvider')) {
+                turn = null; dart = null; lanes = null; turnKey = ''; route.resetAt = now;
+                if (!is) route.since = null;
+            }
         },
-        /** A queryContent reply. */
-        events(reply, now) {
+        /**
+         * A queryContent reply; askedAt: when it was asked. One asked before the route ended or changed hands
+         * (a 900 ms query in flight) is dropped: it would put the old route's arrow back.
+         */
+        events(reply, now, askedAt) {
+            if (typeof askedAt === 'number' && askedAt <= route.resetAt) return { ok: false, error: 'from before the route changed', events: [], raw: 0, stale: true };
             const r = decodeEvents(reply);
             if (!r.ok) { lastErr = r.error; return r; }
             lastErr = null;
             turn = r.events[0] || null; turnAt = now;
-            if (r.events[0] && !routingOf(route) && route.since === null) route.since = now;
+            seen(turn, now);
             return r;
         },
         /** The query failed (timeout, refused): the old turn just goes stale. */
@@ -249,7 +292,9 @@ function Tracker() {
         current(now) {
             let m = turn && now - turnAt <= STALE_MS ? turn : dart && now - dartAt <= STALE_MS ? dart : null;
             if (!m) return null;
-            const fresh = lanes && now - lanesAt <= STALE_MS ? lanes : null;
+            // lanes: fresh, or sent since this turn began (the car may only send them when they change: standing at
+            // the lights they'd go stale otherwise); rows: [], the route ending or a new turn clear them
+            const fresh = lanes && (now - lanesAt <= STALE_MS || (lanesAt >= turnSince && keyOf(m) === turnKey)) ? lanes : null;
             m = Object.assign({}, m, { lanes: fresh, t: m === turn ? turnAt : dartAt, src: m === turn ? 'events' : 'dart' });
             return m;
         },
@@ -259,10 +304,11 @@ function Tracker() {
          */
         view(mode, now) {
             if (mode === 'off') return { show: null, giveWay: false };
+            if (!routingOf(route)) return { show: null, giveWay: false };
             const m = self.current(now);
-            const routing = routingOf(route) || !!m;
-            if (!routing) return { show: null, giveWay: false };
-            if (!m) return { show: null, giveWay: route.since !== null && now - route.since >= GIVE_WAY_MS };
+            // give way only on a route for certain, and only after GIVE_WAY_MS with no readable turn (from the route's
+            // start or the last turn, whichever is later: one reply without a turn mustn't hide the whole HUD)
+            if (!m) return { show: null, giveWay: routeSure(route) && route.since !== null && now - Math.max(route.since, lastTurnAt) >= GIVE_WAY_MS };
             if (mode === 'near') {
                 const d = metres(m);
                 if (!m.lanes && (d === null || d >= NEAR_M)) return { show: null, giveWay: false };
@@ -276,18 +322,19 @@ function Tracker() {
 
 /**
  * start(ctx, log, probe): the tracker, fed by the navigation probe (navlog.js's tap), and a line in redline-nav.log
- * for each change of what would show. Returns { view(mode), current(), routing(), stop(), status() }.
+ * for each change of what would show. Returns { tap, view(mode), routing() }.
  */
 function start(ctx, log, probe) {
     const T = Tracker();
     let lastLine = '', lastGive = false;
     const note = (s) => { if (probe && probe.write) probe.write(s); };
-    const tap = (src, name, v) => {
+    const tap = (src, name, v, askedAt) => {
         try {
             const now = Date.now();
             if (src === 'events') {
                 if (name === 'reply') {
-                    const r = T.events(v, now);
+                    const r = T.events(v, now, askedAt);
+                    if (r.stale) return;
                     if (!r.ok) note('dir: event list ' + r.error);
                     else if (r.raw && !r.events.length) note('dir: no turn in ' + kindsOf(v).join(','));
                 } else if (name === 'error') T.failed(v);
@@ -309,11 +356,8 @@ function start(ctx, log, probe) {
                 return v;
             } catch (e) { return { show: null, giveWay: false }; }
         },
-        current: () => T.current(Date.now()),
         routing: () => T.routing(),
-        stop() { if (probe && probe.stop) probe.stop(); },
-        status: () => (probe && probe.status ? probe.status() : ''),
     };
 }
 
-module.exports = { start, SKIP, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS, NEAR_M };
+module.exports = { start, SKIP, ENUMS, enumOf, routeSure, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, kindsOf, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS, NEAR_M };
