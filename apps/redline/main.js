@@ -536,21 +536,8 @@ mgu.run({
         // P: that profile as settings (Hud.profileView), so every control on the page reads and changes it
         const studio = { cue: {}, t0: Date.now(), panel: 'look', profile: 'sport', drawnAt: 0, readouts: 'engine' };
         const studioP = () => Hud.profileView(settings, studio.profile);
-        /** The preview's frame at now: what frameData would give the HUD for the scripted drive. */
-        function studioFrame(now) {
-            const o = Hud.optsFrom(studioP()), t = now - studio.t0, dm = Hud.demoAt(t);
-            const d = { rpm: dm.rpm, gear: dm.gear, stage: dm.stage, oil: dm.oil, coolant: dm.coolant };
-            const cue = Hud.shiftCue(studio.cue, dm.rpm, now, dm.shift, 6550, hud ? hud.lead() : 200, dm.gear);
-            const blink = cue.shift || cue.limiter ? Math.floor(now / 100) % 2 === 0 : true;
-            return {
-                d: d, shift: dm.shift, redline: 6550, max: 8000, blink: blink, cue: cue, down: dm.down,
-                peak: o.peak ? dm.peak : 0,
-                chip: dm.chip && o.chip !== 'off' && dm.chipAge < 1500 ? { verdict: dm.chip.verdict, age: dm.chipAge, burst: o.chip === 'burst' } : null,
-                shake: o.shake && cue.limiter ? [[2, 1], [-2, -1], [1, -1], [-1, 1]][Math.floor(now / 100) % 4] : null,
-                readouts: Hud.readoutsFor(d, dm.gearbox, dm.boost, { rpm: dm.shift, cold: false }, o, dm),
-                mode: o.mode ? dm.mode : null, opts: o,
-            };
-        }
+        /** The preview's frame at now: the HUD's own demo frame (hud.js demoFrame), the same as on the glass. */
+        const studioFrame = (now) => Hud.demoFrame(now - studio.t0, Hud.optsFrom(studioP()), studio.cue, hud ? hud.lead() : 200, now);
         /** A small still of a layout for its tile (cached per look and the settings that change it). */
         function lookLayer(style) {
             const P = studioP(), o = Hud.optsFrom(P);

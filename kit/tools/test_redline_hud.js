@@ -211,6 +211,22 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     if (!(d.rpm >= 0 && d.rpm <= 8000 && d.gear >= 1 && d.gear <= 8 && d.pedal >= 0 && d.pedal <= 100)) { ok(false, 'demo out of range at ' + t + ': ' + JSON.stringify(d)); break; }
 }
 
+/* ---------- one helper writes the learned files whole (files.js writeAtomic), no copies of it ---------- */
+{
+    const { writeAtomic } = require(path.join(APP, 'files'));
+    const os = require('os'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-files-')), f = path.join(dir, 'x.json');
+    writeAtomic(f, '{"a":1}');
+    ok(fs.readFileSync(f, 'utf8') === '{"a":1}' && !fs.existsSync(f + '.tmp'), 'writeAtomic: the file written, no temp file left');
+    const said = [];
+    writeAtomic(path.join(dir, 'no', 'y.json'), 'x', { warn: (m) => said.push(m) }, 'limiter save');
+    ok(said.length === 1 && /^limiter save: /.test(said[0]), 'writeAtomic: a failure logged, not thrown (' + said[0] + ')');
+    fs.unlinkSync(f); fs.rmdirSync(dir);
+    fs.readdirSync(APP).filter((n) => /\.js$/.test(n) && n !== 'files.js').forEach((n) => {
+        const s = fs.readFileSync(path.join(APP, n), 'utf8');
+        ok(!/writeFileSync\([^;]*\.tmp/.test(s) && !/function writeAtomic/.test(s), n + ': its own temp-file write (use files.js writeAtomic)');
+    });
+}
+
 /* ---------- the HUD looks page has every HUD setting (Settings shows them only with "All HUD options here") ---------- */
 {
     const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
