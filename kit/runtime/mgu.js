@@ -81,6 +81,13 @@ process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught: ' + (e && e
 process.on('exit', (code) => fileLog(code ? 'FATAL' : 'INFO', 'exit code ' + code + ' rss=' + Math.round(process.memoryUsage().rss / 1048576) + 'MB'));
 
 /* ---------------- settings (persisted in data/settings.json) ---------------- */
+/** Write a file whole or not at all: a temp file renamed over it (a reader or a power cut never sees half). */
+function writeWhole(file, text) {
+    const tmp = file + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+}
+
 class Settings {
     constructor(schema) {
         this.schema = schema || [];
@@ -100,7 +107,7 @@ class Settings {
             this.values._themeV = 2;            // (a fresh install has the default: the mark is saved with its first setting)
             if (saved) {
                 this.values.theme = th.default;
-                try { fs.writeFileSync(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
+                try { writeWhole(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
             }
         }
         // a setting with "reset": n in app.json goes back to its default once when n changes
@@ -110,12 +117,12 @@ class Settings {
             const mark = '_reset_' + it.key;
             if (it.reset && this.values[mark] !== it.reset) { this.values[it.key] = it.default; this.values[mark] = it.reset; changed = true; }
         }
-        if (changed && fs.existsSync(this.file)) try { fs.writeFileSync(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
+        if (changed && fs.existsSync(this.file)) try { writeWhole(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { /* read-only */ }
     }
     get(key) { return this.values[key]; }
     set(key, value) {
         this.values[key] = value;
-        try { fs.writeFileSync(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { log.warn('settings save: ' + e); }
+        try { writeWhole(this.file, JSON.stringify(this.values, null, 1)); } catch (e) { log.warn('settings save: ' + e); }
         this.listeners.forEach((fn) => { try { fn(key, value); } catch (e) { log.error(e); } });
     }
     onChange(fn) { this.listeners.push(fn); }

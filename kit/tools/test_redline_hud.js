@@ -48,7 +48,7 @@ ok(optsDefault.bar === true && optsDefault.rpm === true && optsDefault.lights ==
 ok(optsDefault.torque === false && optsDefault.power === false && optsDefault.g === false && optsDefault.throttle === false && optsDefault.outside === false, 'defaults: the extra readouts are off');
 
 /* ---------- drawing: every layout, palette and switch, both layers ---------- */
-const LAYOUTS = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector'];
+const LAYOUTS = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'];
 const lit = (cv) => { let n = 0; for (let i = 3; i < cv.d.length; i += 4) if (cv.d[i]) n++; return n; };
 function frame(o, extra) {
     return Object.assign({
@@ -65,8 +65,9 @@ LAYOUTS.forEach((style) => ['colour', 'amber', 'ice'].forEach((palette) => [true
         catch (e) { ok(false, style + '/' + palette + '/' + layer + ' threw: ' + e.message); }
     });
 })));
-// the Rev bar switch removes the bar (minimal has none to remove)
-LAYOUTS.filter((s) => s !== 'minimal').forEach((style) => {
+// the Rev bar switch removes the bar (minimal has none to remove; on ramp and dial the band is the shift
+// lights too, so it stays while they are on)
+LAYOUTS.filter((s) => ['minimal', 'ramp', 'dial'].indexOf(s) < 0).forEach((style) => {
     const px = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return lit(cv); };
     ok(px(false) < px(true) * 0.6, style + ': Rev bar off still draws most of the bar');
 });
@@ -171,5 +172,56 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     if (!(d.rpm >= 0 && d.rpm <= 8000 && d.gear >= 1 && d.gear <= 8 && d.pedal >= 0 && d.pedal <= 100)) { ok(false, 'demo out of range at ' + t + ': ' + JSON.stringify(d)); break; }
 }
 
-console.log(fails ? fails + ' of ' + checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + checks + ').');
-process.exit(fails ? 1 : 0);
+/* ---------- 1.16: M layouts, gear font, placement, the reaction time, the test pattern ---------- */
+{
+    // the M layouts: every chip moment, the flash and the limiter, 0 to 4 readouts, clearer labels, both layers
+    const items = [{ label: 'BOOST', value: '1.4', tone: 'text' }, { label: 'OIL', value: '104°', tone: 'hot' }, { label: 'WATER', value: '62°', tone: 'cold' }, { label: 'HP', value: '312', tone: 'text' }];
+    Hud.M_STYLES.forEach((style) => [0, 150, 400, 1000, 1400].forEach((age) => [0, 1, 4].forEach((n) => [false, true].forEach((cl) => ['m', 'f1', 'mono'].forEach((ls) => {
+        const o = Object.assign({}, optsDefault, { style: style, clearLabels: cl, lightStyle: ls, gearFont: 'gear_barlow' });
+        ['bg', 'fg', 'both'].forEach((layer) => {
+            const cv = new Canvas(Draw.IW, Draw.IH);
+            try { Draw.drawLayer(cv, frame(o, { readouts: items.slice(0, n), chip: age ? { verdict: 'SPOT ON', age: age, burst: true } : null, cue: { from: 4050, at: 5550, shift: age === 400, limiter: age === 1000 } }), layer); }
+            catch (e) { ok(false, style + ' age ' + age + ' readouts ' + n + ' ' + layer + ' threw: ' + e.message); }
+        });
+    })))));
+    // the static layer of an M layout doesn't change with the rpm (it is cached by bgKey, which has no rpm)
+    Hud.M_STYLES.forEach((style) => {
+        const o = Object.assign({}, optsDefault, { style: style }), a = new Canvas(Draw.IW, Draw.IH), b = new Canvas(Draw.IW, Draw.IH);
+        Draw.drawLayer(a, frame(o, { d: { rpm: 2000, gear: 2 }, cue: { from: 3000, at: 4000, shift: false, limiter: false } }), 'bg');
+        Draw.drawLayer(b, frame(o, { d: { rpm: 6000, gear: 4 }, cue: { from: 5000, at: 6000, shift: false, limiter: false } }), 'bg');
+        ok(Buffer.compare(Buffer.from(a.d), Buffer.from(b.d)) === 0, style + ': the static layer depends on something bgKey lacks');
+    });
+    // gear font: Auto is Barlow on the M layouts only; a missing atlas falls back to Ubuntu
+    ok(Hud.gearFontOf('auto', 'arc') === 'gear_barlow' && Hud.gearFontOf('auto', 'standard') === 'gear' && Hud.gearFontOf(undefined, 'dial') === 'gear_barlow', 'gear font: Auto');
+    ok(Hud.gearFontOf('ubuntu', 'ramp') === 'gear' && Hud.gearFontOf('barlow', 'wings') === 'gear_barlow', 'gear font: chosen');
+    ok(Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })).gearFont === 'gear_barlow' && Hud.optsFrom(settingsOf({ hudStyle: 'bogus' })).style === 'standard', 'optsFrom: M styles kept, unknown ones standard');
+    ok(Draw.gearFont({ gearFont: 'gear_barlow' }) === 'gear_barlow' && Draw.gearFont({ gearFont: 'no_such_font' }) === 'gear' && Draw.gearFont({}) === 'gear', 'gear font falls back to Ubuntu');
+    // placement and the windshield's window
+    const at = (o) => Hud.placeOf(settingsOf(o));
+    ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');
+    ok(Hud.outsideGlass(at({ hudSize: 140 })).right === 75 && Hud.outsideGlass(at({ hudY: -60 })).top === 20, 'place: off the glass, per side');
+    // reaction time: a slow climb takes the lead as asked; a fast one only the 800 rpm it really had
+    ok(Hud.reactionMs({ rate: 1000, target: 6000, lead: 300 }, 6000) === 300, 'reaction: on time at 1000 rpm/s');
+    ok(Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6000) === 200 && Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6200) === 250, 'reaction: capped lead on a fast climb');
+    ok(Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 5000) === 0 && Hud.reactionMs({ rate: 500, target: 6000, lead: 300 }, 6500) === 600, 'reaction: clamped 0..600');
+    // the test pattern at another size: the tach is blended over it (dim parts stay dim, empty stays empty)
+    const cv = new Canvas(600, 300), bgc = [40, 40, 40, 255];
+    cv.clear(bgc);
+    Draw.drawLayer(Draw.scaled(cv, 1.2, 10, 10), frame(Object.assign({}, optsDefault, { dim: true }), { d: { rpm: 3000, gear: 3 }, chip: null, readouts: [], peak: 0, down: 0, cue: { from: 4400, at: 6200, shift: false, limiter: false } }));
+    const px = (x, y) => Array.from(cv.d.slice((y * 600 + x) * 4, (y * 600 + x) * 4 + 4));
+    const dim = px(10 + Math.round(390 * 1.2), 10 + Math.round(9 * 1.2)), empty = px(10 + Math.round(120 * 1.2), 10 + Math.round(110 * 1.2));
+    ok(JSON.stringify(empty) === JSON.stringify(bgc) && dim[0] < 120 && dim[1] < 120 && dim[3] === 255 && (dim[0] !== 40 || dim[1] !== 40), 'test pattern: scaled tach blends (dim ' + dim + ', empty ' + empty + ')');
+    // the gearbox: a temperature the gearbox stopped giving is not served as fresh
+    const GearboxTemp = require(path.join(APP, 'gearbox'));
+    const g = new GearboxTemp({ log: { info() {}, warn() {} } }), replies = [70, null, null];
+    g.rd = { value: () => Promise.resolve(replies.length ? replies.shift() : null), raws: {}, key: () => '', pick: {} };
+    const realNow = Date.now; let now = 1e6; Date.now = () => now;
+    const poll = () => { g.busy = false; g._poll(); return new Promise((res) => setImmediate(res)); };
+    poll().then(() => { ok(g.value() === 70, 'gearbox: a fresh reading is served');
+        now += 15000; return poll(); }).then(() => { now += 6000; return poll(); }).then(() => {
+        ok(g.value() !== 70, 'gearbox: 21 s after its last reading (two failed polls since) the old 70 is not served');
+        Date.now = realNow;
+        console.log(fails ? fails + ' of ' + checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + checks + ').');
+        process.exit(fails ? 1 : 0);
+    });
+}

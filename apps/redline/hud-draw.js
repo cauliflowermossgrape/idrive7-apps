@@ -15,8 +15,14 @@
  *               and rpm digits
  *     vfd       the same as a teal vacuum-fluorescent display, unlit segments always faintly lit
  *     vector    the standard layout in outline only (rings, outlined segments, outlined digits)
+ *     arc       after the F80/F82 M3/M4's HUD: 8 curved lights over a curved band, the gear under it
+ *     ramp      after the G80/G82 M3/M4's: a band climbing then flat, fields going yellow then red
+ *     dial      after the E60 M5's: a 3/4 dial round the gear, green / orange / red
+ *               (these three: hud-m.js, in the originals' colours)
  *   Palettes (setting "hudPalette"): colour (green / yellow / red), amber (night), ice (white / blue);
- *   vfd has its own.
+ *   vfd and the M layouts have their own.
+ *   Gear font (setting "hudGearFont"): Ubuntu, or Barlow (Auto: Barlow on the M layouts); a font whose
+ *   atlas is missing falls back to Ubuntu.
  *   Effects: the shift grade as a "burst" (pops, a ring grows, fades), the redline shake (on the
  *   limiter the whole image jitters a few px).
  *
@@ -25,6 +31,8 @@
  * Everything here draws on canvas.js Canvas; drawDown() also on the screen's Recorder (quads only).
  */
 const { Canvas, withAlpha } = require('./kit/canvas');
+const fonts = require('./kit/fonts');
+const M = require('./hud-m');
 
 const IW = 400, IH = 130;
 const TEMP_X = 150;          // the readouts start here: BMW draws its assistance graphic under the left of the bar
@@ -82,6 +90,8 @@ function gearText(d) {
 }
 
 const RACE_BLUE = '#2a7dff';
+/** The gear's font family: the option's, or Ubuntu's ('gear') when that atlas isn't in the app. */
+const gearFont = (o) => (o.gearFont && o.gearFont !== 'gear' && fonts.has(o.gearFont) ? o.gearFont : 'gear');
 /**
  * A shift light's colour at f (0 first .. 1 last) for the app's "Shift light style" (setting "lights"),
  * as the app's own lights: m green / yellow / red, f1 (Race) green / red / blue, mono one colour.
@@ -248,6 +258,10 @@ function lightsRow(x, y, w, d) {
  */
 function drawLayer(cv, f, layer) {
     const o = f.opts, d = f.d, P = palette(o.style === 'vfd' ? 'vfd' : o.palette), cue = f.cue;
+    if (o.style === 'arc' || o.style === 'ramp' || o.style === 'dial') {
+        M.drawM(cv, f, layer, { P: P, gearText: gearText, drawDown: drawDown, lightCol: lightCol, RACE_BLUE: RACE_BLUE, gearFont: gearFont });
+        return;
+    }
     // the gearbox mode (D / S / M) as a small letter by the gear
     if (layer !== 'bg' && f.mode && o.gear) {
         const at = o.style === 'wings' ? [IW / 2 + 34, 24] : o.style === 'digital' || o.style === 'vfd' ? [58, 22] : [56, 24];
@@ -285,7 +299,7 @@ function drawLayer(cv, f, layer) {
         }
         if (o.bar !== false) drawBar(cv, 0, 84, IW, 40, s);
         if (fg) {
-            if (o.gear) cv.text(gearText(d), IW / 2, 70, 72, gearCol, { align: 'center', font: 'gear' });
+            if (o.gear) cv.text(gearText(d), IW / 2, 70, 72, gearCol, { align: 'center', font: gearFont(o) });
             drawDown(cv, IW / 2 + 52, 34, f.down || 0, 1, P.arrow);
         }
         return;
@@ -298,7 +312,7 @@ function drawLayer(cv, f, layer) {
         if (o.gear) seg7(cv, gearText(d).slice(0, 1), 8, 12, 44, 72, 8, gearCol, withAlpha(P.text, 0.12), true, layer);
         if (fg) drawDown(cv, 30, 92, f.down || 0, 1, P.arrow);
     } else if (fg && o.gear) {
-        cv.text(gearText(d), 30, 78, 72, gearCol, { align: 'center', font: 'gear' });
+        cv.text(gearText(d), 30, 78, 72, gearCol, { align: 'center', font: gearFont(o) });
         drawDown(cv, 30, 90, f.down || 0, 1, P.arrow);
     }
     if (o.style === 'minimal') {
@@ -364,4 +378,4 @@ function scaled(r, k, ox, oy) {
     };
 }
 
-module.exports = { scaled, lightCol, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };
+module.exports = { scaled, lightCol, gearFont, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };

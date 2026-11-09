@@ -125,12 +125,58 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
 
 const numOf = (settings, k, d) => { const v = Number(settings.get(k)); return isFinite(v) ? v : d; };
 
+/**
+ * The driver's reaction time from one hand upshift: flash = { rate (rpm/s), target (rpm), lead (ms asked
+ * for) }, rpm: where the shift came. The flash came at most 800 rpm early (shiftCue caps the lead), so on a
+ * fast climb it had less lead than asked for: the reaction is the lead it really had plus how late the shift
+ * was (0..600 ms).
+ */
+function reactionMs(flash, rpm) {
+    const effLead = Math.min(flash.lead, 800 / flash.rate * 1000);
+    return clamp(effLead + (rpm - flash.target) / flash.rate * 1000, 0, 600);
+}
+
+/** Where the tach image shows in the HUD's scene (800x480), from the size and position settings. */
+function placeOf(settings) {
+    const k = clamp(numOf(settings, 'hudSize', 100), 50, 140) / 100, w = Math.round(IW * k), h = Math.round(IH * k);
+    const x = BASE_X + Math.round((IW - w) / 2) + clamp(numOf(settings, 'hudX', 0), -120, 120);
+    const y = BASE_Y + clamp(numOf(settings, 'hudY', 0), -120, 120);
+    return { x: clamp(x, 0, SCENE_W - w), y: clamp(y, 0, SCENE_H - h), w: w, h: h };
+}
+
+/**
+ * The part of the HUD's 800x480 scene seen through the windshield, measured from car photos by bimmer-lab
+ * (github.com/bimmer-lab/apps shared/visible.js, MIT, 2026-11-05; it moves with the driver's eye height).
+ */
+const HUD_WINDOW = { x: 120, y: 100, w: 485, h: 278 };
+/** How far a place (placeOf) reaches outside HUD_WINDOW, in px per side ({} when it is all visible). */
+function outsideGlass(r) {
+    const W = HUD_WINDOW, o = {};
+    if (r.x < W.x) o.left = W.x - r.x;
+    if (r.x + r.w > W.x + W.w) o.right = r.x + r.w - (W.x + W.w);
+    if (r.y < W.y) o.top = W.y - r.y;
+    if (r.y + r.h > W.y + W.h) o.bottom = r.y + r.h - (W.y + W.h);
+    return o;
+}
+
+/** The gear's font family for the setting "hudGearFont" (auto / ubuntu / barlow) on a layout. */
+const M_STYLES = ['arc', 'ramp', 'dial'];
+function gearFontOf(choice, style) {
+    if (choice === 'barlow') return 'gear_barlow';
+    if (choice === 'ubuntu') return 'gear';
+    return M_STYLES.indexOf(style) >= 0 ? 'gear_barlow' : 'gear';
+}
+
 /** The HUD's drawing options from the settings (also used by the HUD looks page). */
 function optsFrom(settings) {
     const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
     const layout = settings.get('hudStyle');
+    const style = ['minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'].indexOf(layout) >= 0 ? layout : 'standard';
     return {
-        style: ['minimal', 'wings', 'digital', 'vfd', 'vector'].indexOf(layout) >= 0 ? layout : 'standard',
+        style: style,
+        // the gear's font: Auto is Barlow on the BMW-M-inspired layouts (arc, ramp, dial), Ubuntu on the rest
+        // (hud-draw falls back to Ubuntu if a font's atlas is missing)
+        gearFont: gearFontOf(settings.get('hudGearFont'), style),
         palette: settings.get('hudPalette') || 'colour',
         // readouts, each on its own switch
         gear: on('hudShowGear'), rpm: on('hudShowRpm'), bar: on('hudShowBar'), boost: on('hudBoost'), limit: on('hudShowLimit'),
@@ -395,13 +441,7 @@ function start(ctx, src) {
     const num = (k, dflt) => { const v = Number(settings.get(k)); return isFinite(v) ? v : dflt; };
     const leadMs = () => { const v = num('hudLead', -1); return v < 0 ? learnedLead : v; };
 
-    /** Where the tach image shows in the scene, from the size and position settings. */
-    function rect() {
-        const k = clamp(num('hudSize', 100), 50, 140) / 100, w = Math.round(IW * k), h = Math.round(IH * k);
-        const x = BASE_X + Math.round((IW - w) / 2) + clamp(num('hudX', 0), -120, 120);
-        const y = BASE_Y + clamp(num('hudY', 0), -120, 120);
-        return { x: clamp(x, 0, SCENE_W - w), y: clamp(y, 0, SCENE_H - h), w: w, h: h };
-    }
+    const rect = () => placeOf(settings);
 
     const connect = safe('connect', () => {
         if (cr) return;
@@ -441,11 +481,11 @@ function start(ctx, src) {
         if (!layer) { log.warn('hud: test layer refused by the client'); return; }
         const cv = new Canvas(SCENE_W, SCENE_H);
         drawTestPattern(cv);
-        const t = new Canvas(IW, IH), r = rect();
-        drawHud(t, sample());
-        // where the size and position settings put the tach (scaled as the layer would be)
-        if (r.w === IW && r.h === IH) cv.blit(t, r.x, r.y);
-        else { const s = new Canvas(r.w, r.h); s.drawImage(t.d, IW, IH, 0, 0, r.w, r.h); cv.blit(s, r.x, r.y); }
+        const r = rect();
+        // where the size and position settings put the tach: drawn there at that size, blended over the pattern
+        // (a scaled copy of the 400x130 picture would lose its see-through and dim parts: drawImage is opaque)
+        if (r.w === IW && r.h === IH) { const t = new Canvas(IW, IH); drawHud(t, sample()); cv.blit(t, r.x, r.y); }
+        else Draw.drawLayer(Draw.scaled(cv, r.w / IW, r.x, r.y), sample());
         if (!cr.pixels(layer, null, asBuffer(cv.d))) log.warn('hud: test pattern pixels refused');
         shown = 'test';
         log.info('hud: test pattern up');
@@ -628,7 +668,7 @@ function start(ctx, src) {
             Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25),
             f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
-            o.style, o.palette, o.gear, o.bar, o.lights, o.gt3, o.dim, o.lightStyle].join('|');
+            o.style, o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, o.gearFont].join('|');
     }
 
     /** The tach's image layer at the current place and size, with fresh canvases (the next frame is sent whole). */
@@ -712,7 +752,7 @@ function start(ctx, src) {
         const m = src.mode ? src.mode() : null;
         if (m === 'D' || m === 'S') return;
         const lateMs = (rpm - f.target) / f.rate * 1000;
-        const ideal = clamp(f.lead + lateMs, 0, 600);
+        const ideal = reactionMs(f, rpm);
         const before = learnedLead;
         learnedLead = Math.round(clamp(learnedLead + (ideal - learnedLead) * 0.3, 0, 600) / 10) * 10;
         leadShifts++;
@@ -757,4 +797,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
 }
 
-module.exports = { start, optsFrom, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, optsFrom, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

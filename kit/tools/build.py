@@ -481,6 +481,12 @@ def build(app_id, language='en', preview_only=False):
             shutil.copytree(p, os.path.join(src, 'javascript', 'kit', f))
         else:
             shutil.copy(p, os.path.join(src, 'javascript', 'kit', f))
+    if app_id != 'redline':
+        # Barlow is only the gear on Redline's HUD layouts: other apps don't carry its atlas
+        for name in ('gear_barlow.json', 'OFL-Barlow.txt'):
+            p = os.path.join(src, 'javascript', 'kit', 'fonts', name)
+            if os.path.exists(p):
+                os.remove(p)
     if language != 'ru':
         for name in ('ru.json', 'ru.tsv'):
             p = os.path.join(src, 'javascript', 'kit', 'locales', name)

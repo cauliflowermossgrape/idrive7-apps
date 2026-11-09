@@ -504,10 +504,12 @@ mgu.run({
          * Left: the HUD at twice its size playing the scripted drive (hud.js demoAt: count-in, flash, a
          * shift graded in turn spot on / early / late, the limiter, braking with the downshift cue),
          * drawn by the HUD's own code with the current settings, so a change shows in it at once.
-         * Right: the six layouts, small; tap one to use it. Under them: colours, shift lights, the grade,
+         * Right: the nine layouts, small; tap one to use it. Under them: colours, shift lights, the grade,
          * peak and shake, each a row of buttons. "Play on HUD" runs the same drive on the glass. */
         const LOOKS = [['standard', 'Standard'], ['minimal', 'Minimal'], ['wings', 'Split wings'],
-            ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade']];
+            ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade'],
+            ['arc', 'Arc (F80 M3/M4)'], ['ramp', 'Ramp (G80 M3/M4)'], ['dial', 'Dial (E60 M5)']];
+        const TILE_K = 0.45;            // the tiles' thumbnails: the HUD at 45 %
         const studio = { cue: {}, t0: Date.now(), panel: 'readouts' };
         /** The preview's frame at now: what frameData would give the HUD for the scripted drive. */
         function studioFrame(now) {
@@ -527,13 +529,15 @@ mgu.run({
         /** A small still of a layout for its tile (cached per look and the settings that change it). */
         function lookLayer(style) {
             const o = Hud.optsFrom(settings);
-            const key = ['hudlook2', style, o.palette, o.lights, o.gt3, o.dim, o.lightStyle, o.gear, o.peak, o.bar, o.rpm].join('|');
-            return G.layer(key, HudDraw.IW / 2, HudDraw.IH / 2, (r) => {
-                r.fillRect(0, 0, HudDraw.IW / 2, HudDraw.IH / 2, '#000000');
-                HudDraw.drawLayer(HudDraw.scaled(r, 0.5, 0, 0), {
+            const tw = Math.round(HudDraw.IW * TILE_K), th = Math.round(HudDraw.IH * TILE_K);
+            const font = Hud.gearFontOf(settings.get('hudGearFont'), style);
+            const key = ['hudlook3', style, o.palette, o.lights, o.gt3, o.dim, o.lightStyle, o.gear, o.peak, o.bar, o.rpm, font].join('|');
+            return G.layer(key, tw, th, (r) => {
+                r.fillRect(0, 0, tw, th, '#000000');
+                HudDraw.drawLayer(HudDraw.scaled(r, TILE_K, 0, 0), {
                     d: { rpm: 5000, gear: 3, stage: 'D' }, shift: 5550, redline: 6550, max: 8000, blink: true, down: 0, peak: o.peak ? 6100 : 0, chip: null,
                     cue: { from: 4050, at: 5550, shift: false, limiter: false }, readouts: [{ label: 'BOOST', value: '1.2', tone: 'text' }],
-                    opts: Object.assign({}, o, { style: style }),
+                    opts: Object.assign({}, o, { style: style, gearFont: font }),
                 });
             });
         }
@@ -564,14 +568,13 @@ mgu.run({
             if (hud && (playing || (hud.status() === 'HUD: on' && still))) {
                 G.button(cv, t, 600, 316 + 8, 220, 40, playing ? 'Stop' : 'Play on HUD', () => { if (playing) hud.stopPlay(); else if (!(car.data().speed > 3)) hud.play(); return render(); }, { key: 'studio_play', primary: !playing });
             } else if (hud && hud.status() === 'HUD: on') cv.text('Stop the car to play it on the HUD', 820, 344, 16, t.dim, { align: 'right' });
-            // the six layouts, small, to tap
+            // the nine layouts, small, to tap: three by three, the name under each
             LOOKS.forEach((l, i) => {
-                const x = 864 + (i % 2) * 360, y = 48 + Math.floor(i / 2) * 94, w = 348, h = 86, sel = l[0] === o.style;
+                const x = 864 + (i % 3) * 242, y = 48 + Math.floor(i / 3) * 94, w = 228, h = 88, sel = l[0] === o.style;
                 cv.roundRect(x, y, w, h, 10, withAlpha('#ffffff', 0.05));
                 if (sel) cv.strokeRoundRect(x, y, w, h, 10, 3, t.accent);
-                cv.blit(lookLayer(l[0]), x + 8, y + 10);
-                cv.text(l[1], x + 218, y + 38, 18, sel ? t.text : t.dim, { font: 'bold' });
-                if (sel) cv.text('in use', x + 218, y + 62, 16, t.accent, { font: 'bold' });
+                cv.blit(lookLayer(l[0]), x + Math.round((w - HudDraw.IW * TILE_K) / 2), y + 4);
+                cv.text(l[1], x + w / 2, y + 80, 15, sel ? t.accent : t.dim, { align: 'center', font: 'bold' });
                 cv.target(x, y, w, h, () => { settings.set('hudStyle', l[0]); return render(); }, 'look_' + l[0]);
             });
             // the editor under the preview: tabs, then that panel's buttons
@@ -589,9 +592,16 @@ mgu.run({
             });
             const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.oil, o.coolant, o.gearbox, o.outside].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
-            cv.text(over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show (temperatures only when cold or hot)' : STUDIO_HINT[studio.panel], 1576, 388, 16, over ? t.warn : t.dim, { align: 'right' });
+            // PLACE: say when the size or position puts part of the tach off the windshield's window
+            const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(settings)) : {};
+            const offText = Object.keys(off).map((k) => k + ' ' + off[k] + ' px').join(', ');
+            const hint = over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show (temperatures only when cold or hot)'
+                : offText ? 'Partly outside the windshield (' + offText + '), as measured on one car: check it from your seat' : STUDIO_HINT[studio.panel];
+            cv.text(hint, 1576, 388, 16, over || offText ? t.warn : t.dim, { align: 'right' });
             if (studio.panel === 'look') {
-                choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
+                // the M layouts keep the originals' colours: their row picks the gear's font instead
+                if (Hud.M_STYLES.indexOf(o.style) >= 0) choiceRow(cv, t, 414, 'GEAR FONT', 'hudGearFont', settings.get('hudGearFont') || 'auto', [['auto', 'Auto (Barlow)'], ['ubuntu', 'Ubuntu'], ['barlow', 'Barlow']]);
+                else choiceRow(cv, t, 414, 'COLOURS', 'hudPalette', o.palette, [['colour', 'Colour'], ['amber', 'Night amber'], ['ice', 'Ice white']], o.style === 'vfd');
                 // temperatures only while cold, warming or hot (invisible at operating temperature), or always
                 // what the HUD does in Comfort and Eco Pro (Sport always shows all of it)
                 choiceRow(cv, t, 414, 'COMFORT', 'hudComfort', settings.get('hudComfort') || 'all', [['all', 'Show all'], ['lights', 'Lights + gear'], ['hide', 'Hide']], false, 720);

@@ -23,7 +23,8 @@ const POLL_MS = 5000, FAIL_RETRY_MS = 60000, STALE_MS = 20000;
 class GearboxTemp {
     constructor(ctx) {
         this.ctx = ctx; this.log = ctx.log;
-        this.egs = null; this.egsT = 0; this.egsFails = 0;
+        // egsT: when EGS last gave a temperature (its age); triedT: when it was last asked (the retry pace)
+        this.egs = null; this.egsT = 0; this.triedT = 0; this.egsFails = 0;
         this.bds = null; this.bdsFirst = null; this.bdsMoved = false;
         this.link = null; this.rd = null; this.timer = null; this.busy = false; this.source = '';
     }
@@ -63,11 +64,11 @@ class GearboxTemp {
 
     _poll() {
         if (this.busy || !this.rd) return;
-        if (this.egsFails >= 3 && Date.now() - this.egsT < FAIL_RETRY_MS) return;    // EGS silent: try again each minute
+        if (this.egsFails >= 3 && Date.now() - this.triedT < FAIL_RETRY_MS) return;    // EGS silent: try again each minute
         this.busy = true;
         if (this.egsFails >= 3 && this.link && this.link.wake) this.link.wake(0x18);   // retried each minute: may have been asleep
         Promise.resolve().then(() => this.rd.value('egs', EGS)).then((v) => {
-            this.egsT = Date.now();
+            this.triedT = Date.now();
             if (v === null) {
                 this.egsFails++;
                 if (this.egsFails === 3) {
@@ -76,9 +77,9 @@ class GearboxTemp {
                 }
             } else {
                 if (this.egsFails || this.egs === null) this.log.info('gearbox: EGS ' + EGS[this.rd.pick.egs || 0].did + ' = ' + v + ' C');
-                this.egs = v; this.egsFails = 0;
+                this.egs = v; this.egsT = this.triedT; this.egsFails = 0;
             }
-        }).catch((e) => { this.egsFails++; this.log.warn('gearbox: ' + (e && e.message || e)); })
+        }).catch((e) => { this.triedT = Date.now(); this.egsFails++; this.log.warn('gearbox: ' + (e && e.message || e)); })
             .then(() => { this.busy = false; });
     }
 

@@ -69,6 +69,29 @@ where it cannot be written, nothing is handed back. Cluster functions' side: The
 - **Vector arcade:** the standard layout drawn in outlines only: rings, outlined segments and an
   outlined 7-segment gear.
 
+Three layouts after BMW M's own head-up displays, in their colours (*Colours* doesn't change them):
+
+- **Arc** (after the F80 / F82 M3 and M4): 8 curved shift lights (6 amber, 2 red; *Shift light
+  style* Race or one colour uses those instead) over a curved band with a white rim and a tick per
+  1000 rpm, ending in a yellow then red zone; the gear big under it. Readouts: the first beside the
+  gear, two more at the far right, a fourth high on the left.
+- **Ramp** (after the G80 / G82 M3 and M4): the band climbs from the bottom left, then runs flat
+  along the top in slanted fields, with a 0–8 scale under it. The fields fill warm white, turn
+  yellow as the shift nears and red at it; a red strip marks the redline. The gear sits over a line
+  with the first readout under it (where the car shows the speed) and the others listed on the right.
+- **Dial** (after the E60 M5): a ¾ dial round the gear: yellow-green, then an orange advance
+  warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
+  dial's orange; the first readout bottom right (where the car shows the speed).
+
+On all three the shift grade takes the first readout's place; with *Burst* a ring grows from the gear
+(or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
+on the limiter, as in the cars.
+
+**Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
+Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
+font closest to the BMW Type digits these HUDs use; BMW's own font can't be shipped. A font that is
+missing falls back to Ubuntu.
+
 **Palettes** (*Colours*): Colour (green / yellow / red), Night amber, Ice white.
 
 **Choosing a look: the HUD looks tab.**
@@ -77,7 +100,8 @@ where it cannot be written, nothing is handed back. Cluster functions' side: The
   It counts in, flashes, shifts (graded spot on, early or late in turn), hits the limiter, then
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
-- **Picking:** on the right, the six layouts; tap one to use it.
+- **Picking:** on the right, the nine layouts; tap one to use it. On Arc, Ramp and Dial the Look tab's
+  *Colours* row picks the *Gear font* instead.
 - **Editing:** under the preview, five tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
   - **Look:** colours, what the HUD does in Comfort / Eco Pro, and temperatures hidden at
@@ -156,8 +180,9 @@ layout and colours by picture.
 
 | Setting | Values |
 |---|---|
-| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade |
-| Colours | Colour / Night amber / Ice white (not for VFD, which has its own) |
+| Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
+| Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
+| Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
 | Peak marker | on / off |
@@ -189,7 +214,7 @@ At most four readouts fit the row; past that the last one gives way.
 | Setting | Values |
 |---|---|
 | Size | 70–130 %, scaled about the top centre |
-| Position left / right, up / down | px; moves the layer only |
+| Position left / right, up / down | px; moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
 ### What it does with BMW's content
@@ -285,8 +310,10 @@ log lists the raw values (`gearbox programme: …`), so the detection can be che
 
 With *Shift lights early by* on **Auto**, each upshift after a flash you could see (HUD shown,
 lights on) checks how late it came: (shift rpm − shift point) ÷ climb rate. The lead then moves
-30 % of the way to what would have hit the point, within 0–600 ms. A shift that comes more than
-700 ms after the revs started falling (you lifted first) is not used.
+30 % of the way to what would have hit the point, within 0–600 ms. On a fast climb the flash can
+come at most 800 rpm early, so the lead it really had is used (not the one asked for); otherwise
+quick shifts in 1st and 2nd would push the lead up and make higher gears flash too early. A shift that
+comes more than 700 ms after the revs started falling (you lifted first) is not used.
 
 ## Downshift cue
 
