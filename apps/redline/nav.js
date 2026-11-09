@@ -196,7 +196,7 @@ function decodeEvent(e) {
  * view (the turn isn't known; not the same as "no turns ahead").
  */
 function decodeEvents(reply) {
-    const out = { ok: false, error: null, events: [], raw: 0 };
+    const out = { ok: false, error: null, events: [], raw: 0, uids: [] };
     if (!isObj(reply)) { out.error = 'no reply'; return out; }
     const err = reply.GuidanceEventListError;
     if (err !== undefined && err !== 'NO_ERROR' && err !== 0) { out.error = String(err); return out; }
@@ -204,7 +204,13 @@ function decodeEvents(reply) {
     const evs = v && Array.isArray(v.eventsInView) ? v.eventsInView : null;
     if (!evs) { out.error = 'no view'; return out; }
     out.ok = true; out.raw = evs.length;
-    evs.forEach((e) => { const m = decodeEvent(e && isObj(e.maneuver) ? e.maneuver : e); if (m) out.events.push(m); });
+    evs.forEach((e) => {
+        const body = e && isObj(e.maneuver) ? e.maneuver : e, m = decodeEvent(body);
+        if (!m) return;
+        // each event's uid (CarPlay numbers its turns 1, 2, 3...: an older turn has a smaller one), null without
+        const u = unionOf(body), uid = u && u.body ? Number(u.body.uid) : NaN;
+        out.events.push(m); out.uids.push(isFinite(uid) ? uid : null);
+    });
     return out;
 }
 
@@ -273,6 +279,28 @@ function routingOf(r) {
  * shown as it comes. With a distance (BMW's own navigation lists every turn), shown only within THEN_M.
  */
 const THEN_M = 150;          // 11 s at 50 km/h: time to pick the lane for both turns
+/*
+ * Two things the 2026-11-09 drive showed CarPlay doing (redline-nav-carplay-2026-11-09.txt), both seen on the HUD as
+ * a "then" that made no sense (2026-11-10 drive: a roundabout straight on, "then" a left / right):
+ *   - just after a turn, for one reply, the turn just made listed after the new one (07:27:33: straight on, "then"
+ *     the right just taken). Its uid is older (smaller) than the new turn's: dropped (staleThen).
+ *   - after a straight on, the turn after it however far it is (07:27:35: straight on, "then" a motorway exit 5.1 km
+ *     on). The phone gives no gap (the second turn carries the first's distance to the destination). The two real
+ *     "then"s of the drive came after a turn (an exit, then right 360 m on; a roundabout, then the destination
+ *     250 m on). So with no gap known, no "then" after a straight on (a roundabout's straight-on exit included).
+ */
+const STRAIGHT_DEG = 30;     // a roundabout exit within this of straight on counts as straight on
+/** Whether m goes straight on (no turn to make: its "then", with no gap, may be far away). */
+function straightOn(m) {
+    if (!m) return false;
+    if (m.kind === 'turn') return m.dir === 'STRAIGHT_ON';
+    if (m.kind === 'roundabout' && typeof m.exitAngle === 'number') return Math.min(m.exitAngle, 360 - m.exitAngle) <= STRAIGHT_DEG;
+    return false;
+}
+/** Whether the second event is older than the first (the turn just made, still listed): uids from decodeEvents. */
+function staleThen(uids) {
+    return !!uids && typeof uids[0] === 'number' && typeof uids[1] === 'number' && uids[1] < uids[0];
+}
 /** The hint for the turn after a: { kind, dir, ..., gap: metres between them or null }, or null (none, or too far). */
 function thenOf(a, b) {
     if (!a || !b || b.kind === 'follow') return null;
@@ -284,7 +312,7 @@ function thenOf(a, b) {
     else if (metres(a) !== null && metres(b) !== null && metres(b) >= metres(a)) gap = metres(b) - metres(a);
     if (same && (gap === null || gap <= 0)) return null;           // the same turn listed twice
     // no distance at all: the phone decided it's close (it sends a second turn only then)
-    if (gap === null) return b.dist === null ? Object.assign({}, b, { gap: null }) : null;
+    if (gap === null) return b.dist === null && !straightOn(a) ? Object.assign({}, b, { gap: null }) : null;
     return gap <= THEN_M ? Object.assign({}, b, { gap: shown ? gap : null }) : null;
 }
 
@@ -308,6 +336,9 @@ function describe(m) {
  *     latest of the route's start, the last readable turn and the directions coming back on: short gaps (a slow or
  *     failed call, a reply without a turn, the shared native queue busy) show the tach without an arrow, never a
  *     stale one, and never blank the HUD.
+ *   - Never for a guide whose turns it has read this drive (2026-11-10: a U-turn in a cul-de-sac, Apple Maps
+ *     working out the new route for over 15 s, Redline gave way and BMW's card stuck on "Calculating Route" for the
+ *     rest of the trip). Its turns will come again: the tach without an arrow until they do.
  *   - Once it has given way it stays out for the route (no flapping, no blank gaps): until the route ends, or no
  *     reply at all has come for BACK_MS (CarPlay unplugged with its "guiding" flag left on). Coming back while
  *     BMW's card is up only parks Redline behind it.
@@ -328,9 +359,13 @@ function Tracker() {
     let lastTurnAt = -Infinity, lastDataAt = -Infinity, turnKey = '';
     // given way for this route; when the directions were last asked for (coming back on after a pause restarts the count)
     let gaveWay = false, lastViewAt = -Infinity, resumedAt = -Infinity;
+    // the guides whose turns Redline has read this drive (CAR_PLAY, ANDROID_AUTO, BMW): never given way to again
+    const readable = {};
+    const guide = () => (route.carplay ? 'CAR_PLAY' : route.aa ? 'ANDROID_AUTO' : route.provider && route.provider !== 'NONE' && route.provider !== 0 ? String(route.provider) : 'BMW');
     const keyOf = (m) => (m ? [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.road].join('|') : '');
     const seen = (m, now) => {
         if (!m) return;
+        readable[guide()] = true;
         const k = keyOf(m), before = lastTurnAt;
         lastTurnAt = now;
         if (k === turnKey) return;
@@ -386,7 +421,7 @@ function Tracker() {
             const r = decodeEvents(reply);
             if (!r.ok) { lastErr = r.error; return r; }
             lastErr = null; lastDataAt = now;
-            turn = r.events[0] ? Object.assign({}, r.events[0], { then: thenOf(r.events[0], r.events[1]) }) : null; turnAt = now;
+            turn = r.events[0] ? Object.assign({}, r.events[0], { then: staleThen(r.uids) ? null : thenOf(r.events[0], r.events[1]) }) : null; turnAt = now;
             seen(turn, now);
             return r;
         },
@@ -423,7 +458,7 @@ function Tracker() {
             }
             const m = self.current(now);
             if (!m) {
-                if (routeSure(route) && now - Math.max(route.sureSince, lastTurnAt, resumedAt) >= GIVE_WAY_MS) gaveWay = true;
+                if (routeSure(route) && !readable[guide()] && now - Math.max(route.sureSince, lastTurnAt, resumedAt) >= GIVE_WAY_MS) gaveWay = true;
                 return { show: null, giveWay: gaveWay };
             }
             if (mode === 'near') {
@@ -477,4 +512,4 @@ function start(ctx, log, probe) {
     };
 }
 
-module.exports = { start, mono, BACK_MS, thenOf, THEN_M, SKIP, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS };
+module.exports = { start, mono, BACK_MS, thenOf, THEN_M, straightOn, staleThen, SKIP, Tracker, decodeEvent, decodeEvents, decodeLanes, decodeDart, metres, describe, routingOf, STALE_MS, GIVE_WAY_MS };

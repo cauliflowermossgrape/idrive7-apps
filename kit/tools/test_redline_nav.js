@@ -97,9 +97,9 @@ ok(Nav.decodeEvent({ pointOfInterest: { formattedDistance: fd('2', 'KM') } }) ==
 ok(Nav.decodeEvent({ laneGuiding: { lanes: [] } }) === null && Nav.decodeEvent(null) === null && Nav.decodeEvent({ a: {}, b: {} }) === null, 'not a manoeuvre: null');
 ok(Nav.decodeEvent({ intersection: { direction: 'LEFT', formattedDistance: fd('', 'METER') } }).dist === null, 'an empty distance is none');
 // replies that say nothing
-eq(Nav.decodeEvents({ GuidanceEventListError: 'NOT_AVAILABLE' }), { ok: false, error: 'NOT_AVAILABLE', events: [], raw: 0 }, 'an error reply');
+eq(Nav.decodeEvents({ GuidanceEventListError: 'NOT_AVAILABLE' }), { ok: false, error: 'NOT_AVAILABLE', events: [], raw: 0, uids: [] }, 'an error reply');
 eq(Nav.decodeEvents({ GuidanceEventListError: 'NO_ERROR', viewContent: [] }).error, 'no view', 'no view');
-eq(Nav.decodeEvents({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [] }] }), { ok: true, error: null, events: [], raw: 0 }, 'no events: ok, no turn');
+eq(Nav.decodeEvents({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [] }] }), { ok: true, error: null, events: [], raw: 0, uids: [] }, 'no events: ok, no turn');
 ok(Nav.decodeEvents('x').ok === false && Nav.decodeEvents(null).ok === false, 'nonsense: not ok');
 // enum values as numbers (another firmware): the turn still shows, with the number as its direction
 ok(Nav.decodeEvent({ intersection: { direction: 2, formattedDistance: fd('100', 4) } }).dir === 'LEFT' && Nav.decodeEvent({ intersection: { direction: 2, formattedDistance: fd('100', 4) } }).unit === 'm', 'numeric enums: the catalog\'s numbers (direction 2 = LEFT, unit 4 = METER)');
@@ -158,13 +158,26 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
 
 // ---- "then": the turn close behind the next one -------------------------------------------------------------------
 {
-    // the drive (CarPlay): a second turn comes only when Apple Maps shows its "Then", with no distance: shown as it comes
+    // the drive (CarPlay): a second turn with no distance; shown after a turn, not after a straight on (it may be
+    // km on), and never the turn just made (2026-11-10 drive: a roundabout straight on, "then" a left / right)
     const two = replies.filter((r) => r.v.viewContent[0].eventsInView.length === 2);
     const T = Nav.Tracker();
     T.field('carplay', 'projectedGuidanceActive', true, 0);
-    let withThen = 0;
-    two.forEach((r) => { T.events(r.v, r.t); const v = T.view('route', r.t); if (v.show && v.show.then && v.show.then.gap === null) withThen++; });
-    ok(two.length > 30 && withThen === two.length, 'the drive: every reply with a second turn shows "then" (' + withThen + '/' + two.length + ')');
+    const shown = {};
+    two.forEach((r) => {
+        T.events(r.v, r.t); const v = T.view('route', r.t), e = Nav.decodeEvents(r.v).events;
+        const key = e[0].kind + ' ' + (e[0].dir || e[0].exit) + ' > ' + e[1].kind + ' ' + (e[1].dir || '');
+        shown[key] = (shown[key] || '') + (v.show && v.show.then ? 'y' : 'n');
+    });
+    const all = (k, c) => !!shown[k] && shown[k].split('').every((x) => x === c);
+    ok(all('turn STRAIGHT_ON > turn RIGHT', 'n'), 'the drive, 07:27:33: straight on listed with the right just taken: no "then" (' + shown['turn STRAIGHT_ON > turn RIGHT'] + ')');
+    ok(all('turn STRAIGHT_ON > branch BRANCH_LEFT', 'n'), 'the drive: straight on, the exit 5.1 km on: no "then"');
+    ok(all('branch BRANCH_LEFT > turn RIGHT', 'y') && shown['branch BRANCH_LEFT > turn RIGHT'].length > 10, 'the drive: the motorway exit, then right: "then" every time');
+    ok(all('roundabout 1 > destination LEFT', 'y'), 'the drive: the roundabout (exit 1, a turn), then the destination: "then"');
+    ok(Nav.staleThen([3, 2]) && !Nav.staleThen([3, 4]) && !Nav.staleThen([3]) && !Nav.staleThen([null, 2]), 'an older second event is the turn just made');
+    const nod = { kind: 'turn', dir: 'LEFT', dist: null, unit: null, dtd: 100, road: '' };
+    ok(Nav.thenOf({ kind: 'roundabout', exit: 2, exitAngle: 10, dist: '300', unit: 'm', dtd: 100, road: '' }, nod) === null, 'a roundabout straight on (10 degrees), then a turn with no gap: no "then"');
+    ok(Nav.thenOf({ kind: 'roundabout', exit: 1, exitAngle: 307, dist: '300', unit: 'm', dtd: 100, road: '' }, nod) !== null, 'a first roundabout exit (a turn), then a turn: "then"');
     const one = replies.filter((r) => r.v.viewContent[0].eventsInView.length === 1)[0];
     T.events(one.v, one.t);
     ok(T.view('route', one.t).show.then === null, 'one turn only: no "then"');
@@ -299,8 +312,28 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
     const U = Nav.Tracker();
     U.field('carplay', 'projectedGuidanceActive', true, 0);
     U.events(replies[0].v, 1000, 900);
-    ok(drive(U, 0, 1000 + Nav.GIVE_WAY_MS).giveWay, 'unplugged mid-route, the flag left on: gives way after ' + Nav.GIVE_WAY_MS + ' ms');
-    ok(!drive(U, 1000 + Nav.GIVE_WAY_MS, 1000 + Nav.BACK_MS + 400).giveWay, 'nothing answered for ' + Nav.BACK_MS + ' ms: back (behind BMW\'s card if there is one)');
+    ok(!drive(U, 0, 1000 + Nav.BACK_MS + 400).giveWay, 'unplugged mid-route after its turns were read, the flag left on: the tach stays, no giving way');
+    // never read (a route whose turns the event list doesn't give): gives way, back after BACK_MS of silence
+    const U2 = Nav.Tracker(), empty = { GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [] }] };
+    U2.field('carplay', 'projectedGuidanceActive', true, 0);
+    U2.events(empty, 1000, 900);
+    ok(drive(U2, 0, 1000 + Nav.GIVE_WAY_MS).giveWay, 'no turn ever read: gives way after ' + Nav.GIVE_WAY_MS + ' ms');
+    ok(!drive(U2, 1000 + Nav.GIVE_WAY_MS, 1000 + Nav.BACK_MS + 400).giveWay, 'nothing answered for ' + Nav.BACK_MS + ' ms: back (behind the BMW card if there is one)');
+    // 2026-11-10: a U-turn in a cul-de-sac, Apple Maps working out the new route (empty lists, the route flag off and
+    // on): Redline never gives way to the BMW "Calculating Route" card; the arrow comes back with the new turns
+    const RR = Nav.Tracker();
+    RR.field('carplay', 'projectedGuidanceActive', true, 0);
+    RR.events(replies[0].v, 1000, 900);
+    let gave = false;
+    for (let t = 2000; t < 40000; t += 1000) {
+        RR.events(empty, t, t - 100);
+        if (t === 10000) RR.field('carplay', 'projectedGuidanceActive', false, t);
+        if (t === 12000) RR.field('carplay', 'projectedGuidanceActive', true, t);
+        if (drive(RR, t, t + 800).giveWay) gave = true;
+    }
+    ok(!gave, 'rerouting for 38 s (no turns, the flag off and on): never gives way');
+    RR.events(replies[0].v, 40000, 39900);
+    ok(drive(RR, 40000, 40400).show !== null, 'the new route turn: the arrow is back');
     // the source reported gone: its flag with it
     const G = Nav.Tracker();
     G.field('carplay', 'projectedGuidanceActive', true, 0);

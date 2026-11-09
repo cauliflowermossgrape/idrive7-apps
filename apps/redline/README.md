@@ -334,7 +334,10 @@ glass's edge. Checked for every size and position the settings allow.
   Two phones and no telling whose route (both say they're guiding, or BMW names one while the other is guiding): no
   arrow and no giving way, the tach stays (the check jaimeen77's Cluster Redline makes).
 - **Giving way to BMW's card:** only when a route certainly runs and Redline has had no readable turn for 15 s
-  (from the route's start, the last turn, or the directions coming back on). Redline then leaves the HUD (tach
+  (from the route's start, the last turn, or the directions coming back on), and never for a phone (or BMW's
+  navigation) whose turns it has already read this drive: a reroute (a U-turn, Apple Maps working out the new route)
+  shows the tach without an arrow until the new turns come, rather than BMW's card stuck on "Calculating Route" for
+  the rest of the trip. Redline then leaves the HUD (tach
   included) for the rest of the route. It's for the route because of how the HUD slot works (cluster-render's
   README): when Redline lets go, the slot stays empty for about 3 s, then BMW's card is shown, and Redline asking
   again is only parked behind it until the card goes at the route's end. Coming back sooner would only blank the
@@ -346,8 +349,9 @@ glass's edge. Checked for every size and position the settings allow.
   clock that doesn't jump when the head unit sets its time. A picture is about 0.1 ms to draw and is redrawn only
   when what it shows changes. A directions layer the renderer fails is made again after 5 s.
 - **Then:** a turn close behind the next one is shown as "then" + a small arrow on the second line (the street's
-  place), so you can pick the lane for both. CarPlay sends it only when Apple Maps shows its own "Then", without a
-  distance; with BMW's own navigation, when the gap is 150 m or less, with the gap ("then <- 50 m", in yards for UK
+  place), so you can pick the lane for both. CarPlay sends it without a distance, also for a turn kilometres on:
+  shown after a turn, not after a straight on (a roundabout's straight-on exit included), and never the turn just
+  made (CarPlay lists it after the new one for a moment); with BMW's own navigation, when the gap is 150 m or less, with the gap ("then <- 50 m", in yards for UK
   units). With lanes on the second line, the small arrow sits after the distance.
 - **Settings:** *Directions on the HUD*: **While a route runs** (default) / **Near turns** (under 1 km, and
   whenever there are lanes) / **Off** (as before 2.0: Redline keeps the HUD, BMW's card stays hidden).
