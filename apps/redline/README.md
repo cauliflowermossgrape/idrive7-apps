@@ -208,6 +208,7 @@ layout and colours by picture.
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
 | In Comfort / Eco Pro | Show all / Shift lights and gear only / Hide (BMW's own HUD) |
+| Layout in Sport / Sport+, Layout in Comfort / Eco Pro | Same as Layout, or any layout: the HUD changes layout with the driving mode (Play on HUD shows the main one) |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.
@@ -223,6 +224,9 @@ layout and colours by picture.
 | Boost unit | bar / psi / kPa |
 | Oil, Water, Gearbox temperature | on / off each |
 | Cold-engine shift limit | on / off (the LIMIT readout while the cold guard holds the shift point down) |
+| Launch time | on (default) / off: after a standing start, the 0-100 km/h (0-60 mph) time and its difference to your best, for 3 s ([Launch score](#launch-score)) |
+| Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
+| Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
 | Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
@@ -349,6 +353,34 @@ ratios are learned.
 - **Always**.
 - **Off**.
 
+*Downshift arrows show*:
+
+- **Every gear you can drop** (default): as above.
+- **Best gear**: only as far as the power band, the lowest rpm where the engine makes 90 % of its
+  peak power on the learned torque curve. No arrows when you're already in it; the fewest drops that
+  reach it; all you can drop when none does. Until the curve is learned, the same as Every gear.
+
+## Knock
+
+The engine unit's knock control, the same values Live Data shows (*Ignition and knock*): its ignition
+retard (DID `554C`, the cylinders' mean, 0.375° steps) and knock detected (`4A36`), read twice a second
+over read-only diagnostics while the HUD shows and the engine runs (the gearbox reader's link).
+**KNOCK** shows where the grade goes when the retard reaches 2.25° or the engine flags knock, and stays
+while it does; it goes before a grade or launch time. On Minimal and Split wings, which show no grades,
+the gear turns red (Minimal also writes KNOCK under its lights). The *Knock retard* readout shows the
+degrees, only from 0.75°. A car whose engine unit doesn't answer `554C` shows nothing (logged once:
+`knock: the engine unit gives no knock retard`). The threshold is from the catalogue's scaling and not
+yet checked on a car.
+
+## Launch score
+
+Each standing start is timed 0-100 km/h and 0-60 mph by the run timer Drag Timer uses
+(`kit/run_timer.js`: the launch found from a standstill, crossings interpolated between speed samples).
+On the HUD, for 3 s, the time in your speed unit and its difference to your best before it: green for a
+new best, yellow within 0.1 s, red further off; it goes after knock and a shift grade. Bests are kept
+in `launch.json` and forgotten with *Reset all* on the Learned page. Times outside 1.8-30 s (1.7-28 s
+for 0-60) aren't counted.
+
 ## Files and logs
 
 Everything lives in the app's `data/` folder on the head unit
@@ -362,6 +394,7 @@ Everything lives in the app's `data/` folder on the head unit
 | `shiftmap.json` | torque bins and gear ratios | ~0.5–10 KB | at most every 5 min while learning, at most once a minute when a shift point moves |
 | `hudlead.json` | learned reaction time | < 50 B | when it moves |
 | `engine.json` | detected engine type | tiny | once |
+| `launch.json` | best launch times (0-100 km/h, 0-60 mph) | < 100 B | on a new best |
 
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.

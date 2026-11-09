@@ -26,6 +26,7 @@
  *   shiftmap.js  learns the full-load torque curve and the gear ratios, and from them the best
  *                upshift rpm for each gear
  *   gearbox.js   gearbox oil temperature for the HUD (EGS over read-only UDS, or BasicDataSet)
+ *   knock.js     knock retard from the engine unit for the HUD's knock warning and readout (read-only UDS)
  *   cluster_render_client.js  vendored unchanged from robertnisipeanu/idrive-apps (MPL-2.0)
  *
  * The limits, first that has one:
@@ -49,6 +50,8 @@ const Engine = require('./kit/engine');
 const Hud = require('./hud');
 const HudDraw = require('./hud-draw');
 const GearboxTemp = require('./gearbox');
+const KnockWatch = require('./knock');
+const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
 
@@ -95,6 +98,8 @@ mgu.run({
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log });
         // gearbox oil temperature for the HUD (EGS over UDS, or BasicDataSet); polled only while the HUD is on
         const gearbox = new GearboxTemp(ctx);
+        // knock from the engine unit, on the gearbox reader's diagnostics link; polled only while the HUD wants it
+        const knock = new KnockWatch(ctx, () => gearbox.diag());
         // engine torque for the shift map, with its time: put() keeps the last value when the signal
         // goes invalid, so a stale torque would be paired with new rpm and inflate the curve
         const torque = { v: null, t: 0 };
@@ -173,6 +178,10 @@ mgu.run({
          * shift never meets the limiter; else (and with "fixed") the redline minus "shiftBefore".
          * Never below 2500: shifts under that are not scored. */
         const shiftMap = new ShiftMap({ dataDir: ctx.dataDir, log });
+        // the launch score: standing starts timed 0-100 km/h / 0-60 mph by the kit's run timer, best kept
+        const launch = new LaunchScore({ dataDir: ctx.dataDir, log });
+        const launchIdle = setInterval(() => { if (!car.data().demo) launch.idle(Date.now()); }, 100);
+        if (launchIdle.unref) launchIdle.unref();
         shiftMap.setRedline(redline());
         const learnedShift = (gear) => {
             if (settings.get('shiftMode') === 'fixed' || !G.isNum(gear) || gear < 1) return null;
@@ -224,7 +233,9 @@ mgu.run({
                 if (!k || d.speed * k > shiftPoint(d.oil, g).rpm - 300) break;
                 n++;
             }
-            return n;
+            // "Best gear": only as far as the power band (setting "downTarget"); "Every gear": all that fit
+            if (settings.get('downTarget') !== 'best') return n;
+            return ShiftMap.bestDrop(d.gear, n, (g) => d.speed * (shiftMap.ratio(g) || 0), shiftMap.bandStart(0.9));
         }
         // LIMITER: on the cut itself (25 rpm): shift points sit 150 under the redline, so the old 60 caught
         // shifts on the point
@@ -270,6 +281,7 @@ mgu.run({
             onLimiter = lim;
             // learn the real limit (live data only, warm oil): plateaus from 1000 below the profile's redline
             if (!car.data().demo) {
+                if (G.isNum(d.speed)) launch.feed(t, d.speed);
                 const tq = Date.now() - torque.t < 300 ? torque.v : null;
                 if (learning()) shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq });
                 const pr = profileRedline();
@@ -640,6 +652,8 @@ mgu.run({
                     ['Peak marker', o.peak, () => settings.set('hudPeak', !o.peak)],
                     ['Limiter shake', o.shake, () => settings.set('hudShake', !o.shake)],
                 ]);
+                // the arrows: every gear you can drop, or only as far as the power band
+                choiceRow(cv, t, 462, 'ARROWS TO', 'downTarget', settings.get('downTarget') || 'all', [['all', 'Every gear'], ['best', 'Best gear']], (settings.get('downCue') || 'slowing') === 'off', 720);
             } else {
                 // size and position, a step at a time through each setting's own steps (live on the glass)
                 cv.text('SIZE', 40, 414 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
@@ -705,7 +719,7 @@ mgu.run({
 
             // shift points and gear ratios, the redline and the reaction time
             G.panel(cv, t, 808, 44, 768, 468, 'Shift points');
-            G.button(cv, t, 1576 - 20 - 170, 56, 170, 40, 'Reset all', () => { shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead(); learnedView = null; return render(); }, { key: 'resetAll', confirm: true, color: t.warn });
+            G.button(cv, t, 1576 - 20 - 170, 56, 170, 40, 'Reset all', () => { shiftMap.forget(); limiter.forget(); launch.forget(); if (hud) hud.resetLead(); learnedView = null; return render(); }, { key: 'resetAll', confirm: true, color: t.warn });
             const table = learnedView.table;
             let y = 130;
             cv.text('GEAR', 836, y, 18, t.dim, { font: 'bold', spacing: 1 });
@@ -777,7 +791,7 @@ mgu.run({
         const resetArmed = () => Date.now() - resetLearnAt < 5000;
         ui.onClick('BTN_RESET_LEARNED', () => {
             if (!resetArmed()) { resetLearnAt = Date.now(); page = 2; return render(); }
-            resetLearnAt = 0; shiftMap.forget(); limiter.forget(); if (hud) hud.resetLead(); learnedView = null;
+            resetLearnAt = 0; shiftMap.forget(); limiter.forget(); launch.forget(); if (hud) hud.resetLead(); learnedView = null;
             log.info('learned data reset from the bar button');
             return render();
         });
@@ -787,12 +801,13 @@ mgu.run({
         ctx.loop('MAIN', 15, render);
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
         hud = Hud.start(ctx, {
-            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, downshift,
+            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, downshift,
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
             chip: () => (lastShift && graded(lastShift) && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             mode: modeNow,
+            launch: (now, mph) => launch.last(now, mph),
             // 'sport', 'comfort', 'eco' or null (unknown, Adaptive, the demo data): the HUD shows as set up
             driveMode: () => (car.data().demo ? null : driveMode.v),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
@@ -801,6 +816,7 @@ mgu.run({
                 torque: Date.now() - torque.t < 2000 ? torque.v : null,
                 gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),
+                knock: knock.value().retard,
             }),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));

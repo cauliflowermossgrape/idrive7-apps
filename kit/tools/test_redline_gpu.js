@@ -53,9 +53,14 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     fs.writeFileSync(path.join(SHM, 'redline'), JSON.stringify({ held: false, at: Date.now() }) + '\n');
     const v = Object.assign({}, def, { hud: 'on', hudStyle: 'arc', hudRenderer: 'gpu', hudFps: 30 }), fns = [];
     const settings = { get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
-    let rpm = 3000;
+    let rpm = 3000, drive = 'sport';
     const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: 80, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
-        maxRpm: () => 8000, driveMode: () => 'sport' };
+        maxRpm: () => 8000, driveMode: () => drive,
+        // a stand-in knock reader: started / stopped by the HUD, its last event's time set by the test
+        knock: { on: false, at: 0, start() { this.on = true; }, stop() { this.on = false; }, value() { return { retard: null, at: this.at }; } },
+        // a stand-in launch score: a run that finished `at`
+        launch: (now, mph) => (launchRun && now - launchRun.at < 3000 ? Object.assign({ label: mph ? '0-60' : '0-100' }, launchRun) : null) };
+    let launchRun = null;
     const h = Hud.start({ settings: settings, log: log, dataDir: TMP }, src);
     await sleep(250);
 
@@ -98,6 +103,17 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     settings.set('hudStyle', 'standard'); await sleep(150);
     ok(cr.of('effect').length === 0 && cr.of('image').length === 1, 'Standard with GPU set: the picture (GPU is the Arc only)');
     settings.set('hudStyle', 'arc'); await sleep(150);
+    // a layout per driving mode: Sport's own, Comfort's own, "Same as Layout" the main one; a mode switching
+    // the GPU Arc off makes the layers again (and back)
+    settings.set('hudStyleComfort', 'standard'); settings.set('hudStyleSport', 'same'); await sleep(150);
+    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'Sport, same as Layout: the Arc, on the GPU');
+    drive = 'comfort'; await sleep(200);
+    ok(h.frame().opts.style === 'standard' && cr.of('effect').length === 0 && cr.of('image').length === 1, 'Comfort: its own layout (Standard), the GPU layer gone');
+    drive = 'sport'; settings.set('hudStyleSport', 'dial'); await sleep(200);
+    ok(h.frame().opts.style === 'dial' && h.frame().opts.gearFont === 'gear_barlow', 'Sport: its own layout (Dial), with its Auto gear font');
+    settings.set('hudStyleSport', 'same'); await sleep(200);
+    ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'back to the Arc: the GPU layer made again');
+
     // the alpha setting re-makes it with the new output
     settings.set('hudGpuAlpha', 'premul'); await sleep(150);
     const e2 = cr.of('effect')[0];
@@ -107,6 +123,34 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     ok(cr.of('effect').length === 0 && cr.of('image').length === 1, 'a refused shader: back to the picture');
     settings.set('hudStyle', 'arc'); await sleep(150);
     ok(cr.of('effect').length === 0, 'and it stays the picture for this run');
+
+    // the knock warning: the reader runs while the HUD shows (warning on by default); an event shows KNOCK
+    // where the grade goes, for 1.5 s; switched off, the reader stops and nothing shows
+    ok(src.knock.on, 'knock: the engine unit is read while the HUD shows');
+    src.knock.at = Date.now();
+    const kf = h.frame();
+    ok(kf.chip && kf.chip.verdict === 'KNOCK', 'knock: KNOCK shows after an event (' + JSON.stringify(kf.chip) + ')');
+    src.knock.at = Date.now() - 2000;
+    ok(!h.frame().chip, 'knock: gone 1.5 s after the last event');
+    settings.set('hudKnockWarn', false); src.knock.at = Date.now(); await sleep(150);
+    ok(!h.frame().chip && !src.knock.on, 'knock warning off: no KNOCK, the reader stopped');
+    settings.set('hudShowKnock', true); await sleep(150);
+    ok(src.knock.on, 'knock readout on: the reader runs again');
+    rpm = 0; await sleep(150);
+    ok(!src.knock.on, 'engine off: the reader stops');
+
+    // the launch time where the grade shows: the time and its difference, green for a best; knock goes first
+    settings.set('hudKnockWarn', true); src.knock.at = 0; await sleep(100);
+    launchRun = { secs: 4.92, delta: -0.08, best: true, at: Date.now() };
+    let lf = h.frame();
+    ok(lf.chip && lf.chip.verdict === 'LAUNCH' && lf.chip.text === '4.92  -0.08' && lf.chip.tone === 'low', 'launch: 4.92  -0.08 in green (' + JSON.stringify(lf.chip) + ')');
+    launchRun = { secs: 5.31, delta: 0.31, best: false, at: Date.now() };
+    ok(h.frame().chip.tone === 'high' && h.frame().chip.text === '5.31  +0.31', 'launch: slower in red');
+    rpm = 3000; await sleep(150); src.knock.at = Date.now();
+    ok(h.frame().chip.verdict === 'KNOCK', 'knock goes before the launch time');
+    src.knock.at = 0;
+    settings.set('hudLaunch', false);
+    ok(!h.frame().chip, 'launch time off: nothing');
 
     h.stop();
     fs.rmdirSync && (function rm(p) { if (fs.statSync(p).isDirectory()) { fs.readdirSync(p).forEach((n) => rm(path.join(p, n))); fs.rmdirSync(p); } else fs.unlinkSync(p); })(TMP);

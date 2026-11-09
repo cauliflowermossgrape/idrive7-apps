@@ -19,7 +19,9 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const flashing = (cue) => cue.shift || cue.limiter;
 
 /* ---------- shared: readouts, the shift grade, the burst ---------- */
-const GRADE = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold' };
+const GRADE = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold', KNOCK: 'limit' };
+/** A chip's colour: its own tone (the launch time), else its grade's. */
+const chipCol = (chip, P) => P[chip.tone || GRADE[chip.verdict]] || P.text;
 const toneCol = (it, P, base) => (it.tone && it.tone !== 'text' ? P[it.tone] || base : base);
 /** A small readout: label then value on one line (row) or label over value (stack); align 'left' | 'right' | 'center'. */
 function small(cv, x, y, it, P, o, base, mode, align, vsize) {
@@ -43,17 +45,17 @@ function small(cv, x, y, it, P, o, base, mode, align, vsize) {
 }
 /** The shift grade at (x, y): pops in (burst), holds, fades over its last 300 ms. */
 function grade(cv, x, y, chip, P, size, align) {
-    const a = chip.age || 0, c = P[GRADE[chip.verdict]] || P.text;
+    const a = chip.age || 0, c = chipCol(chip, P);
     const alpha = a > 1200 ? clamp(1 - (a - 1200) / 300, 0, 1) : 1;
     const s = chip.burst && a < 150 ? size * (1.3 - 0.3 * a / 150) : size;
-    if (alpha > 0) cv.text(chip.verdict, x, y, s, withAlpha(c, alpha), { align: align || 'center', font: 'bold', spacing: 1 });
+    if (alpha > 0) cv.text(chip.text || chip.verdict, x, y, s, withAlpha(c, alpha), { align: align || 'center', font: 'bold', spacing: 1 });
 }
 /** Burst: a ring grows from (cx, cy) radius r0 to r1 over 500 ms and fades. */
 function ring(cv, cx, cy, r0, r1, chip, P) {
     const a = chip.age || 0;
     if (!chip.burst || a >= 500) return;
     const k = a / 500, r = r0 + (r1 - r0) * k;
-    cv.arc(cx, cy, r - 2.5, r, 0, 360, withAlpha(P[GRADE[chip.verdict]] || P.text, 0.85 * (1 - k)));
+    cv.arc(cx, cy, r - 2.5, r, 0, 360, withAlpha(chipCol(chip, P), 0.85 * (1 - k)));
 }
 const burstOn = (chip, ms) => chip && chip.burst && (chip.age || 0) < ms;
 /**
@@ -187,7 +189,7 @@ function drawRamp(cv, f, layer, h) {
         if (fg && isNum(d.rpm) && d.rpm > 50) {
             const top = Math.min(d.rpm, max);
             // burst: the lit fields pop in the grade's colour for 300 ms
-            const pop = burstOn(f.chip, 300) ? h.P[GRADE[f.chip.verdict]] : null;
+            const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null;
             for (let r = 0; r < top; r += step) {
                 const c = fl ? (f.blink ? flashCol : null) : pop || fieldCol(r);
                 if (c) rSeg(cv, r, Math.min(top, r + step), max, c, 1.2);
@@ -240,7 +242,7 @@ function drawDial(cv, f, layer, h) {
         if (fg && isNum(d.rpm) && d.rpm > 50) {
             const top = Math.min(d.rpm, max);
             // burst: the lit dial flashes the grade's colour for 300 ms
-            const pop = burstOn(f.chip, 300) ? h.P[GRADE[f.chip.verdict]] : null;
+            const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null;
             for (let r = 0; r < top; r += step) {
                 const c = fl ? (f.blink ? flashCol : null) : pop || zone(r);
                 const g = (r + step) % 1000 === 0 ? 0.9 : 0;

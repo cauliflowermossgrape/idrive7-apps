@@ -85,6 +85,18 @@ class ShiftMap {
         return pts;
     }
 
+    /**
+     * Where the power band starts: the lowest rpm at which the engine makes `share` (0.9) of its peak power
+     * (torque x rpm) on the learned curve; null until the curve spans at least 2000 rpm in 5 points.
+     */
+    bandStart(share) {
+        const pts = this.curve();
+        if (pts.length < 5 || pts[pts.length - 1][0] - pts[0][0] < 2000) return null;
+        const pow = pts.map((p) => p[0] * p[1]), peak = Math.max.apply(null, pow), want = peak * (share || 0.9);
+        for (let i = 0; i < pts.length; i++) if (pow[i] >= want) return pts[i][0];
+        return null;
+    }
+
     setRedline(rpm) {
         try {
             const r = num(rpm) && rpm > 0 ? Math.round(rpm) : null;
@@ -222,5 +234,17 @@ class ShiftMap {
 
     _emit() { const t = this.table(); this.listeners.forEach((fn) => { try { fn(t); } catch (e) { this.log.error(e); } }); }
 }
+
+/**
+ * The downshift cue's "Best gear": how many gears to drop to land in the power band. allowed: how many
+ * the cue allows (each under its shift point), rpmIn(g): the rpm in gear g at this speed, band: bandStart().
+ * Already in the band: 0; the fewest drops that reach it; none does: all allowed; no band known: all allowed.
+ */
+ShiftMap.bestDrop = function (gear, allowed, rpmIn, band) {
+    if (!(allowed > 0) || !(band > 0)) return allowed > 0 ? allowed : 0;
+    if (rpmIn(gear) >= band) return 0;
+    for (let k = 1; k <= allowed; k++) if (rpmIn(gear - k) >= band) return k;
+    return allowed;
+};
 
 module.exports = ShiftMap;

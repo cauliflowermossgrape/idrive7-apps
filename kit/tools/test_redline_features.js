@@ -46,6 +46,7 @@ const NOT_ON = {
     hudShowWater: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowGearbox: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowOutside: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowKnock: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowLimit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudTempsMode: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudChip: { layouts: ['minimal', 'wings'], why: 'no grade drawn' },
@@ -55,7 +56,7 @@ const NOT_ON = {
 
 // the data: revs counting in, a grade just made, temperatures hot / cold, every extra value there
 const D = { rpm: 5637, gear: 3, stage: 'D', oil: 95, coolant: 90 };
-const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60 };
+const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3 };
 function picture(over, style, state) {
     const settings = { get: (k) => (k in over ? over[k] : def[k]) };
     const o = Object.assign({}, Hud.optsFrom(settings), { style: style });
@@ -76,17 +77,17 @@ function picture(over, style, state) {
 const shot = (over, style) => Buffer.concat(['count', 'shift', 'limiter', 'graded'].map((st) => picture(over, style, st)));
 // a readout setting is checked with only its readout on (the row holds four), temperatures always shown
 const NONE = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false, hudShowOutside: false,
-    hudShowTorque: false, hudShowPower: false, hudShowG: false, hudTempsMode: 'always' };
+    hudShowTorque: false, hudShowPower: false, hudShowG: false, hudShowKnock: false, hudTempsMode: 'always' };
 const ALONE = {
     hudShowRpm: { hudShowRpm: true }, hudRpmFormat: { hudShowRpm: true }, hudBoost: { hudBoost: true }, hudBoostUnit: { hudBoost: true }, hudLabels: { hudBoost: true },
     hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
     hudShowOil: { hudShowOil: true }, hudShowWater: { hudShowWater: true }, hudShowGearbox: { hudShowGearbox: true }, hudTempUnit: { hudShowOil: true },
-    hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' },
+    hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' }, hudShowKnock: {},
 };
 const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 
 // every option that isn't the default, of the settings that change the picture
-const SKIP = ['hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudRenderer', 'hudGpuAlpha', 'hudStyle'];
+const SKIP = ['hudKnockWarn', 'hudLaunch', 'hudStyleSport', 'hudStyleComfort', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudRenderer', 'hudGpuAlpha', 'hudStyle'];
 const variants = [];
 spec.settings.filter((s) => s.key && (/^hud/.test(s.key) || s.key === 'lights') && SKIP.indexOf(s.key) < 0).forEach((s) => {
     if (s.type === 'bool') variants.push([s.key, !s.default]);

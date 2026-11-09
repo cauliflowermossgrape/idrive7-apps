@@ -211,6 +211,57 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
             ok(labEnd >= 0 && valStart >= 0 && labEnd < valStart, 'arc: ' + p[0] + ' ' + p[1] + (cl ? ' (clearer)' : '') + ' label reaches x ' + labEnd + ', value starts at ' + valStart);
         }));
     }
+    // downshift arrows, "Best gear": the fewest drops into the power band (90 % of peak power on the curve)
+    {
+        const SM = require(path.join(APP, 'shiftmap'));
+        const curve = [[2000, 300], [3000, 400], [4000, 400], [5000, 380], [6000, 330], [6500, 300]];   // power peaks ~6000
+        const band = SM.prototype.bandStart.call({ curve: () => curve }, 0.9);
+        ok(band === 5000, 'power band starts at 5000 on a curve peaking near 6000 (' + band + ')');
+        ok(SM.prototype.bandStart.call({ curve: () => curve.slice(0, 3) }, 0.9) === null, 'no band from a short curve');
+        const k = { 3: 35, 4: 27, 5: 22, 6: 18.5 }, rin = (g) => 150 * (k[g] || 0);      // 150 km/h: 6th 2775, 5th 3300, 4th 4050, 3rd 5250
+        ok(SM.bestDrop(6, 3, rin, band) === 3 && SM.bestDrop(6, 2, rin, band) === 2, 'best: down to 3rd (5250, in the band); never past what is allowed');
+        ok(SM.bestDrop(6, 3, rin, 2500) === 0 && SM.bestDrop(6, 3, rin, null) === 3 && SM.bestDrop(6, 0, rin, band) === 0, 'best: none when already in the band; all allowed without a band; none allowed');
+    }
+    // the knock warning shows on every layout (Minimal and Split wings, which show no grades: the gear goes red)
+    LAYOUTS.forEach((style) => {
+        const o = Object.assign({}, optsDefault, { style: style }), pic = (chip) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(o, { chip: chip, readouts: [] }), 'fg'); return Buffer.from(cv.d); };
+        ok(Buffer.compare(pic(null), pic({ verdict: 'KNOCK', age: 800, burst: true })) !== 0, style + ': KNOCK changes nothing');
+    });
+    // the launch score: standing starts timed by the kit's run timer, against the best (kept in a file)
+    {
+        const LaunchScore = require(path.join(APP, 'launch'));
+        const os = require('os'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-launch-'));
+        const quiet = { info() {}, warn() {} };
+        let clock = 1e6;
+        const realNow = Date.now; Date.now = () => clock;
+        // stand 2 s, then a constant pull reaching 100 km/h in `secs`, on to 130, then slow down
+        const run = (ls, secs) => {
+            for (let t = 0; t <= 2000; t += 100) { clock += 100; ls.feed(clock, 0); ls.idle(clock); }
+            const a = 100 / secs;
+            for (let t = 50; t <= (130 / a) * 1000; t += 50) { clock += 50; ls.feed(clock, a * t / 1000); }
+            for (let v = 130; v >= 90; v -= 5) { clock += 100; ls.feed(clock, v); }
+        };
+        let ls = new LaunchScore({ dataDir: dir, log: quiet });
+        run(ls, 5.0);
+        let l = ls.last(clock, false);
+        ok(l && Math.abs(l.secs - 5.0) < 0.06 && l.delta === null && l.best && l.label === '0-100', 'launch: first run 0-100 in ~5.0 s, a best (' + JSON.stringify(l) + ')');
+        run(ls, 4.8);
+        l = ls.last(clock, false);
+        ok(l && l.best && l.delta < -0.1 && l.delta > -0.3, 'launch: quicker run, a new best, its difference negative (' + (l && l.delta) + ')');
+        run(ls, 5.4);
+        l = ls.last(clock, false);
+        ok(l && !l.best && l.delta > 0.4, 'launch: slower run, not a best (' + (l && l.delta) + ')');
+        const m = ls.last(clock, true);
+        ok(m && m.label === '0-60' && m.secs < l.secs, 'launch: the 0-60 mph time too');
+        clock += 3100;
+        ok(ls.last(clock, false) === null, 'launch: shown for 3 s');
+        // the best is kept across a restart, and forgotten on reset
+        ls = new LaunchScore({ dataDir: dir, log: quiet });
+        ok(Math.abs(ls.bestOf(false) - 4.8) < 0.06, 'launch: best kept in the file (' + ls.bestOf(false) + ')');
+        ls.forget();
+        ok(ls.bestOf(false) === null && new LaunchScore({ dataDir: dir, log: quiet }).bestOf(false) === null, 'launch: Reset forgets it');
+        Date.now = realNow;
+    }
     // gear font: Auto is Barlow on the M layouts only; a missing atlas falls back to Ubuntu
     ok(Hud.gearFontOf('auto', 'arc') === 'gear_barlow' && Hud.gearFontOf('auto', 'standard') === 'gear' && Hud.gearFontOf(undefined, 'dial') === 'gear_barlow', 'gear font: Auto');
     ok(Hud.gearFontOf('ubuntu', 'ramp') === 'gear' && Hud.gearFontOf('barlow', 'wings') === 'gear_barlow', 'gear font: chosen');

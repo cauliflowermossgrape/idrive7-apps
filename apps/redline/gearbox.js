@@ -46,15 +46,21 @@ class GearboxTemp {
         };
     }
 
+    /** The read-only diagnostics link, made on first use; shared with knock.js (one link to the car). */
+    diag() {
+        if (!this.link) {
+            this.link = new ReadOnlyDiag(this.ctx.signals, this.log);
+            Promise.resolve(this.link.init()).catch((e) => this.log.warn('gearbox: diag link: ' + (e && e.message || e)));
+            this.rd = new DidReader(this.link, { ecu: 0x18 });
+        }
+        return this.link;
+    }
+
     /** Poll the EGS while wanted (the HUD is on); stop() when not. */
     start() {
         if (this.timer) return;
         try {
-            if (!this.link) {
-                this.link = new ReadOnlyDiag(this.ctx.signals, this.log);
-                Promise.resolve(this.link.init()).catch((e) => this.log.warn('gearbox: diag link: ' + (e && e.message || e)));
-                this.rd = new DidReader(this.link, { ecu: 0x18 });
-            }
+            this.diag();
             this.timer = setInterval(() => this._poll(), POLL_MS);
             this._poll();
         } catch (e) { this.log.warn('gearbox: ' + (e && e.message || e)); }

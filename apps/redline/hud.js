@@ -168,11 +168,16 @@ function gearFontOf(choice, style) {
     return M_STYLES.indexOf(style) >= 0 ? 'gear_barlow' : 'gear';
 }
 
-/** The HUD's drawing options from the settings (also used by the HUD looks page). */
-function optsFrom(settings) {
+const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'];
+/**
+ * The HUD's drawing options from the settings (also used by the HUD looks page). drive ('sport', 'comfort',
+ * 'eco' or none): its own layout when one is set ("Layout in Sport / Sport+", "Layout in Comfort / Eco Pro").
+ */
+function optsFrom(settings, drive) {
     const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
-    const layout = settings.get('hudStyle');
-    const style = ['minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'].indexOf(layout) >= 0 ? layout : 'standard';
+    const byMode = drive === 'sport' ? settings.get('hudStyleSport') : drive === 'comfort' || drive === 'eco' ? settings.get('hudStyleComfort') : null;
+    const layout = STYLES.indexOf(byMode) >= 0 ? byMode : settings.get('hudStyle');
+    const style = STYLES.indexOf(layout) > 0 ? layout : 'standard';
     return {
         style: style,
         // the gear's font: Auto is Barlow on the BMW-M-inspired layouts (arc, ramp, dial), Ubuntu on the rest
@@ -200,6 +205,10 @@ function optsFrom(settings) {
         lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
         lightStyle: settings.get('lights'), warmOil: numOf(settings, 'warmOil', 80),
         mode: on('hudShowMode'),
+        // knock (the engine unit's ignition retard): the warning on by default, the readout off
+        knock: settings.get('hudShowKnock') === true, knockWarn: settings.get('hudKnockWarn') !== false,
+        // the launch time (0-100 km/h or 0-60 mph) and its difference to the best, after a standing start
+        launch: settings.get('hudLaunch') !== false, mph: settings.get('speedUnit') === 'mph',
     };
 }
 
@@ -276,6 +285,8 @@ function readoutsFor(d, gb, boost, sp, o, x) {
         items.push({ label: 'G', value: roundTo(g, 0.05).toFixed(2), tone: 'text' });
     }
     if (o.limit && sp && sp.cold) items.push({ label: 'LIMIT', value: String(sp.rpm), tone: 'cold' });
+    // knock: the ignition retard knock control takes, only while it takes some (0.75 degrees and up)
+    if (o.knock && isNum(x.knock) && x.knock >= 0.75) items.push({ label: 'KNOCK', value: x.knock.toFixed(1) + '°', tone: x.knock >= 2.25 ? 'hot' : 'warm' });
     TEMPS.forEach((t) => {
         if (!o[t[1]]) return;
         const v = t[1] === 'gearbox' ? gb : d[t[1]];
@@ -475,7 +486,7 @@ function start(ctx, src) {
         log.info('hud: connecting to cluster-render');
     });
 
-    const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); };
+    const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); if (src.knock) src.knock.stop(); };
 
     const dropGpu = () => { if (gpu) gpu.drop(); gpu = null; };
     const dropLayer = safe('drop', () => { stopTimer(); dropGpu(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
@@ -603,14 +614,44 @@ function start(ctx, src) {
     const fps = () => { const v = num('hudFps', FPS_DEFAULT); return v >= 30 ? 30 : v >= 20 ? 20 : 10; };
 
     /** The last upshift's grade while it shows: { verdict, age, burst } (src.chip(): { verdict, at }). */
+    // where the grade shows, first that has one: knock (it can save the engine), the shift grade, the launch time
     function chipNow(o, now) {
-        if (o.chip === 'off' || !src.chip) return null;
-        const c = src.chip();
-        return c ? { verdict: c.verdict, age: now - c.at, burst: o.chip === 'burst' } : null;
+        const k = knockChip(o, now);
+        if (k) return k;
+        const c = o.chip !== 'off' && src.chip ? src.chip() : null;
+        if (c) return { verdict: c.verdict, age: now - c.at, burst: o.chip === 'burst' };
+        return launchChip(o, now);
+    }
+    /*
+     * The launch time for 3 s after a standing start: the time and its difference to the best before it,
+     * green for a new best, yellow within 0.1 s, red further off. Held for 2.6 s (the grade's timeline holds 1.1 s),
+     * then fades as a grade does.
+     */
+    function launchChip(o, now) {
+        if (!o.launch || !src.launch) return null;
+        const l = src.launch(now, o.mph);
+        if (!l) return null;
+        const a = now - l.at, sign = (x) => (x < 0 ? '-' : '+') + Math.abs(x).toFixed(2);
+        return { verdict: 'LAUNCH', text: l.secs.toFixed(2) + (l.delta === null ? ' s' : '  ' + sign(l.delta)), tone: l.best ? 'low' : l.delta !== null && l.delta <= 0.1 ? 'mid' : 'high',
+            age: a < 2600 ? Math.min(a, 1100) : a - 1500, burst: o.chip !== 'simple' };
+    }
+    /*
+     * The knock warning: KNOCK where the grade shows, for 1.5 s after the engine last reported knock (it does
+     * on every read while it knocks, so it stays up). Its burst plays once per spell, not on every read.
+     */
+    const kn = { start: 0, last: 0 };
+    function knockChip(o, now) {
+        if (!o.knockWarn || !src.knock) return null;
+        const at = src.knock.value().at;
+        if (!at || now - at > 1500) return null;
+        if (at - kn.last > 1500 || !kn.start) kn.start = at;
+        kn.last = at;
+        return { verdict: 'KNOCK', age: now - kn.start, burst: o.chip !== 'simple' };
     }
 
     /** The drawing options from the settings. */
-    function optsNow() { return optsFrom(settings); }
+    // the layout follows the driving mode when one is set for it ("Play on HUD": the main layout)
+    function optsNow() { return optsFrom(settings, Date.now() < demoUntil || !src.driveMode ? null : src.driveMode()); }
     /** What the driving mode asks of the HUD now ('all', 'lights', 'hide'); "Play on HUD" always shows all. */
     function calm(playing) { return playing ? 'all' : calmFor(src.driveMode ? src.driveMode() : null, settings.get('hudComfort')); }
 
@@ -641,11 +682,14 @@ function start(ctx, src) {
                     if (target) target = { state: '', holder: '', disabled: target.disabled };
                 }
                 if (src.gearbox) src.gearbox.stop();
+                if (src.knock) src.knock.stop();
                 claim.hold(false);          // nothing of Redline's on the HUD: the standing app may show
                 if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }
             if (!layer) { makeLayer(); if (!layer) return; }
+            // a driving mode with its own layout can switch to or from the GPU-drawn Arc: the layers made again
+            if (!!gpu !== useGpu()) { relayer(); if (!layer) return; }
             claim.hold(true);
             if (hiddenLogged) { hiddenLogged = false; log.info('hud: back on'); }
         }
@@ -655,12 +699,15 @@ function start(ctx, src) {
         if (paused()) {
             first = true; lastKey = '';
             if (src.gearbox) src.gearbox.stop();
+            if (src.knock) src.knock.stop();
             return;
         }
         // the gearbox unit is asked only while its readout is on
         // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
         const oNow = calm(Date.now() < demoUntil) === 'lights' ? calmOpts(optsNow()) : optsNow();
         if (src.gearbox) { if (oNow.gearbox) src.gearbox.start(); else src.gearbox.stop(); }
+        // the engine unit's knock values only while wanted and the engine runs
+        if (src.knock) { const run = isNum(src.data().rpm) && src.data().rpm > 400; if ((oNow.knock || oNow.knockWarn) && run) src.knock.start(); else src.knock.stop(); }
         let f = frameData();
         // GPU: the lights and band are the effect layer's (a few numbers when they change); the image keeps the text
         if (gpu) { gpu.update(f); f = Object.assign({}, f, { opts: Object.assign({}, f.opts, { lights: false, bar: false }) }); }
@@ -692,7 +739,7 @@ function start(ctx, src) {
         const moving = o.lights || o.bar !== false || o.style === 'digital' || o.style === 'vfd';
         return [moving && isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
             moving ? Math.round(c.from / 25) : '', moving ? Math.round(c.at / 25) : '', f.shift, f.redline, f.max, moving ? Math.round((f.peak || 0) / 25) : '',
-            f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
+            f.chip ? f.chip.verdict + (f.chip.text || '') + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
             o.style, o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, o.gearFont].join('|');
     }

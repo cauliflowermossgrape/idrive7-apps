@@ -46,9 +46,9 @@ const PALETTES = {
     vfd: { low: '#3ef0d0', mid: '#a8fff0', high: '#ff6a3a', flash: '#ff6a3a', limit: '#ff4a2a', text: '#5ff6dc', cold: '#46b4ff', warm: '#ffd34a', hot: '#ff5a3a', arrow: '#5ff6dc', peak: '#d8fff8' },
     ice: { low: '#8fcfff', mid: '#e6f4ff', high: '#ff3a3a', flash: '#ff3a3a', limit: '#ff3a3a', text: '#ffffff', cold: '#5aa8ff', warm: '#e6f4ff', hot: '#ff3a3a', arrow: '#8fcfff', peak: '#ffffff' },
 };
-const VERDICT = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold' };
+const VERDICT = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold', KNOCK: 'limit' };
 const palette = (name) => PALETTES[name] || PALETTES.colour;
-const VERDICT_TEXT = { 'SPOT ON': 'PERFECT SHIFT', EARLY: 'EARLY', LATE: 'LATE', LIMITER: 'LIMITER', 'COLD REV': 'COLD REV' };
+const VERDICT_TEXT = { 'SPOT ON': 'PERFECT SHIFT', EARLY: 'EARLY', LATE: 'LATE', LIMITER: 'LIMITER', 'COLD REV': 'COLD REV', KNOCK: 'KNOCK' };
 
 /*
  * 7-segment characters: segments a (top), b (top right), c (bottom right), d (bottom), e (bottom
@@ -232,8 +232,9 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
  * and fades, and the word fades over the last 300 ms of its 1.5 s.
  */
 function drawChip(cv, x0, x1, y, chip, P) {
-    const c = P[VERDICT[chip.verdict] || 'text'] || P.text, cx = (x0 + x1) / 2;
-    if (!chip.burst) { cv.text(chip.verdict, cx, y + 36, 28, c, { align: 'center', font: 'bold', spacing: 2 }); return; }
+    // a chip may carry its own text and colour (the launch time: { text, tone }); the grades go by the verdict
+    const c = P[chip.tone || VERDICT[chip.verdict] || 'text'] || P.text, cx = (x0 + x1) / 2;
+    if (!chip.burst) { cv.text(chip.text || chip.verdict, cx, y + 36, 28, c, { align: 'center', font: 'bold', spacing: 2 }); return; }
     const a = chip.age || 0;
     const size = a < 150 ? 34 - 8 * (a / 150) : 26, alpha = a > 1200 ? clamp(1 - (a - 1200) / 300, 0, 1) : 1;
     if (a < 500) {
@@ -241,7 +242,7 @@ function drawChip(cv, x0, x1, y, chip, P) {
         const rr = Math.min(30 + 36 * (a / 500), IH - (y + 26) - 2);
         cv.arc(cx, y + 26, rr - 2, rr, 0, 360, withAlpha(c, 0.8 * (1 - a / 500)));
     }
-    if (alpha > 0) cv.text(VERDICT_TEXT[chip.verdict] || chip.verdict, cx, y + 36, size, withAlpha(c, alpha), { align: 'center', font: 'bold', spacing: 1.5 });
+    if (alpha > 0) cv.text(chip.text || VERDICT_TEXT[chip.verdict] || chip.verdict, cx, y + 36, size, withAlpha(c, alpha), { align: 'center', font: 'bold', spacing: 1.5 });
 }
 
 /** The parts every layout draws the same way. */
@@ -268,7 +269,9 @@ function drawLayer(cv, f, layer) {
         cv.text(f.mode, at[0], at[1], 18, withAlpha(P.text, 0.85), { font: 'bold' });
     }
     const s = { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, dim: o.dim, style: o.lightStyle, P: P, layer: layer, peak: f.peak };
-    const gearCol = cue.limiter && f.blink ? P.limit : P.text;
+    // knock on the layouts with no place for the warning (Minimal, Split wings): the gear goes red as well
+    const knock = f.chip && f.chip.verdict === 'KNOCK';
+    const gearCol = (cue.limiter && f.blink) || (knock && (o.style === 'minimal' || o.style === 'wings')) ? P.limit : P.text;
     const fg = layer !== 'bg';
 
     if (o.style === 'digital' || o.style === 'vfd') {
@@ -321,6 +324,8 @@ function drawLayer(cv, f, layer) {
             const r = lightsRow(tx, 26, tw, 22);
             drawLights(cv, r.pts, r.pts.map((p, i) => (o.gt3 ? Math.min(i, 11 - i) : i)), o.gt3 ? 6 : 12, r.rad, s);
         }
+        // the knock warning in the room under the lights (Minimal shows no grades)
+        if (fg && knock) cv.text('KNOCK', tx + tw / 2, 100, 26, P.limit, { align: 'center', font: 'bold', spacing: 2 });
         return;
     }
 
