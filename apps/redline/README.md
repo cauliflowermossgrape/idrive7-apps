@@ -429,6 +429,13 @@ Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
 - `hud: drawing … on the GPU …`, `hud: GPU layer …`: the GPU drawing's layer and its state.
+- `hud: slot 0x323 status …`: what BMW has in the HUD's slot besides Redline (each change).
+- `redline-nav.log` (beside `redline.log`): the navigation probe, read-only, for Redline's own HUD
+  directions to come. What BMW's guidance service (`navigation.guiding.Guidance`: route state, which app
+  guides, the next manoeuvre with its distance) and the CarPlay / Android Auto managers send, each change
+  (a turn getting nearer at most every 5 s), and once per kind of manoeuvre every key it has. Coordinates
+  are left out. The interfaces are the ones jaimeen77's Cluster Redline (jaimeen77-cmyk/apps) reads; all
+  optional, so a car without them installs Redline as before.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
 - `limiter: learned …`
 - `shiftmap: 3>4 at 5550`

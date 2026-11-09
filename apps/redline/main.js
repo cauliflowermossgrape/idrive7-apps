@@ -870,6 +870,8 @@ mgu.run({
                 knock: knock.value().retard,
             }),
         });
+        // read-only navigation probe for Redline's own HUD directions (redline-nav.log); never stops the app
+        try { require('./navlog').start(ctx, log); } catch (e) { log.warn('nav: probe not started: ' + e); }
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });
