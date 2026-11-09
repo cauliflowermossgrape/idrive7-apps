@@ -583,11 +583,10 @@ function start(ctx, src) {
     const dropLayer = safe('drop', () => { stopTimer(); dropGpu(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
     // the GPU path: chosen, on the Arc (the only layout it draws yet), and not refused by this renderer
     let gpuFailed = false;
-    // the GPU draws the Arc only. 1.16.1 drew every layout with the gauge shader: on the car (2026-11-09) flicking
-    // through layouts restarted the instrument cluster twice (its renderer runs the shaders) and cluster-render's
-    // guard switched the HUD off. GpuGauge stays in hud-gpu.js, unused, until the cluster's limits are known.
+    // the GPU draws the Arc only (Advanced, experimental). A shader for every other layout was tried in 1.16.1:
+    // on the car it restarted the instrument cluster (its renderer runs the HUD's shaders), so it was dropped
     const useGpu = () => settings.get('hudRenderer') === 'gpu' && !gpuFailed && optsNow().style === 'arc';
-    const gpuStale = () => !!gpu !== useGpu() || (!!gpu && gpu.style !== optsNow().style);
+    const gpuStale = () => !!gpu !== useGpu();
     /** The layers made again (the drawing path or its options changed), the timer kept. */
     const relayer = safe('relayer', () => {
         if (shown !== 'tach' || !layer) return;
@@ -810,8 +809,7 @@ function start(ctx, src) {
         if (src.knock) { const run = isNum(src.data().rpm) && src.data().rpm > 400; if ((oNow.knock || oNow.knockWarn) && run) src.knock.start(); else src.knock.stop(); }
         let f = frameData();
         // GPU: the lights and band are the effect layer's (a few numbers when they change); the image keeps the text
-        // (the Arc's shader draws its lights and band whole; for the rest the picture keeps what stands still)
-        if (gpu) { gpu.update(f); f = Object.assign({}, f, { opts: Object.assign({}, f.opts, gpu.under ? { lights: false, bar: false } : { gpuSink: Gpu.DROP_SINK }) }); }
+        if (gpu) { gpu.update(f); f = Object.assign({}, f, { opts: Object.assign({}, f.opts, { lights: false, bar: false }) }); }
         // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
         const key = frameKey(f);
         if (!first && key === lastKey) return;
@@ -837,11 +835,9 @@ function start(ctx, src) {
         const age = f.chip && f.chip.burst ? (f.chip.age < 500 || f.chip.age > 1200 ? Math.floor(f.chip.age / 40) : 'h') : '';
         // the revs, the count-in and the peak only move the lights, the bar and the 7-segment digits: without them
         // (the GPU path draws them, or both switched off) the picture is the text, keyed by the readouts' values
-        // (with the GPU's sink nothing moving is in the picture but the peak line, which hides as the revs reach it)
-        const moving = !o.gpuSink && (o.lights || o.bar !== false || o.style === 'digital' || o.style === 'vfd');
-        const peakSeen = isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50);
+        const moving = o.lights || o.bar !== false || o.style === 'digital' || o.style === 'vfd';
         return [moving && isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
-            moving ? Math.round(c.from / 25) : '', moving ? Math.round(c.at / 25) : '', f.shift, f.redline, f.max, moving ? Math.round((f.peak || 0) / 25) : o.gpuSink && peakSeen ? Math.round(f.peak / 25) : '',
+            moving ? Math.round(c.from / 25) : '', moving ? Math.round(c.at / 25) : '', f.shift, f.redline, f.max, moving ? Math.round((f.peak || 0) / 25) : '',
             f.chip ? f.chip.verdict + (f.chip.text || '') + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
             o.style, o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, o.gearFont].join('|');
@@ -851,14 +847,12 @@ function start(ctx, src) {
     function makeLayer() {
         const r = rect();
         if (useGpu()) {
-            gpu = optsNow().style === 'arc' ? new Gpu.GpuArc(cr, { P: Draw.PALETTES[optsNow().palette] || Draw.PALETTES.colour, lightCol: Draw.lightCol, RACE_BLUE: '#2a7dff' }, log)
-                : new Gpu.GpuGauge(cr, optsNow().style, { drawLayer: Draw.drawLayer, SEG7: Draw.SEG7 }, log);
+            gpu = new Gpu.GpuArc(cr, { P: Draw.PALETTES[optsNow().palette] || Draw.PALETTES.colour, lightCol: Draw.lightCol, RACE_BLUE: '#2a7dff' }, log);
             if (!gpu.make(r, settings.get('hudGpuAlpha') === 'premul')) { log.warn('hud: GPU layer refused by the client'); gpu = null; }
             else log.info('hud: drawing ' + optsNow().style + ' on the GPU (alpha ' + (settings.get('hudGpuAlpha') === 'premul' ? 'premultiplied' : 'straight') + ')');
         }
         // the text over the GPU's layer (z 1), or the whole picture
-        // the Arc's shader under the picture (it draws the whole band); the gauge shader over it (only what's lit)
-        layer = cr.image({ target: 'hud', klass: 'overlay', z: gpu && gpu.under ? 1 : 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
+        layer = cr.image({ target: 'hud', klass: 'overlay', z: gpu ? 1 : 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
         if (!layer) { log.warn('hud: tach layer refused by the client'); return; }
         cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true; lastKey = '';
     }

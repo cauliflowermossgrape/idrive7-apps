@@ -124,7 +124,7 @@ function drawLights(cv, pts, pos, steps, rad, s) {
         const k = pos[i];
         if (bg && (s.dim || s.ghost)) put(pts[i], withAlpha(flash ? flashCol : col(k), s.ghost ? 0.14 : 0.16), false);
         const c = flash ? (s.blink ? flashCol : null) : k < lit ? col(k) : null;
-        if (fg && c) { if (s.sink) s.sink.light(pts[i][0], pts[i][1], rad, shape, c); else put(pts[i], c, true); }
+        if (fg && c) put(pts[i], c, true);
     }
 }
 
@@ -150,14 +150,13 @@ function drawBar(cv, x, y, w, h, s) {
     if (fg) mark(s.redline, P.limit);
     if (bg && (s.dim || s.outline)) for (let r = 0; r < s.redline; r += 500) seg(r, Math.min(s.redline, r + 500), s.trackCol);
     if (bg) for (let r = s.redline; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), withAlpha(P.limit, 0.4));
-    if (fg && s.sink) s.sink.bar(x, barY, w, barH, slant, s.max, !!s.outline);
     if (fg && isNum(rpm) && rpm > 50) {
         // low below the shift point, mid past it, high into the redline; all flashing on the limiter
         const top = Math.min(rpm, s.max);
         for (let r = 0; r < top; r += 500) {
             const mid = r + 250;
             const c = cue.limiter ? (s.blink ? P.limit : withAlpha(P.limit, 0.35)) : mid >= s.redline ? P.high : mid >= s.shift ? P.mid : P.low;
-            if (s.sink) s.sink.seg(r / 500, c); else seg(r, Math.min(top, r + 500), c);
+            seg(r, Math.min(top, r + 500), c);
         }
     }
     // peak: a thin slanted line where the revs peaked, while they are below it
@@ -179,7 +178,6 @@ function drawGraph(cv, x, y, w, h, s, vfd) {
     const rpmOf = (i) => (i + 0.5) * s.max / n;
     const sx = (i) => x + i * (sw + gap);
     const at = (r) => clamp(Math.floor(r / s.max * n), 0, n - 1);
-    if (fg && s.sink) s.sink.graph(x, top, sw, sh, s.max);
     if (fg && isNum(s.shift) && s.shift < s.redline) cv.fillRect(sx(at(s.shift)) + sw / 2 - 1, y, 3, 4, P.mid);
     if (fg) cv.fillRect(sx(at(s.redline)) + sw / 2 - 1, y, 3, 4, P.limit);
     for (let i = 0; i < n; i++) {
@@ -187,7 +185,7 @@ function drawGraph(cv, x, y, w, h, s, vfd) {
         if (bg && (vfd || s.dim || zone)) cv.fillRect(sx(i), top, sw, sh, withAlpha(zone ? P.limit : P.text, zone ? 0.3 : vfd ? 0.1 : 0.12));
         if (fg && isNum(rpm) && r <= rpm) {
             const c = cue.limiter ? (s.blink ? P.limit : withAlpha(P.limit, 0.35)) : zone ? P.high : r >= s.shift ? P.mid : P.low;
-            if (s.sink) s.sink.seg(i, c); else cv.fillRect(sx(i), top, sw, sh, c);
+            cv.fillRect(sx(i), top, sw, sh, c);
         }
     }
     if (fg && isNum(s.peak) && s.peak > 0 && !(isNum(rpm) && rpm >= s.peak - 50)) {
@@ -273,7 +271,7 @@ function drawLayer(cv, f, layer) {
         const at = o.style === 'wings' ? [IW / 2 + 34, 24] : o.style === 'digital' || o.style === 'vfd' ? [58, 22] : [56, 24];
         cv.text(f.mode, at[0], at[1], 18, withAlpha(P.text, 0.85), { font: 'bold' });
     }
-    const s = { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, dim: o.dim, style: o.lightStyle, P: P, layer: layer, peak: f.peak, sink: o.gpuSink };
+    const s = { rpm: d.rpm, cue: cue, shift: f.shift, redline: f.redline, max: f.max, blink: f.blink, dim: o.dim, style: o.lightStyle, P: P, layer: layer, peak: f.peak };
     // knock on the layouts with no place for the warning (Minimal, Split wings): the gear goes red as well
     const knock = f.chip && f.chip.verdict === 'KNOCK';
     const gearCol = (cue.limiter && f.blink) || (knock && (o.style === 'minimal' || o.style === 'wings')) ? P.limit : P.text;
@@ -292,10 +290,7 @@ function drawLayer(cv, f, layer) {
         if (o.gear) seg7(cv, gearText(d).slice(0, 1), 4, 10, 50, 86, 9, gearCol, ghost, false, layer);
         if (fg) drawDown(cv, 29, 106, f.down || 0, 1, P.arrow);
         const rpmTxt = isNum(d.rpm) && d.rpm < 9995 ? String(Math.max(0, Math.round(d.rpm / 10) * 10)).padStart(4, ' ') : '----';
-        if (o.rpm !== false) {
-            if (s.sink && layer === 'fg') s.sink.digits(rpmTxt, P.text);
-            else seg7text(cv, rpmTxt, 76, 64, 16, 30, 4, 5, P.text, ghost, false, s.sink ? 'bg' : layer);
-        }
+        if (o.rpm !== false) seg7text(cv, rpmTxt, 76, 64, 16, 30, 4, 5, P.text, ghost, false, layer);
         if (f.chip) { if (fg) drawChip(cv, 166, IW, 62, f.chip, P); } else drawReadouts(cv, 166, IW, 62, f.readouts || [], P, layer, o.clearLabels);
         return;
     }
@@ -392,4 +387,4 @@ function scaled(r, k, ox, oy) {
     };
 }
 
-module.exports = { scaled, lightCol, gearFont, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, SEG7, gearText, PALETTES, IW, IH, TEMP_X };
+module.exports = { scaled, lightCol, gearFont, drawHud, drawLayer, drawLights, drawBar, drawGraph, drawDown, drawReadouts, drawChip, seg7, gearText, PALETTES, IW, IH, TEMP_X };

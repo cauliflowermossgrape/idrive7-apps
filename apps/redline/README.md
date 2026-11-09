@@ -95,14 +95,13 @@ On all three the shift grade takes the first readout's place; with *Burst* a rin
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
 on the limiter, as in the cars.
 
-**Drawing on the GPU** (*Drawing*, experimental, Arc only; Picture by default): the Arc's lights, band,
-ticks, peak line and flash are a cluster-render effect layer, a shader the renderer runs itself
-(`hud-gpu.js`), sent a few numbers only when they change; the text stays a picture over it. The HUD's
-shaders run on the instrument cluster's own renderer. 1.16.1 drew every layout this way (a gauge shader,
-still in `hud-gpu.js`, unused): on the car, flicking through layouts restarted the cluster twice
-(driver-assistance warnings until it settled) and cluster-render's guard switched the HUD off. So only the
-Arc's shader, which ran on the car without trouble, is used. If the renderer refuses it, Redline goes back
-to the picture for that run (`hud: GPU drawing refused` in the log).
+**Drawing on the GPU** (Advanced: *HUD drawing*, experimental, Arc only; Picture by default): the Arc's
+lights, band, ticks, peak line and flash as a cluster-render effect layer, a shader the renderer runs itself
+(`hud-gpu.js`), sent a few numbers only when they change; the text stays a picture over it. It ran on the
+car, but the shift lights felt a touch late next to the picture, so the picture stays the default. The HUD's
+shaders run on the instrument cluster's own renderer: a shader for every other layout, tried in 1.16.1,
+restarted the cluster on the car and was dropped. If the renderer refuses the Arc's shader, Redline goes
+back to the picture for that run (`hud: GPU drawing refused` in the log).
 
 **Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
 Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
@@ -134,7 +133,7 @@ missing falls back to Ubuntu.
   - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
     peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
     gear or the best one).
-  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass; on Arc, the GPU drawing (experimental). Reset puts
+  - **Place:** smaller / bigger, and move left / right / up / down, live on the glass. Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
   you're parked. Nothing is learned from it.
@@ -161,7 +160,7 @@ as Live Data shows it) picks which one shows.
     anything makes Comfort its own, so nothing needs switching on first.
   - *Don't show*: Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as soon as the mode
     is Sport. Comfort's own setup, if it has one, is kept for later.
-- Shared by both: size and position, the GPU drawing, units, the light colours and the downshift
+- Shared by both: size and position, the HUD drawing (Advanced), units, the light colours and the downshift
   arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
   becomes Comfort's own setup without readouts or alerts.
@@ -206,7 +205,7 @@ else is on the **HUD looks** page, by picture and with a live preview. Switch *A
 on to also list them in Settings, as five groups (*HUD: look*, *gauge*, *readouts*, *alerts*, *place*);
 they set the Sport HUD (Comfort's own is set up on HUD looks). The rest of Settings is grouped too: *Shift point*, *Engine*, *Learning*, *Units* (all
 five units, app-wide), *Screen*, and behind *Advanced settings*, the renderer and the HUD's frame
-rate, readout refresh, GPU edges and hand-back. Every change shows on the HUD at once. The tables
+rate, readout refresh, the Arc's GPU drawing and its edges, and hand-back. Every change shows on the HUD at once. The tables
 below list them by what they do.
 
 **HUD style:** how it looks.
@@ -215,8 +214,8 @@ below list them by what they do.
 |---|---|
 | Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
 | Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
-| Drawing (Arc) | Picture (default) / GPU (experimental) |
-| GPU edges | Straight / Premultiplied (while testing the GPU drawing) |
+| HUD drawing (Advanced, Arc) | Picture (default) / GPU (experimental) |
+| GPU edges (Advanced) | Straight / Premultiplied (while testing the GPU drawing) |
 | Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
@@ -423,13 +422,8 @@ Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
 - `hud: drawing … on the GPU …`, `hud: GPU layer …`: the GPU drawing's layer and its state.
-- `hud: slot 0x323 status …`: what BMW has in the HUD's slot besides Redline (each change).
-- `redline-nav.log` (beside `redline.log`): the navigation probe, read-only, for Redline's own HUD
-  directions to come. What BMW's guidance service (`navigation.guiding.Guidance`: route state, which app
-  guides, the next manoeuvre with its distance) and the CarPlay / Android Auto managers send, each change
-  (a turn getting nearer at most every 5 s), and once per kind of manoeuvre every key it has. Coordinates
-  are left out. The interfaces are the ones jaimeen77's Cluster Redline (jaimeen77-cmyk/apps) reads; all
-  optional, so a car without them installs Redline as before.
+- `hud: target hud: slot 0x323 …`: cluster-render's report on the HUD's slot (each change): whether Redline
+  or BMW's content (its navigation, with CarPlay) holds it.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
 - `limiter: learned …`
 - `shiftmap: 3>4 at 5550`
