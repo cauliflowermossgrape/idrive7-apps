@@ -48,6 +48,8 @@ const NOT_ON = {
     hudShowOutside: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowKnock: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowLimit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowTyres: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudTyreUnit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowBattSoc: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowBattVolt: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowHvSoc: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
@@ -63,7 +65,9 @@ const NOT_ON = {
 // the data: revs counting in, a grade just made, temperatures hot / cold, every extra value there
 const D = { rpm: 5637, gear: 3, stage: 'D', oil: 95, coolant: 90 };
 // (the electrical values too: a plug-in hybrid; test_redline_hud.js checks a petrol car shows none of the hybrid ones)
-const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3, soc12: 82, v12: 14.2, hvSoc: 64, hvKw: -18, hvTemp: 27, hvVolt: 352 };
+// the tyres (as the demo has them: one a little under its target, one well under)
+const TY = Hud.demoAt(0).tyres;
+const X = { tyres: TY, torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3, soc12: 82, v12: 14.2, hvSoc: 64, hvKw: -18, hvTemp: 27, hvVolt: 352 };
 function picture(over, style, state) {
     const settings = { get: (k) => (k in over ? over[k] : def[k]) };
     const o = Object.assign({}, Hud.optsFrom(settings), { style: style });
@@ -92,13 +96,16 @@ const ALONE = {
     hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
     hudShowOil: { hudShowOil: true }, hudShowWater: { hudShowWater: true }, hudShowGearbox: { hudShowGearbox: true }, hudTempUnit: { hudShowOil: true },
     hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' }, hudShowKnock: {},
+    hudShowTyres: {}, hudTyreUnit: { hudShowTyres: true },
     hudShowBattSoc: {}, hudShowBattVolt: {}, hudShowHvSoc: HY, hudShowHvPower: HY, hudShowHvTemp: HY, hudShowHvVolt: HY,
 };
 const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 
 // every option that isn't the default, of the settings that change the picture
 // hudHybridSeen: found by the app, not a choice (it only lets the hybrid switches work: test_redline_hud.js)
-const SKIP = ['hudHybridSeen', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle',
+// the tyre widget's settings: its own picture in the directions' corner, not the tach's (test_redline_hud.js,
+// test_redline_running.js); hudTyresSeen: found by the app
+const SKIP = ['hudHybridSeen', 'hudTyresSeen', 'hudTyreWidget', 'hudTyreCar', 'hudTyreTarget', 'hudTyreTemp', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle',
     // the directions: their own layer (test_redline_hud_nav.js), not the tach's picture
     'hudNav', 'hudNavX', 'hudNavY'];
 const variants = [];

@@ -143,7 +143,7 @@ missing falls back to Ubuntu.
   - **Gauge:** the shift lights (GT3, left to right, or off) and their colours (M, Race, one
     colour: the centre screen's too), which parts show (rev bar, gear, gear mode) and unlit
     segments (dim or hidden). Every part can be turned off, so the HUD can be, say, the lights alone.
-  - **Readouts:** *Engine*: RPM, Boost, Torque, Power, G-force, Knock. *Temps*: Oil, Water,
+  - **Readouts:** *Engine*: RPM, Boost, Torque, Power, G-force, Knock, Tyres. *Temps*: Oil, Water,
     Gearbox, Outside, the cold-engine limit, and *Only when cold or hot*. Up to four show, in this
     order; when more are on, the last plain ones give way, so a cold or hot reading keeps its place.
     *Engine / Electric* switches to the electrical readouts: *12 V*: Charge, Voltage (every car);
@@ -152,6 +152,10 @@ missing falls back to Ubuntu.
   - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
     peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
     gear or the best one).
+  - **Tyres** (only once the car has sent tyre pressures): the tyre widget. When it shows (when a tyre
+    is low / always / off), its unit, its parts (the car, each tyre's target, the temperatures) and
+    where its corner is (moving it moves the directions too). The preview shows it three times its
+    size: your tyres, or a sample ([Tyres](#tyres)).
   - **Place:** smaller / bigger, and move left / right / up / down, live on the glass. Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
@@ -257,11 +261,15 @@ below list them by what they do.
 | Launch time | on (default) / off: after a standing start, the 0-100 km/h (0-60 mph) time and its difference to your best, for 3 s ([Launch score](#launch-score)) |
 | Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
+| Tyres | off (default) / on: TYRES over the four pressures in a 2x2 block (front over rear), each coloured against its target; on Arc, Ramp and Dial the worst tyre (TYRE RR 2.1) ([Tyres](#tyres)) |
+| Tyre widget | when a tyre is low (default) / always / off: the four tyres in the directions' corner, when they have no turn ([Tyres](#tyres)) |
+| Tyre widget: the car, each tyre's target, tyre temperatures | on (default) / off each |
 | 12 V battery charge, 12 V battery voltage | off (default) / on each, on every car ([Electrical](#electrical)) |
 | Hybrid battery charge, power, temperature, voltage | off (default) / on each; listed only on a plug-in hybrid ([Electrical](#electrical)) |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
 | Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
+| Tyre pressure unit | bar (default) / psi / kPa, on the HUD |
 
 At most four readouts fit the row; past that the last one gives way.
 
@@ -511,6 +519,44 @@ None is checked on a car yet: the 12 V ones can be checked on any car, the hybri
 hybrid. The power's sign (+ drive, − regen) is eDrive's, checked only on an X5 45e. A 48 V mild hybrid
 shows only the 12 V ones (its 48 V battery is in eDrive).
 
+## Tyres
+
+Redline's own reading of the car's tyre pressure signals; nothing of Car Vitals is loaded or read. The
+scaling is the one Car Vitals worked out on cars:
+
+| Signal | What | Scaling |
+|---|---|---|
+| `TPMS.statusTyrePressure` | each tyre's pressure | 0.1 × raw in the car's pressure unit; 65532 and up = none |
+| `TPMS.statusTargetTyrePressure` | each tyre's target | the same |
+| `TPMS.statusTyreTemperature` | each tyre's temperature | the car's degrees + 40; 65535 = none |
+| `Vehicle.statusNewCurrentUnitsStatusExt` | the car's units (bar / kPa / psi, °C / °F) | until the car says, told from the value: bar 0.5–6, psi 7–60, kPa 60–600 (psi means °F too) |
+
+**Colours**, against each tyre's own target (Car Vitals' tyre card's bands): red under 85 %, orange
+under 93 % or over 115 %, green between. Without a target, white. The tyre temperature is blue under
+20 °C, orange over 90, red over 105.
+
+**The Tyres readout** shows TYRES over the four pressures in a 2x2 block, front over rear. Where readouts
+are a label and a value (Arc, Ramp, Dial) it is the worst tyre: the lowest against its target. While every
+tyre is green it is a plain readout, so with more than four on it gives way like one.
+
+**The tyre widget** is a second small picture beside the tach: the directions' (200×76, the glass's
+bottom right corner, the same layer and place). The directions come first: while they have a turn to
+show, the corner is theirs, and the tyres come back when it's done. In it: the car from above with the
+unit inside, a tyre at each corner, and beside each its pressure big with "/2.5" (its target) small after
+it, then the tyre's temperature under it. Each part can be switched off (the car, the targets, the
+temperatures); with no temperatures the pressures are bigger. Text that wouldn't fit its room (kPa,
+*Clearer* labels) is drawn smaller. It uses the HUD colours.
+
+It shows **when a tyre is low** (the default: red, under 85 % of its target; it goes when the tyre is
+pumped up), **always**, or **never**. Set it up on *HUD looks → TYRES*; its corner moves with *MOVE*
+there, which moves the directions too (*Directions left / right*, *up / down*). The TYRES tab, the Tyres
+readout switch and these settings show only once the car has sent a tyre pressure, so a car without
+tyre data never sees them. Logged `hud: low tyre RR: the tyre widget shows`.
+
+The car sends the tyres every few seconds while driving; a value over 10 minutes old isn't shown. The
+first raw values of each kind are logged (`tyres: raw pressure [...]`) to check the scaling on a new
+car. Not yet checked on a car.
+
 ## Launch score
 
 Each standing start is timed 0-100 km/h and 0-60 mph by the run timer Drag Timer uses
@@ -541,7 +587,7 @@ load they are range-checked; a bad file is ignored and relearned.
 To see what was learned, run this from a computer on the car's hotspot:
 
 ```sh
-ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox|electrical' /var/opt/public/oap/oap_*/data/redline*.log | tail -n 60"
+ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox|electrical|tyres' /var/opt/public/oap/oap_*/data/redline*.log | tail -n 60"
 ```
 
 Useful lines:
@@ -565,6 +611,7 @@ Useful lines:
 - `hud: shift at … (N ms late), reaction lead now …`
 - `gearbox: EGS 6000 = … C`
 - `electrical: 12 V from 18:OBD 42`, `electrical: high-voltage battery found (…)`
+- `tyres: the car sends tyre pressures: …`, `tyres: car units: …`, `tyres: raw pressure [...]`, `hud: low tyre RR: …`
 
 ## For developers
 
@@ -581,6 +628,8 @@ Useful lines:
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |
 | `knock.js` | Knock retard from the engine unit (read-only UDS 22) |
 | `electrical.js` | 12 V and hybrid battery readouts (car signals and read-only UDS; hybrid found by the app) |
+| `tyres.js` | Tyre pressures, targets and temperatures from the car's signals; the Tyres readout and its colours |
+| `hud-tyres.js` | Drawing the tyre widget (200×76, the directions' corner): the car from above with its four tyres |
 | `cluster_render_client.js` | Vendored unchanged from robertnisipeanu/idrive-apps `native/cluster-render/js` (MPL-2.0) |
 
 **Flow.** Car samples (about 10–20 a second) go to `main.js` `onSample`. From there they feed the

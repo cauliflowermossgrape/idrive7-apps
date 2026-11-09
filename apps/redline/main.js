@@ -28,6 +28,8 @@
  *   gearbox.js   gearbox oil temperature for the HUD (EGS over read-only UDS, or BasicDataSet)
  *   knock.js     knock retard from the engine unit for the HUD's knock warning and readout (read-only UDS)
  *   electrical.js  12 V and hybrid battery readouts for the HUD (car signals and read-only UDS)
+ *   tyres.js     tyre pressures, targets and temperatures from the car's signals (Redline's own reading)
+ *   hud-tyres.js the tyre widget: the car from above with its four tyres, in the directions' corner
  *   cluster_render_client.js  vendored unchanged from robertnisipeanu/idrive-apps (MPL-2.0)
  *
  * The limits, first that has one:
@@ -53,6 +55,8 @@ const HudDraw = require('./hud-draw');
 const GearboxTemp = require('./gearbox');
 const KnockWatch = require('./knock');
 const Electrical = require('./electrical');
+const Tyres = require('./tyres');
+const HudTyres = require('./hud-tyres');
 const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
@@ -104,6 +108,8 @@ mgu.run({
         const knock = new KnockWatch(ctx, () => gearbox.diag());
         // 12 V and hybrid battery from the car (signals, and read-only UDS on the same link); hybrid ones only on a hybrid
         const electrical = new Electrical(ctx, () => gearbox.diag());
+        // tyre pressures, targets and temperatures from the car's own signals (no requests to any unit)
+        const tyres = new Tyres(log, settings);
         // engine torque for the shift map, with its time: put() keeps the last value when the signal
         // goes invalid, so a stale torque would be paired with new rpm and inflate the curve
         const torque = { v: null, t: 0 };
@@ -156,7 +162,7 @@ mgu.run({
                 if (gearMode.seen.indexOf(String(raw)) < 0 && gearMode.seen.length < 12) { gearMode.seen.push(String(raw)); log.info('gearbox programme: ' + JSON.stringify(raw) + ' -> ' + gearMode.v); }
             },
         } };
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), electrical.handlers(), torqueWatch));
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], Object.assign({ [Engine.SIGNAL[0]]: engine.handlers() }, gearbox.handlers(), electrical.handlers(), tyres.handlers(), torqueWatch));
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter
@@ -581,7 +587,14 @@ mgu.run({
             // the live preview, twice the HUD's size, on black like the glass
             const px = 32, py = 56, f = studioFrame(now), sh = f.shake ? f.shake : [0, 0];
             cv.roundRect(24, 48, 816, 276, 12, '#000000');
-            HudDraw.drawLayer(HudDraw.scaled(cv, 2, px + sh[0] * 2, py + sh[1] * 2), f);
+            // the TYRES tab: the tyre widget three times its size (the car's tyres, or a sample), not the tach
+            if (studio.panel === 'tyres' && !tyres.seen()) studio.panel = 'look';
+            if (studio.panel === 'tyres') {
+                const w = HudTyres.widgetOf(settings), live = tyres.value();
+                HudTyres.drawWidget(HudDraw.scaled(cv, 3, 432 - HudTyres.TW * 1.5, 172 - HudTyres.TH * 1.5), live || HudTyres.SAMPLE, w, o.style === 'vfd' ? 'vfd' : o.palette);
+                const note = w.show === 'off' ? 'Off: not shown on the HUD' : (live ? 'Your tyres now' : 'A sample') + (w.show === 'low' ? '; on the HUD only while a tyre is low' : '');
+                cv.text(note, 432, 314, 15, t.dim, { align: 'center', font: 'bold' });
+            } else HudDraw.drawLayer(HudDraw.scaled(cv, 2, px + sh[0] * 2, py + sh[1] * 2), f);
             // Comfort / Eco Pro on Don't show: say so over the preview (the setup under it stays)
             if (comfort && cmode === 'hide') {
                 cv.roundRect(24, 48, 816, 276, 12, withAlpha('#000000', 0.9));
@@ -620,7 +633,8 @@ mgu.run({
             // the editor under the preview: tabs, then that panel's buttons
             // category tabs: text with an underline on a divider (like the page tabs), not pills, so they
             // read as categories and the pills below as the things you change
-            const panels = [['look', 'LOOK'], ['gauge', 'GAUGE'], ['readouts', 'READOUTS'], ['alerts', 'ALERTS'], ['place', 'PLACE']];
+            // TYRES only once the car has sent tyre pressures
+            const panels = [['look', 'LOOK'], ['gauge', 'GAUGE'], ['readouts', 'READOUTS'], ['alerts', 'ALERTS']].concat(tyres.seen() ? [['tyres', 'TYRES']] : [], [['place', 'PLACE']]);
             cv.fillRect(24, 398, 1552, 1, withAlpha(t.tick, 0.6));
             let tx = 40;
             panels.forEach((pn) => {
@@ -630,7 +644,7 @@ mgu.run({
                 cv.target(tx - 16, 362, w + 32, 40, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 48;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside,
+            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside, o.tyres,
                 o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvTemp, o.hvVolt].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
@@ -684,7 +698,7 @@ mgu.run({
                     ['Power', o.power, () => P.set('hudShowPower', !o.power)],
                     ['G-force', o.g, () => P.set('hudShowG', !o.g)],
                     ['Knock', o.knock, () => P.set('hudShowKnock', !o.knock)],
-                ]);
+                ].concat(tyres.seen() ? [['Tyres', o.tyres, () => P.set('hudShowTyres', !o.tyres)]] : []));
                 switches(cv, t, R2, 'TEMPS', [
                     ['Oil', o.oil, () => P.set('hudShowOil', !o.oil)],
                     ['Water', o.coolant, () => P.set('hudShowWater', !o.coolant)],
@@ -704,6 +718,21 @@ mgu.run({
                     ['Shake', o.shake, () => P.set('hudShake', !o.shake)],
                 ]);
                 choiceRow(cv, t, R2, 'ARROWS TO', 'downTarget', P.get('downTarget') || 'all', [['all', 'Every gear'], ['best', 'Best gear']], (P.get('downCue') || 'slowing') === 'off', RX, 150);
+            } else if (studio.panel === 'tyres') {
+                // the tyre widget: when it shows, its unit, its parts, and its corner (the directions' too)
+                const w = HudTyres.widgetOf(settings);
+                choiceRow(cv, t, R1, 'SHOW', 'hudTyreWidget', w.show, [['low', 'When a tyre is low'], ['always', 'Always'], ['off', 'Off']]);
+                choiceRow(cv, t, R1, 'UNIT', 'hudTyreUnit', w.unit, [['bar', 'bar'], ['psi', 'psi'], ['kpa', 'kPa']], w.show === 'off', RX, 120);
+                switches(cv, t, R2, 'PARTS', [
+                    ['Car', w.car, () => settings.set('hudTyreCar', !w.car)],
+                    ['Target', w.target, () => settings.set('hudTyreTarget', !w.target)],
+                    ['Temperature', w.temp, () => settings.set('hudTyreTemp', !w.temp)],
+                ]);
+                // (two step groups need ~380 px each: from just after the parts, not from the right column)
+                cv.text('MOVE', 615, R2 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
+                const corner = (v) => (v === 0 ? 'corner' : (v > 0 ? '+' : '') + v);
+                stepButtons(cv, t, 700, R2, 'hudNavX', [['Left', -1], ['Right', 1]], corner);
+                stepButtons(cv, t, 1090, R2, 'hudNavY', [['Up', -1], ['Down', 1]], corner);
             } else {
                 // size and position, a step at a time through each setting's own steps (live on the glass)
                 cv.text('SIZE', 40, R1 + 27, 18, t.dim, { font: 'bold', spacing: 1 });
@@ -724,6 +753,7 @@ mgu.run({
             gauge: 'The shift lights and their colours (the screen uses them too); tap a part to show or hide it',
             readouts: 'Up to four show, in this order; a cold or hot one keeps its place. Units: Settings',
             alerts: 'After an upshift, on knock, after a standing start; Shake: on the limiter. And the downshift arrows',
+            tyres: 'Where the directions go, when they have no turn; it moves with them. Shown big here',
             place: 'Where the HUD sits, for both Sport and Comfort',
         };
         /**
@@ -890,7 +920,7 @@ mgu.run({
         hud = Hud.start(ctx, {
             // the next turn and lanes while a route runs (null: none here)
             nav: nav,
-            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, electrical, downshift,
+            data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, electrical, tyres, downshift,
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
             peak: () => peakRpm,
@@ -901,7 +931,7 @@ mgu.run({
             driveMode: () => (car.data().demo ? null : driveMode.v),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
-            extras: () => (car.data().demo ? null : Object.assign(electrical.value(), {
+            extras: () => (car.data().demo ? null : Object.assign(electrical.value(), { tyres: tyres.value() }, {
                 torque: Date.now() - torque.t < 2000 ? torque.v : null,
                 gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),

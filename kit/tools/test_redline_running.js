@@ -6,7 +6,9 @@
 //   shaders, and a heavy one restarted it on the car: README "HUD drawing");
 // - the Sport / Comfort profiles switch the running HUD with the driving mode, Don't show drops its layer;
 // - the HUD slot's report is asked for, and BMW's content waiting there doesn't move Redline;
-// - the knock warning and the launch time where the grade shows.
+// - the knock warning and the launch time where the grade shows;
+// - the tyre widget in the directions' corner: when a tyre is low (or always, or never), the directions first;
+// - the HUD off stops every UDS reader (the electrical one too).
 
 const fs = require('fs');
 const os = require('os');
@@ -38,6 +40,7 @@ Module._load = function (req, parent, isMain) {
     return load.call(this, req, parent, isMain);
 };
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
+const HudNav = require(path.join(ROOT, 'apps', 'redline', 'hud-nav'));
 const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8'));
 const def = {};
 spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
@@ -59,6 +62,11 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
         maxRpm: () => 8000, driveMode: () => drive,
         // a stand-in knock reader: started / stopped by the HUD, its last event's time set by the test
         knock: { on: false, at: 0, start() { this.on = true; }, stop() { this.on = false; }, value() { return { retard: null, at: this.at }; } },
+        // stand-ins for the electrical reader (started / stopped by the HUD) and the tyres (values set by the test)
+        electrical: { on: false, start() { this.on = true; }, stop() { this.on = false; }, value() { return {}; } },
+        tyres: { val: null, value() { return this.val; } },
+        // a stand-in for the directions: m is the turn shown (null: none)
+        nav: { m: null, view() { return { show: this.m, giveWay: false }; } },
         // a stand-in launch score: a run that finished `at`
         launch: (now, mph) => (launchRun && now - launchRun.at < 3000 ? Object.assign({ label: mph ? '0-60' : '0-100' }, launchRun) : null) };
     let launchRun = null;
@@ -70,7 +78,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     ok(img.length === 1 && cr.of('effect').length === 0, 'Arc (an old GPU setting set): one image layer, no shader');
     const I = cr.layers[img[0]] || {};
     ok(I.target === 'hud' && I.klass === 'overlay' && I.z === 0, 'the image: on the HUD, overlay');
-    for (const st of ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'ramp', 'dial', 'arc']) {
+    for (const st of ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'tyres', 'ramp', 'dial', 'arc']) {
         settings.set('hudStyle', st); rpm = 6400; await sleep(120);
         ok(cr.of('image').length === 1 && cr.of('effect').length === 0, st + ': the picture, no shader');
     }
@@ -128,6 +136,36 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     src.knock.at = 0;
     settings.set('hudLaunch', false);
     ok(!h.frame().chip, 'launch time off: nothing');
+
+    // the tyre widget: the directions' corner (their layer and place) when they have nothing; the directions first
+    settings.set('hudStyle', 'standard'); src.knock.at = 0;
+    const T = (rr) => ({ p: { FL: 2.5, FR: 2.5, RL: 2.7, RR: rr }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: { FL: 40, FR: 40, RL: 40, RR: 40 } });
+    const corners = () => cr.of('image').filter((r) => cr.layers[r].iw === 200 && cr.layers[r].ih === 76);
+    src.tyres.val = T(2.6); await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'tyres fine ("when a tyre is low"): no widget (' + h.corner() + ')');
+    src.tyres.val = T(2.0); await sleep(200);
+    ok(h.corner() === 'tyres' && corners().length === 1 && cr.of('image').length === 2, 'a tyre low: the widget in the corner, beside the tach (' + h.corner() + ')');
+    src.nav.m = HudNav.SAMPLE; await sleep(250);
+    ok(h.corner() === 'nav' && corners().length === 1, 'a turn to show: the directions take the corner (' + h.corner() + ')');
+    src.nav.m = null; await sleep(250);
+    ok(h.corner() === 'tyres', 'the turn done: the tyres again');
+    src.tyres.val = T(2.6); await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'the tyre pumped up: the widget goes');
+    settings.set('hudTyreWidget', 'always'); await sleep(200);
+    ok(h.corner() === 'tyres', 'widget "Always": shown with fine tyres');
+    src.tyres.val = null; await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'no tyre data: no widget');
+    settings.set('hudTyreWidget', 'off'); src.tyres.val = T(1.8); await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'widget off: never, a low tyre neither');
+    settings.set('hudTyreWidget', 'low'); await sleep(200);
+    ok(h.corner() === 'tyres', 'back on "when a tyre is low"');
+    ok(cr.effects === 0, 'no shader made with the tyres either (' + cr.effects + ')');
+
+    // the HUD off: every reader stops, the electrical one too (it kept polling before 2.0's review)
+    ok(src.electrical.on, 'electrical reader started while the HUD shows');
+    settings.set('hud', 'off'); await sleep(200);
+    ok(!src.electrical.on && !src.knock.on, 'HUD off: the electrical and knock readers stopped');
+    ok(corners().length === 0 && h.corner() === '', 'HUD off: the tyre widget gone too');
 
     h.stop();
     fs.rmdirSync && (function rm(p) { if (fs.statSync(p).isDirectory()) { fs.readdirSync(p).forEach((n) => rm(path.join(p, n))); fs.rmdirSync(p); } else fs.unlinkSync(p); })(TMP);

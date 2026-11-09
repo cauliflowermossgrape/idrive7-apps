@@ -8,6 +8,7 @@
 // - the shift cue: counts in, flashes before the point by the lead, holds, ends on the upshift, a
 //   lift or the drop after a shift without a gear signal, and flags the limiter;
 // - the scripted demo drive stays in range; settings in the code exist in app.json and vice versa;
+// - 2.0.1's tyres: Redline's own reading, the readout and its 2x2 block, the tyre widget with every part, unit and label size;
 // - 2.0's electrical readouts: a petrol / diesel car never shows the hybrid ones; electrical.js reads what eDrive reads.
 
 const fs = require('fs');
@@ -33,7 +34,7 @@ const ok = (cond, msg) => { checks++; if (!cond) { fails++; console.log('FAIL ' 
 const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
 const declared = {};
 spec.settings.forEach((s) => { if (s.key) declared[s.key] = s; });
-const src = ['hud.js', 'hud-draw.js', 'main.js'].map((f) => fs.readFileSync(path.join(APP, f), 'utf8')).join('\n');
+const src = ['hud.js', 'hud-draw.js', 'main.js', 'hud-tyres.js', 'tyres.js'].map((f) => fs.readFileSync(path.join(APP, f), 'utf8')).join('\n');
 const used = {};
 src.replace(/settings\.(?:get|set)\('(hud[A-Za-z]*)'/g, (m, k) => { used[k] = true; return m; });
 src.replace(/on\('(hud[A-Za-z]*)'\)/g, (m, k) => { used[k] = true; return m; });
@@ -397,6 +398,117 @@ const labels = (items) => items.map((r) => r.label).join(',');
     const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
     const el = main.slice(main.indexOf("studio.readouts === 'electric'"), main.indexOf("} else if (studio.panel === 'readouts') {"));
     ok(/if \(electrical\.hybrid\(\)\)/.test(el) && el.indexOf('hudShowHvSoc') > el.indexOf('electrical.hybrid()'), 'HUD looks: hybrid switches only on a hybrid');
+}
+
+/* ---------- 2.0.1: tyres (Redline's own reading; the readout; the tyre widget in the directions' corner) ---------- */
+{
+    const Tyres = require(path.join(APP, 'tyres'));
+    const HudTyres = require(path.join(APP, 'hud-tyres'));
+    // our own code: nothing of Car Vitals is required or read
+    ['tyres.js', 'hud-tyres.js', 'hud.js', 'hud-draw.js', 'main.js'].forEach((f) => {
+        const src = fs.readFileSync(path.join(APP, f), 'utf8');
+        ok(!/require\([^)]*car_vitals|readFileSync\([^)]*car_vitals|car_vitals\/data|\.\.\/car_vitals/.test(src), f + ': nothing loaded or read from Car Vitals');
+    });
+    ok(spec.signals['de.bmw.infotainment.vehicle.TPMS'] && spec.signals['de.bmw.infotainment.vehicle.TPMS']._optional && spec.signals['de.bmw.infotainment.vehicle.Vehicle']._optional, 'TPMS and Vehicle signals are _optional');
+    ['statusTyrePressure', 'statusTargetTyrePressure', 'statusTyreTemperature'].forEach((k) => ok(spec.signals['de.bmw.infotainment.vehicle.TPMS'][k] === 'rs', 'TPMS.' + k + ' subscribed'));
+
+    // decoding: 0.1 x raw in the car's unit; the unit told from the value until the car says
+    const t = new Tyres();
+    ok(Math.abs(t.pressure(23, [0.5, 6]) - 2.3) < 1e-9, 'pressure: raw 23 = 2.3 bar');
+    ok(Math.abs(t.pressure(2500, [0.5, 6]) - 2.5) < 1e-9, 'pressure: raw 2500 = 250 kPa = 2.5 bar');
+    ok(t.pressure(65532, [0.5, 6]) === null && t.pressure(65535, [0.5, 6]) === null && t.pressure(undefined, [0.5, 6]) === null, 'pressure: 65532 and up = none');
+    ok(t.temperature(99) === 59 && t.temperature(65535) === null, 'temperature: degrees + 40, 65535 = none');
+    const p = new Tyres();
+    ok(Math.abs(p.pressure(360, [0.5, 6]) - 36 / 14.5038) < 1e-9 && p.units.psiSeen, 'pressure: raw 360 = 36 psi (and so Fahrenheit)');
+    ok(Math.abs(p.temperature(140) - (100 - 32) * 5 / 9) < 1e-9, 'temperature: a psi car sends °F (100 °F = 37.8 °C)');
+    const u = new Tyres();
+    u.handlers()['de.bmw.infotainment.vehicle.Vehicle'].statusNewCurrentUnitsStatusExt({ unitOfMeasurementAirPressure: 2, unitOfMeasurementTemperature: 1 });
+    ok(u.units.press === 'KPA' && u.units.temp === 'C', 'the car\'s units read (kPa, °C)');
+    ok(u.pressure(25, [0.5, 6]) === null && Math.abs(u.pressure(2500, [0.5, 6]) - 2.5) < 1e-9, 'the car\'s unit wins over the guess: on a kPa car raw 25 (2.5 kPa) is no tyre pressure, 2500 is 2.5 bar');
+    // the handlers fill value(); nothing sent: null; never throw
+    const h = new Tyres(), H = h.handlers()['de.bmw.infotainment.vehicle.TPMS'];
+    ok(h.value() === null, 'nothing sent: no tyres');
+    H.statusTyrePressure({ actualValuePressureTyreFLH: 24, actualValuePressureTyreFRH: 24, actualValuePressureTyreRLH: 25, actualValuePressureTyreRRH: 21 });
+    H.statusTargetTyrePressure({ targetPressureTyreFLH: 25, targetPressureTyreFRH: 25, targetPressureTyreRLH: 27, targetPressureTyreRRH: 27 });
+    H.statusTyreTemperature({ actualValueTemperatureTyreFLH: 99, actualValueTemperatureTyreFRH: 101, actualValueTemperatureTyreRLH: 109, actualValueTemperatureTyreRRH: 65535 });
+    const v = h.value();
+    ok(v && Math.abs(v.p.RR - 2.1) < 1e-9 && Math.abs(v.tgt.RL - 2.7) < 1e-9 && v.t.FL === 59 && v.t.RR === null, 'handlers: pressures, targets, temperatures per corner (' + JSON.stringify(v) + ')');
+    let threw = false;
+    try { H.statusTyrePressure(null); H.statusTyrePressure({}); H.statusTyreTemperature('x'); h.handlers()['de.bmw.infotainment.vehicle.Vehicle'].statusNewCurrentUnitsStatusExt(undefined); } catch (e) { threw = true; }
+    ok(!threw, 'tyres: handlers never throw');
+
+    // colours against the target (Car Vitals' bands): red under 85 %, orange under 93 % or over 115 %, else green
+    ok(Tyres.toneOf(2.1, 2.7) === 'hot' && Tyres.toneOf(2.5, 2.7) === 'warm' && Tyres.toneOf(2.4, 2.5) === 'low' && Tyres.toneOf(3.0, 2.5) === 'warm' && Tyres.toneOf(2.4, null) === 'text' && Tyres.toneOf(null, 2.5) === null, 'tyre colours');
+    ok(Tyres.fmtP(2.48, 'bar') === '2.5' && Tyres.fmtP(2.48, 'psi') === '36' && Tyres.fmtP(2.48, 'kpa') === '248' && Tyres.fmtP(null, 'bar') === '--', 'pressure units: bar, psi, kPa');
+
+    // the readout: the worst tyre for label-and-value layouts, the four for the 2x2 block
+    const r = Tyres.readout(v, 'bar');
+    ok(r.label === 'TYRE RR' && r.value === '2.1' && r.tone === 'hot' && r.block === 'TYRES', 'readout: the worst tyre, red (' + JSON.stringify(r) + ')');
+    ok(r.tyres.map((c) => c.join(' ')).join(',') === '2.4 low,2.4 low,2.5 warm,2.1 hot', 'readout: four cells FL FR RL RR with their colours');
+    const fine = Tyres.readout({ p: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: {} }, 'psi');
+    ok(fine.tone === 'text' && fine.value === '36', 'readout: all fine is a plain readout (gives way like one), in psi');
+    ok(Tyres.readout(null, 'bar') === null, 'readout: none without tyres');
+    ok(Tyres.lowCorners(v).join() === 'RR' && Tyres.lowCorners(null).length === 0, 'low corners: the red ones');
+    const oT = Hud.optsFrom(settingsOf({ hudShowTyres: true, hudShowRpm: false, hudBoost: false }));
+    ok(oT.tyres === true && oT.tyreUnit === 'bar' && optsDefault.tyres === false, 'options: Tyres readout off by default, in bar');
+    ok(Hud.readoutsFor({ rpm: 3000, oil: 95, coolant: 90 }, null, null, { rpm: 6000, cold: false }, oT, { tyres: v }).some((x) => x.block === 'TYRES'), 'readouts row: the Tyres readout');
+    ok(!Hud.readoutsFor({ rpm: 3000 }, null, null, { rpm: 6000, cold: false }, Hud.calmOpts(oT), { tyres: v }).some((x) => x.block), 'calmOpts: no Tyres readout');
+    ok(Hud.PROFILE_KEYS.indexOf('hudShowTyres') >= 0 && Hud.PROFILE_KEYS.indexOf('hudTyreWidget') < 0, 'the Tyres readout is per profile; the widget, like the directions, is not');
+    ok(!spec.settings.find((s) => s.key === 'hudStyle').options.some((o2) => o2[0] === 'tyres'), 'tyres are no HUD layout (the widget is in the directions corner)');
+    // a car that sends no tyres never sees them: every tyre setting listed only once tyres came, the flag hidden
+    ['hudShowTyres', 'hudTyreWidget', 'hudTyreCar', 'hudTyreTarget', 'hudTyreTemp', 'hudTyreUnit'].forEach((k) => ok(declared[k] && declared[k].when && declared[k].when.hudTyresSeen && declared[k].when.hudTyresSeen[0] === true, k + ' listed only once the car has sent tyres'));
+    ok(declared.hudTyresSeen && declared.hudTyresSeen.hidden === true && declared.hudTyresSeen.default === false && !declared.hudTyreAlert, 'hudTyresSeen hidden, false by default; no separate tyre alert');
+    const sv = {}, st = new Tyres(null, { get: (k) => sv[k], set: (k, x) => { sv[k] = x; } });
+    st.handlers()['de.bmw.infotainment.vehicle.TPMS'].statusTyreTemperature({ actualValueTemperatureTyreFLH: 99 });
+    ok(!st.seen(), 'a temperature alone: tyres not taken as sent');
+    st.handlers()['de.bmw.infotainment.vehicle.TPMS'].statusTyrePressure({ actualValuePressureTyreFLH: 65535, actualValuePressureTyreFRH: 24 });
+    ok(st.seen() && sv.hudTyresSeen === true, 'the first real pressure: hudTyresSeen set');
+    // the HUD looks page: the TYRES tab and the Tyres readout switch only with tyres
+    const mainSrc = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
+    ok(/tyres\.seen\(\) \? \[\['tyres', 'TYRES'\]\]/.test(mainSrc) && /tyres\.seen\(\) \? \[\['Tyres', o\.tyres/.test(mainSrc), 'HUD looks: TYRES tab and Tyres switch only once tyres came');
+
+    // the widget (200 x 76, the directions' size): every part on and off, every unit, Normal and Clearer, °C and °F
+    const W0 = HudTyres.widgetOf(settingsOf({})), WW = HudTyres.TW, WH = HudTyres.TH;
+    ok(WW === 200 && WH === 76, 'the widget is the size of the directions');
+    ok(W0.show === 'low' && W0.car && W0.target && W0.temp && W0.unit === 'bar', 'widget defaults: when a tyre is low, every part, bar');
+    const widget = (w, ty, pal) => { const cv = new Canvas(WW, WH); HudTyres.drawWidget(cv, ty, w, pal || 'colour'); return cv; };
+    const litW = (cv, x0, y0, x1, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (cv.d[(y * WW + x) * 4 + 3]) n++; return n; };
+    [false, true].forEach((car) => [false, true].forEach((tg) => [false, true].forEach((tp) => ['bar', 'psi', 'kpa'].forEach((un) => [false, true].forEach((cl) => {
+        const w = Object.assign({}, W0, { car: car, target: tg, temp: tp, unit: un, clear: cl, fahrenheit: un === 'psi' });
+        const tag = 'widget ' + [car ? 'car' : '', tg ? 'target' : '', tp ? 'temp' : '', un, cl ? 'clearer' : 'normal'].filter(Boolean).join('/');
+        let cv;
+        try { cv = widget(w, v); } catch (e) { ok(false, tag + ' threw: ' + e.message); return; }
+        ok(litW(cv, 0, 0, 90, 38) > 60 && litW(cv, 110, 0, 200, 38) > 60 && litW(cv, 0, 38, 90, 76) > 60 && litW(cv, 110, 38, 200, 76) > 60, tag + ': a pressure at each corner');
+        ok(litW(cv, 0, 0, 1, 76) === 0 && litW(cv, 199, 0, 200, 76) === 0, tag + ': nothing runs off the sides');
+    })))));
+    // each part shows: switching it off changes the picture
+    const wb = (o) => Buffer.from(widget(Object.assign({}, W0, o), v).d), base0 = wb({});
+    [['car', false], ['target', false], ['temp', false], ['unit', 'psi'], ['clear', true], ['fahrenheit', true]].forEach((c) => ok(Buffer.compare(wb({ [c[0]]: c[1] }), base0) !== 0, 'widget: ' + c[0] + ' changes it'));
+    ok(Buffer.compare(Buffer.from(widget(W0, v, 'amber').d), base0) !== 0, 'widget: the HUD colours apply');
+    ok(litW(widget(W0, null), 0, 0, WW, WH) === 0, 'widget: nothing drawn without tyres');
+    // when it shows: low (default) only while a tyre is red, always, off never; never without data
+    const fineT = { p: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: {} };
+    ok(!HudTyres.widgetShows(W0, fineT) && HudTyres.widgetShows(W0, v), 'widget "when low": not with fine tyres, yes with a red one');
+    ok(HudTyres.widgetShows(Object.assign({}, W0, { show: 'always' }), fineT) && !HudTyres.widgetShows(Object.assign({}, W0, { show: 'off' }), v) && !HudTyres.widgetShows(Object.assign({}, W0, { show: 'always' }), null), 'widget always / off / no data');
+    ok(HudTyres.widgetKey(v, W0, 'colour') !== HudTyres.widgetKey(v, Object.assign({}, W0, { temp: false }), 'colour') && HudTyres.widgetKey(v, W0, 'colour') !== HudTyres.widgetKey(fineT, W0, 'colour'), 'widget key: follows the numbers and the parts');
+    // the HUD looks preview draws it through the scaled surface
+    let scaledOk = true;
+    try { const big = new Canvas(700, 260); HudTyres.drawWidget(Draw.scaled(big, 3, 20, 10), v, W0, 'colour'); } catch (e) { scaledOk = false; }
+    ok(scaledOk, 'widget: drawn three times its size for the HUD looks page');
+    // the 2x2 block: four readouts across the row, its numbers inside their column (Normal and Clearer)
+    const item = Tyres.readout(v, 'kpa'), row = [{ label: 'RPM', value: '3000', tone: 'text' }, { label: 'BOOST', value: '1.2', tone: 'text' }, item, { label: 'OIL', value: '95°', tone: 'text' }];
+    [false, true].forEach((cl) => ['standard', 'digital', 'vector', 'arc', 'ramp', 'dial'].forEach((st) => {
+        const o = Object.assign({}, optsDefault, { style: st, clearLabels: cl });
+        try { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(o, { readouts: row, chip: null }), 'both'); } catch (e) { ok(false, st + ' with the Tyres readout threw: ' + e.message); }
+    }));
+    const colw = (Draw.IW - Draw.TEMP_X) / 4, cv0 = new Canvas(10, 10);
+    ok(Tyres.CORNERS.every((c, j) => cv0.textWidth(item.tyres[j][0], 17, { font: 'bold' }) <= colw / 2 - 2), '2x2 block: kPa values fit half a column (' + Math.round(colw / 2) + ' px)');
+    // a rear tyre's change redraws the block (standard)
+    const pic = (cells) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'standard' }), { readouts: [Object.assign({}, item, { tyres: cells })], chip: null }), 'fg'); return Buffer.from(cv.d); };
+    ok(Buffer.compare(pic(item.tyres), pic(item.tyres.slice(0, 3).concat([['199', 'hot']]))) !== 0, '2x2 block: each tyre\'s number is drawn');
+    ok(HudTyres.tempTone(10) === 'cold' && HudTyres.tempTone(95) === 'warm' && HudTyres.tempTone(110) === 'hot' && HudTyres.tempTone(60) === 'text', 'tyre temperature colours');
+    // the demo drive has tyres for the previews
+    ok(Hud.demoAt(0).tyres && Tyres.lowCorners(Hud.demoAt(0).tyres).join() === 'RR', 'demo: tyres, the rear right low');
 }
 
 function electricalChecks() {

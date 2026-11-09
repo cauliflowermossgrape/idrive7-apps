@@ -219,13 +219,23 @@ function drawReadouts(cv, x0, x1, y, items, P, layer, clear) {
         const cx = x0 + colw * (i + 0.5);
         // labels: Normal 14 px nearly full brightness, Clearer 18 px full (12 px at 75 % read as specks on the
         // glass); either made smaller to fit its column, so four readouts never run into each other
+        // the Tyres readout: TYRES over its four pressures in a 2x2 block (front over rear) when the column holds
+        // them (56 px and up: four readouts in the row's 250 px leave 62); else the worst tyre as label and value
+        const block = it.tyres && it.tyres.length === 4 && colw >= 56;
+        const label = block ? it.block : it.label;
         if (layer !== 'fg') {
             const lo = { align: 'center', font: 'bold', spacing: (clear ? 1.5 : 1.2) * k };
             let s = (clear ? 18 : 14) * k;
-            if (cv.textWidth) { const w = cv.textWidth(it.label, s, lo); if (w > colw - 14) s = Math.max(8, s * (colw - 14) / w); }
-            cv.text(it.label, cx, y + (clear ? 15 : 13), s, clear ? P.text : withAlpha(P.text, 0.9), lo);
+            if (cv.textWidth) { const w = cv.textWidth(label, s, lo); if (w > colw - 14) s = Math.max(8, s * (colw - 14) / w); }
+            cv.text(label, cx, y + (clear ? 15 : 13), s, clear ? P.text : withAlpha(P.text, 0.9), lo);
         }
-        if (layer !== 'bg') cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), P[it.tone] || P.text, { align: 'center', font: 'bold' });
+        if (layer === 'bg') return;
+        if (block) {
+            const dx = Math.min(colw / 4, 22), vs = 17, top = y + (clear ? 34 : 32);
+            it.tyres.forEach((c, j) => cv.text(c[0], cx + (j % 2 ? dx : -dx), top + Math.floor(j / 2) * 19, vs, P[c[1]] || P.text, { align: 'center', font: 'bold' }));
+            return;
+        }
+        cv.text(it.value, cx, y + 40, 26 * Math.max(0.8, k), P[it.tone] || P.text, { align: 'center', font: 'bold' });
     });
 }
 
@@ -383,6 +393,8 @@ function scaled(r, k, ox, oy) {
         polyline: (pts, w, c) => r.polyline(P(pts), w * k, c),
         line: (xa, ya, xb, yb, w, c) => r.line(X(xa), Y(ya), X(xb), Y(yb), w * k, c),
         text: (s, x, y, size, c, o) => r.text(s, X(x), Y(y), size * k, c, o && o.spacing ? Object.assign({}, o, { spacing: o.spacing * k }) : o),
+        roundRect: (x, y, w, h, rad, c) => r.roundRect(X(x), Y(y), w * k, h * k, rad * k, c),
+        strokeRoundRect: (x, y, w, h, rad, width, c) => r.strokeRoundRect(X(x), Y(y), w * k, h * k, rad * k, width * k, c),
         textWidth: (s, size, o) => r.textWidth(s, size * k, o && o.spacing ? Object.assign({}, o, { spacing: o.spacing * k }) : o) / k,
     };
 }

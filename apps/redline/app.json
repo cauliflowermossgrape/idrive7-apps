@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; HUD by @biscotit",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -54,6 +54,16 @@
     "de.bmw.infotainment.lsc.LSCDataSink": {
       "_optional": "hybrid battery voltage on the HUD (plug-in hybrids)",
       "statusHighVoltageStorage": "s"
+    },
+    "de.bmw.infotainment.vehicle.TPMS": {
+      "_optional": "tyre pressures, targets and temperatures on the HUD",
+      "statusTyrePressure": "rs",
+      "statusTargetTyrePressure": "rs",
+      "statusTyreTemperature": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle": {
+      "_optional": "the car's pressure and temperature units for the tyres; else told from the values",
+      "statusNewCurrentUnitsStatusExt": "rs"
     },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",
@@ -143,6 +153,7 @@
     {"key": "hudTorqueUnit", "label": "Torque unit", "type": "choice", "default": "nm", "options": [["nm", "Nm"], ["lbft", "lb-ft"]], "group": "Units"},
     {"key": "hudPowerUnit", "label": "Power unit", "type": "choice", "default": "hp", "options": [["hp", "hp"], ["ps", "PS"], ["kw", "kW"]], "group": "Units"},
     {"key": "hudBoostUnit", "label": "Boost unit", "type": "choice", "default": "bar", "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]], "group": "Units"},
+    {"key": "hudTyreUnit", "label": "Tyre pressure unit", "type": "choice", "default": "bar", "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]], "when": {"hudTyresSeen": [true]}, "group": "Units"},
     {"key": "hudPalette", "label": "HUD colours", "type": "choice", "default": "colour", "when": {"hud": ["on", "test"], "hudStyle": ["standard", "minimal", "wings", "digital", "vector"], "hudAll": [true]}, "options": [["colour", "Colour"], ["amber", "Night amber"], ["ice", "Ice white"]], "group": "HUD: look"},
     {"key": "hudGearFont", "label": "Gear font", "type": "choice", "default": "auto", "when": {"hud": ["on", "test"], "hudStyle": ["standard", "minimal", "wings", "arc", "ramp", "dial"], "hudAll": [true]}, "options": [["auto", "Auto (Barlow on Arc, Ramp and Dial)"], ["ubuntu", "Ubuntu"], ["barlow", "Barlow"]], "group": "HUD: look"},
     {"key": "hudLabels", "label": "Readout labels", "type": "choice", "default": "normal", "when": {"hud": ["on", "test"], "hudAll": [true]}, "options": [["normal", "Normal"], ["clear", "Clearer (bigger, brighter)"]], "group": "HUD: look"},
@@ -162,6 +173,7 @@
     {"key": "hudShowWater", "label": "Water", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowGearbox", "label": "Gearbox", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowOutside", "label": "Outside (blue at 3 °C / 37 °F and below)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
+    {"key": "hudShowTyres", "label": "Tyres (the four pressures, coloured against their targets)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowLimit", "label": "Cold-engine shift limit", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
     {"key": "hudTempsMode", "label": "Temperatures shown", "type": "choice", "default": "smart", "when": {"hud": ["on", "test"], "hudAll": [true]}, "options": [["smart", "Only when cold or hot"], ["always", "Always"]], "group": "HUD: readouts"},
     {"key": "hudShowBattSoc", "label": "12 V battery charge (%)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: readouts"},
@@ -176,6 +188,11 @@
     {"key": "hudLaunch", "label": "Launch time (0-100 km/h or 0-60 mph after a standing start, against your best)", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},
     {"key": "hudPeak", "label": "Peak marker", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},
     {"key": "hudShake", "label": "Shake on the limiter", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},
+    {"key": "hudTyreWidget", "label": "Tyre widget (in the directions' corner; the directions come first)", "type": "choice", "default": "low", "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "options": [["low", "When a tyre is low"], ["always", "Always"], ["off", "Off"]], "group": "HUD: tyres"},
+    {"key": "hudTyreCar", "label": "Tyre widget: the car", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
+    {"key": "hudTyreTarget", "label": "Tyre widget: each tyre's target", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
+    {"key": "hudTyreTemp", "label": "Tyre widget: tyre temperatures", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true], "hudTyresSeen": [true]}, "group": "HUD: tyres"},
+    {"key": "hudTyresSeen", "label": "This car sends tyre pressures (found by the app)", "type": "bool", "default": false, "hidden": true},
     {"key": "hudSize", "label": "Size", "type": "number", "unit": "%", "default": 100, "when": {"hud": ["on", "test"], "hudAll": [true]}, "steps": [70, 80, 90, 100, 110, 120, 130], "group": "HUD: place"},
     {"key": "hudX", "label": "Position left / right", "type": "number", "unit": "px", "default": 0, "labels": {"0": "Centre"}, "when": {"hud": ["on", "test"], "hudAll": [true]}, "steps": [-120, -100, -80, -60, -40, -20, 0, 20, 40, 60, 80, 100, 120], "group": "HUD: place"},
     {"key": "hudY", "label": "Position up / down", "type": "number", "unit": "px", "default": 0, "labels": {"0": "Default"}, "when": {"hud": ["on", "test"], "hudAll": [true]}, "steps": [-40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60], "group": "HUD: place"},

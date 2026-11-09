@@ -24,6 +24,8 @@
  *   - Directions (setting "hudNav", hud-nav.js, nav.js): while a route runs, the next turn as a second picture
  *     (200x76) in the bottom right corner of the glass. With a route but no turn it can read, Redline steps aside so BMW's
  *     own card shows (the KOMBI hides it behind Redline).
+ *   - The tyre widget (settings "hudTyreWidget" ..., hud-tyres.js, tyres.js): the four tyres in the same corner, the same
+ *     layer, when the directions have nothing to show (while a tyre is low, by default).
  *
  * Settings: hud (off | on | test); groups "HUD style" (layout, colours, lights, grade, peak, shake,
  * unlit), "HUD readouts" (gear, boost, each temperature, the cold limit, smart temperatures, units),
@@ -36,6 +38,8 @@ const { Canvas, withAlpha } = require('./kit/canvas');
 const Draw = require('./hud-draw');
 // Redline's own directions (the next turn, its distance, the street, the lanes), a picture in the bottom right corner
 const HudNav = require('./hud-nav');
+const TyresMod = require('./tyres');
+const HudTyres = require('./hud-tyres');
 const { HudClaim } = require('./kit/hud_claim');
 const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
@@ -222,7 +226,7 @@ const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc
 const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hudRpmFormat', 'hudUnlit', 'hudLightStyle',
     'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
-    'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt',
+    'hudShowTyres', 'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt',
     'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
 /** The profile a driving mode uses ('sport', 'comfort', 'eco' or null). */
 function profileOf(drive) { return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport'; }
@@ -308,6 +312,10 @@ function optsFrom(settings, drive) {
         // throttle: off until the accelerator pedal's scaling is checked on a car (readoutsFor keeps it)
         throttle: false, g: settings.get('hudShowG') === true,
         outside: settings.get('hudShowOutside') === true,
+        // tyres: the condensed readout (off unless switched on) in the unit set (Units, or the TYRES tab); the big
+        // tyre widget is the directions' corner's (hud-tyres.js widgetOf)
+        tyres: settings.get('hudShowTyres') === true,
+        tyreUnit: ['psi', 'kpa'].indexOf(settings.get('hudTyreUnit')) >= 0 ? settings.get('hudTyreUnit') : 'bar',
         // electrical, off unless switched on: the 12 V on every car; the hybrid ones only once the car has shown a
         // high-voltage battery (hudHybridSeen, electrical.js), so a petrol or diesel car never has them
         soc12: settings.get('hudShowBattSoc') === true, volt12: settings.get('hudShowBattVolt') === true,
@@ -361,7 +369,7 @@ function calmFor(drive, mode) {
 /** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
 function calmOpts(o) {
     return Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, limit: false,
-        oil: false, coolant: false, gearbox: false, outside: false, soc12: false, volt12: false, hvSoc: false, hvPower: false, hvTemp: false,
+        oil: false, coolant: false, gearbox: false, outside: false, tyres: false, soc12: false, volt12: false, hvSoc: false, hvPower: false, hvTemp: false,
         hvVolt: false, chip: 'off', peak: false, shake: false });
 }
 
@@ -427,6 +435,8 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     });
     // outside: blue at 3 °C and below (ice is possible)
     if (o.outside && isNum(x.outside)) items.push({ label: 'OUTSIDE', value: Math.round(o.fahrenheit ? x.outside * 9 / 5 + 32 : x.outside) + '°', tone: x.outside <= 3 ? 'cold' : 'text' });
+    // tyres: TYRES and the four pressures (hud-draw's 2x2 block), or the worst one where readouts are a label and a value
+    if (o.tyres) { const ty = TyresMod.readout(x.tyres, o.tyreUnit); if (ty) items.push(ty); }
     electricalItems(o, x).forEach((it) => items.push(it));
     // four fit the row legibly: the last plain readout gives way first, so a warning keeps its place
     // (on a cold start with boost, limit, oil, water and gearbox on, the gearbox goes)
@@ -482,6 +492,8 @@ function demoAt(tMs) {
     const pull = r.down || t >= 8.6 ? 0 : t >= 7.6 ? 0.3 : 1;
     r.pedal = pull * 100; r.torque = pull ? 180 + 220 * clamp(r.boost / 1.3, 0, 1) : 0;
     r.gLong = r.down ? -0.85 : pull * 0.45; r.gLat = 0.1; r.outside = 14;
+    // tyres for the previews: front right of target, rear left a little under, rear right well under
+    r.tyres = { p: { FL: 2.4, FR: 2.4, RL: 2.5, RR: 2.1 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: { FL: 59, FR: 61, RL: 69, RR: 70 } };
     return r;
 }
 
@@ -603,19 +615,34 @@ function start(ctx, src) {
     /*
      * The directions' picture (hud-nav.js): its own image layer in the bottom right corner, made while there is a turn to show,
      * dropped when there isn't. Only what changed is sent (the distance counting down), nothing when it's the same.
+     * The same corner shows the tyre widget (hud-tyres.js) when the directions have nothing: it is the directions' layer
+     * and place, so the two never overlap and the directions always come first.
      */
     let navLayer = 0, navCur = null, navPrev = null, navFirst = true, navLast = '', navGiving = false;
-    const dropNav = () => { if (cr && navLayer) cr.drop(navLayer); navLayer = 0; navLast = ''; };
+    const dropNav = () => { if (cr && navLayer) cr.drop(navLayer); navLayer = 0; navLast = ''; corner = ''; };
     /** What the directions do now: { show, giveWay } (nothing while the demo plays or without the source). */
     // a directions layer the renderer refused or failed: made again after NAV_RETRY_MS (dropNav; the next tick)
+    // timed on the monotonic clock: the head unit's wall clock is set from GPS and can jump back
+    const monoMs = () => { const t = process.hrtime(); return t[0] * 1000 + t[1] / 1e6; };
     let navRefusedLogged = false, navFailedAt = -Infinity;
     const NAV_RETRY_MS = 5000;
-    const navFailed = (why) => { log.warn('hud: directions layer ' + why + ', made again in ' + NAV_RETRY_MS / 1000 + ' s'); dropNav(); navFailedAt = Date.now(); };
+    const navFailed = (why) => { log.warn('hud: directions layer ' + why + ', made again in ' + NAV_RETRY_MS / 1000 + ' s'); dropNav(); navFailedAt = monoMs(); };
     const navNow = (playing) => (src.nav && !playing ? src.nav.view(navModeOf(settings)) : { show: null, giveWay: false });
-    const drawNavLayer = (m) => {
-        if (!m) { dropNav(); return; }
+    // what the corner shows now: 'nav', 'tyres' or '' (for the tests and the log)
+    let corner = '', tyreLowLogged = '';
+    /** The tyre widget now: { ty, w } when it shows (setting "hudTyreWidget"; "Play on HUD" shows the sample), else null. */
+    const tyreView = (playing) => {
+        const w = HudTyres.widgetOf(settings);
+        const ty = playing ? HudTyres.SAMPLE : src.tyres ? src.tyres.value() : null;
+        const low = TyresMod.lowCorners(ty).join(',');
+        if (low !== tyreLowLogged) { if (low) log.info('hud: low tyre ' + low + (w.show !== 'off' ? ': the tyre widget shows' : '')); tyreLowLogged = low; }
+        return (playing ? w.show !== 'off' : HudTyres.widgetShows(w, ty)) ? { ty: ty, w: w } : null;
+    };
+    const drawNavLayer = (m, tv) => {
+        corner = m ? 'nav' : tv ? 'tyres' : '';
+        if (!m && !tv) { dropNav(); return; }
         if (!navLayer) {
-            if (Date.now() - navFailedAt < NAV_RETRY_MS) return;
+            if (monoMs() - navFailedAt < NAV_RETRY_MS) return;
             const r = navPlaceOf(settings);
             navLayer = cr.image({ target: 'hud', klass: 'overlay', z: 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: HudNav.NW, ih: HudNav.NH, fps: 5, sampling: 'bilinear' });
             if (!navLayer) { if (!navRefusedLogged) { navRefusedLogged = true; log.warn('hud: directions layer refused by the client'); } return; }
@@ -623,10 +650,10 @@ function start(ctx, src) {
             navCur = new Canvas(HudNav.NW, HudNav.NH); navPrev = new Canvas(HudNav.NW, HudNav.NH); navFirst = true; navLast = '';
         }
         const o = optsNow(), no = { palette: o.style === 'vfd' ? 'vfd' : o.palette };
-        const key = HudNav.navKey(m, no);
+        const key = m ? HudNav.navKey(m, no) : HudTyres.widgetKey(tv.ty, tv.w, no.palette);
         if (!navFirst && key === navLast) return;
         navLast = key;
-        HudNav.drawNav(navCur, m, no);
+        if (m) HudNav.drawNav(navCur, m, no); else HudTyres.drawWidget(navCur, tv.ty, tv.w, no.palette);
         if (navFirst) { if (cr.pixels(navLayer, null, asBuffer(navCur.d))) navFirst = false; }
         else {
             // one box (changedBoxes' bands are the tach's)
@@ -684,7 +711,9 @@ function start(ctx, src) {
         log.info('hud: connecting to cluster-render');
     });
 
-    const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); if (src.knock) src.knock.stop(); };
+    // the UDS readers (gearbox, knock, electrical): stopped together whenever the tach isn't drawing
+    const stopReads = () => { [src.gearbox, src.knock, src.electrical].forEach((r) => { if (r) r.stop(); }); };
+    const stopTimer = () => { if (timer) clearInterval(timer); timer = null; stopReads(); };
 
     const dropLayer = safe('drop', () => { stopTimer(); dropNav(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; navGiving = false; });
 
@@ -706,11 +735,17 @@ function start(ctx, src) {
         // (a scaled copy of the 400x130 picture would lose its see-through and dim parts: drawImage is opaque)
         if (r.w === IW && r.h === IH) { const t = new Canvas(IW, IH); drawHud(t, sample()); cv.blit(t, r.x, r.y); }
         else Draw.drawLayer(Draw.scaled(cv, r.w / IW, r.x, r.y), sample());
-        // where the directions go (setting "Directions"): a sample turn at 100 %, its frame at any size
-        if (navModeOf(settings) !== 'off') {
+        // where the directions go (setting "Directions"): a sample turn at 100 %, its frame at any size; the tyre
+        // widget's sample there when the directions are off and the widget isn't (on a car that sends tyres)
+        const tw = HudTyres.widgetOf(settings), tyresOn = tw.show !== 'off' && settings.get('hudTyresSeen') === true;
+        if (navModeOf(settings) !== 'off' || tyresOn) {
             const nr = navPlaceOf(settings);
             cv.strokeRoundRect(nr.x, nr.y, nr.w, nr.h, 6, 1, withAlpha(CYAN, 0.6));
-            if (nr.w === HudNav.NW) { const t = new Canvas(HudNav.NW, HudNav.NH); HudNav.drawNav(t, HudNav.SAMPLE, { palette: 'colour' }); cv.blit(t, nr.x, nr.y); }
+            if (nr.w === HudNav.NW) {
+                const t = new Canvas(HudNav.NW, HudNav.NH);
+                if (navModeOf(settings) !== 'off') HudNav.drawNav(t, HudNav.SAMPLE, { palette: 'colour' }); else HudTyres.drawWidget(t, HudTyres.SAMPLE, tw, 'colour');
+                cv.blit(t, nr.x, nr.y);
+            }
         }
         if (!cr.pixels(layer, null, asBuffer(cv.d))) log.warn('hud: test pattern pixels refused');
         shown = 'test';
@@ -885,9 +920,7 @@ function start(ctx, src) {
                     // stop), so a layer made again isn't held back waiting for a target event
                     if (target) target = { state: '', holder: '', disabled: target.disabled };
                 }
-                if (src.gearbox) src.gearbox.stop();
-                if (src.knock) src.knock.stop();
-                if (src.electrical) src.electrical.stop();
+                stopReads();
                 // nothing of Redline's on the HUD. Comfort's hide: the standing app (Cluster functions) may show. Giving
                 // way: keep the claim, so it's BMW's card that shows, not Cluster functions' map over it (2026-11-09 review)
                 claim.hold(!!nv.giveWay);
@@ -903,13 +936,13 @@ function start(ctx, src) {
         // the first frame after it is sent whole. No target event yet: draw (it may never come).
         if (paused()) {
             first = true; lastKey = ''; navFirst = true; navLast = '';
-            if (src.gearbox) src.gearbox.stop();
-            if (src.knock) src.knock.stop();
-            if (src.electrical) src.electrical.stop();
+            stopReads();
             return;
         }
         // the directions: their own layer, redrawn only when what they show changes
-        if (shown === 'tach') drawNavLayer(nv.show);
+        // a fault in the directions drops them, never the tach's frame
+        // (the tyre widget in the same corner when the directions have nothing to show)
+        if (shown === 'tach') { try { drawNavLayer(nv.show, nv.show ? null : tyreView(Date.now() < demoUntil)); } catch (e) { log.warn('hud: directions: ' + (e && e.stack || e)); dropNav(); } }
         // the gearbox unit is asked only while its readout is on
         // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
         const oNow = optsNow();
@@ -948,7 +981,7 @@ function start(ctx, src) {
         return [moving && isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
             moving ? Math.round(c.from / 25) : '', moving ? Math.round(c.at / 25) : '', f.shift, f.redline, f.max, moving ? Math.round((f.peak || 0) / 25) : '',
             f.chip ? f.chip.verdict + (f.chip.text || '') + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
-            f.readouts.map((r) => r.label + r.value + r.tone).join(','),
+            f.readouts.map((r) => r.label + r.value + r.tone + (r.tyres ? r.tyres.join('/') : '')).join(','),
             o.style, o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, o.gearFont].join('|');
     }
 
@@ -1079,7 +1112,7 @@ function start(ctx, src) {
     const stopPlay = () => { demoUntil = 0; first = true; };
 
     return { stop: () => { clearInterval(slotTimer); disconnect(); }, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
-        play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil };
+        play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil, corner: () => corner };
 }
 
 module.exports = { start, navPlaceOf, navModeOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
