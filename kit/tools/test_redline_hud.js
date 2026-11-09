@@ -633,5 +633,46 @@ function electricalChecks() {
         // every battery read waits at most about a second (the link is shared with knock and the gearbox)
         const all = Electrical.HV_SOC.concat(Electrical.HV_V, Electrical.HV_A);
         ok(all.every((c) => c.timeoutMs > 0 && c.timeoutMs <= 1000), 'every battery read waits at most 1 s (' + all.map((c) => c.did + ' ' + c.timeoutMs).join(', ') + ')');
+    }).then(() => {
+        // the link stops asking a unit after 5 misses until woken: a start wakes every unit electrical asks,
+        // and each once-a-minute try wakes its units first (else that try never reaches the car)
+        const sW = settingsFake({ hudHybridSeen: true }), linkW = linkFor({ '7:DDBC': [0x02, 0x84] });
+        linkW.woke = []; linkW.wake = function (e) { this.woke.push(e); };
+        const w = new Electrical({ log: log, settings: sW }, () => linkW);
+        w.start({ v12: true, hvSoc: true, hvKw: false }); w.stop();
+        ok([0x12, 0x13, 0x18, 0x07].every((e) => linkW.woke.indexOf(e) >= 0), 'electrical: a start wakes the units it asks (' + linkW.woke.join() + ')');
+        // charge only, on a battery unit that gives the charge but not the power: the power isn't asked, the
+        // charge never counts as failed between its reads
+        w.want = { v12: false, hvSoc: true, hvKw: false };
+        return w._turn().then(() => w._turn()).then(() => w._turn()).then(() => {
+            ok(!linkW.asked.some((k) => /7:DD(B4|68|66|EF|69)/.test(k)), 'HV charge only: the power is not asked (' + linkW.asked.join() + ')');
+            ok(w.fails.soc === 0 && Math.abs(w.value().hvSoc - 64.4) < 1e-9, 'HV charge only: kept, no failures between its reads');
+            // a minute after 3 failures: the try wakes the battery unit, then asks it
+            w.fails.soc = 3; w.tried.soc = Date.now() - 61000; w.slowT = 0; linkW.woke = []; linkW.asked = [];
+            return w._turn();
+        }).then(() => ok(linkW.woke.indexOf(0x07) >= 0 && linkW.asked.join() === '7:DDBC' && w.fails.soc === 0, 'the once-a-minute try wakes the unit and asks it (' + linkW.woke.join() + ' / ' + linkW.asked.join() + ')'));
+    }).then(() => {
+        // knock: its start and its once-a-minute try wake the engine unit (electrical's 12 V reads ask it too)
+        const KnockWatch = require(path.join(APP, 'knock'));
+        const linkK = linkFor({}); linkK.woke = []; linkK.wake = function (e) { this.woke.push(e); };
+        const k = new KnockWatch({ log: log }, () => linkK);
+        k.start(); k.stop();
+        ok(linkK.woke.indexOf(0x12) >= 0, 'knock: a start wakes the engine unit');
+        linkK.woke = []; k.busy = false; k.fails = 3; k.triedT = Date.now() - 61000; k._poll();
+        ok(linkK.woke.indexOf(0x12) >= 0, 'knock: the once-a-minute try wakes the engine unit');
+        ok(typeof Hud.writeAtomic === 'function', 'Hud.writeAtomic still there (code from before 2.0 calls it)');
+        // Play on HUD: the tyre sample only on a car that sends tyres
+        const hudSrc = fs.readFileSync(path.join(APP, 'hud.js'), 'utf8');
+        ok(/if \(playing\) return w\.show !== 'off' && settings\.get\('hudTyresSeen'\) === true/.test(hudSrc), 'Play on HUD: no tyre widget on a car without tyre sensors');
+        // the quiet log: the same kind of line once per 10 minutes, then with the count held back
+        const QuietLog = require(path.join(APP, 'quietlog'));
+        const lines = [], base = { info: (...a) => lines.push(a.join(' ')), warn: (...a) => lines.push('W ' + a.join(' ')), error: (...a) => lines.push('E ' + a.join(' ')), debug() {} };
+        let t = 0;
+        const q = QuietLog.wrap(base, () => t);
+        q.info('knock: retard 2.6 deg'); q.info('knock: retard 3.0 deg'); q.info('knock: retard 4.1 deg'); q.info('hud: on'); q.error('boom'); q.error('boom');
+        ok(lines.join('|') === 'knock: retard 2.6 deg|hud: on|E boom|E boom', 'quiet log: the same kind of line once, errors always (' + lines.join('|') + ')');
+        t = QuietLog.REPEAT_MS + 1; q.info('knock: retard 2.3 deg');
+        ok(lines[lines.length - 1] === 'knock: retard 2.3 deg (+2 like it)', 'quiet log: after 10 minutes again, with the count held back (' + lines[lines.length - 1] + ')');
+        ok(QuietLog.wrap(q) === q, 'quiet log: wrapping twice is the same');
     });
 }

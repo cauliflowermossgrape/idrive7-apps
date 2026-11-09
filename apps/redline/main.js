@@ -56,6 +56,7 @@ const GearboxTemp = require('./gearbox');
 const KnockWatch = require('./knock');
 const Electrical = require('./electrical');
 const Tyres = require('./tyres');
+const QuietLog = require('./quietlog');
 const HudTyres = require('./hud-tyres');
 const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
@@ -98,6 +99,9 @@ function migrateSettings(settings, log) {
 
 mgu.run({
     async start(ctx) {
+        // redline.log kept small: the same kind of line at most every 10 minutes (quietlog.js); every part
+        // below logs through this
+        ctx.log = QuietLog.wrap(ctx.log);
         const { ui, settings, log } = ctx;
         migrateSettings(settings, log);
         // engine profile (diesel / petrol): rev scale top and the Auto redline / cold limit
@@ -268,7 +272,7 @@ mgu.run({
             if (hud && learning() && !car.data().demo) hud.upshift(rpm);         // never learn from the demo drive
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
-            log.info('shift ' + from + '->' + to + ' @' + lastShift.rpm + ' ' + lastShift.verdict);
+            log.debug('shift ' + from + '->' + to + ' @' + lastShift.rpm + ' ' + lastShift.verdict);
         }
 
         car.onSample((d, t) => {
@@ -910,7 +914,9 @@ mgu.run({
             let tracker = null;
             // the event list is asked only while the HUD and its directions are on (the probe's other lines are passive)
             const probe = require('./navlog').start(ctx, log, (s, f, v, at) => { if (tracker) tracker.tap(s, f, v, at); },
-                { wanted: () => settings.get('hud') !== 'off' && settings.get('hudNav') !== 'off', routing: () => !!tracker && tracker.routing() });
+                { wanted: () => settings.get('hud') !== 'off' && settings.get('hudNav') !== 'off', routing: () => !!tracker && tracker.routing(),
+                    // written to flash only while the HUD shows directions (not giving way, hidden, paused or off)
+                    onGlass: () => !!hud && hud.directionsShown() });
             tracker = Nav.start(ctx, log, probe);
             nav = tracker;
         } catch (e) { log.warn('nav: directions not started: ' + e); }

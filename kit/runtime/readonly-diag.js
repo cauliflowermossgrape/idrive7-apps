@@ -101,7 +101,7 @@ class ReadOnlyDiag {
             if (!uds) {
                 this.stats.missed++;
                 this.misses[target] = (this.misses[target] || 0) + 1;
-                if (this.silent(target)) { this.stats.silent++; this.log.info('unit ' + hex(target) + ': no answer ' + this.silentAfter + ' times in a row - skipped until the next scan'); }
+                if (this.silent(target)) { this.stats.silent++; this.log.info('unit ' + hex(target) + ': no answer ' + this.silentAfter + ' times in a row - skipped until woken'); }
                 return null;
             }
             this.misses[target] = 0;

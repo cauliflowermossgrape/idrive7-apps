@@ -187,6 +187,22 @@ ok(named.road === 'Example Street' && Nav.describe(named) === 'turn LEFT 450 m <
 /** view() every 200 ms from..to (as the HUD's tick does); the last answer. */
 const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to; t += 200) v = T.view(mode || 'route', t); return v; };
 {
+    // Redline started after a cancelled CarPlay route: CAR_PLAY still the provider, CarPlay says it isn't guiding
+    const T = Nav.Tracker();
+    T.field('guidance', 'guidingProvider', 'CAR_PLAY', 1000);
+    T.field('carplay', 'projectedGuidanceActive', false, 1100);
+    ok(!T.routing(), 'a CAR_PLAY provider left over, CarPlay not guiding: no route, the event list not asked');
+    T.field('carplay', 'projectedGuidanceActive', true, 2000);
+    ok(T.routing(), '... and a CarPlay route after it counts');
+    // given way on a BMW route without readable turns, then CarPlay takes the route: giving way starts over
+    const B = Nav.Tracker(), b0 = 5000000;
+    B.field('guidance', 'guidanceState', 'ACTIVE', b0);
+    ok(drive(B, b0, b0 + Nav.GIVE_WAY_MS + 2000).giveWay, 'BMW route, no readable turn: gave way');
+    B.field('carplay', 'projectedGuidanceActive', true, b0 + 20000);
+    B.field('guidance', 'guidingProvider', 'CAR_PLAY', b0 + 20050);
+    ok(!B.view('route', b0 + 20100).giveWay, 'the route handed to CarPlay: not giving way any more (its turns may be readable)');
+}
+{
     const T = Nav.Tracker();
     const t0 = 1000000;
     ok(drive(T, t0, t0 + 1000).show === null && !T.view('route', t0 + 1000).giveWay, 'nothing running: nothing, no giving way');

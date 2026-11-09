@@ -341,7 +341,7 @@ function optsFrom(settings, drive) {
 /** A hybrid readout's switch: on only when switched on and the car has a high-voltage battery. */
 function hybridOn(settings, key) { return settings.get('hudHybridSeen') === true && settings.get(key) === true; }
 /** The electrical readouts that need UDS reads (electrical.js start()): { hv, v12 }. */
-function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower), v12: !!o.volt12 }; }
+function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower), hvSoc: !!o.hvSoc, hvKw: !!o.hvPower, v12: !!o.volt12 }; }
 
 /**
  * The car's driving mode (FES statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, a
@@ -649,17 +649,20 @@ function start(ctx, src) {
     const navFailed = (why) => { log.warn('hud: directions layer ' + why + ', made again in ' + NAV_RETRY_MS / 1000 + ' s'); dropNav(); navFailedAt = monoMs(); };
     const navNow = (playing) => (src.nav && !playing ? src.nav.view(navModeOf(settings)) : { show: null, giveWay: false });
     // what the corner shows now: 'nav', 'tyres' or '' (for the tests and the log)
-    let corner = '', tyreLowLogged = '';
+    let corner = '', tyreLowLogged = '', navShownAt = -Infinity;
     /** The tyre widget now: { ty, w } when it shows (setting "hudTyreWidget"; "Play on HUD" shows the sample), else null. */
     const tyreView = (playing) => {
         const w = HudTyres.widgetOf(settings);
-        const ty = playing ? HudTyres.SAMPLE : src.tyres ? src.tyres.value() : null;
+        // the sample on "Play on HUD" only on a car that sends tyres (a car without never sees anything of them)
+        if (playing) return w.show !== 'off' && settings.get('hudTyresSeen') === true ? { ty: HudTyres.SAMPLE, w: w } : null;
+        const ty = src.tyres ? src.tyres.value() : null;
         const low = TyresMod.lowCorners(ty).join(',');
         if (low !== tyreLowLogged) { if (low) log.info('hud: low tyre ' + low + (w.show !== 'off' ? ': the tyre widget shows' : '')); tyreLowLogged = low; }
-        return (playing ? w.show !== 'off' : HudTyres.widgetShows(w, ty)) ? { ty: ty, w: w } : null;
+        return HudTyres.widgetShows(w, ty) ? { ty: ty, w: w } : null;
     };
     const drawNavLayer = (m, tv) => {
         corner = m ? 'nav' : tv ? 'tyres' : '';
+        if (m) navShownAt = monoMs();
         if (!m && !tv) { dropNav(); return; }
         if (!navLayer) {
             if (monoMs() - navFailedAt < NAV_RETRY_MS) return;
@@ -1064,7 +1067,7 @@ function start(ctx, src) {
         const f = flashInfo;
         flashInfo = null;
         if (!f || !isNum(rpm) || Date.now() - f.t > 2000 || f.rate < 300) return;
-        if (f.fall !== null && Date.now() - f.fall > 700) { log.info('hud: shift after a lift, not used for the reaction time'); return; }
+        if (f.fall !== null && Date.now() - f.fall > 700) { log.debug('hud: shift after a lift, not used for the reaction time'); return; }
         // in D or S the gearbox picks the moment: only shifts made by hand (M) say anything about you
         const m = src.mode ? src.mode() : null;
         if (m === 'D' || m === 'S') return;
@@ -1073,7 +1076,7 @@ function start(ctx, src) {
         const before = learnedLead;
         learnedLead = Math.round(clamp(learnedLead + (ideal - learnedLead) * 0.3, 0, 600) / 10) * 10;
         leadShifts++;
-        log.info('hud: shift at ' + Math.round(rpm) + ' for ' + f.target + ' (' + (lateMs >= 0 ? Math.round(lateMs) + ' ms late' : Math.round(-lateMs) + ' ms early') +
+        log.debug('hud: shift at ' + Math.round(rpm) + ' for ' + f.target + ' (' + (lateMs >= 0 ? Math.round(lateMs) + ' ms late' : Math.round(-lateMs) + ' ms early') +
             '), reaction lead now ' + learnedLead + ' ms after ' + leadShifts + ' shifts');
         // written only when the lead moves (once settled, seldom)
         if (learnedLead !== before) writeAtomic(leadFile, JSON.stringify({ ms: learnedLead, n: leadShifts }), log);
@@ -1113,7 +1116,10 @@ function start(ctx, src) {
     const stopPlay = () => { demoUntil = 0; first = true; };
 
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
-        play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil, corner: () => corner };
+        play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil, corner: () => corner,
+        /** Directions on the glass in the last tick or so (the nav log writes only then): drawn each tick while shown. */
+        directionsShown: () => corner === 'nav' && monoMs() - navShownAt < 2000 };
 }
 
-module.exports = { start, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };
+// writeAtomic: kept here too (it moved to files.js in 2.0) for code that calls Hud.writeAtomic
+module.exports = { start, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };

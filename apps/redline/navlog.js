@@ -8,9 +8,11 @@
  * decodes the next turn and the lanes for Redline's own directions on the HUD. The interfaces are the ones jaimeen77's Cluster Redline
  * reads (jaimeen77-cmyk/apps, MPL-2.0; only the interface names are taken from it, the code here is Redline's).
  *
- * Written to its own file, redline-nav.log beside redline.log (512 KiB, two files), so a long route can't push
- * the HUD's lines out of redline.log. Lines:
- *   nav: <source> <field> = <json>      every change of a field (the distance alone at most every 5 s)
+ * Written to its own file, redline-nav.log beside redline.log, so a long route can't push the HUD's lines out of
+ * redline.log; at most 2 x 256 KiB (the full file is renamed to .1 over the older one), and only while the HUD
+ * shows directions (opts.onGlass, and 10 s after). Lines:
+ *   nav: <source> <field> = <json>      every change of a field; the same thing nearer (only distances and
+ *                                       times to the turn or destination changed) at most every 5 s
  *   nav: shape <kind>: <key paths>      once per kind of manoeuvre: every key it has
  * Lanes: Guidance.currentLaneGuiding and ProjectedModeGuiding.currentLaneGuiding (rows of lanes: the arrow to follow,
  * the other arrows, highlighted, bus / HOV / toll, markers, the recommended lane, the car's lane). Road names
@@ -35,7 +37,7 @@ const SOURCES = [
     { name: 'androidauto', iface: 'de.bmw.infotainment.sdi.aap.androidautoprojectedmanager.AndroidAutoProjectedManager', inst: 'AndroidAutoProjectedManagerInst1',
         fields: ['projectedGuidanceActive', 'projectedGuidanceMetadataAvailable'] },
 ];
-const MAX_BYTES = 512 * 1024, LINE = 3000, DIST_MS = 5000;
+const MAX_BYTES = 256 * 1024, LINE = 3000, DIST_MS = 5000, GLASS_GRACE_MS = 10000;
 /*
  * Phone navigation: CarPlay hands BMW its turns (ProjectedModeGuiding.updateEventsOnRoute) and they don't reach
  * Guidance.conclusiveDart (2026-11-09 drive: provider CAR_PLAY, conclusiveDart still empty). BMW lists them in
@@ -43,8 +45,10 @@ const MAX_BYTES = 512 * 1024, LINE = 3000, DIST_MS = 5000;
  * events from the car's position on, turns and lanes included. Asked every second while a route runs.
  */
 const EVENT_LIST = { iface: 'de.bmw.infotainment.navigation.guiding.GuidanceEventList', inst: 'Main_Instance', method: 'queryContent' };
-// once a second: nav.js shows a turn for 3 s after its last reply
-const QUERY_MS = 1000, PROXY_RETRY_MS = 30000, CALL_BACKOFF_MS = 2000;
+// once a second: nav.js shows a turn for STALE_MS after its last reply. One failed call is tried again on the
+// next tick (a 2 s wait after it would outlast the turn); two in a row wait CALL_BACKOFF_MS; FAILS_RECONNECT in
+// a row drop the connection, made again after PROXY_RETRY_MS (a provider gone for good holds the shared queue)
+const QUERY_MS = 1000, PROXY_RETRY_MS = 30000, CALL_BACKOFF_MS = 2000, FAILS_RECONNECT = 5;
 /** The request: one view from the car's position (CCP), six events, turns, lanes, keep-left/right and destinations. */
 function eventQuery() {
     return { viewConfigs: [{
@@ -86,8 +90,11 @@ function kindOf(dart) {
     const k = m && typeof m === 'object' ? Object.keys(m).filter((x) => m[x] !== undefined && m[x] !== null) : [];
     return k.length === 1 ? k[0] : k.length ? k.join('+') : 'none';
 }
+// what changes every second while the car drives towards the same turn (distances, times, progress)
+const MOVING = { formattedDistance: 1, rawDistance: 1, distance: 1, timeStamp: 1, distanceToDestination: 1, travelTime: 1,
+    timeToDestination: 1, remainingTime: 1, length: 1, bargraphProgress: 1, currentDistances: 1 };
 function withoutDistance(v) {
-    return JSON.stringify(v, (k, x) => (k === 'formattedDistance' || k === 'rawDistance' || k === 'distance' || k === 'timeStamp' ? undefined : x));
+    return JSON.stringify(v, (k, x) => (MOVING[k] ? undefined : x));
 }
 
 /**
@@ -101,19 +108,30 @@ function start(ctx, log, tap, opts) {
     const wanted = opts && typeof opts.wanted === 'function' ? opts.wanted : () => true;
     // whether a route runs: the directions' own answer when given (it ends a route the provider alone keeps open)
     const routingNow = opts && typeof opts.routing === 'function' ? opts.routing : () => routingOf(route);
+    // directions on the glass now (hud.js); without it (the tests), whenever wanted
+    const onGlass = opts && typeof opts.onGlass === 'function' ? opts.onGlass : null;
     const file = path.join(ctx.dataDir || '.', 'redline-nav.log');
-    // written only while wanted too: with the HUD or its directions off nothing goes to flash (the values still
-    // reach the directions through tap); before 2.0.1 it wrote every route, ~2 MB an hour with the HUD off
+    // written only while the HUD shows directions (and GLASS_GRACE_MS after): giving way to BMW's card, hidden in
+    // Comfort, paused, or no renderer, nothing goes to flash (the values still reach the directions through tap)
+    let glassAt = -Infinity;
+    const writing = () => {
+        if (!wanted()) return false;
+        if (!onGlass) return true;
+        let on = false;
+        try { on = !!onGlass(); } catch (e) { /* no */ }
+        if (on) glassAt = mono();
+        return mono() - glassAt < GLASS_GRACE_MS;
+    };
     const write = (msg) => {
         try {
-            if (!wanted()) return;
+            if (!writing()) return;
             const st = fs.existsSync(file) ? fs.statSync(file) : null;
             if (st && st.size > MAX_BYTES) fs.renameSync(file, file + '.1');
             fs.appendFileSync(file, new Date().toISOString() + ' nav: ' + msg + '\n');
         } catch (e) { /* the log is best effort */ }
     };
     const last = {}, shapes = {}, subs = [];
-    let lastDist = 0;
+    const lastDist = {};
     // is a route running? (BMW's own, or the phone's)
     const route = { state: null, provider: null, carplay: false, aa: false };
     const routing = () => { try { return routingNow(); } catch (e) { return false; } };
@@ -126,14 +144,15 @@ function start(ctx, log, tap, opts) {
             if (src === 'guidance' && field === 'guidingProvider') route.provider = v;
             if (field === 'projectedGuidanceActive') route[src === 'carplay' ? 'carplay' : 'aa'] = v === true;
             if (field === 'conclusiveDart') {
-                const kind = kindOf(v), core = withoutDistance(v);
+                const kind = kindOf(v);
                 if (!shapes[kind]) { shapes[kind] = true; write('shape ' + kind + ': ' + paths(clean(v, 0), '', []).join(' ')); }
-                // the same manoeuvre getting nearer: at most every 5 s
-                if (last[key + ':core'] === core && Date.now() - lastDist < DIST_MS) return;
-                last[key + ':core'] = core; lastDist = Date.now();
             }
             const s = json(v);
             if (last[key] === s) return;
+            // the same thing getting nearer (a turn, the lanes): at most every DIST_MS per field
+            const core = withoutDistance(v);
+            if (last[key + ':core'] === core && mono() - (lastDist[key] || -Infinity) < DIST_MS) return;
+            last[key + ':core'] = core; lastDist[key] = mono();
             last[key] = s;
             write(src + ' ' + field + ' = ' + s);
         } catch (e) { write('error reading ' + src + '.' + field + ': ' + e); }
@@ -160,10 +179,11 @@ function start(ctx, log, tap, opts) {
     // the event list, asked while a route runs; each new reply logged (the same events nearer: at most every 5 s)
     // a failed connection is tried again after PROXY_RETRY_MS (once at start-up would turn directions off for good);
     // after a failed call the next waits CALL_BACKOFF_MS (a provider that doesn't answer holds the shared native queue)
-    let elProxy = null, proxyFailedAt = -Infinity, callFailedAt = -Infinity, asking = false, lastEl = '', lastElCore = '', lastElAt = 0, elErr = '';
+    let elProxy = null, proxyFailedAt = -Infinity, callFailedAt = -Infinity, callFails = 0, asking = false, lastEl = '', lastElCore = '', lastElAt = -Infinity, elErr = '';
     const ask = () => {
         const now = mono();
-        if (asking || !routing() || !wanted() || !ctx.signals.proxy || !ctx.signals.call || now - callFailedAt < CALL_BACKOFF_MS) return;
+        if (asking || !routing() || !wanted() || !ctx.signals.proxy || !ctx.signals.call) return;
+        if (callFails >= 2 && now - callFailedAt < CALL_BACKOFF_MS) return;
         if (!elProxy && now - proxyFailedAt < PROXY_RETRY_MS) return;
         asking = true;
         const askedAt = now;
@@ -172,7 +192,7 @@ function start(ctx, log, tap, opts) {
             return ctx.signals.proxy(EVENT_LIST.iface, EVENT_LIST.inst).then((p) => { elProxy = p; write('events connected'); return p; },
                 (e) => { proxyFailedAt = mono(); throw e; });
         }).then((p) => ctx.signals.call(p, EVENT_LIST.method, eventQuery(), 900)).then((reply) => {
-            elErr = '';
+            elErr = ''; callFails = 0;
             tapped('events', 'reply', reply, askedAt);
             const views = reply && reply.viewContent, events = views && views[0] && views[0].eventsInView;
             if (Array.isArray(events)) events.forEach((e) => {
@@ -181,12 +201,16 @@ function start(ctx, log, tap, opts) {
             });
             const s = json(reply, 8000), core = withoutDistance(reply);
             if (s === lastEl) return;
-            if (core === lastElCore && Date.now() - lastElAt < DIST_MS) return;
-            lastEl = s; lastElCore = core; lastElAt = Date.now();
+            if (core === lastElCore && mono() - lastElAt < DIST_MS) return;
+            lastEl = s; lastElCore = core; lastElAt = mono();
             write('events = ' + s);
         }).catch((e) => {
             const m = String(e && e.message || e).slice(0, 200);
-            if (elProxy) callFailedAt = mono();
+            if (elProxy) {
+                callFailedAt = mono();
+                // failing again and again: drop the connection, made again after PROXY_RETRY_MS
+                if (++callFails >= FAILS_RECONNECT) { elProxy = null; callFails = 0; proxyFailedAt = mono(); }
+            }
             tapped('events', 'error', m);
             if (m !== elErr) { elErr = m; write('events error: ' + m); }
         }).then(() => { asking = false; });

@@ -359,6 +359,9 @@ function Tracker() {
             else if (name === 'conclusiveDart') { dart = decodeDart(v); dartAt = now; seen(dart, now); }
             else if (name === 'currentLaneGuiding') { lanes = decodeLanes(v); lanesAt = now; }
             if (routeSure(route)) route.sureSeen = true;
+            // the phone named as the provider says it isn't guiding (CarPlay can stay the provider after a cancel,
+            // also when Redline starts after it): its flag counts from now on, the provider alone no longer does
+            if (name === 'projectedGuidanceActive' && v === false && route.provider === (src === 'carplay' ? 'CAR_PLAY' : 'ANDROID_AUTO')) route.sureSeen = true;
             // giving way counts from when the route became certain, not from the provider (it may be set long before)
             if (routeSure(route) && !wasSure) route.sureSince = now;
             const is = routing();
@@ -369,6 +372,9 @@ function Tracker() {
                 reset(now);
                 // (sureSeen stays: a car that sends "guiding" flags always does, so the provider alone never counts again)
                 if (!is) { route.since = null; gaveWay = false; }
+                // another provider took the route (BMW to the phone, or back): its turns may be readable, so giving
+                // way starts over and counts from now
+                else if (route.provider !== oldProvider) { gaveWay = false; route.sureSince = now; }
             }
         },
         /**

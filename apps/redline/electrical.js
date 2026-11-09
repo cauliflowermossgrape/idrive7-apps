@@ -28,7 +28,10 @@
  * the HUD shows a readout that needs them, and only once that link is up (a read before then fails at once and
  * would count as the unit not answering). Each waits at most ~1 s for an answer, so a unit that doesn't answer
  * doesn't hold up knock and gearbox reads on the same link; one that doesn't answer three times is asked once
- * a minute. Never throws; value() is { soc12, v12, hvSoc, hvKw, hvTemp, hvVolt } (each a number or null).
+ * a minute. The link stops asking a unit after 5 misses in a row until it is woken: each start and each of those
+ * once-a-minute tries wakes the units asked, so a unit that was asleep a while (engine off) is asked again
+ * (and knock, which reads the engine unit too, isn't left without it). The charge and the power each keep
+ * their own count, and each is read only while its readout shows. Never throws; value() is { soc12, v12, hvSoc, hvKw, hvTemp, hvVolt } (each a number or null).
  */
 const { DidReader } = require('./kit/dids');
 
@@ -46,6 +49,7 @@ const V12 = [
     Object.assign({ ecu: 0x12, did: '5853' }, VOLT),
 ];
 const SME = 0x07;
+const V12_ECUS = V12.map((c) => c.ecu).filter((e, i, a) => a.indexOf(e) === i);
 // every read has its own short wait: the link is shared with knock (twice a second) and the gearbox, and the
 // default 4 s per unanswered identifier could hold them up for ~12 s a turn on a hybrid whose SME differs
 const HV_SOC = [{ ecu: SME, did: 'DDBC', bytes: 2, at: 0, factor: 0.1, offset: 0, min: 0, max: 100, timeoutMs: 1000 }];
@@ -102,7 +106,7 @@ class Electrical {
         this.ctx = ctx; this.log = ctx.log; this.linkOf = linkOf; this.settings = ctx.settings;
         this.rd = null; this.timer = null; this.busy = false; this.want = {};
         this.s = {};                  // name -> { v, t } from the signals and the reads
-        this.fails = { hv: 0, v12: 0 }; this.tried = { hv: 0, v12: 0 }; this.slowT = 0; this.v12T = 0;
+        this.fails = { soc: 0, kw: 0, v12: 0 }; this.tried = { soc: 0, kw: 0, v12: 0 }; this.slowT = 0; this.v12T = 0;
         this.vs = { pick: null, miss: 0, res: {} };
         this.probed = false;
     }
@@ -139,22 +143,34 @@ class Electrical {
     }
 
     /**
-     * Read what the HUD shows: want = { hv (HV charge or power), v12 (the 12 V voltage) }. Not yet known to be a
+     * Read what the HUD shows: want = { hvSoc (HV charge), hvKw (HV power), v12 (the 12 V voltage) } (hv: both,
+     * for callers that don't tell them apart). Not yet known to be a
      * hybrid: the SME is asked once (DDBC), so the hybrid readouts can be offered; never on a known petrol car again.
      */
     start(want) {
-        this.want = want || {};
+        const w = want || {};
+        this.want = { v12: !!w.v12, hvSoc: w.hvSoc !== undefined ? !!w.hvSoc : !!w.hv, hvKw: w.hvKw !== undefined ? !!w.hvKw : !!w.hv };
+        this.want.hv = this.want.hvSoc || this.want.hvKw;
         const any = this.want.v12 || (this.want.hv && this.hybrid()) || (!this.hybrid() && !this.probed);
         if (!any) return this.stop();
         if (this.timer) return;
         try {
             if (!this.rd) this.rd = new DidReader(this.linkOf(), { ecu: SME });
+            // a new start (the HUD back on, the next drive): the units it asks are asked again, even if the link
+            // gave up on them while they slept
+            this._wake(V12_ECUS.concat([SME]));
             this.timer = setInterval(() => this._poll(), POLL_MS);
             this._poll();
         } catch (e) { this.log.warn('electrical: ' + (e && e.message || e)); }
     }
 
     stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
+
+    /** Let the link ask these units again (it stops after 5 misses in a row, until woken). */
+    _wake(ecus) {
+        const link = this.rd && this.rd.diag;
+        if (link && typeof link.wake === 'function') ecus.forEach((e) => { try { link.wake(e); } catch (err) { /* never */ } });
+    }
 
     _poll() {
         if (this.busy || !this.rd) return;
@@ -172,24 +188,30 @@ class Electrical {
         if (link && link.ready === false) return;
         if (!this.hybrid() && !this.probed) {
             this.probed = true;
+            this._wake([SME]);
             const v = await this.rd.read(Object.assign({}, HV_SOC[0], { timeoutMs: PROBE_TIMEOUT_MS }));
             if (v !== null) { this._put('hvSoc', v); this._seen('battery unit DDBC, ' + ((this.rd.raws[this.rd.key(HV_SOC[0])] || {}).bytes || '')); }
             else this.log.info('electrical: no high-voltage battery unit (' + ((this.rd.raws[this.rd.key(HV_SOC[0])] || {}).why || '?') + ')');
             if (!this.want.v12 && !(this.want.hv && this.hybrid())) this.stop();
             return;
         }
-        if (this.want.hv && this.hybrid() && this._may('hv', now)) {
+        // the power and the charge each counted on their own: a unit that gives the charge but not the power
+        // keeps its charge read every SLOW_MS
+        const w = this.want, wantKw = w.hvKw !== undefined ? w.hvKw : w.hv, wantSoc = w.hvSoc !== undefined ? w.hvSoc : w.hv;
+        if (wantKw && this.hybrid() && this._may('kw', now, [SME])) {
             const volts = await this.rd.value('hvV', HV_V);
             const amps = volts === null ? null : await this.rd.value('hvA', HV_A);
             const kw = decode.hvKw(volts, amps);
             if (kw !== null) { this._put('hvKw', kw); this._put('hvVolt', volts); }
-            if (now - this.slowT >= SLOW_MS) {
-                this.slowT = now;
-                this._put('hvSoc', await this.rd.value('hvSoc', HV_SOC));
-            }
-            this._result('hv', kw !== null || (this.s.hvSoc && this.s.hvSoc.t >= now), 'the battery unit (SME 0x07) gives no power or charge');
+            this._result('kw', kw !== null, 'the battery unit (SME 0x07) gives no power');
         }
-        if (this.want.v12 && now - this.v12T >= V12_MS && this._may('v12', now)) {
+        if (wantSoc && this.hybrid() && now - this.slowT >= SLOW_MS && this._may('soc', now, [SME])) {
+            this.slowT = now;
+            const soc = await this.rd.value('hvSoc', HV_SOC);
+            this._put('hvSoc', soc);
+            this._result('soc', soc !== null, 'the battery unit (SME 0x07) gives no charge');
+        }
+        if (this.want.v12 && now - this.v12T >= V12_MS && this._may('v12', now, V12_ECUS)) {
             this.v12T = now;
             const v = await this._volt();
             this._put('v12', v);
@@ -197,7 +219,13 @@ class Electrical {
         }
     }
 
-    _may(k, now) { return this.fails[k] < 3 || now - this.tried[k] >= FAIL_RETRY_MS; }
+    /** May path k ask now: yes until it failed 3 times, then once a minute (waking its units for that try). */
+    _may(k, now, ecus) {
+        if (this.fails[k] < 3) return true;
+        if (now - this.tried[k] < FAIL_RETRY_MS) return false;
+        this._wake(ecus || []);
+        return true;
+    }
     _result(k, ok, why) {
         this.tried[k] = Date.now();
         if (ok) { this.fails[k] = 0; return; }

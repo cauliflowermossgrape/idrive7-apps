@@ -16,7 +16,7 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
         call: (px, method, params) => {
             calls++; lastQuery = { method: method, params: params };
             return Promise.resolve({ GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [
-                { maneuver: { intersection: { direction: 'SLIGHT_LEFT', formattedDistance: { distance: '799', unit: 'METER' }, description: { elements: [{ text: 'Example Street' }] } } } },
+                { distanceToDestination: 9000 - calls, maneuver: { intersection: { direction: 'SLIGHT_LEFT', formattedDistance: { distance: '799', unit: 'METER' }, description: { elements: [{ text: 'Example Street' }] } } } },
                 { laneGuiding: { lanes: [{ directionToFollow: 'SLIGHT_LEFT', isHighlighted: true }] } }] }] });
         },
         watch(iface, inst, handlers) {
@@ -40,7 +40,9 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
     H.Guidance.guidanceState('ACTIVE');              // the same value again: not logged
     await sleep(2300);
     ok(calls >= 1 && lastQuery.method === 'queryContent' && lastQuery.params.viewConfigs[0].viewport.includedTypes.indexOf('INCLUDE_LANE_GUIDINGS') >= 0, 'CarPlay routing: queryContent asked, lanes included (' + calls + ')');
-    H.Guidance.currentLaneGuiding({ rows: [{ lanes: [{ directionToFollow: 'LEFT', isHighlighted: true }, { directionToFollow: 'STRAIGHT_ON', isHighlighted: false }] }], carPositionLaneIndex: 1 });
+    H.Guidance.currentLaneGuiding({ rows: [{ length: 120, lanes: [{ directionToFollow: 'LEFT', isHighlighted: true }, { directionToFollow: 'STRAIGHT_ON', isHighlighted: false }] }], carPositionLaneIndex: 1 });
+    // the same lanes nearer (only their length changed): held back for 5 s
+    H.Guidance.currentLaneGuiding({ rows: [{ length: 95, lanes: [{ directionToFollow: 'LEFT', isHighlighted: true }, { directionToFollow: 'STRAIGHT_ON', isHighlighted: false }] }], carPositionLaneIndex: 1 });
     H.ProjectedModeGuiding.currentLaneGuiding({ rows: [], carPositionLaneIndex: 0 });
     const text = fs.readFileSync(path.join(dir, 'redline-nav.log'), 'utf8');
     const lines = text.trim().split('\n');
@@ -56,7 +58,8 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
     ok(!/latitude|longitude|37\.5|127/.test(text), 'no coordinates in the log');
     ok(/guidance currentLaneGuiding = .*"directionToFollow":"LEFT"/.test(text) && /phone currentLaneGuiding = /.test(text), 'lanes logged, from BMW and the phone');
     ok(/events connected/.test(text) && /events = .*SLIGHT_LEFT.*799/.test(text) && /shape event intersection: /.test(text), 'the route events logged with their shape');
-    ok((text.match(/ events = /g) || []).length === 1, 'the same reply again is not logged again');
+    ok((text.match(/ events = /g) || []).length === 1, 'the same events nearer (distance to the destination changing) not logged again within 5 s (' + calls + ' replies)');
+    ok((text.match(/guidance currentLaneGuiding = /g) || []).length === 1, 'the same lanes nearer not logged again within 5 s');
     ok(!/Example Street/.test(text) && /"text":"<14 chars>"/.test(text), 'street names logged as their length only');
     ok(logged.some((m) => /probe on/.test(m)), 'one line in redline.log');
     // the HUD or its directions off (wanted false): nothing written to flash, the values still reach the directions
@@ -68,6 +71,14 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
     ok(!fs.existsSync(path.join(dir2, 'redline-nav.log')), 'HUD or directions off: no nav log written');
     ok(tapped.indexOf('guidance.guidanceState') >= 0 && tapped.indexOf('guidance.conclusiveDart') >= 0, 'HUD or directions off: the values still reach the directions (' + tapped.join(',') + ')');
     off.stop();
+    // the HUD not showing directions (giving way, hidden, paused, no renderer): nothing written either
+    const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-nav-glass-'));
+    const noGlass = NavLog.start({ signals: signals, dataDir: dir3 }, { info() {}, warn() {} }, null, { wanted: () => true, onGlass: () => false });
+    await sleep(50);
+    H.Guidance.guidanceState('ACTIVE'); H.Guidance.conclusiveDart(dart(250));
+    await sleep(50);
+    ok(!fs.existsSync(path.join(dir3, 'redline-nav.log')), 'no directions on the glass: no nav log written');
+    noGlass.stop();
     // no signals (the preview): nothing breaks
     const q = NavLog.start({ dataDir: dir }, null);
     ok(typeof q.stop === 'function' && typeof q.write === 'function', 'no signals: a quiet stub');

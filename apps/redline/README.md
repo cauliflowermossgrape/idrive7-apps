@@ -583,13 +583,19 @@ Everything lives in the app's `data/` folder on the head unit
 
 | File | What | Size | Written |
 |---|---|---|---|
-| `redline.log`, `redline.log.1` | the app's log, rotated at 256 KB | ≤ ~512 KB | on events, never per frame |
+| `redline.log`, `redline.log.1` | the app's log: at 256 KB it is renamed to `.1` over the older one | ≤ ~512 KB | on events, never per frame; the same kind of line at most every 10 min (`quietlog.js`) |
+| `redline-nav.log`, `redline-nav.log.1` | the navigation probe: the same, at 256 KB | ≤ ~512 KB | only while the HUD shows directions (and 10 s after) |
 | `settings.json` | settings | small | when a setting changes |
 | `limiter.json` | learned redline | < 50 B | when it rises |
 | `shiftmap.json` | torque bins and gear ratios | ~0.5–10 KB | at most every 5 min while learning, at most once a minute when a shift point moves |
 | `hudlead.json` | learned reaction time | < 50 B | when it moves |
 | `engine.json` | detected engine type | tiny | once |
 | `launch.json` | best launch times (0-100 km/h, 0-60 mph) | < 100 B | on a new best |
+
+Both logs keep at most two files, so Redline's logs never take more than about 1 MB: the oldest lines are
+dropped as new ones come. A line that would repeat (a unit not answering, knock, a low tyre, a plateau on the
+limiter) is written once, then again at most every 10 minutes with how many were held back (`(+12 like it)`);
+each shift is not logged at all.
 
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.
@@ -606,7 +612,8 @@ Useful lines:
 - `redline-nav.log` (beside `redline.log`): the navigation probe, read-only, behind Redline's own HUD
   directions. What BMW's guidance service (`navigation.guiding.Guidance`: route state, which app
   guides, the next manoeuvre with its distance) and the CarPlay / Android Auto managers send, each change
-  (a turn getting nearer at most every 5 s), and once per kind of manoeuvre every key it has. Coordinates
+  (the same turn or lanes getting nearer at most every 5 s), only while Redline's directions are on the glass
+  (not while it gives way to BMW's card, is hidden, paused or off), and once per kind of manoeuvre every key it has. Coordinates
   are left out, street names are logged as their length only. The interfaces are the ones jaimeen77's Cluster
   Redline (jaimeen77-cmyk/apps) reads; all optional, so a car without them installs Redline as before.
   `dir: …` lines: what the directions show, one line per turn (`dir: turn LEFT 450 m <14 chars> lanes
@@ -635,6 +642,7 @@ Useful lines:
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
 | `files.js` | `writeAtomic`: the learned files written whole or not at all (temp file, then rename) |
+| `quietlog.js` | keeps redline.log small: the same kind of line at most every 10 minutes, with a count of the ones held back |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |
 | `knock.js` | Knock retard from the engine unit (read-only UDS 22) |
 | `electrical.js` | 12 V and hybrid battery readouts (car signals and read-only UDS; hybrid found by the app) |
