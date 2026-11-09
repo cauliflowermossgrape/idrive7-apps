@@ -13,7 +13,7 @@ const log = { info() {}, warn() {}, error() {} };
 const mo = (x) => { const r = modeOf(x); return r && r.mode; };
 ok(mo('SPORT_DYNAMIC') === 'sport' && mo(2) === 'sport' && mo('ECO_PRO_PLUS') === 'eco' && mo(5) === 'comfort' &&
     mo('ADAPTIVE') === 'adaptive' && mo(10) === 'adaptive' && mo('OFFROAD_ICE') === null && modeOf(undefined) === null, 'driving modes');
-ok(mo('PHEV_SPORT_STANDARD') === 'sport' && mo('PHEV_HYBRID_STANDARD') === 'hybrid' && mo('PHEV_HYBRID_ECO') === 'hybridEco' &&
+ok(mo('PHEV_SPORT_STANDARD') === 'sport' && mo('PHEV_HYBRID_STANDARD') === 'hybrid' && mo('PHEV_HYBRID_ECO') === 'hybrid' && mo('BOOST') === 'sport' && mo('PHEV_SPORT_PLUS') === 'sport' &&
     mo(20) === 'electric' && modeOf('PHEV_ELECTRIC_INDIVIDUAL').phev && !modeOf('SPORT_DYNAMIC').phev, 'a plug-in hybrid\'s modes');
 ok(slotOf('FARBAUSWAHL_7') === 7 && slotOf(12) === 12 && slotOf('FARBAUSWAHL_13') === null && slotOf('SIGNAL_UNGUELTIG') === null, 'colour slots');
 const r = request(4);
@@ -26,7 +26,7 @@ const signals = {
     watch: async (iface, inst, h) => { subs[iface] = h; return { proxy: {}, error: null }; },
     set: async (p, field, v) => { writes.push(slotOf(v.controlMenuAmbientePanoramicRoofInteriorLighting)); },
 };
-const values = { carKind: 'ice', follow: true, sport: 3, comfort: 0, eco: 5, adaptive: 0, hybrid: 0, hybridEco: 0, electric: 9, restore: true };
+const values = { carKind: 'ice', follow: true, sport: 3, comfort: 0, eco: 5, adaptive: 0, hybrid: 0, electric: 9, restore: true };
 const settings = { get: (k) => values[k], set: (k, v) => { values[k] = v; } };
 const a = new Ambient({ settings, signals, log, now: () => t });
 const colour = (n) => subs['de.bmw.infotainment.misc.ComfortFunctionIuK'].statusAmbientLightInteriorColour({ statusMenuAmbientePanoramicRoofInteriorLighting: 'FARBAUSWAHL_' + n });
@@ -74,8 +74,12 @@ const tick = () => new Promise((res) => setImmediate(res));
     values.follow = true;
     t += 2000;
     mode('PHEV_ELECTRIC_STANDARD'); await tick();
-    ok(values.carKind === 'hybrid' && a.modes().join() === 'sport,hybrid,hybridEco,electric', 'a PHEV mode: the hybrid\'s modes');
+    ok(values.carKind === 'hybrid' && a.modes().join() === 'sport,hybrid,electric,adaptive', 'a PHEV mode: the hybrid\'s modes (no Comfort, Eco Pro in Hybrid)');
     ok(writes[writes.length - 1] === 9, 'Electric: its colour');
+    t += 2000;
+    mode('ADAPTIVE'); await tick();
+    ok(a.mode() === 'adaptive', 'Adaptive');
+    ok(mo('PHEV_ADAPTIVE_NEW') === 'adaptive' && mo('SOMETHING_ELSE') === null, 'an unknown name by its words');
     a.stop();
     console.log('ambient config: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
