@@ -34,6 +34,14 @@ const log = { info() {}, warn() {}, error() {} };
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const until = (check, ms) => new Promise((res) => { const end = Date.now() + ms; const poll = () => (check() || Date.now() > end ? res() : setTimeout(poll, 50)); poll(); });
 const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
+// fs.rmSync is Node 14.14+; the head unit (and the node8-runtime CI job) is Node 8.16.2. The claims folder is flat.
+const rm = (p) => {
+    let st;
+    try { st = fs.lstatSync(p); } catch (e) { return; }
+    if (!st.isDirectory()) return fs.unlinkSync(p);
+    fs.readdirSync(p).forEach((f) => rm(path.join(p, f)));
+    fs.rmdirSync(p);
+};
 
 (async () => {
     const a = new HudClaim('a', log);
@@ -42,6 +50,8 @@ const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
     const t1 = at('a');
     await sleep(2200);
     ok(at('a') > t1, 'touched again (the folder there already)');
+    // each app runs as its own user: the folder is open to all (sticky) whatever the umask (no modes on Windows)
+    if (process.platform !== 'win32') ok((fs.statSync(SHM).mode & 0o7777) === 0o1777, 'the claims folder is 1777, not ' + (fs.statSync(SHM).mode & 0o7777).toString(8));
     ok(HudClaim.others('b').join() === 'a' && HudClaim.others('a').length === 0, 'a held claim is seen by the others');
     a.hold(false);
     ok(HudClaim.others('b').length === 0 && a.thisBoot(), 'given back: not seen, still known for this boot');
@@ -66,7 +76,7 @@ const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
     h.stop();
 
     // the standing app comes after Redline: looked for, then off
-    fs.rmSync(path.join(SHM, 'redline'), { force: true });
+    rm(path.join(SHM, 'redline'));
     HudClaim.standing('robertn_waze_cluster', false);
     s = settings(); h = start(s);
     ok(s.v.hud === 'on', 'no standing app yet: on');
@@ -76,10 +86,18 @@ const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
     h.stop();
 
     // hudHandBack off: stays on at a start
-    fs.rmSync(path.join(SHM, 'redline'), { force: true });
+    rm(path.join(SHM, 'redline'));
     s = settings({ hudHandBack: false }); h = start(s);
     await sleep(2500);
     ok(s.v.hud === 'on', 'hudHandBack off: Redline\'s HUD stays on');
+    h.stop();
+    // and off is the default: not set at all, it stays on too
+    const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8')).settings.filter((x) => x.key === 'hudHandBack')[0];
+    ok(spec && spec.default === true, 'hudHandBack is on by default (this fork: the map comes back)');
+    rm(path.join(SHM, 'redline'));
+    s = settings({ hudHandBack: undefined }); h = start(s);
+    await sleep(2500);
+    ok(s.v.hud === 'on', 'hudHandBack not set: Redline\'s HUD stays on');
     h.stop();
 
     // turned on in this boot: held until the car is switched off
@@ -102,15 +120,15 @@ const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
     h.stop();
 
     // without a standing app Redline keeps its HUD on
-    fs.rmSync(SHM, { recursive: true, force: true });
+    rm(SHM);
     s = settings(); h = start(s);
     await sleep(2500);
     ok(s.v.hud === 'on', 'no standing app: Redline\'s HUD stays on after a start');
     // a claim folder that cannot be written: no new start
-    fs.rmSync(SHM, { recursive: true, force: true });
+    rm(SHM);
     fs.writeFileSync(SHM, 'not a folder');
     HudClaim.standing('robertn_waze_cluster', true);
     ok(new HudClaim('redline', log).thisBoot(), 'an unwritable claim folder: not a new start');
     console.log('hud claim: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
-})();
+})().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });   // Node 8 exits 0 on a rejection

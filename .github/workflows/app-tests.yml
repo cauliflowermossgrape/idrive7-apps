@@ -75,3 +75,16 @@ jobs:
       - run: node kit/tools/test_diagnostic_zh.js dist/dtc_scanner/source/javascript
       - run: cd kit/tools && python3 test_zh.py
       - run: python3 kit/tools/test_import_diagnostic_ru.py
+
+  # The head unit runs Node 8.16.2, so code that only works on newer Node passes the job above and fails in the car
+  # (#114's mkdirSync recursive). Runtime tests are added here as each one runs on 8.16.2 (#115).
+  node8-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '8.16.2'
+      - run: node --version
+      - run: node kit/tools/test_redline_hud.js
+      - run: node kit/tools/test_hud_claim.js

@@ -28,19 +28,19 @@ const DIR = process.env.MGU_HUD_CLAIMS || '/dev/shm/mgu-hud';
 const TOUCH_MS = 2000, FRESH_MS = 6000;
 const STANDING = '.standing';
 
-/* The claims' folder, made if it is not there (Node 8: no recursive mkdir; /dev/shm is there), writable by every
- * app: each runs as its own user, and the umask would leave the folder its maker's alone. */
+/*
+ * The claims' folder, made if it is not there (Node 8: no recursive mkdir; /dev/shm is there). Every app writes in
+ * it, each as its own user, so it is opened as /tmp is (1777, sticky: anyone writes, only a file's owner removes
+ * it); mkdir's mode alone would lose the group and other write to the umask. Only the app that made the folder can
+ * open it: the others' chmod fails, and once tried it is not tried again until the folder is made anew.
+ */
+let opened = false;
 function folder() {
-    try {
-        fs.mkdirSync(DIR, 0o777);
-        fs.chmodSync(DIR, 0o1777);
-    } catch (e) { if (e.code !== 'EEXIST') throw e; }
-}
-
-/* A claim or marker file, readable by every app. */
-function write(file, data) {
-    fs.writeFileSync(file, JSON.stringify(data) + '\n');
-    try { fs.chmodSync(file, 0o644); } catch (e) { /* another app's: it made it readable */ }
+    let made = false;
+    try { fs.mkdirSync(DIR); made = true; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    if (opened && !made) return;
+    opened = true;
+    try { fs.chmodSync(DIR, 0o1777); } catch (e) { /* another app's folder: it opens it */ }
 }
 
 class HudClaim {
@@ -61,7 +61,7 @@ class HudClaim {
         } else {
             clearInterval(this.timer);
             this.timer = null;
-            try { write(this.file, { held: false, at: Date.now() }); } catch (e) { /* tmpfs gone */ }
+            try { fs.writeFileSync(this.file, JSON.stringify({ held: false, at: Date.now() }) + '\n'); } catch (e) { /* tmpfs gone */ }
         }
     }
 
@@ -75,7 +75,7 @@ class HudClaim {
     _touch() {
         try {
             folder();
-            write(this.file, { held: true, at: Date.now() });
+            fs.writeFileSync(this.file, JSON.stringify({ held: true, at: Date.now() }) + '\n');
             this.failed = false;
         } catch (e) {
             if (!this.failed && this.log) this.log.warn('HUD claim: ' + e.message);
@@ -101,7 +101,7 @@ class HudClaim {
         try {
             if (JSON.parse(fs.readFileSync(f, 'utf8')).on === !!on) return;
         } catch (e) { /* not written yet */ }
-        try { folder(); write(f, { on: !!on }); } catch (e) { /* tmpfs gone */ }
+        try { folder(); fs.writeFileSync(f, JSON.stringify({ on: !!on }) + '\n'); } catch (e) { /* tmpfs gone */ }
     }
 
     static standingOn(id) {
