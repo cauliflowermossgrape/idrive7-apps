@@ -204,21 +204,26 @@ function rSeg(cv, a, b, max, c, g, outline) {
  * Zero at the knee; recovery fills down the climb towards 0, power along the flat towards the end (yellow from
  * 85 % of bar.hi). Track and zero tick bg, fill fg.
  */
-const RM = { dy: 24, t: 4, slant: 1.5 };
+// t: the flat (power) part's thickness, clear of the scale's numbers and the gear; tr: the climb's (recovery) at its
+// foot, narrowing to t at the knee (a wedge: more recovery, thicker); start: where the climb begins, clear of the 0
+const RM = { dy: 25, t: 6, tr: 11, slant: 2, start: 0.14 };
 function rampMeter(cv, bar, P, layer) {
-    const A = [RP.x0, RP.y0 + RM.dy], K = [RP.kx, RP.ky + RM.dy], B = [RP.x1, RP.ky + RM.dy];
-    const quad = (a, b, c, line) => {
-        const q = [[a[0] + RM.slant, a[1] - RM.t], [b[0] + RM.slant, b[1] - RM.t], b, a];
+    const along = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+    const A0 = [RP.x0, RP.y0 + RM.dy], K = [RP.kx, RP.ky + RM.dy], B = [RP.x1, RP.ky + RM.dy], A = along(A0, K, RM.start);
+    // the climb's thickness k of the way from the knee (0) to its start (1)
+    const tc = (k) => RM.t + (RM.tr - RM.t) * k;
+    const quad = (a, b, c, line, ta, tb) => {
+        ta = ta || RM.t; tb = tb || ta;
+        const q = [[a[0] + RM.slant * ta / RM.t, a[1] - ta], [b[0] + RM.slant * tb / RM.t, b[1] - tb], b, a];
         if (line) cv.polyline(q.concat([q[0]]), line, c); else cv.quad(q, c);
     };
-    const along = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
     if (layer !== 'fg') {
-        quad(A, K, withAlpha(RC.line, 0.6), 1.1); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
+        quad(A, K, withAlpha(RC.line, 0.6), 1.1, RM.tr, RM.t); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
         cv.line(K[0] + RM.slant / 2, K[1] - RM.t - 3, K[0], K[1] + 3, 1.6, RC.line);
     }
     if (layer === 'bg' || !isNum(bar.v)) return;
     const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
-    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) quad(along(K, A, k), K, P.low); }
+    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) quad(along(K, A, k), K, P.low, 0, tc(k), RM.t); }
     else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) quad(K, along(K, B, k), bar.v >= 0.85 * hi ? RC.yellow : RC.fill); }
 }
 function drawRamp(cv, f, layer, h) {
