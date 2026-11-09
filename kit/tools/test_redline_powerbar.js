@@ -60,7 +60,6 @@ const CASES = [
     ['standard 4 items (wide kept to one column)', 'standard', (v) => [OIL, pw(v), WAT, BO], geo(150, 66, 150 + 62.5, 62.5), true],
     ['digital wide', 'digital', (v) => [pw(v), OIL], geo(166, 62, 166, 2 * 234 / 3), true],
     ['vfd wide', 'vfd', (v) => [pw(v), OIL, WAT], geo(166, 62, 166, 117), true],
-    ['ramp row', 'ramp', (v) => [BO, pw(v), OIL, WAT], { bx: 284, bw: 112, z: 284 + 112 / 3, t0: 70, t1: 76 }, false],
     ['dial row', 'dial', (v) => [OIL, pw(v), WAT], { bx: 284, bw: 112, z: 284 + 112 / 3, t0: 34, t1: 40 }, false],
 ];
 
@@ -137,7 +136,7 @@ CASES.forEach((c) => {
 }
 
 /* ---------- M layouts: the big readout falls back to label + value; arc's bottom row has no room ---------- */
-['arc', 'ramp', 'dial'].forEach((st) => {
+['arc', 'dial'].forEach((st) => {
     const a = layer(frame(st, [pw(-20), OIL, WAT]), 'both'), b = layer(frame(st, [{ label: 'POWER', value: '+12', tone: 'text' }, OIL, WAT]), 'both');
     ok(same(a, b), st + ': the first (big) readout shows label + value only');
 });
@@ -154,11 +153,29 @@ ok(!same(layer(frame('arc', [OIL, BO, WAT, pw(-20)]), 'both'), layer(frame('arc'
     // wide on an item without a bar means nothing
     ok(same(layer(frame(st, [Object.assign({ wide: true }, BO), OIL]), l), layer(frame(st, [BO, OIL]), l)), st + ' ' + l + ': wide without a bar changes nothing');
 }));
-['arc', 'ramp', 'dial'].forEach((st) => {
+['arc', 'dial'].forEach((st) => {
     const a = layer(frame(st, [OIL, pw(-20), WAT, BO]), 'both'), b = layer(frame(st, [OIL, { label: 'POWER', value: '+12', tone: 'text' }, WAT, BO]), 'both');
     const d = diff(a, b, 0, 129);
     ok(d.n > 0 && d.minX >= 280, st + ': only the bar under its row differs (x ' + d.minX + '..' + d.maxX + ')');
 });
+
+/* ---------- ramp: the meter under the band, the ramp's shape (2026-11-10 sketch) ---------- */
+{
+    // the list draws as if the power item weren't there (it takes no place in it)
+    ['bg', 'fg'].forEach((l) => {
+        const a = layer(frame('ramp', [BO, pw(-20), OIL]), l), b = layer(frame('ramp', [BO, OIL]), l);
+        const d = diff(a, b, 0, 129);
+        ok(d.n > 0 && d.maxX <= 375, 'ramp ' + l + ': only the meter under the band differs, the list as without it (x ' + d.minX + '..' + d.maxX + ')');
+    });
+    const fill = (v) => diff(layer(frame('ramp', [BO, pw(v), OIL]), 'both'), layer(frame('ramp', [BO, pw(0), OIL]), 'both'), 0, 129);
+    const rec = fill(-20), pwr = fill(40), full = fill(80), none = fill(0);
+    ok(none.n === 0, 'ramp: 0 kW fills nothing');
+    ok(rec.n > 0 && rec.maxX <= 106 && rec.minX >= 60 && rec.cols.filter((c) => isCol(c, P.low)).length >= 20, 'ramp: -20 kW fills half way down the climb, green (x ' + rec.minX + '..' + rec.maxX + ')');
+    ok(pwr.n > 0 && pwr.minX >= 103 && pwr.maxX > 220 && pwr.maxX < 250 && mostly(pwr.cols, '#f4f1e6'), 'ramp: +40 kW fills half way along the flat (x ' + pwr.minX + '..' + pwr.maxX + ')');
+    ok(full.maxX >= 370 && mostly(full.cols, '#ffc21a'), 'ramp: +80 kW fills the flat to the end, yellow');
+    ok(fill(-100).minX >= 33 && fill(200).maxX <= 375, 'ramp: beyond lo / hi stays inside the track');
+    ok(diff(layer(frame('ramp', [BO, pw(0), OIL]), 'bg'), layer(frame('ramp', [BO, OIL]), 'bg'), 0, 129).n > 0, 'ramp: the track and zero tick on the static layer');
+}
 
 console.log(tally.checks + ' checks, ' + tally.fails + ' failed');
 process.exit(tally.fails ? 1 : 0);

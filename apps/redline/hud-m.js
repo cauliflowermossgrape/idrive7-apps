@@ -198,6 +198,29 @@ function rSeg(cv, a, b, max, c, g, outline) {
         if (outline) cv.polyline(q.concat([q[0]]), outline, c); else cv.quad(q, c);
     });
 }
+/*
+ * The ramp's Recovery / Power meter (a readout with .bar, hud.js): not in the list but a thin second band under
+ * the ramp's scale, the same shape and length (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter).
+ * Zero at the knee; recovery fills down the climb towards 0, power along the flat towards the end (yellow from
+ * 85 % of bar.hi). Track and zero tick bg, fill fg.
+ */
+const RM = { dy: 24, t: 4, slant: 1.5 };
+function rampMeter(cv, bar, P, layer) {
+    const A = [RP.x0, RP.y0 + RM.dy], K = [RP.kx, RP.ky + RM.dy], B = [RP.x1, RP.ky + RM.dy];
+    const quad = (a, b, c, line) => {
+        const q = [[a[0] + RM.slant, a[1] - RM.t], [b[0] + RM.slant, b[1] - RM.t], b, a];
+        if (line) cv.polyline(q.concat([q[0]]), line, c); else cv.quad(q, c);
+    };
+    const along = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+    if (layer !== 'fg') {
+        quad(A, K, withAlpha(RC.line, 0.6), 1.1); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
+        cv.line(K[0] + RM.slant / 2, K[1] - RM.t - 3, K[0], K[1] + 3, 1.6, RC.line);
+    }
+    if (layer === 'bg' || !isNum(bar.v)) return;
+    const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
+    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) quad(along(K, A, k), K, P.low); }
+    else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) quad(K, along(K, B, k), bar.v >= 0.85 * hi ? RC.yellow : RC.fill); }
+}
 function drawRamp(cv, f, layer, h) {
     const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max;
     const step = 500, fl = flashOn(o, cue), flashCol = flashColour(o, cue, h, RC.red);
@@ -240,8 +263,11 @@ function drawRamp(cv, f, layer, h) {
             cv.line(p[0], p[1], p[0] + RP.slant * t / RP.t, p[1] - t, 2.2, '#ffffff');
         }
     }
+    // the power meter under the ramp (not in the list)
+    const meter = (f.readouts || []).filter((it) => it.bar)[0];
+    if (meter) rampMeter(cv, meter.bar, h.P, layer);
     if (!fg) return;
-    const gx = 222, items = f.readouts || [];
+    const gx = 222, items = (f.readouts || []).filter((it) => !it.bar);
     if (f.chip) ring(cv, gx, 74, 22, 58, f.chip, h.P);
     // readouts 2-4: a list on the right, label left and value right
     [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 284, 66 + k * 26, items[i], h.P, o, RC.text, 'row', 112); });

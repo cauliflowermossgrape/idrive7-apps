@@ -421,6 +421,10 @@ const labels = (items) => items.map((r) => r.label).join(',');
         ok(fr && fr.value === String(Math.round(282.481 / 12)), 'fuel readout: 9.6 l/h at 80 km/h = 12 l/100 km = 24 mpg (' + (fr && fr.value) + ')');
         ok(Hud.readoutsFor({}, null, null, null, fo, { fuelLph: null, kmh: 80 }).every((i) => !/MPG|L\//.test(i.label)), 'fuel readout: none without a fuel rate');
         ok(!Hud.calmOpts(fo).fuel, 'calmOpts: no fuel readout');
+        // the ramp draws the power bar under its band: it takes no place in the list of four
+        const four = Object.assign({}, Hud.optsFrom(st({ hudShowHvBar: true, hudHybridSeen: true, hudShowTorque: true, hudTempsMode: 'always' })));
+        const row = (style) => Hud.readoutsFor({ rpm: 3000, oil: 95, coolant: 90 }, 80, 1.1, null, Object.assign({}, four, { style: style }), { torque: 200, hvKw: -9 });
+        ok(row('ramp').length === 5 && row('ramp').some((i) => i.bar) && row('standard').length === 4, 'ramp: the power bar on top of four readouts; elsewhere it counts as one');
         ['hudShowFuel', 'hudShowHvBar'].forEach((k) => ok(Hud.PROFILE_KEYS.indexOf(k) >= 0, k + ' is a profile key'));
     }
     ok(spec.signals['de.bmw.infotainment.vehicle.CDS'].statusBattery2 === 'rs', 'CDS.statusBattery2 subscribed');

@@ -448,10 +448,14 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     electricalItems(o, x).forEach((it) => items.push(it));
     // four fit the row legibly: the last plain readout gives way first, so a warning keeps its place
     // (on a cold start with boost, limit, oil, water and gearbox on, the gearbox goes)
-    while (items.length > MAX_READOUTS) {
-        let i = items.length - 1;
-        while (i >= 0 && items[i].tone !== 'text') i--;
-        items.splice(i >= 0 ? i : items.length - 1, 1);
+    // (the ramp draws the power bar under its band, not in the row: it takes no place there)
+    const free = o.style === 'ramp' ? items.filter((it) => it.bar).length : 0;
+    const keep = (it) => free && it.bar;
+    while (items.length - free > MAX_READOUTS) {
+        let i = items.length - 1, last = -1;
+        for (let j = items.length - 1; j >= 0 && last < 0; j--) if (!keep(items[j])) last = j;
+        while (i >= 0 && (items[i].tone !== 'text' || keep(items[i]))) i--;
+        items.splice(i >= 0 ? i : last, 1);
     }
     return items;
 }

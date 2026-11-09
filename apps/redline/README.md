@@ -513,7 +513,7 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 | 12V | 12 V battery voltage, 0.1 V (yellow under 12.0, red under 11.5 or over 15.0) | UDS `F442` from the engine unit (`0x12`), else OBD `42`, a second engine unit, the gearbox unit (`0x18`) or the battery sensor (`402B`, `5853`): eDrive's list, the one that answers is kept |
 | HV CHARGE | hybrid battery charge, % | UDS `DDBC` from the battery unit (SME `0x07`), every 5 s |
 | HV KW | hybrid battery power, kW: + drives, − charging (regen) | pack voltage (`DDB4` / `DD68` / `DD66` / `DDEF`) × current (`DD69`) from the SME, twice a second |
-| POWER (bar) | the recovery / power bar, like BMW's hybrid power meter: regen fills green left of zero (to 40 kW), drive white right of it (to 80 kW, yellow near the end), with the kW; two columns wide when the row has room | the same as HV KW |
+| POWER (bar) | the recovery / power bar, like BMW's hybrid power meter: regen fills green left of zero (to 40 kW), drive white right of it (to 80 kW, yellow near the end), with the kW; two columns wide when the row has room. On *Ramp* it is a thin second band under the ramp's scale, the ramp's own shape: recovery down the climb, power along the flat, zero at the knee (no place in the list) | the same as HV KW |
 | HV TEMP | hybrid battery temperature (blue under 5 °C, red over 45 °C) | `Efficiencytainment2.statusBatteryTemperature` |
 | HV VOLTS | pack voltage | `LSCDataSink.statusHighVoltageStorage` (or the SME's when it is read for power) |
 
