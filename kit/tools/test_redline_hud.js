@@ -137,15 +137,21 @@ c = drive([[0, null, 3], [50, undefined, 3]], 5550, 200);
 ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
 
 /* ---------- driving mode (Comfort / Eco Pro) ---------- */
-[[1, 'sport'], [2, 'sport'], [3, 'sport'], [4, 'comfort'], [5, 'comfort'], [6, 'comfort'], [7, 'eco'], [9, 'eco'], [10, null], [0, null], [63, null],
-    ['SPORT_DYNAMIC', 'sport'], ['SPORT_EXPERT', 'sport'], ['ECO_PRO_EFFICIENT', 'eco'], ['COMFORT', 'comfort'], ['ADAPTIVE', null], [null, null], [undefined, null], ['', null]]
+[[1, 'sport'], [2, 'sport'], [3, 'sport'], [4, 'comfort'], [5, 'comfort'], [6, 'comfort'], [7, 'eco'], [9, 'eco'], [10, 'comfort'], [0, null], [63, null],
+    [15, 'sport'], [23, 'sport'], [28, 'sport'], [17, 'comfort'], [18, 'comfort'], [20, 'comfort'], [21, 'comfort'],
+    ['SPORT_DYNAMIC', 'sport'], ['SPORT_EXPERT', 'sport'], ['ECO_PRO_EFFICIENT', 'eco'], ['COMFORT', 'comfort'], ['ADAPTIVE', 'comfort'],
+    ['PHEV_SPORT_STANDARD', 'sport'], ['BOOST', 'sport'], ['PHEV_HYBRID_STANDARD', 'comfort'], ['PHEV_HYBRID_ECO', 'comfort'],
+    ['PHEV_ELECTRIC_STANDARD', 'comfort'], [null, null], [undefined, null], ['', null]]
     .forEach((c) => ok(Hud.driveModeOf(c[0]) === c[1], 'driving mode ' + JSON.stringify(c[0]) + ' -> ' + Hud.driveModeOf(c[0]) + ', not ' + c[1]));
 ok(Hud.calmFor('sport', 'hide') === 'all' && Hud.calmFor(null, 'hide') === 'all', 'Sport and an unknown mode show everything');
 ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'hide') === 'hide' && Hud.calmFor('comfort', 'own') === 'all' && Hud.calmFor('comfort', undefined) === 'all', 'Comfort / Eco Pro: hidden only when set so');
 
 /* ---------- the Sport / Comfort profiles ---------- */
 {
-    const store = (over) => { const v = Object.assign({}, over); return { values: v, get: (k) => (k in v ? v[k] : declared[k] ? declared[k].default : undefined), set: (k, x) => { v[k] = x; } }; };
+    // this fork's In Comfort / Eco Pro is Don't show by default (Cluster functions' HUD outside Sport): the profile
+    // checks below start from Same as Sport, the OG default
+    ok(declared.hudComfortMode.default === 'hide' && declared.hudHandBack.default === true, 'this fork: Redline only in Sport, hand-back on');
+    const store = (over) => { const v = Object.assign({}, over); return { values: v, get: (k) => (k in v ? v[k] : k === 'hudComfortMode' ? 'same' : declared[k] ? declared[k].default : undefined), set: (k, x) => { v[k] = x; } }; };
     // Sport is the settings themselves; Comfort follows it until it is changed
     let st = store({ hudStyle: 'arc', hudShowTorque: true });
     let sp = Hud.profileView(st, 'sport'), cf = Hud.profileView(st, 'comfort');

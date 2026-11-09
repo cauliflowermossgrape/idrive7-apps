@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; HUD by @biscotit",
-  "version": "1.16.7",
+  "version": "1.16.8",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -73,7 +73,7 @@
   "settings": [
     {"key": "hud", "label": "Show on HUD (experimental)", "type": "choice", "default": "off", "options": [["off", "Off"], ["on", "On"], ["test", "Test pattern"]]},
     {"key": "hudStyle", "label": "HUD layout", "type": "choice", "default": "standard", "when": {"hud": ["on", "test"]}, "options": [["standard", "Standard"], ["minimal", "Minimal (lights and gear)"], ["wings", "Split wings"], ["digital", "80s digital dash"], ["vfd", "VFD glow (teal)"], ["vector", "Vector arcade (outlines)"], ["arc", "Arc (after the F80 / F82 M3 and M4)"], ["ramp", "Ramp (after the G80 / G82 M3 and M4)"], ["dial", "Dial (after the E60 M5)"]]},
-    {"key": "hudComfortMode", "label": "In Comfort / Eco Pro", "type": "choice", "default": "same", "when": {"hud": ["on", "test"]}, "options": [["same", "Same HUD as Sport"], ["own", "Its own HUD (set up on HUD looks)"], ["hide", "Don't show (BMW's own HUD)"]]},
+    {"key": "hudComfortMode", "label": "In Comfort / Eco Pro", "type": "choice", "default": "hide", "reset": 1, "when": {"hud": ["on", "test"]}, "options": [["same", "Same HUD as Sport"], ["own", "Its own HUD (set up on HUD looks)"], ["hide", "Don't show (BMW's own HUD)"]]},
     {"key": "hudComfortSetup", "label": "Comfort HUD setup", "type": "object", "default": {}, "hidden": true},
     {"key": "hudAll", "label": "All HUD options here (else on the HUD looks page)", "type": "bool", "default": false, "when": {"hud": ["on", "test"]}},
     {"key": "shiftMode", "label": "Shift point", "type": "choice", "default": "learned", "options": [["learned", "Per gear, learned (experimental)"], ["fixed", "Redline minus the setting below"]], "group": "Shift point"},
@@ -135,6 +135,6 @@
     {"key": "speedRate", "label": "Speed display rate", "type": "number", "unit": "fps", "default": 10, "reset": 1, "markDefault": true, "steps": [5, 10, 15, 30, 60], "when": {"advanced": [true]}, "group": "Advanced"},
     {"key": "hudFps", "label": "HUD frame rate", "type": "number", "unit": "fps", "default": 20, "when": {"hud": ["on", "test"], "advanced": [true]}, "steps": [10, 20, 30], "group": "Advanced"},
     {"key": "hudReadoutRate", "label": "HUD readouts refresh (faster: more work for the head unit)", "type": "number", "unit": "/s", "default": 4, "when": {"hud": ["on", "test"], "advanced": [true]}, "steps": [4, 10, 20], "group": "Advanced"},
-    {"key": "hudHandBack", "label": "Give the HUD back to Cluster functions at switch-off", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "advanced": [true]}, "group": "Advanced"}
+    {"key": "hudHandBack", "label": "Give the HUD back to Cluster functions at switch-off", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "advanced": [true]}, "group": "Advanced"}
   ]
 }

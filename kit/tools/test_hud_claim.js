@@ -97,7 +97,7 @@ const rm = (p) => {
     h.stop();
     // and off is the default: not set at all, it stays on too
     const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8')).settings.filter((x) => x.key === 'hudHandBack')[0];
-    ok(spec && spec.default === false, 'hudHandBack is off by default');
+    ok(spec && spec.default === true, 'hudHandBack is on by default (this fork: the map comes back)');
     rm(path.join(SHM, 'redline'));
     s = settings({ hudHandBack: undefined }); h = start(s);
     await sleep(2500);
@@ -115,8 +115,16 @@ const rm = (p) => {
     drive = 'sport';
     await until(() => HudClaim.others('robertn_waze_cluster').length === 1, 3000);
     ok(HudClaim.others('robertn_waze_cluster').join() === 'redline', 'back in Sport: held again');
+    // Don't show in Comfort (Redline only in Sport): the switch-off keeps Redline's HUD on, nothing handed back
     cond = 10;
     await sleep(4500);       // the 2 s check has seen the car on (twice)
+    cond = 5;
+    await sleep(4500);
+    ok(s.v.hud === 'on', 'Sport-only setup: switched off, Redline\'s HUD stays on (the next drive starts in Comfort)');
+    // Same as Sport in Comfort: handed back at the switch-off
+    s.v.hudComfortMode = 'same';
+    cond = 10;
+    await sleep(4500);
     ok(s.v.hud === 'on', 'still on while driving');
     cond = 5;
     await until(() => s.v.hud === 'off', 8000);

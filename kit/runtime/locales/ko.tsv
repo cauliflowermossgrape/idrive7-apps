@@ -1929,3 +1929,31 @@ Hybrid Eco Pro	하이브리드 에코 프로
 Hybrid	하이브리드
 Electric	전기
 Give the HUD back to Cluster functions at switch-off	시동을 끄면 HUD를 Cluster functions에 돌려주기
+All HUD options here (else on the HUD looks page)	모든 HUD 옵션을 여기에 (아니면 HUD 모양 페이지에)
+Arc (after the F80 / F82 M3 and M4)	아크 (F80 / F82 M3, M4 스타일)
+Arrows show	화살표 표시
+Auto (Barlow on Arc, Ramp and Dial)	자동 (아크, 램프, 다이얼은 Barlow)
+Best gear (into the power band)	최적 기어 (파워 밴드로)
+Comfort HUD setup	컴포트 HUD 설정
+Dial (after the E60 M5)	다이얼 (E60 M5 스타일)
+Don't show (BMW's own HUD)	표시 안 함 (BMW 기본 HUD)
+Downshift arrows (experimental)	다운시프트 화살표 (실험적)
+Every gear you can drop	내릴 수 있는 모든 기어
+Gear font	기어 글꼴
+Gearbox mode (D / S / M)	변속기 모드 (D / S / M)
+HUD colours	HUD 색상
+HUD frame rate	HUD 프레임 속도
+HUD layout	HUD 레이아웃
+HUD readouts refresh (faster: more work for the head unit)	HUD 수치 새로 고침 (빠를수록 헤드 유닛 부하 증가)
+Its own HUD (set up on HUD looks)	자체 HUD (HUD 모양에서 설정)
+Knock retard (degrees, only while it retards)	노킹 지각 (도, 지각 중에만)
+Knock warning (KNOCK when the engine pulls timing, experimental)	노킹 경고 (엔진 점화 시기 지각 시 KNOCK, 실험적)
+Launch time (0-100 km/h or 0-60 mph after a standing start, against your best)	출발 시간 (정지 출발 후 0-100 km/h 또는 0-60 mph, 최고 기록과 비교)
+Light colours	표시등 색상
+Light fill	표시등 채우기
+Outside (blue at 3 °C / 37 °F and below)	외기 (3 °C / 37 °F 이하에서 파란색)
+RPM shows as	RPM 표시 방식
+Ramp (after the G80 / G82 M3 and M4)	램프 (G80 / G82 M3, M4 스타일)
+Rev bar	회전수 바
+Same HUD as Sport	스포츠와 같은 HUD
+Temperatures shown	온도 표시

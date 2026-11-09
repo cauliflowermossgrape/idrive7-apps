@@ -52,7 +52,8 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     fs.mkdirSync(SHM);
     fs.writeFileSync(path.join(SHM, 'redline'), JSON.stringify({ held: false, at: Date.now() }) + '\n');
     // an old setting from 1.16.0-1.16.6 asking for the GPU: ignored
-    const v = Object.assign({}, def, { hud: 'on', hudStyle: 'arc', hudRenderer: 'gpu', hudFps: 30 }), fns = [];
+    // (In Comfort / Eco Pro: Same as Sport, the OG default; this fork's own is Don't show, checked in test_redline_hud.js)
+    const v = Object.assign({}, def, { hud: 'on', hudStyle: 'arc', hudRenderer: 'gpu', hudFps: 30, hudComfortMode: 'same' }), fns = [];
     const settings = { get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
     let rpm = 3000, drive = 'sport';
     const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: 80, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
