@@ -120,7 +120,7 @@ missing falls back to Ubuntu.
   current settings, so every change shows in it at once.
 - **Picking:** on the right, the nine layouts; tap one to use it.
 - **Sport or Comfort:** under the preview, **SPORT** and **COMFORT / ECO PRO** pick the setup you're
-  looking at and changing; with Comfort picked, *Same as Sport*, *Its own* or *BMW's HUD* beside it.
+  looking at and changing; with Comfort picked, *Same as Sport*, *Its own* or *Don't show* beside it.
   Everything on the page then shows and changes that setup (size and position are shared).
 - **Editing:** under that, five tabs, each showing its changes in the preview at once.
   Switches show a lit green dot when on.
@@ -160,7 +160,7 @@ as Live Data shows it) picks which one shows.
   - *Its own HUD*: a setup of its own: layout, colours, readouts, alerts, everything on HUD looks.
     It starts as a copy of Sport's. On HUD looks, with **COMFORT / ECO PRO** picked, changing
     anything makes Comfort its own, so nothing needs switching on first.
-  - *BMW's own HUD*: Redline steps aside in Comfort and Eco Pro; it comes back as soon as the mode
+  - *Don't show*: Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as soon as the mode
     is Sport. Comfort's own setup, if it has one, is kept for later.
 - Shared by both: size and position, the GPU drawing, units, the light colours and the downshift
   arrows (the centre screen uses those too).
@@ -223,7 +223,7 @@ below list them by what they do.
 | Shift grade after each upshift | Burst / Simple / Off |
 | Peak marker | on / off |
 | Shake on the limiter | on / off (off: each shake step resends the whole picture) |
-| In Comfort / Eco Pro | Same HUD as Sport / Its own HUD (set up on HUD looks) / BMW's own HUD |
+| In Comfort / Eco Pro | Same HUD as Sport / Its own HUD (set up on HUD looks) / Don't show (BMW's own HUD) |
 | Unlit segments | dim / hidden |
 
 **HUD readouts:** what it shows, each on its own switch.

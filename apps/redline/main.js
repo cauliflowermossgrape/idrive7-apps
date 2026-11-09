@@ -578,11 +578,11 @@ mgu.run({
             const px = 32, py = 56, f = studioFrame(now), sh = f.shake ? f.shake : [0, 0];
             cv.roundRect(24, 48, 816, 276, 12, '#000000');
             HudDraw.drawLayer(HudDraw.scaled(cv, 2, px + sh[0] * 2, py + sh[1] * 2), f);
-            // in Comfort / Eco Pro the HUD is BMW's own: say so over the preview (the setup under it stays)
+            // Comfort / Eco Pro on Don't show: say so over the preview (the setup under it stays)
             if (comfort && cmode === 'hide') {
                 cv.roundRect(24, 48, 816, 276, 12, withAlpha('#000000', 0.9));
-                cv.text("BMW's own HUD in Comfort / Eco Pro", 432, 176, 26, t.text, { align: 'center', font: 'bold' });
-                cv.text('Pick Same as Sport or Its own above to show Redline here', 432, 212, 18, t.dim, { align: 'center' });
+                cv.text("Redline's HUD is off in Comfort / Eco Pro", 432, 176, 26, t.text, { align: 'center', font: 'bold' });
+                cv.text("BMW's own HUD shows instead. Pick Same as Sport or Its own to bring it back", 432, 212, 18, t.dim, { align: 'center' });
             }
             // the strip above the preview: which HUD this page edits (and, for Comfort, what it shows), in a quiet
             // switch so it reads as "where am I", not as a setting; Play on HUD is the strip's one red button
@@ -590,7 +590,7 @@ mgu.run({
             let hx = 40 + segmented(cv, t, 40, HY, [['sport', 'Sport'], ['comfort', 'Comfort / Eco Pro']], studio.profile, (v) => { studio.profile = v; }, 'studio_profile_');
             if (comfort) {
                 cv.text('SHOWS', hx + 28, HY + 23, 14, t.dim, { font: 'bold', spacing: 1 });
-                segmented(cv, t, hx + 92, HY, [['same', 'Same as Sport'], ['own', 'Its own'], ['hide', "BMW's HUD"]], cmode, (v) => Hud.setComfortMode(settings, v), 'studio_cmode_');
+                segmented(cv, t, hx + 92, HY, [['same', 'Same as Sport'], ['own', 'Its own'], ['hide', "Don't show"]], cmode, (v) => Hud.setComfortMode(settings, v), 'studio_cmode_');
             }
             const playing = hud && hud.playing();
             // switched on but cluster-render isn't there: say where to get it

@@ -113,7 +113,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     drive = 'sport'; await sleep(200);
     ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'back in Sport: the Arc, the GPU layer made again');
     Hud.setComfortMode(settings, 'hide'); drive = 'comfort'; await sleep(200);
-    ok(cr.of('image').length === 0 && cr.of('effect').length === 0, "Comfort, BMW's HUD: Redline's layers gone");
+    ok(cr.of('image').length === 0 && cr.of('effect').length === 0, "Comfort, Don't show: Redline's layers gone");
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('effect').length === 1 && cr.of('image').length === 1, 'back in Sport: shown again');
 
