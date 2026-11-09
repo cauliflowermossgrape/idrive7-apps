@@ -532,27 +532,18 @@ function start(ctx, src) {
     /*
      * BMW's own content in the HUD's slot (0x323). With CarPlay directions on (2026-11-09 drive, Apple Maps:
      * "Proceed to the route", the line, the arrow and the distance) they didn't show while Redline held the slot:
-     * the KOMBI shows the first content in a slot and parks the rest behind it. cluster-render's status lists
-     * the slot's rows; while BMW content is among them, Redline steps aside if "hudGiveWay" says so (not by default: BMW shows directions the whole route) like
-     * Don't show does, and comes back after two reports without it. Every change of the slot's rows is logged.
+     * the KOMBI shows the first content in a slot and parks the rest behind it. BMW shows them for the whole
+     * route, so stepping aside would mean no Redline while navigating: Redline keeps the slot and only logs
+     * the slot's rows from cluster-render's status (each change), to know what BMW puts there (for drawing
+     * directions of its own).
      */
-    const HUD_SCENE = 0x1000400;
-    let aside = false, freeReports = 0, lastSlot = '';
-    const giveWay = () => settings.get('hudGiveWay') === 'aside';
+    let lastSlot = '';
     function onSlots(text) {
         const line = String(text || '').split(/\r?\n/).filter((l) => /slot 0x323\b/i.test(l))[0];
-        const rows = [], re = /(0x[0-9a-f]+) class (\d+) map (\d+)/gi;
-        let m;
-        while (line && (m = re.exec(line))) rows.push({ content: parseInt(m[1], 16), map: Number(m[3]) });
         const s = line ? line.trim() : 'slot 0x323 not in the report';
         if (s !== lastSlot) { lastSlot = s; log.info('hud: ' + s); }
-        const bmw = rows.filter((r) => r.content !== HUD_SCENE && Math.floor(r.content / 0x10000) === 0x100);
-        if (bmw.length && giveWay()) {
-            freeReports = 0;
-            if (!aside) { aside = true; log.info("hud: stepping aside for BMW's content in the HUD slot (" + bmw.map((r) => '0x' + r.content.toString(16) + ' map ' + r.map).join(', ') + ')'); }
-        } else if (aside && ++freeReports >= 2) { aside = false; log.info("hud: the HUD slot is Redline's again"); }
     }
-    // the slot report, while the tach is on (also while stepped aside: that's how it knows to come back)
+    // the slot report, while the tach is on
     const slotTimer = setInterval(safe('slots', () => { if (cr && cr.ready && cr.status && shown === 'tach') cr.status(); }), 2500);
     if (slotTimer.unref) slotTimer.unref();
 
@@ -781,7 +772,7 @@ function start(ctx, src) {
         // running to bring it back when the mode changes
         if (shown === 'tach') {
             const playing = Date.now() < demoUntil;
-            if (calm(playing) === 'hide' || (aside && !playing)) {
+            if (calm(playing) === 'hide') {
                 if (layer) {
                     dropGpu(); cr.drop(layer); layer = 0;
                     // the old layer's target state isn't the new one's: forget it (keeping a guard
@@ -791,7 +782,7 @@ function start(ctx, src) {
                 if (src.gearbox) src.gearbox.stop();
                 if (src.knock) src.knock.stop();
                 claim.hold(false);          // nothing of Redline's on the HUD: the standing app may show
-                if (!hiddenLogged) { hiddenLogged = true; log.info(aside && !playing ? "hud: hidden while BMW uses the HUD slot" : 'hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
+                if (!hiddenLogged) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }
             if (!layer) { makeLayer(); if (!layer) return; }
@@ -875,7 +866,7 @@ function start(ctx, src) {
         if (shown === 'tach') { if (layer) cr.set(layer, r); if (gpu) { cr.set(gpu.ref, r); gpu.w = r.w; gpu.sent = {}; } return; }
         dropLayer();
         // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
-        const hidden = calm(Date.now() < demoUntil) === 'hide' || aside;
+        const hidden = calm(Date.now() < demoUntil) === 'hide';
         if (!hidden) { makeLayer(); if (!layer) return; }
         claim.hold(!hidden);
         shown = 'tach';
@@ -926,7 +917,6 @@ function start(ctx, src) {
 
     const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
     settings.onChange(safe('setting', (key) => {
-        if (key === 'hudGiveWay') { if (!giveWay() && aside) { aside = false; log.info('hud: keeping the HUD slot (setting)'); } return; }
         if (key === 'hudFps' && timer) { clearInterval(timer); timer = setInterval(tick, Math.round(1000 / fps())); log.info('hud: ' + fps() + ' fps'); return; }
         // the drawing path (picture or GPU) follows the renderer setting, its alpha and the layout
         if ((key === 'hudRenderer' || key === 'hudGpuAlpha' || key === 'hudStyle') && shown === 'tach' && (gpuStale() || key === 'hudGpuAlpha')) { relayer(); return; }
@@ -965,7 +955,7 @@ function start(ctx, src) {
         if (!cr || !cr.ready) return NOT_RUNNING;
         if (target && target.disabled) return 'HUD: off after display errors';
         if (m === 'test') return 'HUD: test pattern';
-        if (shown === 'tach' && !layer) return aside ? "HUD: stepped aside for BMW's directions" : 'HUD: hidden in Comfort / Eco Pro';
+        if (shown === 'tach' && !layer) return 'HUD: hidden in Comfort / Eco Pro';
         const st = target ? target.state : '';
         if (st === 'shown') return 'HUD: on';
         if (st === 'parked' || st === 'waiting') return 'HUD: giving way to BMW';

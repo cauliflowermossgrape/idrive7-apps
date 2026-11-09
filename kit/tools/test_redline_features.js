@@ -87,7 +87,7 @@ const ALONE = {
 const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 
 // every option that isn't the default, of the settings that change the picture
-const SKIP = ['hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hudGiveWay', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudRenderer', 'hudGpuAlpha', 'hudStyle'];
+const SKIP = ['hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudRenderer', 'hudGpuAlpha', 'hudStyle'];
 const variants = [];
 spec.settings.filter((s) => s.key && (/^hud/.test(s.key) || s.key === 'lights') && SKIP.indexOf(s.key) < 0).forEach((s) => {
     if (s.type === 'bool') variants.push([s.key, !s.default]);
