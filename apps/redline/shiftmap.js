@@ -31,6 +31,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { writeAtomic } = require('./files');
 
 // TIE: within 1 % counts as equal, so a flat-power engine settles on the earliest equally good point
 const TIE = 0.99;
@@ -228,8 +229,7 @@ class ShiftMap {
         this.dirty = false;
         const ratios = {};
         Object.keys(this.ratios).forEach((g) => { if (this.ratios[g].buf.length) ratios[g] = this.ratios[g].buf.map((k) => Math.round(k * 1000) / 1000); });
-        // whole or not at all (temp file, then rename): a power cut mid-write can't corrupt it
-        try { fs.writeFileSync(this.file + '.tmp', JSON.stringify({ bins: this.bins, ratios: ratios, at: Date.now() })); fs.renameSync(this.file + '.tmp', this.file); } catch (e) { this.log.warn('shiftmap save: ' + e); }
+        writeAtomic(this.file, JSON.stringify({ bins: this.bins, ratios: ratios, at: Date.now() }), this.log, 'shiftmap save');
     }
 
     _emit() { const t = this.table(); this.listeners.forEach((fn) => { try { fn(t); } catch (e) { this.log.error(e); } }); }

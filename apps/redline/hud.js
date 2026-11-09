@@ -41,6 +41,8 @@ const HudNav = require('./hud-nav');
 const TyresMod = require('./tyres');
 const HudTyres = require('./hud-tyres');
 const { HudClaim } = require('./kit/hud_claim');
+// files written whole or not at all (the learned reaction lead)
+const { writeAtomic } = require('./files');
 const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
 try { ClusterRender = require('./cluster_render_client').ClusterRender; } catch (e) { /* logged at start */ }
@@ -61,11 +63,6 @@ const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a',
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const isNum = (x) => typeof x === 'number' && isFinite(x);
-
-/** Write a small file whole or not at all (temp file, then rename): a power cut mid-write can't corrupt it. */
-function writeAtomic(file, text, log) {
-    try { fs.writeFileSync(file + '.tmp', text); fs.renameSync(file + '.tmp', file); } catch (e) { if (log) log.warn('save ' + path.basename(file) + ': ' + e); }
-}
 
 /** Canvas.d is a Uint8Array; the client copies from a Buffer (px.copy). Same memory, no copy. */
 const asBuffer = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
@@ -497,6 +494,29 @@ function demoAt(tMs) {
     return r;
 }
 
+/**
+ * The scripted drive's frame tMs into it, as drawHud wants it: one for "Play on HUD" and the HUD looks
+ * page's preview, so the preview shows what the glass does. o: optsFrom; cueState: kept between frames
+ * ({}); lead: the reaction lead (ms); now: the clock for the cue, flash and shake (default tMs).
+ */
+function demoFrame(tMs, o, cueState, lead, now) {
+    if (!isNum(now)) now = tMs;
+    const dm = demoAt(tMs), redline = 6550;
+    const d = { rpm: dm.rpm, gear: dm.gear, stage: dm.stage, oil: dm.oil, coolant: dm.coolant, demo: true };
+    const sp = { rpm: dm.shift, cold: false };
+    const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, d.rpm);
+    return {
+        d: d, shift: sp.rpm, redline: redline, max: 8000, blink: cue.shift || cue.limiter ? Math.floor(now / BLINK_MS) % 2 === 0 : true, cue: cue,
+        down: dm.down,
+        peak: o.peak ? dm.peak : 0,
+        chip: dm.chip && o.chip !== 'off' && dm.chipAge < 1500 ? { verdict: dm.chip.verdict, age: dm.chipAge, burst: o.chip === 'burst' } : null,
+        shake: o.shake && cue.limiter ? SHAKE[Math.floor(now / 100) % SHAKE.length] : null,
+        readouts: readoutsFor(d, dm.gearbox, dm.boost, sp, o, dm),
+        mode: o.mode && (dm.mode === 'M' || dm.mode === 'S' || dm.mode === 'D') ? dm.mode : null,
+        opts: o,
+    };
+}
+
 /** 800x480 test pattern: border, rulers every 40 px with labels, inset frames at 40/80/120, the tach at its place. */
 function drawTestPattern(cv) {
     cv.clear();
@@ -758,34 +778,34 @@ function start(ctx, src) {
         // the demo stops by itself once the car moves (it replaces the real lights on the glass)
         if (now < demoUntil && src.data().speed > 5) { demoUntil = 0; log.info('hud: demo stopped, the car moved'); }
         const playing = now < demoUntil, dm = playing ? demoAt(now - demoStart) : null;
-        // "Play on HUD": the scripted drive instead of the car, for a few seconds (nothing is learned)
-        const d = dm ? { rpm: dm.rpm, gear: dm.gear, stage: dm.stage, oil: dm.oil, coolant: dm.coolant, demo: true } : src.data();
-        const sp = dm ? { rpm: dm.shift, cold: false } : src.shiftPoint(d.oil, d.gear), redline = dm ? 6550 : src.redline();
-        const demoKey = dm ? 'play' : !!d.demo;
+        const d = dm ? null : src.data(), demoKey = dm ? 'play' : !!d.demo;
         if (demoKey !== lastDemo) { lastDemo = demoKey; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); flashInfo = null; }
         const o = optsNow(), lights = o.lights;
+        // "Play on HUD": the scripted drive instead of the car, for a few seconds (nothing is learned)
+        if (dm) { const f = demoFrame(now - demoStart, o, cueState, leadMs(), now); blink = f.blink; return f; }
+        const sp = src.shiftPoint(d.oil, d.gear), redline = src.redline();
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
-        const show = dm ? d.rpm : smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
+        const show = smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
         const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, show);
         // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
         if (cue.shift && !was) {
-            const seen = lights && target && target.state === 'shown' && !dm;
+            const seen = lights && target && target.state === 'shown';
             flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead, fall: null } : null;
         }
         // first moment the revs fell after the flash: a real upshift reports its new gear within
         // ~0.7 s of that; later, the driver lifted first and the shift says nothing about reaction
         if (flashInfo && flashInfo.fall === null && cue.fallSince !== null) flashInfo.fall = cue.fallSince;
         blink = cue.shift || cue.limiter ? Math.floor(now / BLINK_MS) % 2 === 0 : true;
-        const gb = dm ? dm.gearbox : src.gearbox ? src.gearbox.value() : null;
-        const mode = dm ? dm.mode : src.mode ? src.mode() : null;
+        const gb = src.gearbox ? src.gearbox.value() : null;
+        const mode = src.mode ? src.mode() : null;
         return {
-            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: dm ? 8000 : src.maxRpm(), blink: blink, cue: cue,
-            down: dm ? dm.down : src.downshift ? src.downshift() : 0,
-            peak: o.peak ? (dm ? dm.peak : src.peak ? src.peak() : 0) : 0,
-            chip: dm ? (dm.chip && o.chip !== 'off' && dm.chipAge < 1500 ? { verdict: dm.chip.verdict, age: dm.chipAge, burst: o.chip === 'burst' } : null) : chipNow(o, now),
+            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
+            down: src.downshift ? src.downshift() : 0,
+            peak: o.peak ? (src.peak ? src.peak() : 0) : 0,
+            chip: chipNow(o, now),
             shake: o.shake && cue.limiter ? SHAKE[Math.floor(now / 100) % SHAKE.length] : null,
-            readouts: dm ? readoutsFor(d, gb, dm.boost, sp, o, dm) : readouts(d, gb, sp, o),
+            readouts: readouts(d, gb, sp, o),
             mode: o.mode && (mode === 'M' || mode === 'S' || mode === 'D') ? mode : null,
             opts: o,
         };
@@ -1115,4 +1135,4 @@ function start(ctx, src) {
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil, corner: () => corner };
 }
 
-module.exports = { start, navPlaceOf, navModeOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };
+module.exports = { start, navPlaceOf, navModeOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, profileSnapshot, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, HUD_WINDOW, readoutsFor, rpmItem, electricalItems, electricalWants, hybridOn, MAX_READOUTS, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown, writeAtomic, changedBoxes, packRects, drawHud, drawTestPattern, changedBox, packRect, IW, IH, BASE_X, BASE_Y, SCENE_W, SCENE_H, Draw };

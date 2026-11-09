@@ -8,6 +8,7 @@
 // - the HUD slot's report is asked for, and BMW's content waiting there doesn't move Redline;
 // - the knock warning and the launch time where the grade shows;
 // - the tyre widget in the directions' corner: when a tyre is low (or always, or never), the directions first;
+// - "Play on HUD" and the HUD looks preview: the same demo frame (blink and shake);
 // - the HUD off stops every UDS reader (the electrical one too).
 
 const fs = require('fs');
@@ -57,8 +58,8 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     // an old setting from 1.16.0-1.16.6 asking for the GPU: ignored
     const v = Object.assign({}, def, { hud: 'on', hudStyle: 'arc', hudRenderer: 'gpu', hudFps: 30 }), fns = [];
     const settings = { get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
-    let rpm = 3000, drive = 'sport';
-    const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: 80, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
+    let rpm = 3000, drive = 'sport', speed = 80;
+    const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: speed, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
         maxRpm: () => 8000, driveMode: () => drive,
         // a stand-in knock reader: started / stopped by the HUD, its last event's time set by the test
         knock: { on: false, at: 0, start() { this.on = true; }, stop() { this.on = false; }, value() { return { retard: null, at: this.at }; } },
@@ -160,6 +161,35 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     settings.set('hudTyreWidget', 'low'); await sleep(200);
     ok(h.corner() === 'tyres', 'back on "when a tyre is low"');
     ok(cr.effects === 0, 'no shader made with the tyres either (' + cr.effects + ')');
+
+    // "Play on HUD" and the HUD looks preview draw one demo frame (hud.js demoFrame): the same blink and shake.
+    // The clock is held still and stepped by hand, so the HUD's timer can't step in between.
+    {
+        const main = fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'main.js'), 'utf8');
+        const pv = main.slice(main.indexOf('const studioFrame'), main.indexOf('function lookLayer('));
+        ok(/Hud\.demoFrame\(now - studio\.t0, Hud\.optsFrom\(studioP\(\)\), studio\.cue, hud \? hud\.lead\(\) : 200, now\)/.test(pv) && !/blink|shake|SHAKE/.test(pv),
+            'the preview takes its frame from Hud.demoFrame, no blink or shake of its own');
+        settings.set('hudShake', true); speed = 0;
+        const realNow = Date.now;
+        let clock = realNow.call(Date), diff = null;
+        const shakes = {}, blinks = {}, phase = {};
+        Date.now = () => clock;
+        try {
+            h.play(30000, 'sport');
+            const t0 = clock, cue = {};
+            for (let t = 0; t < Hud.DEMO_MS && !diff; t += 10) {
+                clock = t0 + t;
+                const f = h.frame(), g = Hud.demoFrame(t, f.opts, cue, h.lead(), clock);
+                if (JSON.stringify(f) !== JSON.stringify(g)) diff = t + ' ms: ' + JSON.stringify(f).slice(0, 300) + ' / ' + JSON.stringify(g).slice(0, 300);
+                if (f.shake) shakes[f.shake.join()] = true;
+                if (f.cue.shift || f.cue.limiter) { blinks[f.blink] = true; phase[Math.floor(clock / 100) % 2 === 0] = f.blink; }
+            }
+        } finally { Date.now = realNow; }
+        h.stopPlay(); settings.set('hudShake', false); speed = 80;
+        ok(!diff, 'Play on HUD: its frame is Hud.demoFrame, frame by frame' + (diff ? ' (' + diff + ')' : ''));
+        ok(Object.keys(shakes).length === 6, 'demo frame: the shake steps through all 6 offsets (' + Object.keys(shakes).join(' ') + ')');
+        ok(blinks.true && blinks.false && phase.true === true && phase.false === false, 'demo frame: the flash blinks on the HUD rhythm (100 ms on, 100 ms off)');
+    }
 
     // the HUD off: every reader stops, the electrical one too (it kept polling before 2.0's review)
     ok(src.electrical.on, 'electrical reader started while the HUD shows');

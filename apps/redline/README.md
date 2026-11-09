@@ -626,6 +626,7 @@ Useful lines:
 | `hud-nav.js` | Directions, the picture (200x76, bottom right corner): thick white arrows, distance, street or lanes |
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
+| `files.js` | `writeAtomic`: the learned files written whole or not at all (temp file, then rename) |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |
 | `knock.js` | Knock retard from the engine unit (read-only UDS 22) |
 | `electrical.js` | 12 V and hybrid battery readouts (car signals and read-only UDS; hybrid found by the app) |

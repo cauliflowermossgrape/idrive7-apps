@@ -21,6 +21,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { writeAtomic } = require('./files');
 
 // the plateau is judged on the last HOLD_MS only, so the end of the run up to it doesn't count
 const HOLD_MS = 500, BAND = 200, TREND = 60, WINDOW_MS = HOLD_MS + 20;
@@ -100,7 +101,7 @@ class Limiter {
         }
         this.log.info('limiter: learned ' + rpm + ' rpm' + (this.saved !== null ? ' (was ' + this.saved + ')' : ''));
         this.saved = rpm; this.at = Date.now();
-        try { fs.writeFileSync(this.file + '.tmp', JSON.stringify({ rpm: rpm, at: this.at })); fs.renameSync(this.file + '.tmp', this.file); } catch (e) { this.log.warn('limiter save: ' + e); }
+        writeAtomic(this.file, JSON.stringify({ rpm: rpm, at: this.at }), this.log, 'limiter save');
         this._emit();
     }
 
