@@ -63,6 +63,8 @@ const MPH = 1.609344;
 const GREEN = '#2fd27a', YELLOW = '#ffc21a', BLUE = '#2a7dff';
 const N_LEDS = 12, LED_RANGE = 2000;
 // MDrive.dataDisplayGearbox programmes (names or wire numbers), as in Car Vitals
+// the ambient light's flash at the shift point: Ambient config shows it (its setting "Redline shift flash")
+const AMBIENT_FLASH = process.env.MGU_AMBIENT_FLASH || '/dev/shm/mgu-ambient-flash.json';
 const PROGRAMS = { S_MINUS_PROGRAMM: 'S', M_MINUS_PROGRAMM: 'M', 1: 'S', 2: 'M' };
 
 /**
@@ -213,7 +215,7 @@ mgu.run({
         const recent = [];                  // [t, rpm, speed] last ~1 s
         let lastGear = null, onLimiter = false, lastShift = null, hud = null;
         const cueState = {};
-        let screenCue = null, slowingUntil = 0, lastRpmVal = null, lastRpmChange = 0;
+        let screenCue = null, cueShift = false, slowingUntil = 0, lastRpmVal = null, lastRpmChange = 0;
 
         /*
          * Downshift cue: how many gears (0..3) you can drop now without the revs passing that gear's
@@ -268,6 +270,9 @@ mgu.run({
             // the screen's shift cue, the same as the HUD's (count-in by climb rate, early flash,
             // lift handling), updated on each sample so a fast screen doesn't see repeated readings
             screenCue = Hud.shiftCue(cueState, d.rpm, t, shiftPoint(d.oil, d.gear).rpm, redline(), hud ? hud.lead() : 200, d.gear);
+            // the moment the cue flashes: the ambient light flashes red too (real drives only)
+            if (screenCue.shift && !cueShift && !car.data().demo) Hud.writeAtomic(AMBIENT_FLASH, JSON.stringify({ rgb: [255, 0, 0], ms: 1200 }) + '\n');
+            cueShift = !!screenCue.shift;
             // slowing (for the downshift cue): braking, down at least 6 km/h per second (~0.17 g) over
             // the last 0.5 s; coasting off the throttle stays under it
             const back = recent.find((r) => t - r[0] <= 500);
