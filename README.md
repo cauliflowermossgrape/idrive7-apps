@@ -91,32 +91,32 @@ More in [How apps draw](#44-how-apps-draw-remote-hmi-rhmi) and [`kit/renderd`](k
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/m_vitals.gif" alt="M Vitals engine page"><br><b>M Vitals</b>: rpm, boost, speed + gear, power, torque</td>
-<td width="50%"><img src="docs/media/gforce.gif" alt="G-Force"><br><b>G-Force</b>: friction circle with trail, grip envelope, peaks, records</td>
+<td width="50%"><img src="docs/screens/redline.png" alt="Redline"><br><b>Redline</b>: Live Cockpit rev bar, big gear, shift scoring</td>
+<td width="50%"><img src="docs/media/redline_hud.gif" alt="Redline on the windscreen HUD: Standard, Arc, Ramp and Dial layouts on the demo drive"><br><b>Redline</b> on the windscreen HUD (cluster-render): shift lights early by your reaction time, gear, grades and readouts; Standard and the M-style Arc, Ramp and Dial</td>
 </tr>
 <tr>
-<td><img src="docs/media/draggy.gif" alt="Drag Timer"><br><b>Drag Timer</b>: live speed trace, splits, ¼ mile</td>
-<td><img src="docs/media/brake_test.gif" alt="Brake Test"><br><b>Brake Test</b>: 100-0 distance, deceleration trace, fade</td>
-</tr>
-<tr>
-<td><img src="docs/media/m_vitals_chassis.gif" alt="M Vitals chassis page"><br><b>M Vitals</b>: g-force, tyre pressures + temperatures, xDrive split</td>
-<td><img src="docs/media/warmup.gif" alt="Warm-Up"><br><b>Warm-Up</b>: time to working temperature, safe rev limit</td>
-</tr>
-<tr>
-<td><img src="docs/screens/m_vitals_fuel.png" alt="M Vitals fuel and ignition page"><br><b>M Vitals</b>: intake air, HPFP / LPFP fuel pressure, ignition timing, misfires per cylinder</td>
-<td><img src="docs/screens/edrive.png" alt="eDrive"><br><b>eDrive</b>: real electric range, battery health, last charge, 12 V</td>
-</tr>
-<tr>
-<td><img src="docs/screens/edrive_log.png" alt="eDrive charge log"><br><b>eDrive</b>: charge log with cost and totals</td>
-<td><img src="docs/screens/dyno.png" alt="Virtual Dyno"><br><b>Virtual Dyno</b>: power and torque curve from a pull</td>
-</tr>
-<tr>
-<td><img src="docs/screens/dtc_scanner.png" alt="Fault Scanner"><br><b>Fault Scanner</b>: fault codes of every control unit, with their texts</td>
-<td><img src="docs/screens/redline.png" alt="Redline"><br><b>Redline</b>: Live Cockpit rev bar, big gear, shift scoring</td>
-</tr>
-<tr>
-<td><img src="docs/media/redline_hud.gif" alt="Redline on the windscreen HUD: Standard, Arc, Ramp and Dial layouts on the demo drive"><br><b>Redline</b> on the windscreen HUD (cluster-render): shift lights early by your reaction time, gear, grades and readouts; Standard and the M-style Arc, Ramp and Dial</td>
 <td><img src="docs/screens/redline_hud.png" alt="Redline's nine HUD layouts"><br><b>Redline</b> HUD: nine layouts, picked and edited by picture on the app's HUD looks page</td>
+<td><img src="docs/media/m_vitals.gif" alt="M Vitals engine page"><br><b>M Vitals</b>: rpm, boost, speed + gear, power, torque</td>
+</tr>
+<tr>
+<td><img src="docs/media/gforce.gif" alt="G-Force"><br><b>G-Force</b>: friction circle with trail, grip envelope, peaks, records</td>
+<td><img src="docs/media/draggy.gif" alt="Drag Timer"><br><b>Drag Timer</b>: live speed trace, splits, ¼ mile</td>
+</tr>
+<tr>
+<td><img src="docs/media/brake_test.gif" alt="Brake Test"><br><b>Brake Test</b>: 100-0 distance, deceleration trace, fade</td>
+<td><img src="docs/media/m_vitals_chassis.gif" alt="M Vitals chassis page"><br><b>M Vitals</b>: g-force, tyre pressures + temperatures, xDrive split</td>
+</tr>
+<tr>
+<td><img src="docs/media/warmup.gif" alt="Warm-Up"><br><b>Warm-Up</b>: time to working temperature, safe rev limit</td>
+<td><img src="docs/screens/m_vitals_fuel.png" alt="M Vitals fuel and ignition page"><br><b>M Vitals</b>: intake air, HPFP / LPFP fuel pressure, ignition timing, misfires per cylinder</td>
+</tr>
+<tr>
+<td><img src="docs/screens/edrive.png" alt="eDrive"><br><b>eDrive</b>: real electric range, battery health, last charge, 12 V</td>
+<td><img src="docs/screens/edrive_log.png" alt="eDrive charge log"><br><b>eDrive</b>: charge log with cost and totals</td>
+</tr>
+<tr>
+<td><img src="docs/screens/dyno.png" alt="Virtual Dyno"><br><b>Virtual Dyno</b>: power and torque curve from a pull</td>
+<td><img src="docs/screens/dtc_scanner.png" alt="Fault Scanner"><br><b>Fault Scanner</b>: fault codes of every control unit, with their texts</td>
 </tr>
 <tr>
 <td><img src="docs/screens/service.png" alt="Service"><br><b>Service</b>: service requirements, next service, details per item; an Engine page with oil life, spark plugs, engine hours and the particulate filter</td>
@@ -132,26 +132,25 @@ More in [How apps draw](#44-how-apps-draw-remote-hmi-rhmi) and [`kit/renderd`](k
 </tr>
 <tr>
 <td><img src="docs/screens/edrive_12v_history.png" alt="eDrive 12 V history"><br><b>eDrive</b> without a hybrid system, History: the last hour's voltage and charge, the charge the car recorded and the time per charge band</td>
-<td></td>
-</tr>
-<tr>
 <td><img src="docs/screens/live_adjustments.png" alt="Engine Config, exhaust flap following the driving mode"><br><b>Engine Config</b>: exhaust flap open, closed, handed back to the car (OEM) or following the driving mode (Sport open, Eco Pro closed), held against the DME's timeout</td>
+</tr>
+<tr>
 <td><img src="docs/screens/live_adjustments_closed.png" alt="Engine Config, exhaust flap closed"><br><b>Engine Config</b>: flap closed, the selected mode in red; Close handed back to the car above a set engine speed; more adjustments can be added as tabs</td>
-</tr>
-<tr>
 <td><img src="docs/screens/live_adjustments_map.png" alt="Live Adjustments, engine map"><br><b>Live Adjustments</b> (tuned DME): engine map 1–4 with one press; the DME echoes the request back</td>
+</tr>
+<tr>
 <td><img src="docs/screens/live_adjustments_cooling.png" alt="Live Adjustments, Max Cooling"><br><b>Live Adjustments</b> (tuned DME): Max Cooling on / off</td>
-</tr>
-<tr>
 <td><img src="docs/screens/live_adjustments_map_readback.png" alt="Live Adjustments, engine map read back"><br><b>Live Adjustments</b> (tuned DME, not yet tested on a car): engine map confirmed by reading it back from the DME</td>
+</tr>
+<tr>
 <td><img src="docs/screens/live_adjustments_burbles.png" alt="Live Adjustments, burbles"><br><b>Live Adjustments</b> (tuned DME, not yet tested on a car): burble aggression 0–12 picked with – / +, sent on Apply and read back; Off</td>
-</tr>
-<tr>
 <td><img src="docs/screens/live_data.png" alt="Live Data, a screen of gauges"><br><b>Live Data</b>: a screen of your own, sport-display bar and numbers with the last 5 minutes</td>
-<td><img src="docs/screens/live_data_trips.png" alt="Live Data, trips"><br><b>Live Data</b>: the trip computer, distance, fuel and cost per trip</td>
 </tr>
 <tr>
+<td><img src="docs/screens/live_data_trips.png" alt="Live Data, trips"><br><b>Live Data</b>: the trip computer, distance, fuel and cost per trip</td>
 <td><img src="docs/screens/live_data_engine.png" alt="Live Data, engine values"><br><b>Live Data</b>: the engine unit's values in groups, read live</td>
+</tr>
+<tr>
 <td><img src="docs/screens/live_data_pick.png" alt="Live Data, choosing a gauge's value"><br><b>Live Data</b>: a gauge's value chosen from a group, each with what it reads now</td>
 </tr>
 </table>
