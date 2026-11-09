@@ -687,8 +687,11 @@ function start(ctx, src) {
         const step = o.style === 'digital' || o.style === 'vfd' ? 10 : 25;
         // the burst moves until 500 ms and fades after 1200 ms; in between the picture stands still
         const age = f.chip && f.chip.burst ? (f.chip.age < 500 || f.chip.age > 1200 ? Math.floor(f.chip.age / 40) : 'h') : '';
-        return [isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
-            Math.round(c.from / 25), Math.round(c.at / 25), f.shift, f.redline, f.max, Math.round((f.peak || 0) / 25),
+        // the revs, the count-in and the peak only move the lights, the bar and the 7-segment digits: without them
+        // (the GPU path draws them, or both switched off) the picture is the text, keyed by the readouts' values
+        const moving = o.lights || o.bar !== false || o.style === 'digital' || o.style === 'vfd';
+        return [moving && isNum(d.rpm) ? Math.round(d.rpm / step) : '-', gearText(d), f.down || 0, c.shift, c.limiter, (c.shift || c.limiter) ? f.blink : '',
+            moving ? Math.round(c.from / 25) : '', moving ? Math.round(c.at / 25) : '', f.shift, f.redline, f.max, moving ? Math.round((f.peak || 0) / 25) : '',
             f.chip ? f.chip.verdict + age : '', f.shake ? f.shake.join(',') : '', f.mode || '',
             f.readouts.map((r) => r.label + r.value + r.tone).join(','),
             o.style, o.palette, o.gear, o.rpm, o.bar, o.lights, o.gt3, o.dim, o.lightStyle, o.clearLabels, o.gearFont].join('|');

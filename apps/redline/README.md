@@ -83,6 +83,12 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
   warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
   dial's orange; the first readout bottom right (where the car shows the speed).
 
+*Shift light style* (Settings) works on all three as on the other layouts: M is the cars' own colours,
+Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
+lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
+right make no difference here: Arc fills left to right like the F80, Ramp and Dial along their band.
+On Ramp and Dial the band is the shift lights too, so it stays with *Rev bar* off.
+
 On all three the shift grade takes the first readout's place; with *Burst* a ring grows from the gear
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
 on the limiter, as in the cars.

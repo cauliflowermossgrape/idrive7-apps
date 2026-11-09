@@ -22,12 +22,20 @@ const flashing = (cue) => cue.shift || cue.limiter;
 const GRADE = { 'SPOT ON': 'low', EARLY: 'mid', LATE: 'high', LIMITER: 'limit', 'COLD REV': 'cold' };
 const toneCol = (it, P, base) => (it.tone && it.tone !== 'text' ? P[it.tone] || base : base);
 /** A small readout: label then value on one line (row) or label over value (stack); align 'left' | 'right' | 'center'. */
-function small(cv, x, y, it, P, o, base, mode, align) {
+function small(cv, x, y, it, P, o, base, mode, align, vsize) {
+    const vs = vsize || 19;
     const lab = o.clearLabels ? { s: 12, c: base } : { s: 10, c: withAlpha(base, 0.75) };
     if (mode === 'row') {
-        // label at x, value right-aligned at the row's right edge (x + w)
-        cv.text(it.label, x, y, lab.s, lab.c, { font: 'bold', spacing: 1 });
-        cv.text(it.value, x + align, y + 1, 19, toneCol(it, P, base), { align: 'right', font: 'bold' });
+        // label at x, value right-aligned at the row's right edge (x + w); a label too long for the room the
+        // value leaves (GEARBOX 120°, BOOST in kPa) is drawn smaller, down to 7 px, rather than run into it
+        const w = align, lo = { font: 'bold', spacing: 1 };
+        let ls = lab.s;
+        if (cv.textWidth) {
+            const room = w - cv.textWidth(it.value, vs, { font: 'bold' }) - 4, lw = cv.textWidth(it.label, ls, lo);
+            if (lw > room) ls = Math.max(7, ls * room / lw);
+        }
+        cv.text(it.label, x, y, ls, lab.c, lo);
+        cv.text(it.value, x + w, y + 1, vs, toneCol(it, P, base), { align: 'right', font: 'bold' });
         return;
     }
     cv.text(it.label, x, y, lab.s, lab.c, { align: align, font: 'bold', spacing: 1 });
@@ -48,6 +56,14 @@ function ring(cv, cx, cy, r0, r1, chip, P) {
     cv.arc(cx, cy, r - 2.5, r, 0, 360, withAlpha(P[GRADE[chip.verdict]] || P.text, 0.85 * (1 - k)));
 }
 const burstOn = (chip, ms) => chip && chip.burst && (chip.age || 0) < ms;
+/**
+ * The band layouts' shift colours follow the app's "Shift light style" as the other layouts' lights do:
+ * M (the originals' own colours: own() false), Race (green / red / blue) or one colour. With the HUD's
+ * shift lights Off they don't count in or flash for the shift; the limiter still flashes.
+ */
+const ownColours = (o) => o.lightStyle === 'f1' || o.lightStyle === 'mono';
+const flashOn = (o, cue) => cue.limiter || (o.lights && cue.shift);
+const flashColour = (o, cue, h, red) => (!cue.limiter && o.lightStyle === 'f1' ? h.RACE_BLUE : red);   // as drawLights: Race blue, else red
 
 /* ---------- arc (F80) ---------- */
 const A = { cx: 200, cy: 372, span: 27, l0: 352, l1: 368, b0: 325, b1: 343, rim: 3 };
@@ -111,8 +127,9 @@ function drawArc(cv, f, layer, h) {
             cv.text(items[0].label, 288, 100, o.clearLabels ? 12 : 10, o.clearLabels ? W : withAlpha(W, 0.75), { align: 'center', font: 'bold', spacing: 1 });
             cv.text(items[0].value, 288, 125, 26, toneCol(items[0], P, W), { align: 'center', font: o.valFont || 'bold' });
         }
-        if (items[1]) small(cv, 326, 104, items[1], P, o, W, 'row', 72);
-        if (items[2]) small(cv, 326, 126, items[2], P, o, W, 'row', 72);
+        // from just right of the first readout (it ends by x 313) to the edge, values a size smaller
+        if (items[1]) small(cv, 318, 104, items[1], P, o, W, 'row', 80, 17);
+        if (items[2]) small(cv, 318, 126, items[2], P, o, W, 'row', 80, 17);
     }
 }
 
@@ -141,9 +158,15 @@ function rSeg(cv, a, b, max, c, g, outline) {
 }
 function drawRamp(cv, f, layer, h) {
     const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max;
-    const step = 500, fl = flashing(cue);
+    const step = 500, fl = flashOn(o, cue), flashCol = flashColour(o, cue, h, RC.red);
     // what colour the field from r..r+step is when lit
-    const fieldCol = (r) => (r + step / 2 >= cue.at ? RC.red : r + step / 2 >= cue.from ? RC.yellow : RC.fill);
+    const fieldCol = (r) => {
+        const m = r + step / 2;
+        if (!o.lights || m < cue.from) return RC.fill;
+        if (!ownColours(o)) return m >= cue.at ? RC.red : RC.yellow;
+        // Race / one colour: the count-in as the app's lights, the last field the flash's colour
+        return m >= cue.at ? flashColour(o, { limiter: false }, h, RC.red) : h.lightCol(o.lightStyle, h.P, clamp((m - cue.from) / (cue.at - cue.from), 0, 1));
+    };
     if (o.bar !== false || o.lights) {
         if (BG) {
             for (let r = 0; r < max; r += step) {
@@ -166,7 +189,7 @@ function drawRamp(cv, f, layer, h) {
             // burst: the lit fields pop in the grade's colour for 300 ms
             const pop = burstOn(f.chip, 300) ? h.P[GRADE[f.chip.verdict]] : null;
             for (let r = 0; r < top; r += step) {
-                const c = fl ? (f.blink ? RC.red : null) : pop || fieldCol(r);
+                const c = fl ? (f.blink ? flashCol : null) : pop || fieldCol(r);
                 if (c) rSeg(cv, r, Math.min(top, r + step), max, c, 1.2);
             }
         }
@@ -189,7 +212,7 @@ function drawRamp(cv, f, layer, h) {
         const it = items[0];
         if (it) {
             cv.text(it.value, gx, 124, 24, it.tone && it.tone !== 'text' ? h.P[it.tone] : RC.text, { align: 'center', font: o.valFont || 'bold' });
-            cv.text(it.label.toLowerCase(), gx + 32, 102, 9, RC.text, { font: 'bold' });
+            cv.text(it.label.toLowerCase(), gx + 32, 102, o.clearLabels ? 12 : 9, RC.text, { font: 'bold' });
         }
     }
 }
@@ -198,12 +221,15 @@ function drawRamp(cv, f, layer, h) {
 const D = { cx: 200, cy: 70, r0: 50, r1: 60, a0: -125, a1: 110 };
 const DC = { green: '#a6d64a', orange: '#ff8a2e', red: '#f0313a', text: '#ff8a2e', speed: '#ff5a2e' };
 function drawDial(cv, f, layer, h) {
-    const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max, fl = flashing(cue);
+    const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max, fl = flashOn(o, cue);
+    const flashCol = flashColour(o, cue, h, DC.red);
     const ang = (r) => D.a0 + (D.a1 - D.a0) * clamp(r / max, 0, 1);
     // the E60's advance warning field: the last 1000 rpm before the redline (fixed, so the cached static
     // layer stays right; the count-in itself is the shift cue's flash)
     const warn = Math.max(0, f.redline - 1000);
-    const zone = (r) => (r >= f.redline ? DC.red : r >= warn ? DC.orange : DC.green);
+    // the zones in the E60's colours, or the app's light style's: Race green / red / blue, one colour throughout
+    const Z = o.lightStyle === 'f1' ? [h.P.low, h.P.high, h.RACE_BLUE] : o.lightStyle === 'mono' ? [h.P.text, h.P.text, h.P.text] : [DC.green, DC.orange, DC.red];
+    const zone = (r) => (r >= f.redline ? Z[2] : r >= warn ? Z[1] : Z[0]);
     const step = 250;
     if (o.bar !== false || o.lights) {
         if (BG) for (let r = 0; r < max; r += step) {
@@ -216,7 +242,7 @@ function drawDial(cv, f, layer, h) {
             // burst: the lit dial flashes the grade's colour for 300 ms
             const pop = burstOn(f.chip, 300) ? h.P[GRADE[f.chip.verdict]] : null;
             for (let r = 0; r < top; r += step) {
-                const c = fl ? (f.blink ? DC.red : null) : pop || zone(r);
+                const c = fl ? (f.blink ? flashCol : null) : pop || zone(r);
                 const g = (r + step) % 1000 === 0 ? 0.9 : 0;
                 if (c) cv.arc(D.cx, D.cy, D.r0, D.r1, ang(r), ang(Math.min(top, r + step)) - (r + step <= top ? g : 0), c);
             }
@@ -238,7 +264,7 @@ function drawDial(cv, f, layer, h) {
         const it = items[0];
         if (it) {
             cv.text(it.value, 300, 122, 26, it.tone && it.tone !== 'text' ? h.P[it.tone] : DC.speed, { align: 'right', font: o.valFont || 'bold' });
-            cv.text(it.label.toLowerCase(), 304, 122, 10, DC.speed, { font: 'bold' });
+            cv.text(it.label.toLowerCase(), 304, 122, o.clearLabels ? 13 : 10, DC.speed, { font: 'bold' });
         }
     }
 }

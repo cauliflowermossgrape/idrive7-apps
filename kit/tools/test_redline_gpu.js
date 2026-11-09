@@ -82,6 +82,13 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     if (whole) for (let y = 0; y < 22; y++) for (let x = 40; x < 360; x++) if (whole.px[(y * 400 + x) * 4 + 3]) top++;
     ok(whole && top === 0, 'GPU: the image has no lights or band (' + top + ' px in the lights\' rows)');
 
+    // with no readout showing the revs, moving revs send uniforms only: the text image isn't redrawn
+    settings.set('hudShowRpm', false); await sleep(150);
+    const framesBefore = cr.frames.length;
+    for (let r = 5300; r <= 6000; r += 100) { rpm = r; await sleep(60); }
+    ok(cr.frames.length === framesBefore, 'GPU: revs alone redraw no picture (' + (cr.frames.length - framesBefore) + ' frames)');
+    settings.set('hudShowRpm', true); await sleep(150);
+
     // Picture: the effect goes, one image layer draws everything
     settings.set('hudRenderer', 'image'); await sleep(150);
     ok(cr.of('effect').length === 0 && cr.of('image').length === 1 && cr.layers[cr.of('image')[0]].z === 0, 'Picture: the image layer alone');

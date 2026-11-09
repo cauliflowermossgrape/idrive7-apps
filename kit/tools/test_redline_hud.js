@@ -191,6 +191,26 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         Draw.drawLayer(b, frame(o, { d: { rpm: 6000, gear: 4 }, cue: { from: 5000, at: 6000, shift: false, limiter: false } }), 'bg');
         ok(Buffer.compare(Buffer.from(a.d), Buffer.from(b.d)) === 0, style + ': the static layer depends on something bgKey lacks');
     });
+    // the Arc's right column: no label runs into its value, at either label size (the longest ones). The row is
+    // drawn whole and with the value alone: the label is what the whole has and the value alone hasn't, and its
+    // last column must be left of the value's first
+    {
+        const pairs = [['GEARBOX', '120°'], ['THROTTLE', '100%'], ['OUTSIDE', '-10°']];
+        const draw = (cl, it) => {
+            const o = Object.assign({}, optsDefault, { style: 'arc', clearLabels: cl }), cv = new Canvas(Draw.IW, Draw.IH);
+            Draw.drawLayer(cv, frame(o, { chip: null, down: 0, mode: null, readouts: [{ label: '', value: '', tone: 'text' }, it] }), 'fg');
+            return (x, y) => cv.d[(y * Draw.IW + x) * 4 + 3] > 40;
+        };
+        [false, true].forEach((cl) => pairs.forEach((p) => {
+            const whole = draw(cl, { label: p[0], value: p[1], tone: 'text' }), alone = draw(cl, { label: '', value: p[1], tone: 'text' });
+            let labEnd = -1, valStart = -1;
+            for (let x = 300; x < Draw.IW; x++) for (let y = 88; y <= 107; y++) {
+                if (alone(x, y) && valStart < 0) valStart = x;
+                if (whole(x, y) && !alone(x, y)) labEnd = x;
+            }
+            ok(labEnd >= 0 && valStart >= 0 && labEnd < valStart, 'arc: ' + p[0] + ' ' + p[1] + (cl ? ' (clearer)' : '') + ' label reaches x ' + labEnd + ', value starts at ' + valStart);
+        }));
+    }
     // gear font: Auto is Barlow on the M layouts only; a missing atlas falls back to Ubuntu
     ok(Hud.gearFontOf('auto', 'arc') === 'gear_barlow' && Hud.gearFontOf('auto', 'standard') === 'gear' && Hud.gearFontOf(undefined, 'dial') === 'gear_barlow', 'gear font: Auto');
     ok(Hud.gearFontOf('ubuntu', 'ramp') === 'gear' && Hud.gearFontOf('barlow', 'wings') === 'gear_barlow', 'gear font: chosen');

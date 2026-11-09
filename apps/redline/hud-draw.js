@@ -375,6 +375,7 @@ function scaled(r, k, ox, oy) {
         polyline: (pts, w, c) => r.polyline(P(pts), w * k, c),
         line: (xa, ya, xb, yb, w, c) => r.line(X(xa), Y(ya), X(xb), Y(yb), w * k, c),
         text: (s, x, y, size, c, o) => r.text(s, X(x), Y(y), size * k, c, o && o.spacing ? Object.assign({}, o, { spacing: o.spacing * k }) : o),
+        textWidth: (s, size, o) => r.textWidth(s, size * k, o && o.spacing ? Object.assign({}, o, { spacing: o.spacing * k }) : o) / k,
     };
 }
 
