@@ -8,8 +8,8 @@ const APP = path.join(__dirname, '..', '..', 'apps', 'redline');
 const Nav = require(path.join(APP, 'nav'));
 const NavLog = require(path.join(APP, 'navlog'));
 
-let fails = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
+const TH = require('./redline_test_harness');
+const tally = TH.counter(), ok = tally.ok;
 const eq = (a, b, msg) => ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')');
 
 // ---- the car's replies -------------------------------------------------------------------------------------------
@@ -379,8 +379,8 @@ setTimeout(() => {
             ok(/ nav: dir: turn LEFT 1 km <\d+ chars> lanes \*STRAIGHT_ON,\*STRAIGHT_ON,NONE/.test(text) && / nav: dir: turn RIGHT 50 m <14 chars>/.test(text), 'what shows is logged, one line per turn');
             ok(!/Example/.test(text), 'no street names in the log');
             probe.stop();
-            console.log(checks + ' checks, ' + fails + ' failed');
-            process.exit(fails ? 1 : 0);
+            console.log(tally.checks + ' checks, ' + tally.fails + ' failed');
+            process.exit(tally.fails ? 1 : 0);
         }, 1300);
     }, 1300);
 }, 100);

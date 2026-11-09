@@ -3,45 +3,21 @@
 // hud.js's directions layer against a stand-in cluster-render and a stand-in nav.js. Node 8 compatible.
 //   node kit/tools/test_redline_hud_nav.js
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const Module = require('module');
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-hudnav-'));
-const SHM = process.env.MGU_HUD_CLAIMS = path.join(TMP, 'shm');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const { TMP, SHM } = TH.claimsDir('redline-hudnav-');
+const ROOT = TH.ROOT;
 
 let cr = null;
-class FakeCr {
-    constructor() { cr = this; this.ready = true; this.backend = 'test'; this.targets = 'hud'; this.n = 0; this.layers = {}; this.frames = []; this.h = {}; }
-    on(ev, fn) { this.h[ev] = fn; }
-    connect() {} close() {} removeAllListeners() {} status() {}
-    set(ref, o) { if (this.layers[ref]) Object.assign(this.layers[ref], o); }
-    _add(kind, o) { this.n++; this.layers[this.n] = Object.assign({ kind: kind }, o); return this.n; }
-    image(o) { return this._add('image', o); }
-    effect(o) { return this._add('effect', o); }
-    uniform() {}
-    pixels(ref, rects, px) { this.frames.push({ ref: ref, rects: rects, px: Buffer.from(px) }); return true; }
-    drop(r) { delete this.layers[r]; }
-    images() { return Object.keys(this.layers).map(Number).filter((r) => this.layers[r].kind === 'image'); }
-}
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    if (req === './cluster_render_client') return { ClusterRender: FakeCr };
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit({ clusterRender: TH.fakeClusterRender({ set: 'merge', onCreate: (c) => { cr = c; } }) });
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
 const N = require(path.join(ROOT, 'apps', 'redline', 'hud-nav'));
 // every arrow the car can ask for, and sample turns (test-only, not in the app)
 const C = require(path.join(__dirname, 'redline_nav_cases'));
 const { Canvas } = require(path.join(ROOT, 'kit', 'runtime', 'canvas'));
-const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8'));
-const def = {};
-spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
+const def = TH.redlineDefaults().def;
 
-let fails = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
 
 // ---- the picture ---------------------------------------------------------------------------------------------------
 const draw = (m, palette) => { const c = new Canvas(N.NW, N.NH); N.drawNav(c, m, { palette: palette || 'colour' }); return c; };
@@ -397,6 +373,6 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
 
     ok(!lines.some((l) => /^hud \w+: /.test(l) && /Error/.test(l)), 'no errors in the HUD\'s log (' + lines.filter((l) => /Error/.test(l)).join(' / ').slice(0, 300) + ')');
     h.stop();
-    console.log(checks + ' checks, ' + fails + ' failed');
-    process.exit(fails ? 1 : 0);
+    console.log(tally.checks + ' checks, ' + tally.fails + ' failed');
+    process.exit(tally.fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });
