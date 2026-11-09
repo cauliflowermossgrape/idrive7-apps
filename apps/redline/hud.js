@@ -178,7 +178,7 @@ const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc
 const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hudRpmFormat', 'hudUnlit', 'hudLightStyle',
     'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
-    'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt', 'hudShowEShare',
+    'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt',
     'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
 /** The profile a driving mode uses ('sport', 'comfort', 'eco' or null). */
 function profileOf(drive) { return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport'; }
@@ -268,7 +268,7 @@ function optsFrom(settings, drive) {
         // high-voltage battery (hudHybridSeen, electrical.js), so a petrol or diesel car never has them
         soc12: settings.get('hudShowBattSoc') === true, volt12: settings.get('hudShowBattVolt') === true,
         hvSoc: hybridOn(settings, 'hudShowHvSoc'), hvPower: hybridOn(settings, 'hudShowHvPower'), hvTemp: hybridOn(settings, 'hudShowHvTemp'),
-        hvVolt: hybridOn(settings, 'hudShowHvVolt'), eShare: hybridOn(settings, 'hudShowEShare'),
+        hvVolt: hybridOn(settings, 'hudShowHvVolt'),
         torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
@@ -318,7 +318,7 @@ function calmFor(drive, mode) {
 function calmOpts(o) {
     return Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, limit: false,
         oil: false, coolant: false, gearbox: false, outside: false, soc12: false, volt12: false, hvSoc: false, hvPower: false, hvTemp: false,
-        hvVolt: false, eShare: false, chip: 'off', peak: false, shake: false });
+        hvVolt: false, chip: 'off', peak: false, shake: false });
 }
 
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
@@ -338,7 +338,7 @@ const roundTo = (v, step) => Math.round(v / step) * step;
 /**
  * The readouts row for o (optsFrom): d (rpm, oil, coolant), gearbox temperature, boost (bar), sp
  * ({ rpm, cold }), x (the extras: torque Nm, pedal %, gLat / gLong g, outside °C, and electrical.js's
- * soc12 %, v12 V, hvSoc %, hvKw, hvTemp °C, hvVolt V, eShare %; any may be null).
+ * soc12 %, v12 V, hvSoc %, hvKw, hvTemp °C, hvVolt V; any may be null).
  * In the order of the switches; at most four. When more are on, the last plain ones give way first:
  * a cold, warming or hot temperature (and the cold limit) keeps its place.
  * Fast values are rounded (torque to 5, throttle to 5 %, g to 0.05) so the row doesn't flicker.
@@ -397,7 +397,7 @@ function readoutsFor(d, gb, boost, sp, o, x) {
 /**
  * The electrical readouts (each only with a value): 12 V charge (yellow under 60 %, red under 40 %), 12 V voltage
  * (to 0.1 V; yellow under 12.0, red under 11.5 or over 15.0), HV charge, HV power (+ drives, - regen; to 1 kW),
- * HV temperature (blue under 5 °C, red over 45 °C), pack voltage, electric drive share.
+ * HV temperature (blue under 5 °C, red over 45 °C), pack voltage.
  */
 function electricalItems(o, x) {
     const out = [];
@@ -407,7 +407,6 @@ function electricalItems(o, x) {
     if (o.hvPower && isNum(x.hvKw)) { const k = Math.round(x.hvKw); out.push({ label: 'HV KW', value: (k > 0 ? '+' : '') + k, tone: 'text' }); }
     if (o.hvTemp && isNum(x.hvTemp)) out.push({ label: 'HV TEMP', value: Math.round(o.fahrenheit ? x.hvTemp * 9 / 5 + 32 : x.hvTemp) + '°', tone: x.hvTemp < 5 ? 'cold' : x.hvTemp > 45 ? 'hot' : 'text' });
     if (o.hvVolt && isNum(x.hvVolt)) out.push({ label: 'HV VOLTS', value: String(Math.round(x.hvVolt)), tone: 'text' });
-    if (o.eShare && isNum(x.eShare)) out.push({ label: 'ELECTRIC', value: Math.round(clamp(x.eShare, 0, 100)) + '%', tone: 'text' });
     return out;
 }
 

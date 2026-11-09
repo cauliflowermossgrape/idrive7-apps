@@ -16,17 +16,19 @@
  *                    + the battery drives, - it is charged (regen)
  *     HV temperature Efficiencytainment2.statusBatteryTemperature (raw - 50 °C, 255 = none)
  *     pack voltage   LSCDataSink.statusHighVoltageStorage (V, or 0.1 V above 1500)
- *     electric share KombiIF.statusDisplayElectricalPowerDistribution.displayRepartitionDriveElectricPower
- *                    (taken as % 0-100; 255 = none; scaling not checked on a car)
+ *   (left out: KombiIF's power distribution, whose scale nobody knows yet; eDrive doesn't show it either)
  *
  * Petrol and diesel cars: hybrid() stays false, so nothing hybrid shows anywhere (HUD, HUD looks page,
  * Settings). It turns true, and is kept (setting hudHybridSeen), once the car shows a high-voltage battery:
- * a pack temperature or a pack voltage (150-500 V) in its signals, or the SME answering DDBC. That one
- * read is asked once per start while the HUD shows, and only until it is known.
+ * a pack voltage (150-500 V) in its signals, or the SME answering DDBC. A battery temperature alone is not
+ * enough (a 48 V mild hybrid, or a petrol car, may send one for another battery). That one read is asked
+ * once per start while the HUD shows, and only until it is known; what found it is logged with its raw value.
  *
  * The UDS reads are read-only (UDS 22 / OBD 01) on the gearbox reader's link (one link to the car), only while
- * the HUD shows a readout that needs them; a unit that doesn't answer three times is asked once a minute.
- * Never throws; value() is { soc12, v12, hvSoc, hvKw, hvTemp, hvVolt, eShare } (each a number or null).
+ * the HUD shows a readout that needs them, and only once that link is up (a read before then fails at once and
+ * would count as the unit not answering). Each waits at most ~1 s for an answer, so a unit that doesn't answer
+ * doesn't hold up knock and gearbox reads on the same link; one that doesn't answer three times is asked once
+ * a minute. Never throws; value() is { soc12, v12, hvSoc, hvKw, hvTemp, hvVolt } (each a number or null).
  */
 const { DidReader } = require('./kit/dids');
 
@@ -44,12 +46,14 @@ const V12 = [
     Object.assign({ ecu: 0x12, did: '5853' }, VOLT),
 ];
 const SME = 0x07;
-const HV_SOC = [{ ecu: SME, did: 'DDBC', bytes: 2, at: 0, factor: 0.1, offset: 0, min: 0, max: 100 }];
+// every read has its own short wait: the link is shared with knock (twice a second) and the gearbox, and the
+// default 4 s per unanswered identifier could hold them up for ~12 s a turn on a hybrid whose SME differs
+const HV_SOC = [{ ecu: SME, did: 'DDBC', bytes: 2, at: 0, factor: 0.1, offset: 0, min: 0, max: 100, timeoutMs: 1000 }];
 const HV_V = [
     { ecu: SME, did: 'DDB4', bytes: 2, factor: 0.01, min: 150, max: 500, timeoutMs: 600 },
-    { ecu: SME, did: 'DD68', bytes: 2, factor: 0.01, min: 150, max: 500 },
-    { ecu: SME, did: 'DD66', bytes: 2, factor: 0.01, min: 150, max: 500 },
-    { ecu: SME, did: 'DDEF', bytes: 2, factor: 1, min: 150, max: 500 },
+    { ecu: SME, did: 'DD68', bytes: 2, factor: 0.01, min: 150, max: 500, timeoutMs: 800 },
+    { ecu: SME, did: 'DD66', bytes: 2, factor: 0.01, min: 150, max: 500, timeoutMs: 800 },
+    { ecu: SME, did: 'DDEF', bytes: 2, factor: 1, min: 150, max: 500, timeoutMs: 800 },
 ];
 const HV_A = [{ ecu: SME, did: 'DD69', bytes: 4, factor: 0.01, signed: true, min: -800, max: 800, timeoutMs: 600 }];
 const POWER_SIGN = -1;                // eDrive's powerSign: kW = V x A / 1000 x -1 (+ = the battery gives power)
@@ -85,10 +89,8 @@ const decode = {
         const volts = x > 1500 ? x / 10 : x;           // 0.1 V on the X5 45e
         return volts > 150 && volts < 500 ? volts : null;
     },
-    eShare: (v) => {
-        const x = one(v, 'displayRepartitionDriveElectricPower');
-        return isNum(x) && x !== 255 && x >= 0 && x <= 100 ? x : null;
-    },
+    /** the raw field, for the log line that says what found the battery */
+    rawVolt: (v) => one(v, 'actualValueVoltageHighVoltageStorage'),
     hvKw: (volts, amps) => (isNum(volts) && isNum(amps) ? volts * amps / 1000 * POWER_SIGN : null),
 };
 
@@ -123,14 +125,15 @@ class Electrical {
             'de.bmw.infotainment.vehicle.CDS': {
                 statusBattery2: guard((v) => this._put('soc12', decode.soc12(v))),
             },
+            // kept, but shown only once the car is known to be a hybrid (value()): never proof of one by itself
             'de.bmw.infotainment.drivingexcitement.Efficiencytainment2': {
-                statusBatteryTemperature: guard((v) => { const t = decode.hvTemp(v); if (t !== null) { this._put('hvTemp', t); this._seen('pack temperature'); } }),
+                statusBatteryTemperature: guard((v) => this._put('hvTemp', decode.hvTemp(v))),
             },
             'de.bmw.infotainment.lsc.LSCDataSink': {
-                statusHighVoltageStorage: guard((v) => { const x = decode.hvVolt(v); if (x !== null) { this._put('hvVolt', x); this._seen('pack voltage'); } }),
-            },
-            'de.bmw.infotainment.KombiIF': {
-                statusDisplayElectricalPowerDistribution: guard((v) => this._put('eShare', decode.eShare(v))),
+                statusHighVoltageStorage: guard((v) => {
+                    const x = decode.hvVolt(v);
+                    if (x !== null) { this._put('hvVolt', x); this._seen('pack voltage signal, raw ' + JSON.stringify(decode.rawVolt(v))); }
+                }),
             },
         };
     }
@@ -163,10 +166,14 @@ class Electrical {
     /** One turn: the probe (once), HV power (each turn), HV charge (every SLOW_MS), 12 V (every V12_MS). */
     async _turn() {
         const now = Date.now();
+        // the link is made on the HUD's first tick and comes up a moment later: until then every read fails at
+        // once, which would use up the one look for a hybrid battery and start the minute-long back-off
+        const link = this.rd.diag;
+        if (link && link.ready === false) return;
         if (!this.hybrid() && !this.probed) {
             this.probed = true;
-            const v = await this.rd.read(Object.assign({ timeoutMs: PROBE_TIMEOUT_MS }, HV_SOC[0]));
-            if (v !== null) { this._put('hvSoc', v); this._seen('battery unit DDBC'); }
+            const v = await this.rd.read(Object.assign({}, HV_SOC[0], { timeoutMs: PROBE_TIMEOUT_MS }));
+            if (v !== null) { this._put('hvSoc', v); this._seen('battery unit DDBC, ' + ((this.rd.raws[this.rd.key(HV_SOC[0])] || {}).bytes || '')); }
             else this.log.info('electrical: no high-voltage battery unit (' + ((this.rd.raws[this.rd.key(HV_SOC[0])] || {}).why || '?') + ')');
             if (!this.want.v12 && !(this.want.hv && this.hybrid())) this.stop();
             return;
@@ -233,7 +240,6 @@ class Electrical {
             soc12: get('soc12', SIGNAL_STALE_MS), v12: get('v12', V12_MS * 4),
             hvSoc: hy ? get('hvSoc', SLOW_STALE_MS) : null, hvKw: hy ? get('hvKw', STALE_MS) : null,
             hvTemp: hy ? get('hvTemp', SIGNAL_STALE_MS) : null, hvVolt: hy ? get('hvVolt', SLOW_STALE_MS) : null,
-            eShare: hy ? get('eShare', SIGNAL_STALE_MS) : null,
         };
     }
 }

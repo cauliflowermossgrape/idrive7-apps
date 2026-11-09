@@ -55,10 +55,6 @@
       "_optional": "hybrid battery voltage on the HUD (plug-in hybrids)",
       "statusHighVoltageStorage": "s"
     },
-    "de.bmw.infotainment.KombiIF": {
-      "_optional": "electric share of the drive on the HUD (plug-in hybrids)",
-      "statusDisplayElectricalPowerDistribution": "rs"
-    },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",
       "_methods": [
@@ -138,7 +134,6 @@
     {"key": "hudShowHvPower", "label": "Hybrid battery power (kW, + drive, - regen)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowHvTemp", "label": "Hybrid battery temperature", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudShowHvVolt", "label": "Hybrid battery voltage", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
-    {"key": "hudShowEShare", "label": "Electric share of the drive (%)", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "hudAll": [true], "hudHybridSeen": [true]}, "group": "HUD: readouts"},
     {"key": "hudHybridSeen", "label": "This car has a hybrid battery (found by the app)", "type": "bool", "default": false, "hidden": true},
     {"key": "hudChip", "label": "Shift grade after each upshift", "type": "choice", "default": "burst", "when": {"hud": ["on", "test"], "hudAll": [true]}, "aliases": {"true": "burst", "false": "off"}, "options": [["burst", "Burst (pops, ring)"], ["simple", "Simple"], ["off", "Off"]], "group": "HUD: alerts"},
     {"key": "hudKnockWarn", "label": "Knock warning (KNOCK when the engine pulls timing, experimental)", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "hudAll": [true]}, "group": "HUD: alerts"},

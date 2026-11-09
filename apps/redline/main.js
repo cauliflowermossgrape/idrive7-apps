@@ -631,7 +631,7 @@ mgu.run({
                 tx += w + 48;
             });
             const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.oil, o.coolant, o.gearbox, o.outside,
-                o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvTemp, o.hvVolt, o.eShare].filter(Boolean).length;
+                o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvTemp, o.hvVolt].filter(Boolean).length;
             const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
             const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(P)) : {};
@@ -671,7 +671,6 @@ mgu.run({
                         ['Power', o.hvPower, () => P.set('hudShowHvPower', !on('hudShowHvPower'))],
                         ['Temp', o.hvTemp, () => P.set('hudShowHvTemp', !on('hudShowHvTemp'))],
                         ['Voltage', o.hvVolt, () => P.set('hudShowHvVolt', !on('hudShowHvVolt'))],
-                        ['Electric share', o.eShare, () => P.set('hudShowEShare', !on('hudShowEShare'))],
                     ]);
                 }
                 readoutsPick(cv, t);

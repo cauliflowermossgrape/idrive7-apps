@@ -54,7 +54,6 @@ const NOT_ON = {
     hudShowHvPower: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowHvTemp: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowHvVolt: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
-    hudShowEShare: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudTempsMode: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudChip: { layouts: ['minimal', 'wings'], why: 'no grade drawn' },
     hudShowBar: { layouts: ['minimal', 'ramp', 'dial'], why: 'no bar (ramp, dial: the band is the shift lights too)' },
@@ -64,7 +63,7 @@ const NOT_ON = {
 // the data: revs counting in, a grade just made, temperatures hot / cold, every extra value there
 const D = { rpm: 5637, gear: 3, stage: 'D', oil: 95, coolant: 90 };
 // (the electrical values too: a plug-in hybrid; test_redline_hud.js checks a petrol car shows none of the hybrid ones)
-const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3, soc12: 82, v12: 14.2, hvSoc: 64, hvKw: -18, hvTemp: 27, hvVolt: 352, eShare: 70 };
+const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3, soc12: 82, v12: 14.2, hvSoc: 64, hvKw: -18, hvTemp: 27, hvVolt: 352 };
 function picture(over, style, state) {
     const settings = { get: (k) => (k in over ? over[k] : def[k]) };
     const o = Object.assign({}, Hud.optsFrom(settings), { style: style });
@@ -93,7 +92,7 @@ const ALONE = {
     hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
     hudShowOil: { hudShowOil: true }, hudShowWater: { hudShowWater: true }, hudShowGearbox: { hudShowGearbox: true }, hudTempUnit: { hudShowOil: true },
     hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' }, hudShowKnock: {},
-    hudShowBattSoc: {}, hudShowBattVolt: {}, hudShowHvSoc: HY, hudShowHvPower: HY, hudShowHvTemp: HY, hudShowHvVolt: HY, hudShowEShare: HY,
+    hudShowBattSoc: {}, hudShowBattVolt: {}, hudShowHvSoc: HY, hudShowHvPower: HY, hudShowHvTemp: HY, hudShowHvVolt: HY,
 };
 const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 

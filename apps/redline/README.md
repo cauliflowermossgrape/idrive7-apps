@@ -147,7 +147,7 @@ missing falls back to Ubuntu.
     Gearbox, Outside, the cold-engine limit, and *Only when cold or hot*. Up to four show, in this
     order; when more are on, the last plain ones give way, so a cold or hot reading keeps its place.
     *Engine / Electric* switches to the electrical readouts: *12 V*: Charge, Voltage (every car);
-    *Hybrid*: Charge, Power, Temp, Voltage, Electric share (only on a plug-in hybrid: see
+    *Hybrid*: Charge, Power, Temp, Voltage (only on a plug-in hybrid: see
     [Electrical](#electrical)).
   - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
     peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
@@ -258,7 +258,7 @@ below list them by what they do.
 | Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
 | 12 V battery charge, 12 V battery voltage | off (default) / on each, on every car ([Electrical](#electrical)) |
-| Hybrid battery charge, power, temperature, voltage; electric share of the drive | off (default) / on each; listed only on a plug-in hybrid ([Electrical](#electrical)) |
+| Hybrid battery charge, power, temperature, voltage | off (default) / on each; listed only on a plug-in hybrid ([Electrical](#electrical)) |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
 | Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
@@ -416,16 +416,26 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 | HV KW | hybrid battery power, kW: + drives, − charging (regen) | pack voltage (`DDB4` / `DD68` / `DD66` / `DDEF`) × current (`DD69`) from the SME, twice a second |
 | HV TEMP | hybrid battery temperature (blue under 5 °C, red over 45 °C) | `Efficiencytainment2.statusBatteryTemperature` |
 | HV VOLTS | pack voltage | `LSCDataSink.statusHighVoltageStorage` (or the SME's when it is read for power) |
-| ELECTRIC | electric share of the drive, % (taken as 0–100; not yet checked on a car) | `KombiIF.statusDisplayElectricalPowerDistribution` |
 
 Each shows only while the car sends it. **Petrol and diesel cars never see the hybrid ones**: not on the
-HUD, not on *HUD looks*, not in Settings. They appear once the car shows a high-voltage battery: a pack
-temperature or a 150–500 V pack voltage in its signals, or the SME answering `DDBC` (asked once per start
-while the HUD shows, until found; logged `electrical: no high-voltage battery unit` on a car without one).
-That is remembered. The UDS reads are read-only, on the gearbox reader's link, and only while a readout
-that needs them is on; a unit that doesn't answer three times is asked once a minute. None is checked on a
-car yet: the 12 V ones can be checked on any car, the hybrid ones need a plug-in hybrid. A 48 V mild hybrid shows only the 12 V
-ones (its 48 V battery is in eDrive).
+HUD, not on *HUD looks*, not in Settings. They appear once the car shows a high-voltage battery: a 150–500 V
+pack voltage in its signals, or the SME answering `DDBC` (asked once per start while the HUD shows, until
+found; logged `electrical: no high-voltage battery unit` on a car without one). A battery temperature alone
+doesn't count: a 48 V mild hybrid, or a petrol car, may send one for another battery. Once found it is
+remembered, and the log says what found it, with the raw value
+(`electrical: high-voltage battery found (…)`).
+
+The UDS reads are read-only, on the gearbox reader's link, only while a readout that needs them is on, and
+only once that link is up. Each waits at most about a second for an answer, so a unit that stays quiet
+doesn't hold up the knock and gearbox reads on the same link; one that doesn't answer three times is asked
+once a minute.
+
+The electric share of the drive (KombiIF's power distribution) is left out until its scale is known: eDrive
+doesn't show it either.
+
+None is checked on a car yet: the 12 V ones can be checked on any car, the hybrid ones need a plug-in
+hybrid. The power's sign (+ drive, − regen) is eDrive's, checked only on an X5 45e. A 48 V mild hybrid
+shows only the 12 V ones (its 48 V battery is in eDrive).
 
 ## Launch score
 
