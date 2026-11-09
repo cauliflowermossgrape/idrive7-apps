@@ -220,6 +220,8 @@ cold). A **DEMO** badge shows when the data isn't from the car.
 
 ## 2. What you need
 
+> Not comfortable with root access, SSH and building? [idriveapps.com](https://idriveapps.com/) is a service that installs the apps for you.
+
 **In the car**
 
 - **A BMW with the MGU head unit** (iDrive 7, "ID7"). Developed and tested on firmware
