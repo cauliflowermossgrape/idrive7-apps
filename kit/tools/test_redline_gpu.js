@@ -102,7 +102,29 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     settings.set('hudRenderer', 'gpu'); await sleep(150);
     ok(cr.of('effect').length === 1, 'GPU again: the effect layer back');
     settings.set('hudStyle', 'standard'); await sleep(150);
-    ok(cr.of('effect').length === 0 && cr.of('image').length === 1, 'Standard with GPU set: the picture (GPU is the Arc only)');
+    {
+        // every layout on the GPU: the gauge shader over the picture, its parts for the layout
+        const ge = cr.of('effect'), gi = cr.of('image'), G = cr.layers[ge[0]] || {}, GI = cr.layers[gi[0]] || {};
+        ok(ge.length === 1 && gi.length === 1 && G.z === 1 && GI.z === 0, 'Standard on the GPU: the gauge shader over the picture');
+        ok(/#define LIGHTS/.test(G.fs) && /#define BAR/.test(G.fs) && !/#define DIAL/.test(G.fs), 'Standard: the lights and bar parts of the shader');
+        const last = (n) => cr.uniforms.filter((u) => u.ref === ge[0] && u.name === n).pop();
+        rpm = 5600; await sleep(200);
+        const sc = last('u_sc'), lc = last('u_lc'), r1 = last('u_rpm');
+        ok(sc && sc.v.length === 160 && sc.type === 'vec4' && sc.v.slice(0, 4).join(',') !== '0,0,0,0', 'the segment colours: 40 vec4, the first lit');
+        ok(lc && lc.v.length === 48 && lc.v.some((x, i) => i % 4 === 3 && x > 0), 'the lights: 12 vec4, some lit at 5600 rpm');
+        ok(r1 && Math.abs(r1.v[0] - 5600) < 10, 'the revs sent (' + (r1 && r1.v[0]) + ')');
+        // (the RPM readout is text in the picture, refreshed a few times a second: off for this check)
+        settings.set('hudShowRpm', false); await sleep(200);
+        const before = cr.frames.length; rpm = 5650; await sleep(150); rpm = 5700; await sleep(150);
+        ok(cr.frames.length === before, 'the revs moving: no picture sent, only the revs (' + (cr.frames.length - before) + ' pictures)');
+        settings.set('hudShowRpm', true);
+        for (const st of ['minimal', 'wings', 'digital', 'vfd', 'vector', 'ramp', 'dial']) {
+            settings.set('hudStyle', st); await sleep(150);
+            const e = cr.of('effect');
+            ok(e.length === 1 && (cr.layers[e[0]] || {}).z === 1, st + ': on the GPU');
+        }
+        rpm = 3000; settings.set('hudStyle', 'standard'); await sleep(150);
+    }
     settings.set('hudStyle', 'arc'); await sleep(150);
     // the Sport / Comfort profiles in the running HUD: Comfort follows Sport, then its own (a mode switching the
     // GPU Arc off makes the layers again, and back), then BMW's (the layers dropped while in Comfort)
@@ -110,7 +132,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     drive = 'comfort'; await sleep(200);
     ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'Comfort, same as Sport: the Arc too');
     Hud.profileView(settings, 'comfort').set('hudStyle', 'standard'); await sleep(200);
-    ok(h.frame().opts.style === 'standard' && cr.of('effect').length === 0 && cr.of('image').length === 1, 'Comfort, its own: Standard, the GPU layer gone');
+    ok(h.frame().opts.style === 'standard' && cr.of('effect').length === 1 && /#define BAR/.test((cr.layers[cr.of('effect')[0]] || {}).fs), "Comfort, its own: Standard, on the gauge shader (the Arc's made again as Standard's)");
     drive = 'sport'; await sleep(200);
     ok(h.frame().opts.style === 'arc' && cr.of('effect').length === 1, 'back in Sport: the Arc, the GPU layer made again');
     Hud.setComfortMode(settings, 'hide'); drive = 'comfort'; await sleep(200);

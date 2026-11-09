@@ -203,9 +203,10 @@ function drawRamp(cv, f, layer, h) {
             const top = Math.min(d.rpm, max);
             // burst: the lit fields pop in the grade's colour for 300 ms
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null;
+            if (o.gpuSink) o.gpuSink.band('ramp', max);
             for (let r = 0; r < top; r += step) {
                 const c = fl ? (f.blink ? flashCol : null) : pop || fieldCol(r);
-                if (c) rSeg(cv, r, Math.min(top, r + step), max, c, 1.2);
+                if (c) { if (o.gpuSink) o.gpuSink.seg(r / step, c); else rSeg(cv, r, Math.min(top, r + step), max, c, 1.2); }
             }
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) {
@@ -256,10 +257,11 @@ function drawDial(cv, f, layer, h) {
             const top = Math.min(d.rpm, max);
             // burst: the lit dial flashes the grade's colour for 300 ms
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null;
+            if (o.gpuSink) o.gpuSink.band('dial', max);
             for (let r = 0; r < top; r += step) {
                 const c = fl ? (f.blink ? flashCol : null) : pop || zone(r);
                 const g = (r + step) % 1000 === 0 ? 0.9 : 0;
-                if (c) cv.arc(D.cx, D.cy, D.r0, D.r1, ang(r), ang(Math.min(top, r + step)) - (r + step <= top ? g : 0), c);
+                if (c) { if (o.gpuSink) o.gpuSink.seg(r / step, c); else cv.arc(D.cx, D.cy, D.r0, D.r1, ang(r), ang(Math.min(top, r + step)) - (r + step <= top ? g : 0), c); }
             }
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) cv.arc(D.cx, D.cy, D.r0 - 3, D.r1 + 3, ang(f.peak) - 0.8, ang(f.peak) + 0.8, '#ffffff');
