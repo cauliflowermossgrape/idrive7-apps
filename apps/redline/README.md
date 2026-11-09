@@ -268,10 +268,45 @@ At most four readouts fit the row; past that the last one gives way.
 | Position left / right, up / down | px; moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
+### Directions (experimental)
+
+With Redline on the HUD, the KOMBI hides BMW's own direction card behind it (2026-11-09 drive). So while a
+route runs, Redline draws the next turn itself: a small picture (200x76) in the bottom right corner of the glass,
+right of BMW's limit sign and speed, which sit at the bottom left. It has its own place: the tach's size and
+position don't move it.
+
+```
+[ tach ...................................... ]
+                                   [arrow] 450 m
+(50) ——— km/h                              Example Street     (or the lanes ▏↑▏↑▏↱▏ in its place)
+```
+
+- **Arrow:** thick and white (the HUD colours' text colour; Night amber draws it amber): straight, slight / normal /
+  hard turn, U-turn, keep or fork (the road left behind dim), motorway exit and entry, lane change, roundabout (the
+  ring, the way round and the exit, its number inside), the destination flag, and a dot for anything else
+  ("follow the route").
+- **Distance** as the car formats it (`450 m`, `4.7 km`, `0.3 mi`); under it the **street** (accents dropped: the
+  HUD's fonts are ASCII), or the **lanes** when there are some: in a lane to be in, the arrow to take is bright;
+  everything else is dim. Right-aligned, so it hugs the corner.
+- **Where it comes from:** BMW's guidance service, read-only, the same way for CarPlay, Android Auto and BMW's own
+  navigation: the route's next events (`GuidanceEventList.queryContent`, asked once a second while a route runs),
+  the lanes (`currentLaneGuiding`) and, for BMW's navigation, `conclusiveDart`. Proven on a G21 with CarPlay /
+  Apple Maps; BMW navigation and Android Auto not yet. The interfaces are the ones jaimeen77's Cluster Redline
+  (jaimeen77-cmyk/apps, MPL-2.0) reads; Redline's decoder and drawing are its own (`nav.js`, `hud-nav.js`).
+- **Safety:** a turn older than 3 s isn't shown. When a route runs but Redline has no turn it can read for 4 s,
+  Redline leaves the HUD (tach included) so BMW's own card shows; it comes back with the next readable turn.
+  An old turn never comes back after a route ends or changes hands.
+- **Settings:** *Directions on the HUD*: **While a route runs** (default) / **Near turns** (under 1 km, and
+  whenever there are lanes) / **Off** (as before 1.17: Redline keeps the HUD, BMW's card stays hidden).
+  Under *Advanced*: *Directions left / right* and *up / down* (px from the corner). The test pattern shows a sample
+  turn where they go.
+- A picture, like the rest of the HUD since 1.16.7 (no GPU drawing). It is redrawn only when what it shows
+  changes (the distance counting down), and only the changed part is sent.
+
 ### What it does with BMW's content
 
-- BMW's speed, limit sign, navigation arrows and assistance graphics stay in their own HUD
-  slots, which cluster-render never takes.
+- BMW's speed, limit sign and assistance graphics stay in their own HUD slots, which cluster-render never takes.
+  BMW's direction card is hidden while Redline is on the HUD: [Directions](#directions-experimental).
 - When BMW shows a pop-up on the HUD (media, lists), cluster-render moves the tach aside. It
   comes back about 1.5 s after the pop-up goes. Redline pauses drawing in the meantime.
 - If the cluster restarts twice within 10 s of the HUD being mapped, cluster-render's mapping
@@ -437,6 +472,16 @@ Useful lines:
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
 - `hud: target hud: slot 0x323 …`: cluster-render's report on the HUD's slot (each change): whether Redline
   or BMW's content (its navigation, with CarPlay) holds it.
+- `redline-nav.log` (beside `redline.log`): the navigation probe, read-only, behind Redline's own HUD
+  directions. What BMW's guidance service (`navigation.guiding.Guidance`: route state, which app
+  guides, the next manoeuvre with its distance) and the CarPlay / Android Auto managers send, each change
+  (a turn getting nearer at most every 5 s), and once per kind of manoeuvre every key it has. Coordinates
+  are left out, street names are logged as their length only. The interfaces are the ones jaimeen77's Cluster
+  Redline (jaimeen77-cmyk/apps) reads; all optional, so a car without them installs Redline as before.
+  `dir: …` lines: what the directions show, one line per turn (`dir: turn LEFT 450 m <14 chars> lanes
+  *STRAIGHT_ON,NONE`), `dir: giving way to BMW (no turn data)`, `dir: event list <error>`.
+- `hud: route without readable turns, BMW's directions shown` / `hud: own directions`: Redline leaving the HUD
+  to BMW's card and coming back.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
 - `limiter: learned …`
 - `shiftmap: 3>4 at 5550`
@@ -450,6 +495,9 @@ Useful lines:
 | `main.js` | The app: the screen pages, settings, scoring, and the wiring of everything below |
 | `hud.js` | The HUD layer: connect, pace, smooth the rpm, decide what to show (readouts, grade, peak), send; `shiftCue()` (shared with the screen); the test pattern |
 | `hud-draw.js` | Drawing the HUD image: the six layouts, the palettes, 7-segment digits, lights, bar and bar graph, readouts, grade burst, shake, downshift arrows; the cached static layer |
+| `nav.js` | Directions, the data: decodes the route events, `conclusiveDart` and the lanes into the next turn; freshness (3 s) and giving way to BMW's card |
+| `navlog.js` | The navigation probe: subscribes to the guidance sources, asks the event list, writes `redline-nav.log`, hands every value to `nav.js` |
+| `hud-nav.js` | Directions, the picture (200x76, bottom right corner): thick white arrows, distance, street or lanes |
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |

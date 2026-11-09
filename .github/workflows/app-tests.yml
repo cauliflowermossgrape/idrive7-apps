@@ -63,6 +63,9 @@ jobs:
       - run: node kit/tools/test_redline_hud.js
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
+      - run: node kit/tools/test_redline_navlog.js
+      - run: node kit/tools/test_redline_nav.js
+      - run: node kit/tools/test_redline_hud_nav.js
       - run: node kit/tools/test_redline_features.js
       - run: node kit/tools/test_ambient_config.js
       - run: node kit/tools/test_xdrive_live.js
@@ -91,4 +94,7 @@ jobs:
       - run: node kit/tools/test_redline_hud.js
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
+      - run: node kit/tools/test_redline_navlog.js
+      - run: node kit/tools/test_redline_nav.js
+      - run: node kit/tools/test_redline_hud_nav.js
       - run: node kit/tools/test_redline_features.js

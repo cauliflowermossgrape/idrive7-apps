@@ -848,8 +848,19 @@ mgu.run({
         // 1.14 / 1.15's "In Comfort / Eco Pro" carried into the Sport / Comfort profiles, once
         const moved = Hud.migrateProfiles(settings);
         if (moved && moved !== 'none') log.info('hud: In Comfort (' + moved + ') carried into the Comfort profile');
+        // the navigation probe (redline-nav.log, read-only) feeding Redline's own HUD directions (nav.js); never stops the app
+        let nav = null;
+        try {
+            const Nav = require('./nav');
+            let tracker = null;
+            const probe = require('./navlog').start(ctx, log, (s, f, v) => { if (tracker) tracker.tap(s, f, v); });
+            tracker = Nav.start(ctx, log, probe);
+            nav = tracker;
+        } catch (e) { log.warn('nav: directions not started: ' + e); }
         // head-up display through cluster-render (setting "hud"); the centre screen is unchanged
         hud = Hud.start(ctx, {
+            // the next turn and lanes while a route runs (null: none here)
+            nav: nav,
             data: () => car.data(), shiftPoint, redline, maxRpm, gearbox, knock, downshift,
             // the tach's peak marker (drops back after "Peak hold"), the last upshift's grade for 1.5 s,
             // boost once it has moved and is under 2 s old (none from the demo drive)
