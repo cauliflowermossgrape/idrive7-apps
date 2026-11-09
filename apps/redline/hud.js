@@ -30,6 +30,7 @@ const path = require('path');
 const { Canvas, withAlpha } = require('./kit/canvas');
 // the drawing: layouts, palettes, readouts (hud-draw.js); this file decides what to show and when
 const Draw = require('./hud-draw');
+const Gpu = require('./hud-gpu');
 const { HudClaim } = require('./kit/hud_claim');
 const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
@@ -415,6 +416,8 @@ function changedBoxes(a, b, w) {
 function start(ctx, src) {
     const settings = ctx.settings, log = ctx.log;
     let cr = null, layer = 0, shown = '', lastTarget = '', timer = null, blink = false;
+    // the GPU-drawn Arc (setting "hudRenderer" GPU): an effect layer under the text's image layer; null: the picture path
+    let gpu = null;
     let target = null;                                           // { state, holder, disabled } of 'hud'
     const cueState = {};
     let lastDemo = null;
@@ -458,15 +461,33 @@ function start(ctx, src) {
         }));
         cr.on('layer', safe('layer', (ref, state, reason) => {
             if (ref === layer) log.info('hud: layer ' + state + (reason ? ' (' + reason + ')' : ''));
+            else if (gpu && ref === gpu.ref) {
+                log.info('hud: GPU layer ' + state + (reason ? ' (' + reason + ')' : ''));
+                // a renderer that refuses the shader: back to the picture, for this run
+                if (state === 'error') { gpuFailed = true; log.warn('hud: GPU drawing refused, drawing the picture instead'); relayer(); }
+            }
         }));
-        cr.on('refused', safe('refused', (op, ref, reason) => log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason)));
+        cr.on('refused', safe('refused', (op, ref, reason) => {
+            log.warn('hud: refused ' + op + ' ' + ref + ': ' + reason);
+            if (gpu && ref === gpu.ref) { gpuFailed = true; log.warn('hud: GPU drawing refused, drawing the picture instead'); relayer(); }
+        }));
         cr.connect();
         log.info('hud: connecting to cluster-render');
     });
 
     const stopTimer = () => { if (timer) clearInterval(timer); timer = null; if (src.gearbox) src.gearbox.stop(); };
 
-    const dropLayer = safe('drop', () => { stopTimer(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
+    const dropGpu = () => { if (gpu) gpu.drop(); gpu = null; };
+    const dropLayer = safe('drop', () => { stopTimer(); dropGpu(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; });
+    // the GPU path: chosen, on the Arc (the only layout it draws yet), and not refused by this renderer
+    let gpuFailed = false;
+    const useGpu = () => settings.get('hudRenderer') === 'gpu' && !gpuFailed && optsNow().style === 'arc';
+    /** The layers made again (the drawing path or its options changed), the timer kept. */
+    const relayer = safe('relayer', () => {
+        if (shown !== 'tach' || !layer) return;
+        dropGpu(); cr.drop(layer); layer = 0;
+        makeLayer();
+    });
 
     const disconnect = safe('disconnect', () => {
         dropLayer();
@@ -614,7 +635,7 @@ function start(ctx, src) {
         if (shown === 'tach') {
             if (calm(Date.now() < demoUntil) === 'hide') {
                 if (layer) {
-                    cr.drop(layer); layer = 0;
+                    dropGpu(); cr.drop(layer); layer = 0;
                     // the old layer's target state isn't the new one's: forget it (keeping a guard
                     // stop), so a layer made again isn't held back waiting for a target event
                     if (target) target = { state: '', holder: '', disabled: target.disabled };
@@ -640,7 +661,9 @@ function start(ctx, src) {
         // (with the options it draws with: "lights only" in Comfort / Eco Pro has no gearbox readout)
         const oNow = calm(Date.now() < demoUntil) === 'lights' ? calmOpts(optsNow()) : optsNow();
         if (src.gearbox) { if (oNow.gearbox) src.gearbox.start(); else src.gearbox.stop(); }
-        const f = frameData();
+        let f = frameData();
+        // GPU: the lights and band are the effect layer's (a few numbers when they change); the image keeps the text
+        if (gpu) { gpu.update(f); f = Object.assign({}, f, { opts: Object.assign({}, f.opts, { lights: false, bar: false }) }); }
         // the same inputs draw the same frame: skip it (idle, a steady cruise, no rpm)
         const key = frameKey(f);
         if (!first && key === lastKey) return;
@@ -674,14 +697,20 @@ function start(ctx, src) {
     /** The tach's image layer at the current place and size, with fresh canvases (the next frame is sent whole). */
     function makeLayer() {
         const r = rect();
-        layer = cr.image({ target: 'hud', klass: 'overlay', x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
+        if (useGpu()) {
+            gpu = new Gpu.GpuArc(cr, { P: Draw.PALETTES[optsNow().palette] || Draw.PALETTES.colour, lightCol: Draw.lightCol, RACE_BLUE: '#2a7dff' }, log);
+            if (!gpu.make(r, settings.get('hudGpuAlpha') === 'premul')) { log.warn('hud: GPU layer refused by the client'); gpu = null; }
+            else log.info('hud: drawing the Arc on the GPU (alpha ' + (settings.get('hudGpuAlpha') === 'premul' ? 'premultiplied' : 'straight') + ')');
+        }
+        // the text over the GPU's layer (z 1), or the whole picture
+        layer = cr.image({ target: 'hud', klass: 'overlay', z: gpu ? 1 : 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
         if (!layer) { log.warn('hud: tach layer refused by the client'); return; }
         cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true; lastKey = '';
     }
 
     const showTach = safe('tach', () => {
         const r = rect();
-        if (shown === 'tach') { if (layer) cr.set(layer, r); return; }
+        if (shown === 'tach') { if (layer) cr.set(layer, r); if (gpu) { cr.set(gpu.ref, r); gpu.w = r.w; gpu.sent = {}; } return; }
         dropLayer();
         // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
         const hidden = calm(Date.now() < demoUntil) === 'hide';
@@ -736,6 +765,8 @@ function start(ctx, src) {
     const HUD_KEYS = ['hud', 'hudSize', 'hudX', 'hudY'];
     settings.onChange(safe('setting', (key) => {
         if (key === 'hudFps' && timer) { clearInterval(timer); timer = setInterval(tick, Math.round(1000 / fps())); log.info('hud: ' + fps() + ' fps'); return; }
+        // the drawing path (picture or GPU) follows the renderer setting, its alpha and the layout
+        if ((key === 'hudRenderer' || key === 'hudGpuAlpha' || key === 'hudStyle') && shown === 'tach' && (!!gpu !== useGpu() || key === 'hudGpuAlpha')) { relayer(); return; }
         if (HUD_KEYS.indexOf(key) < 0 && shown !== 'test') { first = true; return; }
         if (shown === 'test' && key !== 'hud') shown = '';         // redraw the pattern with the tach moved
         apply();

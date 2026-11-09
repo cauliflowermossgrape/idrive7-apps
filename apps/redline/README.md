@@ -87,6 +87,16 @@ On all three the shift grade takes the first readout's place; with *Burst* a rin
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
 on the limiter, as in the cars.
 
+**Drawing on the GPU** (*Drawing*, experimental, Arc only): instead of re-sending the 400x130 picture
+as the revs move, the lights, band, ticks, peak line and the flash's blink are a cluster-render effect
+layer: a shader the renderer runs itself (`hud-gpu.js`), sent a few numbers only when they change. The
+gear, readouts and grade stay a picture over it, which then only changes when a number does. If the
+renderer refuses the shader, Redline goes back to the picture for that run (`hud: GPU drawing refused`
+in the log). *GPU edges* (Straight / Premultiplied) is there to find which alpha the renderer expects:
+the right one has clean edges, the wrong one dark or bright fringes round the lights. The shader was
+checked against the picture in a browser (WebGL: within one colour level but at the edges); on the car
+it is untested.
+
 **Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
 Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
 font closest to the BMW Type digits these HUDs use; BMW's own font can't be shipped. A font that is
@@ -182,6 +192,8 @@ layout and colours by picture.
 |---|---|
 | Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
 | Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
+| Drawing (Arc) | Picture / GPU (experimental) |
+| GPU edges | Straight / Premultiplied (while testing the GPU drawing) |
 | Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
@@ -355,6 +367,7 @@ ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox' /var/opt/pub
 Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
+- `hud: drawing the Arc on the GPU …`, `hud: GPU layer …`: the GPU drawing's layer and its state.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
 - `limiter: learned …`
 - `shiftmap: 3>4 at 5550`
