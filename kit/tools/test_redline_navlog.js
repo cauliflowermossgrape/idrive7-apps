@@ -30,6 +30,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     H.Guidance.conclusiveDart(dart(380));            // nearer, same turn, within 5 s: not logged
     H.Guidance.conclusiveDart(dart(380, 'RIGHT'));   // a new turn: logged at once
     H.Guidance.guidanceState('ACTIVE');              // the same value again: not logged
+    H.Guidance.currentLaneGuiding({ rows: [{ lanes: [{ directionToFollow: 'LEFT', isHighlighted: true }, { directionToFollow: 'STRAIGHT_ON', isHighlighted: false }] }], carPositionLaneIndex: 1 });
+    H.ProjectedModeGuiding.currentLaneGuiding({ rows: [], carPositionLaneIndex: 0 });
     const text = fs.readFileSync(path.join(dir, 'redline-nav.log'), 'utf8');
     const lines = text.trim().split('\n');
     ok(/probe started/.test(lines[0]), 'the probe says it started');
@@ -42,6 +44,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const darts = lines.filter((l) => /conclusiveDart = /.test(l));
     ok(darts.length === 2 && /"distance":"400"/.test(darts[0]) && /RIGHT/.test(darts[1]), 'the same turn nearer is held back for 5 s, a new turn logged at once (' + darts.length + ')');
     ok(!/latitude|longitude|37\.5|127/.test(text), 'no coordinates in the log');
+    ok(/guidance currentLaneGuiding = .*"directionToFollow":"LEFT"/.test(text) && /phone currentLaneGuiding = /.test(text), 'lanes logged, from BMW and the phone');
     ok(logged.some((m) => /probe on/.test(m)), 'one line in redline.log');
     ok(/NAV: \d+ updates, last intersection/.test(p.status()), 'status: ' + p.status());
     // no signals (the preview): nothing breaks

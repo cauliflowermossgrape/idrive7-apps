@@ -10,7 +10,10 @@
  * Written to its own file, redline-nav.log beside redline.log (512 KiB, two files), so a long route can't push
  * the HUD's lines out of redline.log. Lines:
  *   nav: <source> <field> = <json>      every change of a field (the distance alone at most every 5 s)
- *   nav: shape <kind>: <key paths>      once per kind of manoeuvre: every key it has (to find lane data)
+ *   nav: shape <kind>: <key paths>      once per kind of manoeuvre: every key it has
+ * Lanes: Guidance.currentLaneGuiding and ProjectedModeGuiding.currentLaneGuiding (rows of lanes: the arrow to follow,
+ * the other arrows, highlighted, bus / HOV / toll, markers, the recommended lane, the car's lane). Road names
+ * (currentRoad) are not read, so a log shared doesn't say where the car drove.
  *   nav: <source> available | not available | error ...
  * Keys that look like coordinates are dropped. Never throws: everything is caught and logged.
  */
@@ -19,7 +22,10 @@ const path = require('path');
 
 const SOURCES = [
     { name: 'guidance', iface: 'de.bmw.infotainment.navigation.guiding.Guidance', inst: 'Main_Instance',
-        fields: ['guidanceState', 'guidingProvider', 'conclusiveDart'] },
+        fields: ['guidanceState', 'guidingProvider', 'conclusiveDart', 'currentLaneGuiding', 'nextIntersection'] },
+    // where CarPlay / Android Auto hand BMW their lanes (read only; the car's catalog has a getter and a notifier)
+    { name: 'phone', iface: 'de.bmw.infotainment.navigation.projectedmodeguiding.ProjectedModeGuiding', inst: 'Main_Instance',
+        fields: ['currentLaneGuiding'] },
     { name: 'carplay', iface: 'de.bmw.infotainment.a4a.carplay.CarPlayManager', inst: 'CarPlayManagerInst1',
         fields: ['projectedGuidanceActive', 'projectedGuidanceMetadataAvailable'] },
     { name: 'androidauto', iface: 'de.bmw.infotainment.sdi.aap.androidautoprojectedmanager.AndroidAutoProjectedManager', inst: 'AndroidAutoProjectedManagerInst1',

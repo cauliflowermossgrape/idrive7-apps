@@ -2,7 +2,7 @@
   "id": "redline",
   "title": "Redline",
   "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; HUD by @biscotit",
-  "version": "1.16.3",
+  "version": "1.16.4",
   "vendor": "custom",
   "loggingId": "OA97",
   "iconGlyph": "rpm",
@@ -60,7 +60,14 @@
       "_instances": "Main_Instance",
       "guidanceState": "rs",
       "guidingProvider": "rs",
-      "conclusiveDart": "rs"
+      "conclusiveDart": "rs",
+      "currentLaneGuiding": "rs",
+      "nextIntersection": "rs"
+    },
+    "de.bmw.infotainment.navigation.projectedmodeguiding.ProjectedModeGuiding": {
+      "_optional": "the navigation probe's phone lane lines; nothing else uses it",
+      "_instances": "Main_Instance",
+      "currentLaneGuiding": "rs"
     },
     "de.bmw.infotainment.a4a.carplay.CarPlayManager": {
       "_optional": "the navigation probe's CarPlay lines; nothing else uses it",
