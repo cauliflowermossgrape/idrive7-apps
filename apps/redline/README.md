@@ -23,6 +23,8 @@ cars with a HUD, but nobody has checked yet.
 
 ## Head-up display
 
+The HUD output is by [@biscotit](https://github.com/biscotit).
+
 ### What you need
 
 - **cluster-render**, installed from the MGU Store (Store page, *Cluster renderer*, from the
