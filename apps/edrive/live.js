@@ -38,6 +38,10 @@ const IDLE_KW = 0.3;              // below this either way the pack is idle
 const SHOWN_MS = 3000;            // the screen counts as shown when drawn this recently
 const POWER_S = 0.1;              // power read while shown: as fast as the car answers
 const BG_POWER_S = 2;             // power read in the background (drive totals) at most this often
+/* Another app showing the battery's power or charge (Cluster functions' HUD / cluster panel) asks for it here:
+ * { t, power, soc }, renewed each second while it shows them. While fresh, the power is read as fast as while
+ * shown, and the charge with the slow reads, with the app closed too. */
+const WANTED = '/tmp/mgu-edrive-wanted.json', WANTED_FRESH_MS = 3000;
 const TRACE_S = 120;              // power trace on the Battery page
 const SEAT_KW = [0, 0.04, 0.07, 0.1];   // seat heating per level 0..3 (estimate)
 const WHEEL_KW = 0.06;                  // steering-wheel heating (estimate)
@@ -169,6 +173,16 @@ module.exports = function live(ctx, sh) {
     const drawn = () => { const opened = Date.now() - lastDrawT > 5000; lastDrawT = Date.now(); if (opened) touched(); };
     // the app's screen, or its home-screen widget (only while driving): either one gets the fast power reads
     const shown = () => inUse() && (Date.now() - lastDrawT < SHOWN_MS || (!!(ctx.widget && ctx.widget.active()) && driving()));
+    // what another app asks for (WANTED), looked at no more than twice a second
+    let wantedT = 0, wantedV = {};
+    const wanted = () => {
+        const now = Date.now();
+        if (now - wantedT > 500) {
+            wantedT = now;
+            try { const w = JSON.parse(fs.readFileSync(WANTED, 'utf8')); wantedV = w && now - w.t < WANTED_FRESH_MS ? w : {}; } catch (e) { wantedV = {}; }
+        }
+        return wantedV;
+    };
 
     /* ---------- power: fast reads, drive totals, traces ---------- */
     const trip = { out: 0, regen: 0, charged: 0, climate: 0, peakOut: 0, peakIn: 0, since: Date.now() };
@@ -210,6 +224,7 @@ module.exports = function live(ctx, sh) {
         live.kw = kw; live.kwT = now;
         push(trace, TRACE_S, kw);
         learnBaseline(kw, now);
+        if (sh.onPower) sh.onPower();
     }
     // how fast power is really read while shown (logged every 30 s): reads, time per read, time queued
     const perf = { n: 0, ms: 0, wait: 0, maxWait: 0, t: Date.now() };
@@ -262,7 +277,7 @@ module.exports = function live(ctx, sh) {
     let powerTimer = null;
     function schedulePower() {
         clearTimeout(powerTimer);
-        const s = shown() ? POWER_S : Math.max(BG_POWER_S, POWER_S);
+        const s = shown() || wanted().power ? POWER_S : Math.max(BG_POWER_S, POWER_S);
         // 0.1 s: as fast as the battery unit answers (one read waits for the last)
         powerTimer = setTimeout(() => readPower().then(schedulePower, schedulePower), Math.max(60, s * 1000 - (s <= 0.1 ? 1000 : 0)));
     }
@@ -277,8 +292,10 @@ module.exports = function live(ctx, sh) {
     let pageDrawT = 0;
     const pageShown = () => Date.now() - pageDrawT < SHOWN_MS;
     async function readSlow() {
-        if (!diag.available || !shown()) return;
+        const asked = !shown() && !!wanted().soc;          // only the charge, for another app
+        if (!diag.available || !(shown() || asked)) return;
         for (const name of SLOW) {
+            if (asked && name !== 'soc') continue;
             if (!(cfg.slow[name] || []).length || Date.now() < (slowSkipUntil[name] || 0)) continue;
             if (!pageShown() && name !== 'soc' && name !== 'limits') continue;
             // each try is its own turn on the link, so a power read can go between them
