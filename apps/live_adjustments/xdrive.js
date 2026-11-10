@@ -24,7 +24,8 @@
  *   write : 2E DB 2F 00   -> 6E DB 2F         (xDrive off, VIP)
  *   read  : 22 DB 44      -> 62 DB 44 01 | 00 (STATUS_LMV_FUNKTION_QDM, logged only)
  * sent with the engine running / the car READY, stationary in P; on an ICE G05 (VIP 0F2520) with the
- * engine OFF and the ignition on instead (VIP_ENGINE_OFF: running, it answers NRC 33). Issue #52: the G05 xDrive45e has
+ * engine OFF and the ignition on instead (VIP_ENGINE_OFF: running, it answers NRC 33; the G05 xDrive45e, also
+ * VIP 0F2520, took it that way too in diagnostic mode, issue #52). Issue #52: the G05 xDrive45e has
  * IB_G05 (0F2500) at 0x29 - it took 2E DB E1 00 with the ignition on but nothing changed, and
  * DBE1 read 0 even in stock AWD - so it goes the VIP way. DB44 read 0 in both modes on the G22, so
  * on this path the mode is not derived from it: the front-axle torque shows the effect.
@@ -91,7 +92,7 @@ const VIP_UNITS = { '0F2520': 'VIP_G05', '0F2530': 'VIP_G05', '0F2860': 'VIP_G30
 // VIPs that take the job with the engine stopped and the ignition on (as the DSC's DBE1), and answer NRC 33 while
 // it runs: 0F2520 on an ICE G05 (diesel X5, IB_G05 0F2500, LMV 0F2180), measured: engine running 7F 2E 33 every
 // time; engine off, ignition on (state 7), P, stationary: accepted, xDrive to RWD, front-axle torque ~0, back
-// after an ignition cycle
+// after an ignition cycle. The G05 xDrive45e has the same VIP (0F2520) and took it the same way (issue #52)
 const VIP_ENGINE_OFF = ['0F2520'];
 const LMV_VARIANTS = {                  // G-series transfer cases by SGBD index
     '0F2180': 'LMV-G ATC13',
@@ -132,7 +133,9 @@ const sgbdIndex = (data) => data.map(hex2).join('').replace(/^0+(?=.{6})/, '');
 const NRC_TEXT = {
     0x22: 'conditions not met · ignition on, engine off, P, parking brake on, car stationary',
     0x31: 'not supported by this DSC',
-    0x33: 'refused (security access) · check the conditions above',
+    // NRC 33 with the conditions met: on a G26 (DSC_G20 0F2510) and a G20 330e the write went through only in
+    // diagnostic mode (Start pressed three times without the brake; issues #63, #52)
+    0x33: 'refused (security access) · try diagnostic mode: press Start 3 times without the brake, then again',
     0x7E: 'not allowed even in the extended diagnostic session',
     0x7F: 'not allowed even in the extended diagnostic session',
     0x13: 'not supported by this DSC',
@@ -536,7 +539,7 @@ class XDriveControl {
                 // a VIP that wants a security unlock (G05 xDrive45e, issue #52): this app does no security access
                 // VIP 0F2520 (ICE G05): NRC 33 means the engine runs - it takes the job with the engine off
                 this.note = name + ' refused: ' + (vip && r[2] === 0x33 && this.vipEngineOff() ? 'the engine is running · switch it off, keep the ignition on, then try again'
-                    : vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
+                    : vip && r[2] === 0x33 ? 'security access · try diagnostic mode (Start 3 times, no brake); else this VIP needs an unlock'
                     : NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
                 this.noteType = 'warn';
             } else {
