@@ -18,7 +18,7 @@ const ROOT = TH.ROOT;
 
 // a stand-in cluster-render: ready at once; records layers and pixels
 let cr = null;
-TH.hookKit({ clusterRender: TH.fakeClusterRender({ onCreate: (c) => { cr = c; } }) });
+TH.hookKit({ clusterRender: TH.fakeClusterRender({ set: 'merge', onCreate: (c) => { cr = c; } }) });
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
 const HudNav = require(path.join(ROOT, 'apps', 'redline', 'hud-nav'));
 const def = TH.redlineDefaults().def;
@@ -80,6 +80,17 @@ const log = { info() {}, warn() {}, error() {} };
     ok(!src.knock.on && src.electrical.on && JSON.stringify(src.electrical.want) === '{}', "Comfort, Don't show: no reads, the electrical reader only for its hybrid look (" + JSON.stringify(src.electrical.want) + ')');
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('image').length === 1, 'back in Sport: shown again');
+    // Comfort's own size and place: the tach moves there when the mode is Comfort, back when it's Sport
+    Hud.setComfortMode(settings, 'own');
+    const cv = Hud.profileView(settings, 'comfort');
+    cv.set('hudSize', 70); cv.set('hudX', 120); cv.set('hudY', 40);
+    drive = 'comfort'; await sleep(250);
+    const small = Object.assign({}, cr.layers[cr.of('image')[0]] || {}), want = Hud.placeOf(cv);
+    ok(small.w === 280 && small.x === want.x && small.y === want.y, 'Comfort, its own place: the tach small in the corner (' + [small.x, small.y, small.w, small.h] + ')');
+    drive = 'sport'; await sleep(250);
+    const big = cr.layers[cr.of('image')[0]] || {};
+    ok(big.w === 400 && big.x !== small.x, 'back in Sport: Sport\'s own size and place (' + [big.x, big.y, big.w, big.h] + ')');
+    Hud.setComfortMode(settings, 'same'); await sleep(150);
     ok(cr.effects === 0, 'no shader made in the whole run (' + cr.effects + ')');
 
     // the knock warning: the reader runs while the HUD shows (warning on by default); an event shows KNOCK

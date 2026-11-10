@@ -231,7 +231,9 @@ const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hud
     'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
     'hudShowTyres', 'hudShowFuel', 'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvBar', 'hudShowHvTemp', 'hudShowHvVolt',
-    'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
+    'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake',
+    // size and place: a setup of its own can sit elsewhere (2026-11-10: a small one in a corner for Comfort)
+    'hudSize', 'hudX', 'hudY'];
 /*
  * The setups besides Sport: Comfort (Comfort / Eco Pro, Adaptive) and, on a car known to be a plug-in hybrid
  * (hudHybridSeen), Hybrid (its Hybrid, Electric and battery modes; 2026-11-10: a hybrid's everyday mode, where its
@@ -686,7 +688,15 @@ function start(ctx, src) {
     const num = (k, dflt) => { const v = Number(settings.get(k)); return isFinite(v) ? v : dflt; };
     const leadMs = () => { const v = num('hudLead', -1); return v < 0 ? learnedLead : v; };
 
-    const rect = () => placeOf(settings);
+    /**
+     * The settings the HUD's place comes from: the driving mode's setup (its own size and place when it has its own),
+     * the one being played on "Play on HUD".
+     */
+    const placeView = () => profileView(settings, Date.now() < demoUntil ? playProfile : profileOf(src.driveMode ? src.driveMode() : null, settings));
+    const rect = () => placeOf(placeView());
+    // where the layers were last put: a change of driving mode to a setup placed elsewhere moves them (tick)
+    let placedKey = '';
+    const rectKey = (r) => [r.x, r.y, r.w, r.h].join(',');
 
     /*
      * The directions' picture (hud-nav.js): its own image layer in the bottom right corner, made while there is a turn to show,
@@ -722,7 +732,7 @@ function start(ctx, src) {
         if (!m && !tv) { dropNav(); return; }
         if (!navLayer) {
             if (monoMs() - navFailedAt < NAV_RETRY_MS) return;
-            const r = navPlaceOf(settings);
+            const r = navPlaceOf(placeView());
             navLayer = cr.image({ target: 'hud', klass: 'overlay', z: 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: HudNav.NW, ih: HudNav.NH, fps: 5, sampling: 'bilinear' });
             if (!navLayer) { if (!navRefusedLogged) { navRefusedLogged = true; log.warn('hud: directions layer refused by the client'); } return; }
             navRefusedLogged = false;
@@ -805,7 +815,7 @@ function start(ctx, src) {
         // widget's sample there when the directions are off and the widget isn't (on a car that sends tyres)
         const tw = HudTyres.widgetOf(settings), tyresOn = tw.show !== 'off' && settings.get('hudTyresSeen') === true;
         if (navModeOf(settings) !== 'off' || tyresOn) {
-            const nr = navPlaceOf(settings);
+            const nr = navPlaceOf(placeView());
             cv.strokeRoundRect(nr.x, nr.y, nr.w, nr.h, 6, 1, withAlpha(CYAN, 0.6));
             if (nr.w === HudNav.NW) {
                 const t = new Canvas(HudNav.NW, HudNav.NH);
@@ -1003,6 +1013,15 @@ function start(ctx, src) {
             if (hiddenLogged) { hiddenLogged = false; log.info('hud: back on'); }
         }
         if (!layer) return;
+        // the driving mode's setup sits elsewhere (its own size and place): the layers move there
+        if (shown === 'tach') {
+            const pr = rect();
+            if (rectKey(pr) !== placedKey) {
+                cr.set(layer, pr); placedKey = rectKey(pr);
+                if (navLayer) cr.set(navLayer, navPlaceOf(placeView()));
+                log.info('hud: moved to ' + pr.x + ',' + pr.y + ' ' + pr.w + 'x' + pr.h + ' (the driving mode\'s own place)');
+            }
+        }
         // nothing to draw while the HUD isn't showing (behind BMW's content, disabled, unavailable):
         // the first frame after it is sent whole. No target event yet: draw (it may never come).
         if (paused()) {
@@ -1065,12 +1084,13 @@ function start(ctx, src) {
         // restarted the cluster on the car (1.16.1; README "HUD drawing")
         layer = cr.image({ target: 'hud', klass: 'overlay', z: 0, x: r.x, y: r.y, w: r.w, h: r.h, iw: IW, ih: IH, fps: FPS_MAX, sampling: 'bilinear' });
         if (!layer) { log.warn('hud: tach layer refused by the client'); return; }
+        placedKey = rectKey(r);
         cur = new Canvas(IW, IH); prev = new Canvas(IW, IH); first = true; lastKey = '';
     }
 
     const showTach = safe('tach', () => {
         const r = rect();
-        if (shown === 'tach') { if (layer) cr.set(layer, r); if (navLayer) cr.set(navLayer, navPlaceOf(settings)); return; }
+        if (shown === 'tach') { if (layer) { cr.set(layer, r); placedKey = rectKey(r); } if (navLayer) cr.set(navLayer, navPlaceOf(placeView())); return; }
         dropLayer();
         // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
         const hidden = calm(Date.now() < demoUntil) === 'hide';

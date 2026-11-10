@@ -207,9 +207,13 @@ ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'hide') === '
     ok(Hud.optsFrom(cf).torque === true, 'profiles: Comfort own starts as a copy of Sport (torque readout kept)');
     sp.set('hudShowTorque', false);
     ok(Hud.optsFrom(cf).torque === true && Hud.optsFrom(sp).torque === false, 'profiles: after that, Sport changes stay in Sport');
-    // shared keys (place, units, light colours) are one for both, whichever profile changes them
-    cf.set('hudSize', 120);
-    ok(st.get('hudSize') === 120 && !('hudSize' in st.get('hudComfortSetup')), 'profiles: size is shared');
+    // shared keys (units, light colours) are one for both, whichever profile changes them
+    cf.set('hudTempUnit', 'f');
+    ok(st.get('hudTempUnit') === 'f' && !('hudTempUnit' in st.get('hudComfortSetup')), 'profiles: units are shared');
+    // size and place are each setup's own (2026-11-10: a small HUD in a corner for Comfort)
+    cf.set('hudSize', 70); cf.set('hudX', 120); cf.set('hudY', 40);
+    const pc = Hud.placeOf(cf), ps = Hud.placeOf(sp);
+    ok(st.get('hudComfortSetup').hudSize === 70 && pc.w === 280 && pc.x > ps.x && pc.y > ps.y && ps.w === 400, 'profiles: Comfort\'s own size and place (' + JSON.stringify(pc) + '), Sport\'s kept (' + JSON.stringify(ps) + ')');
     // the driving mode picks the profile; Sport+ and an unknown mode use Sport
     ok(Hud.optsFrom(st, 'comfort').style === 'dial' && Hud.optsFrom(st, 'eco').style === 'dial' && Hud.optsFrom(st, 'sport').style === 'arc' && Hud.profileOf(null) === 'sport', 'profiles: the mode picks one');
     // Same as Sport again: Comfort's setup is kept (back with Its own), Sport shows

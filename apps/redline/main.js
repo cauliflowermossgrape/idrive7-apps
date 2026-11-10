@@ -637,7 +637,7 @@ mgu.run({
             const status = missing ? 'The HUD needs cluster-render: install Cluster renderer from the MGU Store'
                 : !on ? 'Show on HUD is off (Settings)' : playing ? 'Playing on the HUD...' : hud && hud.status() === 'HUD: on' && !still ? 'Stop the car to play it on the HUD'
                     : comfort && cmode === 'same' ? modeName + ' uses the Sport HUD. Change anything here to give it its own.'
-                        : comfort && cmode === 'own' ? 'Changes here only affect ' + modeName + '. Size and place are shared.' : '';
+                        : comfort && cmode === 'own' ? 'Changes here only affect ' + modeName + ', its size and place too.' : '';
             cv.text(status, 40, 348, 15, missing || !on ? t.warn : t.dim, { font: 'bold' });
             // the layouts, small, to tap, the name under each: three rows, a column of three at a time; with more than
             // three columns' worth they scroll sideways (the arrows either side, by touch or the controller) at the
@@ -842,9 +842,10 @@ mgu.run({
         }
         /** Buttons that step a number setting through its "steps" (−1 / +1), with the value between. */
         function stepButtons(cv, t, x, y, key, buttons, fmt) {
-            const it = settings.item(key), steps = (it && it.steps) || [], cur = settings.get(key);
+            // the setup being edited (size and place are each setup's own)
+            const S = studio.P || settings, it = settings.item(key), steps = (it && it.steps) || [], cur = S.get(key);
             const i = Math.max(0, steps.indexOf(cur));
-            const go = (d) => { const j = Math.max(0, Math.min(steps.length - 1, i + d)); settings.set(key, steps[j]); return render(); };
+            const go = (d) => { const j = Math.max(0, Math.min(steps.length - 1, i + d)); S.set(key, steps[j]); return render(); };
             const w0 = G.button(cv, t, x, y, 0, 40, buttons[0][0], () => go(buttons[0][1]), { key: 'studio_step_' + key + '_a', busy: i <= 0 });
             cv.text(fmt(steps.length ? steps[i] : cur), x + (w0 || 120) + 70, y + 27, 18, t.text, { align: 'center', font: 'bold' });
             G.button(cv, t, x + (w0 || 120) + 140, y, 0, 40, buttons[1][0], () => go(buttons[1][1]), { key: 'studio_step_' + key + '_b', busy: i >= steps.length - 1 });

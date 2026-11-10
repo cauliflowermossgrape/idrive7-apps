@@ -200,8 +200,9 @@ as Live Data shows it) picks which one shows.
 - **Hybrid / Electric** (only on a car known to be a plug-in hybrid): its Hybrid, Electric and battery modes, the
   same three choices (*In Hybrid / Electric*), but *Same HUD as Sport* by default: on a hybrid these are the everyday
   modes, where the power bar matters most. Its own tab on HUD looks.
-- Shared by all: size and position, units, the light colours and the downshift
-  arrows (the centre screen uses those too).
+- Each setup of its own also has its own size and position (PLACE on HUD looks, with that mode's tab picked): a
+  small HUD in a corner for Comfort, say, and the full one for Sport. The HUD moves when the driving mode changes.
+- Shared by all: units, the light colours and the downshift arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
   becomes Comfort's own setup without readouts or alerts.
 
