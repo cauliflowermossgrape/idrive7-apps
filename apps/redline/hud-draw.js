@@ -226,9 +226,10 @@ function drawBarMeter(cv, x, w, barH, y, h, bar, P, layer, outline) {
     if (layer !== 'fg') {
         for (let i = 0; i < nl; i++) seg(-stepL * (i + 1), -stepL * i, trackCol);
         for (let i = 0; i < nr; i++) seg(stepR * i, stepR * (i + 1), trackCol);
-        // the zero tick: the bar's slant, 1 px over and under the strip (vector: as far as the outlines reach)
-        const z = X(0), e = outline ? 0.7 : 1, k = sl / h, tw = 0.7;
-        cv.quad([[z + k * e - tw, y - e], [z + k * e + tw, y - e], [z - k * (h + e) + tw, y + h + e], [z - k * (h + e) - tw, y + h + e]], withAlpha(P.text, 0.8));
+        // the zero tick: the bar's slant, bold and full bright, 1 px over and under the strip (the gaps to the bar and
+        // the labels stay 2 px), so it reads at a glance where recovery ends and power starts (2026-11-10)
+        const z = X(0), e = outline ? 0.7 : 1, k = sl / h, tw = 1.4;
+        cv.quad([[z + k * e - tw, y - e], [z + k * e + tw, y - e], [z - k * (h + e) + tw, y + h + e], [z - k * (h + e) - tw, y + h + e]], P.text);
     }
     const v = bar.v;
     if (layer === 'bg' || !isNum(v) || v === 0) return;
@@ -246,7 +247,8 @@ function drawGraphMeter(cv, x, w, y, h, bar, P, layer) {
     const nl = clamp(Math.round(n * -lo / (hi - lo)), 1, n - 1), nr = n - nl, sx = (i) => x + i * (sw + gap);
     if (layer !== 'fg') {
         for (let i = 0; i < n; i++) cv.fillRect(sx(i), y, sw, h, withAlpha(P.text, 0.12));
-        cv.fillRect(sx(nl) - gap, y - 1, gap, h + 2, withAlpha(P.text, 0.7));
+        // the zero: bold and full bright, 1 px over and under the row (the gaps stay 2 px) (2026-11-10)
+        cv.fillRect(sx(nl) - gap - 0.5, y - 1, gap + 1, h + 2, P.text);
     }
     const v = bar.v;
     if (layer === 'bg' || !isNum(v) || v === 0) return;

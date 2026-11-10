@@ -80,7 +80,8 @@ function ringMeter(cv, cx, cy, r0, r1, a0, a1, t0, t1, bar, c, layer) {
     const az = a0 + (a1 - a0) * (-lo) / (hi - lo);
     if (layer !== 'fg') {
         cbox(cv, cx, cy, a0, a1, r0, r1, c.line, 1.1);
-        cv.arc(cx, cy, t0, t1, az - 0.8 * 60 / r1, az + 0.8 * 60 / r1, c.tick);
+        // the zero: bold (about 3 px wide), so it reads at a glance where recovery ends and power starts
+        cv.arc(cx, cy, t0, t1, az - 1.5 * 60 / r1, az + 1.5 * 60 / r1, c.tick);
     }
     if (layer === 'bg' || !isNum(bar.v)) return;
     if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) cv.arc(cx, cy, r0, r1, az - (az - a0) * k, az, c.low); }
@@ -236,7 +237,8 @@ function rampMeter(cv, bar, P, layer) {
     };
     if (layer !== 'fg') {
         quad(A, K, withAlpha(RC.line, 0.6), 1.1); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
-        cv.line(K[0] + RM.slant / 2, K[1] - RM.t - 3, K[0], K[1] + 3, 1.6, RC.line);
+        // the zero at the knee: bold, so it reads at a glance where recovery ends and power starts
+        cv.line(K[0] + RM.slant / 2, K[1] - RM.t - 2, K[0], K[1] + 3, 2.8, RC.line);
     }
     if (layer === 'bg' || !isNum(bar.v)) return;
     const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
