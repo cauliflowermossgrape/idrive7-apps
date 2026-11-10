@@ -493,10 +493,11 @@ function drawPill(cv, f, layer, h) {
     if (meter) pillMeter(cv, meter.bar, P, 'both');
     if (f.chip) ring(cv, PL.gx, PL.gy, PL.r1 + 2, PL.r1 + 30, f.chip, P);
     // (white throughout: the panel itself flashes red)
-    if (o.gear) cv.text(h.gearText(d), PL.gx, PL.gy + 19, 52, P.text, { align: 'center', font: h.gearFont(o) });
+    if (o.gear) cv.text(h.gearText(d), PL.gx, PL.gy + 15, 52, P.text, { align: 'center', font: h.gearFont(o) });
     // the gearbox mode under the ring's right side, clear of the dots
     if (f.mode && o.gear) cv.text(f.mode, PL.gx + 38, PL.gy + 44, 14, withAlpha(P.text, 0.85), { font: 'bold' });
-    h.drawDown(cv, PL.gx, PL.gy + 30, f.down || 0, 0.7, P.arrow);
+    // the downshift arrows inside the ring, under the gear (clear of the ring and of the panel's edge)
+    h.drawDown(cv, PL.gx, PL.gy + 21, f.down || 0, 0.6, P.arrow);
     // the readouts: a small label over big digits, three slots; the shift grade takes them over
     if (f.chip) { grade(cv, (PL.vx + PL.dx1) / 2, PL.vy + PL.vh, f.chip, P, 28); return; }
     const items = (f.readouts || []).filter((it) => !it.bar);
