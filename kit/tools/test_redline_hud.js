@@ -7,37 +7,34 @@
 // - the readouts row: units, the four-item cap (a cold / hot warning keeps its place), missing data;
 // - the shift cue: counts in, flashes before the point by the lead, holds, ends on the upshift, a
 //   lift or the drop after a shift without a gear signal, and flags the limiter;
-// - the scripted demo drive stays in range; settings in the code exist in app.json and vice versa.
+// - the scripted demo drive stays in range; settings in the code exist in app.json and vice versa;
+// - 2.0.1's tyres: Redline's own reading, the readout and its 2x2 block, the tyre widget with every part, unit and label size;
+// - 2.0's electrical readouts: a petrol / diesel car never shows the hybrid ones; electrical.js reads what eDrive reads.
 
 const fs = require('fs');
 const path = require('path');
-const Module = require('module');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const ROOT = TH.ROOT;
 const APP = path.join(ROOT, 'apps', 'redline');
 
 // the app requires the kit as './kit/...' (where the build puts it)
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit();
 const Hud = require(path.join(APP, 'hud'));
 const Draw = require(path.join(APP, 'hud-draw'));
 const { Canvas } = require(path.join(ROOT, 'kit', 'runtime', 'canvas'));
 
-let fails = 0, checks = 0;
-const ok = (cond, msg) => { checks++; if (!cond) { fails++; console.log('FAIL ' + msg); } };
+const tally = TH.counter(), ok = tally.ok;
 
 /* ---------- settings: every key the HUD code reads is declared, with the default it expects ---------- */
 const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
 const declared = {};
 spec.settings.forEach((s) => { if (s.key) declared[s.key] = s; });
-const src = ['hud.js', 'hud-draw.js', 'main.js'].map((f) => fs.readFileSync(path.join(APP, f), 'utf8')).join('\n');
+const src = ['hud.js', 'hud-draw.js', 'main.js', 'hud-tyres.js', 'tyres.js'].map((f) => fs.readFileSync(path.join(APP, f), 'utf8')).join('\n');
 const used = {};
 src.replace(/settings\.(?:get|set)\('(hud[A-Za-z]*)'/g, (m, k) => { used[k] = true; return m; });
 src.replace(/on\('(hud[A-Za-z]*)'\)/g, (m, k) => { used[k] = true; return m; });
 Object.keys(used).forEach((k) => ok(declared[k], 'setting ' + k + ' is used but not in app.json'));
-Object.keys(declared).filter((k) => /^hud/.test(k)).forEach((k) => ok(used[k] || k === 'hudAll' || /hudLead|hudFps|hudSize|hudX|hudY|hudUnlit|hudStyle|hudPalette|hudChip|hudPeak|hudShake|hudLightStyle|hudTempsMode|hudTempUnit|hudBoostUnit|hudTorqueUnit|hudPowerUnit/.test(k) && src.indexOf("'" + k + "'") >= 0,
+Object.keys(declared).filter((k) => /^hud/.test(k)).forEach((k) => ok(used[k] || k === 'hudAll' || /hudLead|hudFps|hudSize|hudX|hudY|hudUnlit|hudStyle|hudPalette|hudChip|hudPeak|hudShake|hudLightStyle|hudTempsMode|hudTempUnit|hudBoostUnit|hudTorqueUnit|hudPowerUnit|hudHybridMode|hudHybridSetup/.test(k) && src.indexOf("'" + k + "'") >= 0,
     'setting ' + k + ' is in app.json but never read'));
 
 const settingsOf = (over) => ({
@@ -146,11 +143,35 @@ ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
 
 /* ---------- driving mode (Comfort / Eco Pro) ---------- */
 [[1, 'sport'], [2, 'sport'], [3, 'sport'], [4, 'comfort'], [5, 'comfort'], [6, 'comfort'], [7, 'eco'], [9, 'eco'], [10, 'comfort'], [0, null], [63, null],
-    [15, 'sport'], [23, 'sport'], [28, 'sport'], [17, 'comfort'], [18, 'comfort'], [20, 'comfort'], [21, 'comfort'],
+    [15, 'sport'], [23, 'sport'], [28, 'sport'], [17, 'hybrid'], [18, 'hybrid'], [20, 'hybrid'], [21, 'hybrid'], [22, 'hybrid'],
     ['SPORT_DYNAMIC', 'sport'], ['SPORT_EXPERT', 'sport'], ['ECO_PRO_EFFICIENT', 'eco'], ['COMFORT', 'comfort'], ['ADAPTIVE', 'comfort'],
-    ['PHEV_SPORT_STANDARD', 'sport'], ['BOOST', 'sport'], ['PHEV_HYBRID_STANDARD', 'comfort'], ['PHEV_HYBRID_ECO', 'comfort'],
-    ['PHEV_ELECTRIC_STANDARD', 'comfort'], [null, null], [undefined, null], ['', null]]
+    ['PHEV_SPORT_STANDARD', 'sport'], ['BOOST', 'sport'], ['PHEV_HYBRID_STANDARD', 'hybrid'], ['PHEV_HYBRID_ECO', 'hybrid'],
+    ['PHEV_ELECTRIC_STANDARD', 'hybrid'], [null, null], [undefined, null], ['', null]]
     .forEach((c) => ok(Hud.driveModeOf(c[0]) === c[1], 'driving mode ' + JSON.stringify(c[0]) + ' -> ' + Hud.driveModeOf(c[0]) + ', not ' + c[1]));
+
+/* ---------- a plug-in hybrid's Hybrid / Electric modes: their own setup, once the car is known to be a hybrid ---------- */
+{
+    const mk = (over) => { const v = Object.assign({ hudComfortMode: 'hide', hudHybridMode: 'same', hudStyle: 'arc', hudComfortSetup: {}, hudHybridSetup: {} }, over || {});
+        return { v: v, get: (k) => v[k], set: (k, x) => { v[k] = x; } }; };
+    const pet = mk(), phev = mk({ hudHybridSeen: true });
+    ok(Hud.profileOf('hybrid', pet) === 'comfort' && Hud.profileOf('hybrid', phev) === 'hybrid' && Hud.profileOf('hybrid') === 'comfort',
+        'hybrid modes: Comfort\'s setup until the car is known to be a hybrid, then their own');
+    ok(Hud.profileOf('comfort', phev) === 'comfort' && Hud.profileOf('sport', phev) === 'sport' && Hud.profileOf('eco', phev) === 'comfort', 'the other modes keep their setups on a hybrid');
+    // defaults: Comfort hidden (main), Hybrid follows Sport
+    ok(Hud.calmFor('hybrid', Hud.setupMode(phev, Hud.profileOf('hybrid', phev))) === 'all' && Hud.calmFor('hybrid', Hud.setupMode(pet, Hud.profileOf('hybrid', pet))) === 'hide',
+        'by default a hybrid shows Redline in its Hybrid mode (Same as Sport); before it is known, hidden as Comfort');
+    ok(Hud.optsFrom(phev, 'hybrid').style === 'arc', 'Hybrid, same as Sport: Sport\'s layout');
+    // its own setup: starts as Sport's, changed apart from Sport and Comfort
+    Hud.profileView(phev, 'hybrid').set('hudStyle', 'ramp');
+    ok(phev.v.hudHybridMode === 'own' && phev.v.hudHybridSetup.hudStyle === 'ramp' && phev.v.hudStyle === 'arc' && Object.keys(phev.v.hudComfortSetup).length === 0,
+        'a change on the Hybrid tab gives Hybrid its own setup, Sport and Comfort untouched');
+    ok(Hud.optsFrom(phev, 'hybrid').style === 'ramp' && Hud.optsFrom(phev, 'sport').style === 'arc' && Hud.optsFrom(phev, 'comfort').style === 'arc', 'each mode draws its own setup');
+    Hud.setSetupMode(phev, 'hybrid', 'hide');
+    ok(Hud.calmFor('hybrid', Hud.setupMode(phev, 'hybrid')) === 'hide' && Hud.profileView(phev, 'hybrid').get('hudStyle') === 'ramp', "Hybrid on Don't show: hidden, its setup kept");
+    const fresh = mk({ hudHybridSeen: true });
+    Hud.setSetupMode(fresh, 'hybrid', 'own');
+    ok(fresh.v.hudHybridSetup.hudStyle === 'arc', 'Hybrid made its own: starts as a copy of Sport');
+}
 ok(Hud.calmFor('sport', 'hide') === 'all' && Hud.calmFor(null, 'hide') === 'all', 'Sport and an unknown mode show everything');
 ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'hide') === 'hide' && Hud.calmFor('comfort', 'own') === 'all' && Hud.calmFor('comfort', undefined) === 'all', 'Comfort / Eco Pro: hidden only when set so');
 
@@ -223,6 +244,22 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     if (!(d.rpm >= 0 && d.rpm <= 8000 && d.gear >= 1 && d.gear <= 8 && d.pedal >= 0 && d.pedal <= 100)) { ok(false, 'demo out of range at ' + t + ': ' + JSON.stringify(d)); break; }
 }
 
+/* ---------- one helper writes the learned files whole (files.js writeAtomic), no copies of it ---------- */
+{
+    const { writeAtomic } = require(path.join(APP, 'files'));
+    const os = require('os'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-files-')), f = path.join(dir, 'x.json');
+    writeAtomic(f, '{"a":1}');
+    ok(fs.readFileSync(f, 'utf8') === '{"a":1}' && !fs.existsSync(f + '.tmp'), 'writeAtomic: the file written, no temp file left');
+    const said = [];
+    writeAtomic(path.join(dir, 'no', 'y.json'), 'x', { warn: (m) => said.push(m) }, 'limiter save');
+    ok(said.length === 1 && /^limiter save: /.test(said[0]), 'writeAtomic: a failure logged, not thrown (' + said[0] + ')');
+    fs.unlinkSync(f); fs.rmdirSync(dir);
+    fs.readdirSync(APP).filter((n) => /\.js$/.test(n) && n !== 'files.js').forEach((n) => {
+        const s = fs.readFileSync(path.join(APP, n), 'utf8');
+        ok(!/writeFileSync\([^;]*\.tmp/.test(s) && !/function writeAtomic/.test(s), n + ': its own temp-file write (use files.js writeAtomic)');
+    });
+}
+
 /* ---------- the HUD looks page has every HUD setting (Settings shows them only with "All HUD options here") ---------- */
 {
     const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
@@ -231,7 +268,8 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     page.replace(/'([a-zA-Z]+)'/g, (m, k) => { onPage[k] = true; return m; });
     spec.settings.filter((s) => /^HUD: /.test(s.group || '') || s.key === 'hudStyle').forEach((s) => ok(onPage[s.key], 'setting ' + s.key + ' (' + s.group + ') is not on the HUD looks page'));
     // and Settings' top level is short: the HUD's details are behind "All HUD options here"
-    const top = spec.settings.filter((s) => !s.group && !s.hidden);
+    // (a row only some cars get, as In Hybrid / Electric on a plug-in hybrid, isn't counted)
+    const top = spec.settings.filter((s) => !s.group && !s.hidden && !(s.when && (s.when.hudHybridSeen || s.when.hudTyresSeen)));
     ok(top.length <= 6, 'Settings top level has ' + top.length + ' rows besides the groups: ' + top.map((s) => s.key).join(', '));
     spec.settings.filter((s) => /^HUD: /.test(s.group || '')).forEach((s) => ok(s.when && s.when.hudAll && s.when.hudAll[0] === true, s.key + ' shows in Settings without "All HUD options here"'));
 }
@@ -335,6 +373,9 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     const at = (o) => Hud.placeOf(settingsOf(o));
     ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');
     ok(Hud.outsideGlass(at({ hudSize: 140 })).right === 75 && Hud.outsideGlass(at({ hudY: -60 })).top === 20, 'place: off the glass, per side');
+    // Minimal's dots can go up over BMW's own ramp (2026-11-10, an X3 M40i): Up reaches -120, and the empty top of its
+    // picture isn't counted as off the glass
+    ok(at({ hudY: -120 }).y === 20 && Hud.outsideGlass(at({ hudY: -60 }), 'minimal').top === 11 && Hud.outsideGlass(at({ hudY: -40 }), 'minimal').top === undefined, 'place: Minimal up to -120, only its empty top (above the D / S / M letter) not counted off the glass');
     // reaction time: a slow climb takes the lead as asked; a fast one only the 800 rpm it really had
     ok(Hud.reactionMs({ rate: 1000, target: 6000, lead: 300 }, 6000) === 300, 'reaction: on time at 1000 rpm/s');
     ok(Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6000) === 200 && Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6200) === 250, 'reaction: capped lead on a fast climb');
@@ -356,7 +397,484 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         now += 15000; return poll(); }).then(() => { now += 6000; return poll(); }).then(() => {
         ok(g.value() !== 70, 'gearbox: 21 s after its last reading (two failed polls since) the old 70 is not served');
         Date.now = realNow;
-        console.log(fails ? fails + ' of ' + checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + checks + ').');
-        process.exit(fails ? 1 : 0);
+        return electricalChecks();
+    }).then(() => {
+        console.log(tally.fails ? tally.fails + ' of ' + tally.checks + ' Redline HUD checks failed' : 'Redline HUD checks passed (' + tally.checks + ').');
+        process.exit(tally.fails ? 1 : 0);
+    }).catch((e) => { console.log('FAIL electrical checks threw: ' + (e && e.stack || e)); process.exit(1); });
+}
+
+/* ---------- 2.0: the electrical readouts (12 V on every car, the hybrid battery only on a hybrid) ---------- */
+// x as electrical.js gives it on a plug-in hybrid
+const EX = { soc12: 82, v12: 14.23, hvSoc: 64.4, hvKw: -18.4, hvTemp: 27, hvVolt: 352.4 };
+const ALL_ON = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false,
+    hudShowBattSoc: true, hudShowBattVolt: true, hudShowHvSoc: true, hudShowHvPower: true, hudShowHvTemp: true, hudShowHvVolt: true };
+const labels = (items) => items.map((r) => r.label).join(',');
+{
+    // off by default, on every car
+    ['soc12', 'volt12', 'hvSoc', 'hvPower', 'hvTemp', 'hvVolt'].forEach((k) => ok(optsDefault[k] === false, 'defaults: ' + k + ' readout is off'));
+    // a petrol / diesel car: every switch on, hybrid values even arriving - only the 12 V shows
+    const petrol = Hud.optsFrom(settingsOf(ALL_ON));
+    ok(!petrol.hvSoc && !petrol.hvPower && !petrol.hvTemp && !petrol.hvVolt && petrol.soc12 && petrol.volt12, 'petrol car: hybrid switches stay off without hudHybridSeen');
+    const it = Hud.electricalItems(petrol, EX);
+    ok(labels(it) === '12V CHARGE,12V', 'petrol car: only the 12 V readouts (' + labels(it) + ')');
+    ok(labels(Hud.readoutsFor({ rpm: 3000 }, null, null, { rpm: 6000, cold: false }, petrol, EX)) === '12V CHARGE,12V', 'petrol car: readouts row has no hybrid item');
+    ok(Hud.electricalWants(petrol).hv === false && Hud.electricalWants(petrol).v12 === true, 'petrol car: no hybrid battery reads asked for');
+    // a hybrid: every one, in order, formatted
+    const hy = Hud.optsFrom(settingsOf(Object.assign({ hudHybridSeen: true }, ALL_ON)));
+    const all = Hud.electricalItems(hy, EX);
+    ok(labels(all) === '12V CHARGE,12V,HV CHARGE,HV KW,HV TEMP,HV VOLTS', 'hybrid: every electrical readout in order (' + labels(all) + ')');
+    ok(all.map((r) => r.value).join(' ') === '82% 14.2 64% -18 27° 352', 'hybrid: values (' + all.map((r) => r.value).join(' ') + ')');
+    ok(Hud.electricalItems(hy, Object.assign({}, EX, { hvKw: 41.6 }))[3].value === '+42', 'hybrid: power while driving shows +');
+    ok(Hud.electricalItems(Object.assign({}, hy, { fahrenheit: true }), EX)[4].value === '81°', 'hybrid: battery temperature in °F');
+    ok(Hud.readoutsFor({ rpm: 3000 }, null, null, { rpm: 6000, cold: false }, hy, EX).length === Hud.MAX_READOUTS, 'hybrid: the row still holds four');
+    ok(Hud.electricalWants(hy).hv === true, 'hybrid: power / charge readouts ask for the battery unit');
+    // no data, no readout (a hybrid that doesn't send them, or a stale value)
+    ok(Hud.electricalItems(hy, {}).length === 0, 'no data: no electrical readout');
+    // tones: a weak 12 V battery is yellow, then red; overcharging red; a cold pack blue
+    const tone = (x, i) => Hud.electricalItems(hy, Object.assign({}, EX, x))[i].tone;
+    ok(tone({ soc12: 55 }, 0) === 'warm' && tone({ soc12: 30 }, 0) === 'hot' && tone({}, 0) === 'text', '12 V charge tones');
+    ok(tone({ v12: 11.9 }, 1) === 'warm' && tone({ v12: 11.2 }, 1) === 'hot' && tone({ v12: 15.4 }, 1) === 'hot' && tone({ v12: 12.5 }, 1) === 'text', '12 V voltage tones');
+    ok(tone({ hvTemp: 2 }, 4) === 'cold' && tone({ hvTemp: 50 }, 4) === 'hot', 'HV temperature tones');
+    // Comfort's "lights only" clears them; they are profile keys like the other readouts
+    ok(Hud.electricalItems(Hud.calmOpts(hy), EX).length === 0, 'calmOpts: no electrical readouts');
+    ['hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvTemp', 'hudShowHvVolt'].forEach((k) => ok(Hud.PROFILE_KEYS.indexOf(k) >= 0, k + ' is a profile key'));
+    // Settings: the hybrid rows only once the car has a hybrid battery; hudHybridSeen itself never shows
+    spec.settings.filter((s) => /^hudShowHv/.test(s.key)).forEach((s) => ok(s.when && s.when.hudHybridSeen && s.when.hudHybridSeen[0] === true && s.default === false, s.key + ' shows only on a hybrid, off by default'));
+    ok(declared.hudHybridSeen && declared.hudHybridSeen.hidden === true && declared.hudHybridSeen.default === false, 'hudHybridSeen is hidden and false by default');
+    // every new signal interface is optional (a unit without it still installs Redline)
+    ['de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'de.bmw.infotainment.lsc.LSCDataSink'].forEach((i) => ok(spec.signals[i] && spec.signals[i]._optional, i + ' is _optional'));
+    // the electric share isn't shown until its scale is known (eDrive doesn't show it either): only logged raw
+    // (powerlog.js) so a drive can settle it, on an optional interface
+    const kombi = spec.signals['de.bmw.infotainment.KombiIF'];
+    ok(kombi && kombi._optional && Object.keys(kombi).filter((k) => k[0] !== '_').join() === 'statusDisplayElectricalPowerDistribution', 'KombiIF: the power distribution only, optional');
+    ok(!declared.hudShowEShare && !/eShare|ELECTRIC'|PowerDistribution/.test(fs.readFileSync(path.join(APP, 'hud.js'), 'utf8')), 'no electric-share readout');
+    // the recovery / power bar: hybrids only; fuel use on any car (2026-11-10)
+    {
+        const st = (o) => settingsOf(o);
+        const pet = Hud.optsFrom(st({ hudShowHvBar: true })), hyb = Hud.optsFrom(st({ hudShowHvBar: true, hudHybridSeen: true }));
+        ok(!pet.hvBar && hyb.hvBar, 'power bar: never on a petrol / diesel car, on a hybrid when switched on');
+        ok(Hud.electricalWants(hyb).hvKw && Hud.electricalWants(hyb).hv && !Hud.electricalWants(pet).hvKw, 'power bar: the HV kW read only when it shows');
+        const bar = Hud.electricalItems(hyb, { hvKw: -18.4 }).filter((i) => i.bar)[0];
+        ok(bar && bar.label === 'POWER' && bar.value === '-18' && bar.bar.v === -18.4 && bar.bar.lo < 0 && bar.bar.hi > 0 && bar.wide, 'power bar item: signed kW, regen below zero');
+        ok(Hud.electricalItems(Hud.calmOpts(hyb), { hvKw: 10 }).length === 0, 'calmOpts: no power bar');
+        const fo = Object.assign({}, Hud.optsFrom(st({ hudShowFuel: true, hudFuelUnit: 'mpguk' })));
+        const fr = Hud.readoutsFor({}, null, null, null, fo, { fuelLph: 9.6, kmh: 80 }).filter((i) => i.label === 'MPG')[0];
+        ok(fr && fr.value === String(Math.round(282.481 / 12)), 'fuel readout: 9.6 l/h at 80 km/h = 12 l/100 km = 24 mpg (' + (fr && fr.value) + ')');
+        ok(Hud.readoutsFor({}, null, null, null, fo, { fuelLph: null, kmh: 80 }).every((i) => !/MPG|L\//.test(i.label)), 'fuel readout: none without a fuel rate');
+        ok(!Hud.calmOpts(fo).fuel, 'calmOpts: no fuel readout');
+        // the ramp draws the power bar under its band: it takes no place in the list of four
+        const four = Object.assign({}, Hud.optsFrom(st({ hudShowHvBar: true, hudHybridSeen: true, hudShowTorque: true, hudTempsMode: 'always' })));
+        const row = (style) => Hud.readoutsFor({ rpm: 3000, oil: 95, coolant: 90 }, 80, 1.1, null, Object.assign({}, four, { style: style }), { torque: 200, hvKw: -9 });
+        ok(['ramp', 'arc', 'dial', 'standard', 'vector', 'digital', 'vfd'].every((st) => row(st).length === 5 && row(st).some((i) => i.bar)) && row('wings').length === 4, 'the power bar along the gauge, on top of four readouts (Split wings: no meter, it counts as one)');
+        ['hudShowFuel', 'hudShowHvBar'].forEach((k) => ok(Hud.PROFILE_KEYS.indexOf(k) >= 0, k + ' is a profile key'));
+    }
+    ok(spec.signals['de.bmw.infotainment.vehicle.CDS'].statusBattery2 === 'rs', 'CDS.statusBattery2 subscribed');
+    // the HUD looks page: hybrid switches only behind electrical.hybrid()
+    const main = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
+    const el = main.slice(main.indexOf("studio.readouts === 'electric'"), main.indexOf("} else if (studio.panel === 'readouts') {"));
+    ok(/if \(electrical\.hybrid\(\)\)/.test(el) && el.indexOf('hudShowHvSoc') > el.indexOf('electrical.hybrid()'), 'HUD looks: hybrid switches only on a hybrid');
+}
+
+/* ---------- 2.0.1: tyres (Redline's own reading; the readout; the tyre widget in the directions' corner) ---------- */
+{
+    const Tyres = require(path.join(APP, 'tyres'));
+    const HudTyres = require(path.join(APP, 'hud-tyres'));
+    // our own code: nothing of Car Vitals is required or read
+    ['tyres.js', 'hud-tyres.js', 'hud.js', 'hud-draw.js', 'main.js'].forEach((f) => {
+        const src = fs.readFileSync(path.join(APP, f), 'utf8');
+        ok(!/require\([^)]*car_vitals|readFileSync\([^)]*car_vitals|car_vitals\/data|\.\.\/car_vitals/.test(src), f + ': nothing loaded or read from Car Vitals');
+    });
+    ok(spec.signals['de.bmw.infotainment.vehicle.TPMS'] && spec.signals['de.bmw.infotainment.vehicle.TPMS']._optional && spec.signals['de.bmw.infotainment.vehicle.Vehicle']._optional, 'TPMS and Vehicle signals are _optional');
+    ['statusTyrePressure', 'statusTargetTyrePressure', 'statusTyreTemperature'].forEach((k) => ok(spec.signals['de.bmw.infotainment.vehicle.TPMS'][k] === 'rs', 'TPMS.' + k + ' subscribed'));
+
+    // decoding: 0.1 x raw in the car's unit; the unit told from the value until the car says
+    const t = new Tyres();
+    ok(Math.abs(t.pressure(23, [0.5, 6]) - 2.3) < 1e-9, 'pressure: raw 23 = 2.3 bar');
+    ok(Math.abs(t.pressure(2500, [0.5, 6]) - 2.5) < 1e-9, 'pressure: raw 2500 = 250 kPa = 2.5 bar');
+    ok(t.pressure(65532, [0.5, 6]) === null && t.pressure(65535, [0.5, 6]) === null && t.pressure(undefined, [0.5, 6]) === null, 'pressure: 65532 and up = none');
+    ok(t.temperature(99) === 59 && t.temperature(65535) === null, 'temperature: degrees + 40, 65535 = none');
+    const p = new Tyres();
+    ok(Math.abs(p.pressure(360, [0.5, 6]) - 36 / 14.5038) < 1e-9 && p.units.psiSeen, 'pressure: raw 360 = 36 psi (and so Fahrenheit)');
+    ok(Math.abs(p.temperature(140) - (100 - 32) * 5 / 9) < 1e-9, 'temperature: a psi car sends °F (100 °F = 37.8 °C)');
+    const u = new Tyres();
+    u.handlers()['de.bmw.infotainment.vehicle.Vehicle'].statusNewCurrentUnitsStatusExt({ unitOfMeasurementAirPressure: 2, unitOfMeasurementTemperature: 1 });
+    ok(u.units.press === 'KPA' && u.units.temp === 'C', 'the car\'s units read (kPa, °C)');
+    ok(u.pressure(25, [0.5, 6]) === null && Math.abs(u.pressure(2500, [0.5, 6]) - 2.5) < 1e-9, 'the car\'s unit wins over the guess: on a kPa car raw 25 (2.5 kPa) is no tyre pressure, 2500 is 2.5 bar');
+    // the handlers fill value(); nothing sent: null; never throw
+    const h = new Tyres(), H = h.handlers()['de.bmw.infotainment.vehicle.TPMS'];
+    ok(h.value() === null, 'nothing sent: no tyres');
+    H.statusTyrePressure({ actualValuePressureTyreFLH: 24, actualValuePressureTyreFRH: 24, actualValuePressureTyreRLH: 25, actualValuePressureTyreRRH: 21 });
+    H.statusTargetTyrePressure({ targetPressureTyreFLH: 25, targetPressureTyreFRH: 25, targetPressureTyreRLH: 27, targetPressureTyreRRH: 27 });
+    H.statusTyreTemperature({ actualValueTemperatureTyreFLH: 99, actualValueTemperatureTyreFRH: 101, actualValueTemperatureTyreRLH: 109, actualValueTemperatureTyreRRH: 65535 });
+    const v = h.value();
+    ok(v && Math.abs(v.p.RR - 2.1) < 1e-9 && Math.abs(v.tgt.RL - 2.7) < 1e-9 && v.t.FL === 59 && v.t.RR === null, 'handlers: pressures, targets, temperatures per corner (' + JSON.stringify(v) + ')');
+    let threw = false;
+    try { H.statusTyrePressure(null); H.statusTyrePressure({}); H.statusTyreTemperature('x'); h.handlers()['de.bmw.infotainment.vehicle.Vehicle'].statusNewCurrentUnitsStatusExt(undefined); } catch (e) { threw = true; }
+    ok(!threw, 'tyres: handlers never throw');
+
+    // colours against the target (Car Vitals' bands): red under 85 %, orange under 93 % or over 115 %, else green
+    ok(Tyres.toneOf(2.1, 2.7) === 'hot' && Tyres.toneOf(2.5, 2.7) === 'warm' && Tyres.toneOf(2.4, 2.5) === 'low' && Tyres.toneOf(3.0, 2.5) === 'warm' && Tyres.toneOf(2.4, null) === 'text' && Tyres.toneOf(null, 2.5) === null, 'tyre colours');
+    ok(Tyres.fmtP(2.48, 'bar') === '2.5' && Tyres.fmtP(2.48, 'psi') === '36' && Tyres.fmtP(2.48, 'kpa') === '248' && Tyres.fmtP(null, 'bar') === '--', 'pressure units: bar, psi, kPa');
+
+    // the readout: the worst tyre for label-and-value layouts, the four for the 2x2 block
+    const r = Tyres.readout(v, 'bar');
+    ok(r.label === 'TYRE RR' && r.value === '2.1' && r.tone === 'hot' && r.block === 'TYRES', 'readout: the worst tyre, red (' + JSON.stringify(r) + ')');
+    ok(r.tyres.map((c) => c.join(' ')).join(',') === '2.4 low,2.4 low,2.5 warm,2.1 hot', 'readout: four cells FL FR RL RR with their colours');
+    const fine = Tyres.readout({ p: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: {} }, 'psi');
+    ok(fine.tone === 'text' && fine.value === '36', 'readout: all fine is a plain readout (gives way like one), in psi');
+    ok(Tyres.readout(null, 'bar') === null, 'readout: none without tyres');
+    ok(Tyres.lowCorners(v).join() === 'RR' && Tyres.lowCorners(null).length === 0, 'low corners: the red ones');
+    const oT = Hud.optsFrom(settingsOf({ hudShowTyres: true, hudShowRpm: false, hudBoost: false }));
+    ok(oT.tyres === true && oT.tyreUnit === 'bar' && optsDefault.tyres === false, 'options: Tyres readout off by default, in bar');
+    ok(Hud.readoutsFor({ rpm: 3000, oil: 95, coolant: 90 }, null, null, { rpm: 6000, cold: false }, oT, { tyres: v }).some((x) => x.block === 'TYRES'), 'readouts row: the Tyres readout');
+    ok(!Hud.readoutsFor({ rpm: 3000 }, null, null, { rpm: 6000, cold: false }, Hud.calmOpts(oT), { tyres: v }).some((x) => x.block), 'calmOpts: no Tyres readout');
+    ok(Hud.PROFILE_KEYS.indexOf('hudShowTyres') >= 0 && Hud.PROFILE_KEYS.indexOf('hudTyreWidget') < 0, 'the Tyres readout is per profile; the widget, like the directions, is not');
+    ok(!spec.settings.find((s) => s.key === 'hudStyle').options.some((o2) => o2[0] === 'tyres'), 'tyres are no HUD layout (the widget is in the directions corner)');
+    // a car that sends no tyres never sees them: every tyre setting listed only once tyres came, the flag hidden
+    ['hudShowTyres', 'hudTyreWidget', 'hudTyreCar', 'hudTyreTarget', 'hudTyreTemp', 'hudTyreUnit'].forEach((k) => ok(declared[k] && declared[k].when && declared[k].when.hudTyresSeen && declared[k].when.hudTyresSeen[0] === true, k + ' listed only once the car has sent tyres'));
+    ok(declared.hudTyresSeen && declared.hudTyresSeen.hidden === true && declared.hudTyresSeen.default === false && !declared.hudTyreAlert, 'hudTyresSeen hidden, false by default; no separate tyre alert');
+    const sv = {}, st = new Tyres(null, { get: (k) => sv[k], set: (k, x) => { sv[k] = x; } });
+    st.handlers()['de.bmw.infotainment.vehicle.TPMS'].statusTyreTemperature({ actualValueTemperatureTyreFLH: 99 });
+    ok(!st.seen(), 'a temperature alone: tyres not taken as sent');
+    st.handlers()['de.bmw.infotainment.vehicle.TPMS'].statusTyrePressure({ actualValuePressureTyreFLH: 65535, actualValuePressureTyreFRH: 24 });
+    ok(st.seen() && sv.hudTyresSeen === true, 'the first real pressure: hudTyresSeen set');
+    // the HUD looks page: the TYRES tab and the Tyres readout switch only with tyres
+    const mainSrc = fs.readFileSync(path.join(APP, 'main.js'), 'utf8');
+    ok(/tyres\.seen\(\) \? \[\['tyres', 'TYRES'\]\]/.test(mainSrc) && /tyres\.seen\(\) \? \[\['Tyres', o\.tyres/.test(mainSrc), 'HUD looks: TYRES tab and Tyres switch only once tyres came');
+    ok(/tyres\.seen\(\) \? 'Tyre sensors' : 'No tyre sensors'/.test(mainSrc) && /electrical\.hybrid\(\) \? ' hybrid' : ' car'/.test(mainSrc), 'Learned page: the car (Petrol car, Diesel hybrid ...) and whether it has tyre sensors');
+
+    // the widget (200 x 76, the directions' size): every part on and off, every unit, Normal and Clearer, °C and °F
+    const W0 = HudTyres.widgetOf(settingsOf({})), WW = HudTyres.TW, WH = HudTyres.TH;
+    ok(WW === 200 && WH === 76, 'the widget is the size of the directions');
+    ok(W0.show === 'low' && W0.car && !W0.target && W0.temp && W0.unit === 'bar', 'widget defaults: when a tyre is low, the car and temperatures, no target, bar');
+    const widget = (w, ty, pal) => { const cv = new Canvas(WW, WH); HudTyres.drawWidget(cv, ty, w, pal || 'colour'); return cv; };
+    const litW = (cv, x0, y0, x1, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (cv.d[(y * WW + x) * 4 + 3]) n++; return n; };
+    [false, true].forEach((car) => [false, true].forEach((tg) => [false, true].forEach((tp) => ['bar', 'psi', 'kpa'].forEach((un) => [false, true].forEach((cl) => {
+        const w = Object.assign({}, W0, { car: car, target: tg, temp: tp, unit: un, clear: cl, fahrenheit: un === 'psi' });
+        const tag = 'widget ' + [car ? 'car' : '', tg ? 'target' : '', tp ? 'temp' : '', un, cl ? 'clearer' : 'normal'].filter(Boolean).join('/');
+        let cv;
+        try { cv = widget(w, v); } catch (e) { ok(false, tag + ' threw: ' + e.message); return; }
+        const m = HudTyres.layoutOf(cv, v, w).cx;
+        ok(litW(cv, 0, 0, m - 10, 38) > 60 && litW(cv, m + 10, 0, 200, 38) > 60 && litW(cv, 0, 38, m - 10, 76) > 60 && litW(cv, m + 10, 38, 200, 76) > 60, tag + ': a pressure at each corner');
+        // in the corner: right of the middle, lined up with the directions (their right edge RIGHT_IN in), never past it
+        let lastX = -1; for (let x = WW - 1; x >= 0 && lastX < 0; x--) if (litW(cv, x, 0, x + 1, 76) > 0) lastX = x;
+        // (too wide to move, as with targets or kPa: it stays in the middle and fills the box)
+        ok(m >= 100 && lastX < WW && (m === 100 || lastX <= WW - HudTyres.RIGHT_IN + 1), tag + ': in the right part of the box (middle ' + m + ', right edge ' + lastX + ')');
+        ok(litW(cv, 0, 0, 1, 76) === 0 && litW(cv, 199, 0, 200, 76) === 0, tag + ': nothing runs off the sides');
+    })))));
+    // each part shows: switching it off changes the picture
+    const wb = (o) => Buffer.from(widget(Object.assign({}, W0, o), v).d), base0 = wb({});
+    [['car', false], ['target', true], ['temp', false], ['unit', 'psi'], ['clear', true], ['fahrenheit', true]].forEach((c) => ok(Buffer.compare(wb({ [c[0]]: c[1] }), base0) !== 0, 'widget: ' + c[0] + ' changes it'));
+    ok(Buffer.compare(Buffer.from(widget(W0, v, 'amber').d), base0) !== 0, 'widget: the HUD colours apply');
+    ok(litW(widget(W0, null), 0, 0, WW, WH) === 0, 'widget: nothing drawn without tyres');
+    // when it shows: low (default) only while a tyre is red, always, off never; never without data
+    const fineT = { p: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: {} };
+    ok(!HudTyres.widgetShows(W0, fineT) && HudTyres.widgetShows(W0, v), 'widget "when low": not with fine tyres, yes with a red one');
+    ok(HudTyres.widgetShows(Object.assign({}, W0, { show: 'always' }), fineT) && !HudTyres.widgetShows(Object.assign({}, W0, { show: 'off' }), v) && !HudTyres.widgetShows(Object.assign({}, W0, { show: 'always' }), null), 'widget always / off / no data');
+    ok(HudTyres.widgetKey(v, W0, 'colour') !== HudTyres.widgetKey(v, Object.assign({}, W0, { temp: false }), 'colour') && HudTyres.widgetKey(v, W0, 'colour') !== HudTyres.widgetKey(fineT, W0, 'colour'), 'widget key: follows the numbers and the parts');
+    // the HUD looks preview draws it through the scaled surface
+    let scaledOk = true;
+    try { const big = new Canvas(700, 260); HudTyres.drawWidget(Draw.scaled(big, 3, 20, 10), v, W0, 'colour'); } catch (e) { scaledOk = false; }
+    ok(scaledOk, 'widget: drawn three times its size for the HUD looks page');
+    // the 2x2 block: four readouts across the row, its numbers inside their column (Normal and Clearer)
+    const item = Tyres.readout(v, 'kpa'), row = [{ label: 'RPM', value: '3000', tone: 'text' }, { label: 'BOOST', value: '1.2', tone: 'text' }, item, { label: 'OIL', value: '95°', tone: 'text' }];
+    [false, true].forEach((cl) => ['standard', 'digital', 'vector', 'arc', 'ramp', 'dial'].forEach((st) => {
+        const o = Object.assign({}, optsDefault, { style: st, clearLabels: cl });
+        try { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(o, { readouts: row, chip: null }), 'both'); } catch (e) { ok(false, st + ' with the Tyres readout threw: ' + e.message); }
+    }));
+    const colw = (Draw.IW - Draw.TEMP_X) / 4, cv0 = new Canvas(10, 10);
+    ok(Tyres.CORNERS.every((c, j) => cv0.textWidth(item.tyres[j][0], 17, { font: 'bold' }) <= colw / 2 - 2), '2x2 block: kPa values fit half a column (' + Math.round(colw / 2) + ' px)');
+    // a rear tyre's change redraws the block (standard)
+    const pic = (cells) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'standard' }), { readouts: [Object.assign({}, item, { tyres: cells })], chip: null }), 'fg'); return Buffer.from(cv.d); };
+    ok(Buffer.compare(pic(item.tyres), pic(item.tyres.slice(0, 3).concat([['199', 'hot']]))) !== 0, '2x2 block: each tyre\'s number is drawn');
+    ok(HudTyres.tempTone(10) === 'cold' && HudTyres.tempTone(95) === 'warm' && HudTyres.tempTone(110) === 'hot' && HudTyres.tempTone(60) === 'text', 'tyre temperature colours');
+    // warm-up: blue cold, green warm; the widget's "Warming up" keeps it up until all four are warm
+    ok(HudTyres.warmth(HudTyres.COLD_C - 5) === 0 && HudTyres.warmth(HudTyres.WARM_C + 5) === 1 && HudTyres.warmth(30) > 0 && HudTyres.warmth(30) < 1 && HudTyres.warmth(null) === null, 'warm-up: 0 cold, 1 warm, between in between');
+    const warmT = (c) => ({ p: fineT.p, tgt: fineT.tgt, t: { FL: c, FR: 60, RL: 60, RR: 60 } }), WW0 = Object.assign({}, W0, { show: 'warm' });
+    ok(HudTyres.widgetShows(WW0, warmT(25)) && !HudTyres.widgetShows(WW0, warmT(50)) && HudTyres.widgetShows(WW0, v) === HudTyres.widgetShows(W0, v), 'widget "warming up": while a tyre is cold, gone once all are warm, and still when one is low');
+    ok(!HudTyres.widgetShows(W0, warmT(25)) && !HudTyres.widgetShows(WW0, fineT), 'widget "when low" ignores cold tyres; no temperatures: not warming up');
+    ok(HudTyres.widgetOf(settingsOf({ hudTyreWidget: 'warm' })).show === 'warm', 'the "warm" setting is read');
+    // a cold front-left tyre is drawn blue, a warm one green (the tyre in the car, left of the body)
+    const tyreCol = (c) => { const ty = warmT(c), cv = widget(W0, ty), m = HudTyres.layoutOf(cv, ty, W0).cx, i = ((6 + 8) * WW + (m - 13 - 2 - 3)) * 4; return [cv.d[i], cv.d[i + 1], cv.d[i + 2]]; };
+    const cold = tyreCol(10), warm = tyreCol(50);
+    ok(cold[2] > cold[1] && warm[1] > warm[2] && warm[1] > warm[0], 'warm-up: the cold tyre blue (' + cold + '), the warm one green (' + warm + ')');
+    // the tyre widget redraws when a temperature as drawn changes, also in °F
+    { const ty = (t) => ({ p: { FL: 2.5, FR: 2.5, RL: 2.5, RR: 2.5 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.5, RR: 2.5 }, t: { FL: t, FR: 40, RL: 40, RR: 40 } }), wF = Object.assign({}, HudTyres.widgetOf(settingsOf({})), { fahrenheit: true });
+      ok(HudTyres.widgetKey(ty(36.6), wF, 'colour') !== HudTyres.widgetKey(ty(37.4), wF, 'colour'), 'tyre widget key: 98 and 99 °F differ (both 37 °C)'); }
+    // the demo drive has tyres for the previews
+    ok(Hud.demoAt(0).tyres && Tyres.lowCorners(Hud.demoAt(0).tyres).join() === 'RR', 'demo: tyres, the rear right low');
+}
+
+function electricalChecks() {
+    const Electrical = require(path.join(APP, 'electrical'));
+    const { DidReader } = require(path.join(ROOT, 'kit', 'runtime', 'dids'));
+    const edrive = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'edrive', 'app.json'), 'utf8')).config.battery;
+    // the same reads as eDrive (its config.battery): 12 V candidates in order, the HV charge, voltage and current
+    const same = (a, b, keys) => keys.every((k) => (a[k] == null ? null : a[k]) === (b[k] == null ? null : b[k]));
+    const ecuOf = (c) => (c.ecu == null ? edrive.ecu : c.ecu);
+    ok(Electrical.V12.length === edrive.v12.length && Electrical.V12.every((c, i) => c.ecu === ecuOf(edrive.v12[i]) && same(c, edrive.v12[i], ['did', 'obd', 'bytes', 'factor', 'offset', 'min', 'max']) && (c.at || 0) === (edrive.v12[i].at || 0)),
+        'electrical: 12 V candidates are eDrive\'s config.battery.v12');
+    ok(same(Electrical.HV_SOC[0], edrive.soc[0], ['did', 'bytes', 'factor', 'min', 'max']) && Electrical.HV_SOC[0].ecu === edrive.ecu, 'electrical: HV charge is eDrive\'s DDBC');
+    ok(Electrical.HV_V.map((c) => c.did).join() === edrive.fast.hvV.map((c) => c.did).join() && Electrical.HV_V.every((c, i) => c.factor === edrive.fast.hvV[i].fields.v.factor), 'electrical: pack voltage DIDs are eDrive\'s');
+    ok(Electrical.HV_A[0].did === edrive.fast.hvI[0].did && Electrical.HV_A[0].bytes === edrive.fast.hvI[0].fields.a.bytes && Electrical.HV_A[0].signed === true, 'electrical: pack current is eDrive\'s DD69');
+    // never another app's files: no /tmp, no file reads
+    const src = fs.readFileSync(path.join(APP, 'electrical.js'), 'utf8');
+    ok(!/\/tmp|require\('fs'\)|readFile/.test(src), 'electrical: reads the car, never another app\'s files');
+
+    // decoders
+    const D = Electrical.decode;
+    ok(D.soc12({ conditionBatteryChargingCondition: 87 }) === 87 && D.soc12({ conditionBatteryChargingCondition: 255 }) === null, 'decode: 12 V charge');
+    ok(D.hvTemp({ x: [{ actualValueTemperatureHighVoltageStorage: 76 }] }) === 26 && D.hvTemp({ actualValueTemperatureHighVoltageStorage: 255 }) === null, 'decode: HV temperature (-50, 255 none)');
+    ok(D.hvVolt({ actualValueVoltageHighVoltageStorage: 3524 }) === 352.4 && D.hvVolt({ actualValueVoltageHighVoltageStorage: 352 }) === 352 && D.hvVolt({ actualValueVoltageHighVoltageStorage: 0 }) === null, 'decode: pack voltage (V or 0.1 V)');
+    ok(Math.abs(D.hvKw(352, -100) - 35.2) < 1e-9 && Math.abs(D.hvKw(352, 50) + 17.6) < 1e-9, 'decode: power + drive / - regen (eDrive powerSign -1)');
+
+    // a fake car: replies per 'ecu:DID' or 'ecu:obdPID' (bytes after the DID / PID), 'nrc', or nothing
+    const settingsFake = (v) => { const vals = Object.assign({ hudHybridSeen: false }, v); return { get: (k) => vals[k], set: (k, x) => { vals[k] = x; }, vals: vals }; };
+    const log = { info() {}, warn() {} };
+    const linkFor = (replies) => ({ asked: [], physical(ecu, sid, data) {
+        const key = ecu.toString(16) + ':' + (sid === 1 ? 'obd' : '') + data.map((b) => (b < 16 ? '0' : '') + b.toString(16)).join('').toUpperCase();
+        this.asked.push(key);
+        const r = replies[key];
+        if (r === undefined) return Promise.resolve(null);
+        if (r === 'nrc') return Promise.resolve([0x7F, sid, 0x31]);
+        if (r === 'nrc22') return Promise.resolve([0x7F, sid, 0x22]);      // conditions not correct: not now
+        return Promise.resolve((sid === 1 ? [0x41] : [0x62]).concat(data, r));
+    } });
+    const handle = (e, iface, f, v) => e.handlers()[iface][f](v);
+
+    // petrol car (no battery unit): one look for it, then nothing hybrid, ever - even with odd signals
+    const sP = settingsFake(), linkP = linkFor({ '12:F442': 'nrc', '12:obd42': [0x37, 0x6E] });
+    const p = new Electrical({ log: log, settings: sP }, () => linkP);
+    p.rd = new DidReader(linkP, { ecu: 7 });
+    p.want = { v12: true, hv: true };
+    handle(p, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 255 });
+    handle(p, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: 0 });
+    // a temperature that looks plausible is not proof of a hybrid battery (a 48 V mild hybrid may send one)
+    handle(p, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 72 });
+    handle(p, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', { conditionBatteryChargingCondition: 81 });
+    return p._turn().then(() => {
+        ok(linkP.asked.join() === '7:DDBC', 'petrol: one look for a battery unit (' + linkP.asked.join() + ')');
+        ok(p.hybrid() === false && sP.vals.hudHybridSeen === false, 'petrol: not taken for a hybrid');
+        // the 12 V search asks 1 candidate a turn: F442 (refused), the SME's, then OBD 42 answers
+        return p._turn().then(() => {
+            ok(linkP.asked.slice(1).join() === '12:F442' && p.v12T > 0 && p.fails.v12 === 0, 'petrol: the 12 V search asks 1 a turn, no failure part-way (' + linkP.asked.slice(1).join() + ')');
+            return p._turn();
+        }).then(() => p._turn());
+    }).then(() => {
+        const v = p.value();
+        ok(v.hvSoc === null && v.hvKw === null && v.hvTemp === null && v.hvVolt === null, 'petrol: no hybrid values (' + JSON.stringify(v) + ')');
+        ok(linkP.asked.filter((k) => /^7:DD/.test(k)).length === 1, 'petrol: the battery unit is not asked again');
+        ok(v.soc12 === 81 && Math.abs(v.v12 - 14.19) < 1e-9, 'petrol: 12 V charge and voltage (F442 refused, OBD 42 answers): ' + v.soc12 + ' ' + v.v12);
+        ok(p.vs.pick === 2, 'petrol: the 12 V source that answered is kept');
+        const n = linkP.asked.length;
+        p.v12T = 0;
+        return p._turn().then(() => ok(linkP.asked.slice(n).join() === '12:obd42', 'petrol: next time only the 12 V source that answered (' + linkP.asked.slice(n).join() + ')'));
+    }).then(() => {
+        // a plug-in hybrid: the battery unit answers; then power each turn, charge every 5 s
+        const sH = settingsFake(), linkH = linkFor({ '7:DDBC': [0x02, 0x84], '7:DDB4': [0x89, 0xA8], '7:DD69': [0xFF, 0xFF, 0xD8, 0xF0], '12:F442': [0x36, 0xB0] });
+        const h = new Electrical({ log: log, settings: sH }, () => linkH);
+        h.rd = new DidReader(linkH, { ecu: 7 });
+        h.want = { v12: false, hv: true };
+        return h._turn().then(() => {
+            ok(h.hybrid() === true && sH.vals.hudHybridSeen === true, 'hybrid: found from the battery unit and kept');
+            return h._turn();
+        }).then(() => {
+            const v = h.value();
+            ok(Math.abs(v.hvSoc - 64.4) < 1e-9, 'hybrid: charge 64.4 % (' + v.hvSoc + ')');
+            ok(Math.abs(v.hvVolt - 352.4) < 1e-9 && Math.abs(v.hvKw - 35.24) < 1e-9, 'hybrid: 352.4 V x -100 A = +35.2 kW drive (' + v.hvKw + ')');
+            ok(v.v12 === null, 'hybrid: 12 V not read while its readout is off');
+            // a hybrid found from its signals alone
+            const s2 = settingsFake(), e2 = new Electrical({ log: log, settings: s2 }, () => linkH);
+            handle(e2, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            ok(e2.hybrid() === false && e2.value().hvTemp === null, 'a battery temperature alone: not taken for a hybrid, not shown');
+            // the pack voltage signal counts once it moves: two different plausible values 10 s apart (2026-11-10 review)
+            const realNow2 = Date.now, t2 = realNow2.call(Date);
+            const volt = (e, raw, at) => { Date.now = () => t2 + at; try { handle(e, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: raw }); } finally { Date.now = realNow2; } };
+            volt(e2, 3524, 0);
+            ok(e2.hybrid() === false, 'one pack voltage message: not proof yet');
+            volt(e2, 3530, 5000);
+            ok(e2.hybrid() === false, 'a second value within 10 s: not yet');
+            volt(e2, 3524, 10000);
+            ok(e2.hybrid() === true && e2.value().hvVolt === 352.4 && e2.value().hvTemp === 26, 'hybrid: found from the pack voltage signal moving over 10 s, then its temperature shows');
+            // a "no value" pattern (4095 = 409.5 V) or one that never moves: never a hybrid
+            const s3 = settingsFake(), e3 = new Electrical({ log: log, settings: s3 }, () => linkH);
+            volt(e3, 4095, 0); volt(e3, 4095, 20000); volt(e3, 2047, 40000); volt(e3, 4095, 60000);
+            const s4 = settingsFake(), e4 = new Electrical({ log: log, settings: s4 }, () => linkH);
+            volt(e4, 480, 0); volt(e4, 480, 30000);
+            ok(e3.hybrid() === false && s3.vals.hudHybridSeen !== true && e4.hybrid() === false, 'pack voltage: sentinels and a value that never moves never mark a hybrid');
+            // a signal handler never throws
+            let threw = false;
+            try { handle(e2, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', undefined); handle(e2, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', null); } catch (e) { threw = true; }
+            ok(!threw, 'electrical: handlers never throw');
+        });
+    }).then(() => {
+        // the link not up yet (the HUD's first ticks): nothing is asked, the one look for a hybrid is kept for later
+        const sL = settingsFake(), linkL = linkFor({ '7:DDBC': [0x02, 0x84] });
+        linkL.ready = false;
+        const l = new Electrical({ log: log, settings: sL }, () => linkL);
+        l.rd = new DidReader(linkL, { ecu: 7 });
+        l.want = { v12: true, hv: true };
+        return l._turn().then(() => l._turn()).then(() => {
+            ok(linkL.asked.length === 0 && l.probed === false && l.fails.v12 === 0, 'link not up: nothing asked, nothing counted as failed');
+            linkL.ready = true;
+            return l._turn();
+        }).then(() => ok(linkL.asked.join() === '7:DDBC' && l.hybrid() === true, 'link up: the look for a hybrid battery happens then'));
+    }).then(() => {
+        // every battery read waits at most about a second (the link is shared with knock and the gearbox)
+        const all = Electrical.HV_SOC.concat(Electrical.HV_V, Electrical.HV_A);
+        ok(all.every((c) => c.timeoutMs > 0 && c.timeoutMs <= 1000), 'every battery read waits at most 1 s (' + all.map((c) => c.did + ' ' + c.timeoutMs).join(', ') + ')');
+    }).then(() => {
+        // the link stops asking a unit after 5 misses until woken: a start wakes every unit electrical asks,
+        // and each once-a-minute try wakes its units first (else that try never reaches the car)
+        const sW = settingsFake({ hudHybridSeen: true }), linkW = linkFor({ '7:DDBC': [0x02, 0x84] });
+        linkW.woke = []; linkW.wake = function (e) { this.woke.push(e); };
+        const w = new Electrical({ log: log, settings: sW }, () => linkW);
+        w.start({ v12: true, hvSoc: true, hvKw: false }); w.stop();
+        ok([0x12, 0x13, 0x18, 0x07].every((e) => linkW.woke.indexOf(e) >= 0), 'electrical: a start wakes the units it asks (' + linkW.woke.join() + ')');
+        // charge only, on a battery unit that gives the charge but not the power: the power isn't asked, the
+        // charge never counts as failed between its reads
+        w.want = { v12: false, hvSoc: true, hvKw: false };
+        return w._turn().then(() => w._turn()).then(() => w._turn()).then(() => {
+            ok(!linkW.asked.some((k) => /7:DD(B4|68|66|EF|69)/.test(k)), 'HV charge only: the power is not asked (' + linkW.asked.join() + ')');
+            ok(w.fails.soc === 0 && Math.abs(w.value().hvSoc - 64.4) < 1e-9, 'HV charge only: kept, no failures between its reads');
+            // a minute after 3 failures: the try wakes the battery unit, then asks it
+            w.fails.soc = 3; w.tried.soc = Date.now() - 61000; w.slowT = 0; linkW.woke = []; linkW.asked = [];
+            return w._turn();
+        }).then(() => ok(linkW.woke.indexOf(0x07) >= 0 && linkW.asked.join() === '7:DDBC' && w.fails.soc === 0, 'the once-a-minute try wakes the unit and asks it (' + linkW.woke.join() + ' / ' + linkW.asked.join() + ')'));
+    }).then(() => {
+        // (2026-11-10 review) a clock the checks move: electrical.js and the reads stamp with Date.now; put back after
+        const realNow = Date.now;
+        let clock = realNow.call(Date);
+        Date.now = () => clock;
+        const lines = [], logL = { info: (m) => lines.push(m), warn: (m) => lines.push('W ' + m) };
+        const wait = () => new Promise((res) => setTimeout(res, 20));
+        const mk = (s, link) => { const e = new Electrical({ log: logL, settings: s }, () => link); e.rd = new DidReader(link, { ecu: 7 }); return e; };
+        // the look for a hybrid battery: a transport error is no answer, asked again a minute later
+        const linkR = linkFor({ '7:DDBC': [0x02, 0x84] }), physR = linkR.physical;
+        let refuse = true;
+        linkR.physical = function () { if (refuse) { this.asked.push('refused'); return Promise.reject(new Error('transport refused')); } return physR.apply(this, arguments); };
+        linkR.available = true;
+        const r = mk(settingsFake(), linkR);
+        r.want = { v12: false, hv: true };
+        return r._turn().then(() => {
+            ok(r.probed === false && r.probeN === 1 && r.hybrid() === false && lines.length === 0, 'probe: a transport error is no answer, nothing logged (' + lines.join('|') + ')');
+            ok(r._probeDue(clock + 1000) === false && r._probeDue(clock + 60000) === true, 'probe: due again a minute later');
+            refuse = false; clock += 30000;
+            return r._turn();
+        }).then(() => {
+            ok(linkR.asked.join() === 'refused', 'probe: not asked again within the minute (' + linkR.asked.join() + ')');
+            clock += 31000;
+            return r._turn();
+        }).then(() => {
+            ok(linkR.asked.join() === 'refused,7:DDBC' && r.hybrid() === true && r.probed === true, 'probe: the retry finds the battery unit (' + linkR.asked.join() + ')');
+            // a refusal settles it: no unit, one line, never asked again (nor started for it)
+            const linkN = linkFor({ '7:DDBC': 'nrc' }), e = mk(settingsFake(), linkN);
+            e.want = { v12: false, hv: true }; lines.length = 0;
+            return e._turn().then(() => { clock += 61000; return e._turn(); }).then(() => { clock += 61000; return e._turn(); }).then(() => {
+                ok(linkN.asked.join() === '7:DDBC' && e.probed === true && e.hybrid() === false, 'probe: a refusal settles it, not asked again (' + linkN.asked.join() + ')');
+                ok(lines.length === 1 && /no high-voltage battery unit \(NRC 31/.test(lines[0]), 'probe: one line for no unit (' + lines.join('|') + ')');
+                e.start({ hv: true });
+                ok(e.timer === null && e.rd !== null && linkN.asked.length === 1, 'probe: settled, start() asks nothing');
+            });
+        }).then(() => {
+            // "not now" (NRC 22, the unit not ready): tried again a minute later, not taken as no unit
+            const link22 = linkFor({ '7:DDBC': 'nrc22' }), n22 = mk(settingsFake(), link22);
+            n22.want = { v12: false, hv: true };
+            return n22._turn().then(() => {
+                ok(n22.probed === false && n22.hybrid() === false, 'probe: NRC 22 is no answer yet');
+                link22.physical = linkFor({ '7:DDBC': [0x02, 0x6C] }).physical.bind(link22);
+                clock += 61000;
+                return n22._turn();
+            }).then(() => ok(n22.hybrid() === true, 'probe: after NRC 22 the retry finds the battery unit'));
+        }).then(() => {
+            // no reply: 3 tries a minute apart, then one line, then no more
+            const linkQ = linkFor({}), q = mk(settingsFake(), linkQ);
+            q.want = { v12: false, hv: true }; lines.length = 0;
+            let c = Promise.resolve();
+            for (let i = 0; i < 5; i++) c = c.then(() => q._turn()).then(() => { clock += 61000; });
+            return c.then(() => ok(linkQ.asked.join() === '7:DDBC,7:DDBC,7:DDBC' && q.probed === true && lines.length === 1 && /no reply, 3 tries/.test(lines[0]),
+                'probe: no reply, 3 tries then no unit (' + linkQ.asked.join() + ' / ' + lines.join('|') + ')'));
+        }).then(() => {
+            // the link there but not available yet: nothing asked, no try used
+            const linkA = linkFor({ '7:DDBC': [0x02, 0x84] }), a = mk(settingsFake(), linkA);
+            linkA.available = false; a.want = { v12: true, hv: true };
+            return a._turn().then(() => ok(linkA.asked.length === 0 && a.probeN === 0, 'probe: link not available, nothing asked, no try used'));
+        }).then(() => {
+            // steady signals (sent on change only) stay shown; a read's value goes stale; the signal saying none clears it
+            const t = mk(settingsFake({ hudHybridSeen: true }), linkFor({}));
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            handle(t, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', { conditionBatteryChargingCondition: 81 });
+            handle(t, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: 3524 });
+            t._put('hvVoltUds', 360);
+            ok(t.value().hvVolt === 360, 'pack voltage: the fresh SME read first');
+            clock += 5 * 60000;
+            let v = t.value();
+            ok(v.hvTemp === 26 && v.soc12 === 81 && v.hvVolt === 352.4, 'steady signals still shown after 5 min, the SME read gone (' + JSON.stringify(v) + ')');
+            clock += 26 * 60000;
+            v = t.value();
+            ok(v.hvTemp === null && v.soc12 === null && v.hvVolt === null, 'signals: gone after 31 min');
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 255 });
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { other: 1 });
+            ok(t.value().hvTemp === null, 'signals: 255 (none) clears the temperature');
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { other: 1 });
+            ok(t.value().hvTemp === 26, 'signals: a message without the field keeps it');
+        }).then(() => {
+            // stop() during a 12 V search: no further reads; the next start goes on where it stopped
+            const linkS = linkFor({}), physS = linkS.physical, st = mk(settingsFake({ hudHybridSeen: true }), linkS);
+            st.rd = null;
+            linkS.physical = function () { const x = physS.apply(this, arguments); if (this.asked.length === 1) st.stop(); return x; };
+            st.start({ v12: true });
+            return wait().then(() => {
+                ok(linkS.asked.join() === '12:F442' && st.timer === null && st.busy === false, 'stop() during the 12 V search: no further reads (' + linkS.asked.join() + ')');
+                st.start({ v12: true });
+                return wait();
+            }).then(() => {
+                st.stop();
+                ok(/^12:F442,7:F442/.test(linkS.asked.join()) && st.fails.v12 === 0, 'the next start goes on with the search, 1 a turn (' + linkS.asked.join() + ')');
+            });
+        }).then(() => {
+            // a hybrid whose 12 V isn't found: the power is read every turn of the search, and stays fresh
+            const linkP2 = linkFor({ '7:DDB4': [0x89, 0xA8], '7:DD69': [0xFF, 0xFF, 0xD8, 0xF0] }), physP = linkP2.physical;
+            linkP2.physical = function () { const x = physP.apply(this, arguments); if (!/DD/.test(this.asked[this.asked.length - 1])) clock += 1000; return x; };
+            const k = mk(settingsFake({ hudHybridSeen: true }), linkP2);
+            k.want = { v12: true, hvKw: true, hvSoc: false };
+            const turns = [], fresh = [];
+            let c = Promise.resolve();
+            for (let i = 0; i < 10; i++) {
+                c = c.then(() => { const n = linkP2.asked.length; return k._turn().then(() => { turns.push(linkP2.asked.slice(n)); fresh.push(k.value().hvKw !== null); clock += 100; }); });
+            }
+            return c.then(() => {
+                const v12n = turns.map((x) => x.filter((key) => !/DD/.test(key)).length);
+                ok(turns.slice(0, 9).every((x) => x[0] === '7:DDB4' && x[1] === '7:DD69'), 'search: the power read first every turn (' + turns.map((x) => x.join(' ')).join(' | ') + ')');
+                ok(v12n.slice(0, 9).every((n) => n === 1) && fresh.every(Boolean), 'search: 1 candidate a turn, the power fresh after each (' + v12n.join() + ' / ' + fresh.join() + ')');
+                ok(k.fails.v12 === 1, 'search: one failure for the whole search, not one a turn (' + k.fails.v12 + ')');
+            });
+        }).then(() => { Date.now = realNow; }, (e) => { Date.now = realNow; throw e; });
+    }).then(() => {
+        // knock: its start and its once-a-minute try wake the engine unit (electrical's 12 V reads ask it too)
+        const KnockWatch = require(path.join(APP, 'knock'));
+        const linkK = linkFor({}); linkK.woke = []; linkK.wake = function (e) { this.woke.push(e); };
+        const k = new KnockWatch({ log: log }, () => linkK);
+        k.start(); k.stop();
+        ok(linkK.woke.indexOf(0x12) >= 0, 'knock: a start wakes the engine unit');
+        linkK.woke = []; k.busy = false; k.fails = 3; k.triedT = Date.now() - 61000; k._poll();
+        ok(linkK.woke.indexOf(0x12) >= 0, 'knock: the once-a-minute try wakes the engine unit');
+        ok(typeof Hud.writeAtomic === 'function', 'Hud.writeAtomic still there (code from before 2.0 calls it)');
+        // Play on HUD: the tyre sample only on a car that sends tyres
+        const hudSrc = fs.readFileSync(path.join(APP, 'hud.js'), 'utf8');
+        ok(/if \(playing\) return w\.show !== 'off' && settings\.get\('hudTyresSeen'\) === true/.test(hudSrc), 'Play on HUD: no tyre widget on a car without tyre sensors');
+        // the quiet log: the same kind of line once per 10 minutes, then with the count held back
+        const QuietLog = require(path.join(APP, 'quietlog'));
+        const lines = [], base = { info: (...a) => lines.push(a.join(' ')), warn: (...a) => lines.push('W ' + a.join(' ')), error: (...a) => lines.push('E ' + a.join(' ')), debug() {} };
+        let t = 0;
+        const q = QuietLog.wrap(base, () => t);
+        q.info('knock: retard 2.6 deg'); q.info('knock: retard 3.0 deg'); q.info('knock: retard 4.1 deg'); q.info('hud: on'); q.error('boom'); q.error('boom');
+        ok(lines.join('|') === 'knock: retard 2.6 deg|hud: on|E boom|E boom', 'quiet log: the same kind of line once, errors always (' + lines.join('|') + ')');
+        t = QuietLog.REPEAT_MS + 1; q.info('knock: retard 2.3 deg');
+        ok(lines[lines.length - 1] === 'knock: retard 2.3 deg (+2 like it)', 'quiet log: after 10 minutes again, with the count held back (' + lines[lines.length - 1] + ')');
+        ok(QuietLog.wrap(q) === q, 'quiet log: wrapping twice is the same');
     });
 }

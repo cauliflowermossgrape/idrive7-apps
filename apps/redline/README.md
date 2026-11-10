@@ -147,12 +147,19 @@ missing falls back to Ubuntu.
   - **Gauge:** the shift lights (GT3, left to right, or off) and their colours (M, Race, one
     colour: the centre screen's too), which parts show (rev bar, gear, gear mode) and unlit
     segments (dim or hidden). Every part can be turned off, so the HUD can be, say, the lights alone.
-  - **Readouts:** *Engine*: RPM, Boost, Torque, Power, G-force, Knock. *Temps*: Oil, Water,
+  - **Readouts:** *Engine*: RPM, Boost, Torque, Power, G-force, Knock, Tyres. *Temps*: Oil, Water,
     Gearbox, Outside, the cold-engine limit, and *Only when cold or hot*. Up to four show, in this
     order; when more are on, the last plain ones give way, so a cold or hot reading keeps its place.
+    *Engine / Electric* switches to the electrical readouts: *12 V*: Charge, Voltage (every car);
+    *Hybrid*: Charge, Power, Temp, Voltage (only on a plug-in hybrid: see
+    [Electrical](#electrical)).
   - **Alerts:** the shift grade (Burst / Simple / Off), the knock warning, the launch time, the
     peak marker, the limiter shake, and the downshift arrows (When braking / Always / Off; to every
     gear or the best one).
+  - **Tyres** (only once the car has sent tyre pressures): the tyre widget. When it shows (when a tyre
+    is low / always / off), its unit, its parts (the car, each tyre's target, the temperatures) and
+    where its corner is (moving it moves the directions too). The preview shows it three times its
+    size: your tyres, or a sample ([Tyres](#tyres)).
   - **Place:** smaller / bigger, and move left / right / up / down, live on the glass. Reset puts
     it back.
 - **Play on HUD:** runs the same drive on the glass for 20 s (two loops). It's meant for when
@@ -171,16 +178,21 @@ missing falls back to Ubuntu.
 **Sport and Comfort** (two HUD setups): the car's driving mode (FES `statusFESVehicleDynamicSwitchHMI`,
 as Live Data shows it) picks which one shows.
 
-- **Sport** is used in Sport, Sport+ and Sport Individual, and also in Adaptive, a mode it doesn't
-  know, or when the car doesn't send the mode, so the HUD never disappears for lack of a signal.
+- **Sport** is used in Sport, Sport+, Sport Individual and XtraBoost, a mode it doesn't know, or when the car
+  doesn't send the mode, so the HUD never disappears for lack of a signal. Adaptive counts as Comfort, and so do a
+  plug-in hybrid's Hybrid, Electric and battery modes until the car is known to be a hybrid (then they have their own,
+  below).
 - **Comfort / Eco Pro** is one of three (*In Comfort / Eco Pro*, in Settings and on HUD looks):
-  - *Same HUD as Sport* (the default): one HUD for every mode.
+  - *Same HUD as Sport*: one HUD for every mode.
   - *Its own HUD*: a setup of its own: layout, colours, readouts, alerts, everything on HUD looks.
     It starts as a copy of Sport's. On HUD looks, with **COMFORT / ECO PRO** picked, changing
     anything makes Comfort its own, so nothing needs switching on first.
-  - *Don't show*: Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as soon as the mode
-    is Sport. Comfort's own setup, if it has one, is kept for later.
-- Shared by both: size and position, units, the light colours and the downshift
+  - *Don't show* (the default): Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as
+    soon as the mode is Sport. Comfort's own setup, if it has one, is kept for later.
+- **Hybrid / Electric** (only on a car known to be a plug-in hybrid): its Hybrid, Electric and battery modes, the
+  same three choices (*In Hybrid / Electric*), but *Same HUD as Sport* by default: on a hybrid these are the everyday
+  modes, where the power bar matters most. Its own tab on HUD looks.
+- Shared by all: size and position, units, the light colours and the downshift
   arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
   becomes Comfort's own setup without readouts or alerts.
@@ -258,9 +270,19 @@ below list them by what they do.
 | Launch time | on (default) / off: after a standing start, the 0-100 km/h (0-60 mph) time and its difference to your best, for 3 s ([Launch score](#launch-score)) |
 | Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
+| Fuel use (experimental) | off (default) / on: the engine's fuel use, per 100 km while moving, per hour when stopped ([Fuel use](#fuel-use)) |
+| Fuel use unit | l/100 km (default) / mpg (UK) / mpg (US) / km/l |
+| Tyres | off (default) / on: TYRES over the four pressures in a 2x2 block (front over rear), each coloured against its target; on Arc, Ramp and Dial the worst tyre (TYRE RR 2.1) ([Tyres](#tyres)) |
+| Tyre widget | when a tyre is low (default) / low or warming up / always / off: the four tyres in the directions' corner, when they have no turn ([Tyres](#tyres)) |
+| Tyre widget: the car, tyre temperatures | on (default) / off each |
+| Tyre widget: each tyre's target | off (default) / on: the target pressure small after each pressure, as "/2.5" |
+| 12 V battery charge, 12 V battery voltage | off (default) / on each, on every car ([Electrical](#electrical)) |
+| Hybrid battery charge, power, temperature, voltage | off (default) / on each; listed only on a plug-in hybrid ([Electrical](#electrical)) |
+| Recovery / power bar ("Power bar" on HUD looks) | off (default) / on: regen and drive power drawn along the layout's own gauge; only on a plug-in hybrid ([Electrical](#electrical)) |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
 | Torque unit | Nm / lb-ft / kgm, on the HUD and the Learned page's torque curve |
+| Tyre pressure unit | bar (default) / psi / kPa, on the HUD |
 
 At most four readouts fit the row; past that the last one gives way.
 
@@ -269,13 +291,92 @@ At most four readouts fit the row; past that the last one gives way.
 | Setting | Values |
 |---|---|
 | Size | 70–130 %, scaled about the top centre |
-| Position left / right, up / down | px; moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
+| Position left / right, up / down | px (up as far as −120, so Minimal's lights can sit over BMW's own rev gauge); moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
+
+### Directions (experimental)
+
+With Redline on the HUD, the KOMBI hides BMW's own direction card behind it (2026-11-09 drive). So while a
+route runs, Redline draws the next turn itself: a small picture (200x76) in the bottom right corner of the glass,
+right of BMW's limit sign and speed, which sit at the bottom left. It never covers the tach (rev bar, gear,
+readouts, grade, downshift arrows) or BMW's speed: when the tach's *Size* or *Position* reaches the corner, the
+directions move to the nearest clear place (under, beside or above the tach), the one reaching least past the
+glass's edge. Checked for every size and position the settings allow.
+
+```
+[ tach ...................................... ]
+                                   [arrow] 450 m
+(50) ——— km/h                              Example Street     (or the lanes ▏↑▏↑▏↱▏ in its place)
+```
+
+- **Arrow:** thick and white (the HUD colours' text colour; Night amber draws it amber), roads not taken dim. One
+  for every value in the car's catalog (`navigation.GuidingTypes`), each checked by the tests:
+  - turns (`TurnDirection`): straight, slight / normal / hard left and right, U-turns; `NONE`: a dot;
+  - branches (`BranchType`, 15): road branching off, two- and three-way forks, motorway exit (left, right, straight
+    on), motorway entry (left, right, straight on), over- and underpass;
+  - the exact junction shape (`detailedGeometry`, 31) when the car sends one: exit taken or passed, an exit that
+    forks again, two- and three-way forks with the leg taken (the drive only sent `UNDEFINED`);
+  - roundabouts: the way in, round and out at the exit's angle, the number inside. The car's `driveDirection` is
+    the traffic side: `LEFT` (the drive, in Australia) goes round clockwise, `RIGHT` anticlockwise. Its
+    `exitAngle` is read as degrees clockwise from straight on (the drive's exit 1 at 307 = 53° left, where a
+    first exit is in left-hand traffic); without one, from the exit's number. Coming back the way you came (about
+    180°): in on the traffic side and out beside it. Right-hand traffic hasn't been seen on a car yet;
+  - keep left / right along the main road, lane change, the destination flag (with a pointer when it's on the left
+    or right), a stopover pin with its number, a ferry, a car train;
+  - not turns, and never shown in place of the next one: tunnels, borders, toll gates, speed cameras, dangerous
+    curves, school zones, traffic, points of interest, placeholders. A kind newer than the catalog: a dot.
+- **Distance** as the car formats it (`450 m`, `4.7 km`, `0.3 mi`); under it the **street** (accents dropped: the
+  HUD's fonts are ASCII), or the **lanes** when there are some. Lanes are drawn like road markings, with thinner
+  lines than the big arrow: one stem per lane, turns leaving low and straight on running to the top, so a
+  straight-and-right lane keeps both heads apart. The arrows to take (`directionsToFollow`, which can be several) are
+  bright in a lane to be in; everything else is dim. A blocked lane gets a cross; "more lanes than shown"
+  (`ELLIPSIS`) three dots; the lines between lanes are solid or dashed as the car says. Bus, HOV, bike and toll lanes
+  aren't marked yet. Right-aligned, so it hugs the corner.
+- **Where it comes from:** BMW's guidance service, read-only, the same way for CarPlay, Android Auto and BMW's own
+  navigation: the route's next events (`GuidanceEventList.queryContent`, asked once a second while a route runs),
+  the lanes (`currentLaneGuiding`) and, for BMW's navigation, `conclusiveDart`. Proven on a G21 with CarPlay /
+  Apple Maps; BMW navigation and Android Auto not yet. Waze over CarPlay gives the car no turns (checked on the
+  G21, 2026-11-10), so it shows no directions: only apps that send their turns to the car can. The interfaces are the ones jaimeen77's Cluster Redline
+  (jaimeen77-cmyk/apps, MPL-2.0) reads; Redline's decoder and drawing are its own (`nav.js`, `hud-nav.js`).
+- **Safety:** a turn older than 3 s isn't shown: a slow or failed reply, a reply without a turn or a busy head unit
+  shows the tach without an arrow, never a stale one. An old turn never comes back after a route ends or changes
+  hands (a reply asked before that is dropped); a route ends when CarPlay / Android Auto stop guiding, BMW's
+  guidance stops, the provider changes or a source reports itself gone. A direction the car sends that isn't in its
+  catalog (by name or number) draws no arrow, only the "follow the route" dot; a junction shape that contradicts the
+  direction is ignored. Lanes stay with the turn they came with and go with it.
+  Two phones and no telling whose route (both say they're guiding, or BMW names one while the other is guiding): no
+  arrow and no giving way, the tach stays (the check jaimeen77's Cluster Redline makes).
+- **Giving way to BMW's card:** only when a route certainly runs and Redline has had no readable turn for 15 s
+  (from the route's start, the last turn, or the directions coming back on), and never for a phone (or BMW's
+  navigation) whose turns it has already read this drive: a reroute (a U-turn, Apple Maps working out the new route)
+  shows the tach without an arrow until the new turns come, rather than BMW's card stuck on "Calculating Route" for
+  the rest of the trip. Redline then leaves the HUD (tach
+  included) for the rest of the route. It's for the route because of how the HUD slot works (cluster-render's
+  README): when Redline lets go, the slot stays empty for about 3 s, then BMW's card is shown, and Redline asking
+  again is only parked behind it until the card goes at the route's end. Coming back sooner would only blank the
+  HUD again and again. Redline comes back when the route ends, or when nothing has answered for 60 s (a phone gone
+  with its "guiding" flag left on); behind BMW's card if it's still there. While giving way Redline keeps its claim
+  on the HUD, so Cluster functions doesn't put its map over BMW's card.
+- **Load:** BMW's event list is asked once a second only while a route runs and the HUD and its directions are on;
+  after a failed call the next waits 2 s, and a failed connection is tried again every 30 s. The timings use a
+  clock that doesn't jump when the head unit sets its time. A picture is about 0.1 ms to draw and is redrawn only
+  when what it shows changes. A directions layer the renderer fails is made again after 5 s.
+- **Then:** a turn close behind the next one is shown as "then" + a small arrow on the second line (the street's
+  place), so you can pick the lane for both. CarPlay sends it without a distance, also for a turn kilometres on:
+  shown after a turn, not after a straight on (a roundabout's straight-on exit included), and never the turn just
+  made (CarPlay lists it after the new one for a moment); with BMW's own navigation, when the gap is 150 m or less, with the gap ("then <- 50 m", in yards for UK
+  units). With lanes on the second line, the small arrow sits after the distance.
+- **Settings:** *Directions on the HUD*: **While a route runs** (default) / **Near turns** (under 1 km, and
+  whenever there are lanes) / **Off** (as before 2.0: Redline keeps the HUD, BMW's card stays hidden).
+  Under *Advanced*: *Directions left / right* and *up / down* (px from the corner). The test pattern shows a sample
+  turn where they go.
+- A picture, like the rest of the HUD since 1.16.7 (no GPU drawing). It is redrawn only when what it shows
+  changes (the distance counting down), and only the changed part is sent.
 
 ### What it does with BMW's content
 
-- BMW's speed, limit sign, navigation arrows and assistance graphics stay in their own HUD
-  slots, which cluster-render never takes.
+- BMW's speed, limit sign and assistance graphics stay in their own HUD slots, which cluster-render never takes.
+  BMW's direction card is hidden while Redline is on the HUD: [Directions](#directions-experimental).
 - When BMW shows a pop-up on the HUD (media, lists), cluster-render moves the tach aside. It
   comes back about 1.5 s after the pop-up goes. Redline pauses drawing in the meantime.
 - If the cluster restarts twice within 10 s of the HUD being mapped, cluster-render's mapping
@@ -312,6 +413,9 @@ climb about 3000 rpm/s, so a 240 ms reaction means a flash about 700 rpm early.
 All of it is on by default and can be frozen with **Learning (experimental) → Learn from
 driving**. Values learned before stay in use. Nothing is ever learned from the demo drive. The
 **Learned** page (third tab) shows everything, each with a Reset that you press and then confirm.
+Its last row, CAR, says what Redline found the car to be: *Petrol car*, *Diesel car* or a hybrid (once
+it has shown a high-voltage battery), and *Tyre sensors* or *No tyre sensors* (the tyre options appear
+only with them).
 On the software renderer, where the page has no buttons, the bar button *Reset learned* (pressed
 twice within 5 s) resets them all.
 
@@ -403,6 +507,99 @@ degrees, only from 0.75°. A car whose engine unit doesn't answer `554C` shows n
 `knock: the engine unit gives no knock retard`). The threshold is from the catalogue's scaling and not
 yet checked on a car.
 
+### Fuel use
+
+*Fuel* (off by default, any car): the engine's fuel rate from the engine unit over read-only diagnostics, once a
+second while the readout is on and the engine runs (the gearbox reader's link), smoothed over about 2 s. First
+that answers: `5656` (fuel volume flow, ml/s), OBD `5E` (fuel rate, l/h), `4521` (fuel mass flow, over the
+fuel's density). Shown as **L/100KM** while moving (or **MPG**, **MPG US**, **KM/L**: *Fuel use unit* in
+Units), and as **L/H** (or **GAL/H**) under 5 km/h. Coasting with the fuel cut shows 0.0, and so does the engine off once it has given a rate (electric driving, auto start-stop). A car whose engine
+unit answers none of them shows nothing (logged once). Not yet checked on a car.
+
+## Electrical
+
+Read from the car itself, the way eDrive reads them (never from another app's files):
+
+| Readout | Shows | From |
+|---|---|---|
+| 12V CHARGE | 12 V battery charge, % (yellow under 60, red under 40) | the car's signal `CDS.statusBattery2` |
+| 12V | 12 V battery voltage, 0.1 V (yellow under 12.0, red under 11.5 or over 15.0) | UDS `F442` from the engine unit (`0x12`), else OBD `42`, a second engine unit, the gearbox unit (`0x18`) or the battery sensor (`402B`, `5853`): eDrive's list, the one that answers is kept |
+| HV CHARGE | hybrid battery charge, % | UDS `DDBC` from the battery unit (SME `0x07`), every 5 s |
+| HV KW | hybrid battery power, kW: + drives, − charging (regen) | pack voltage (`DDB4` / `DD68` / `DD66` / `DDEF`) × current (`DD69`) from the SME, twice a second |
+| POWER (meter) | the recovery / power meter, like BMW's hybrid power meter, drawn along each layout's own gauge (not in the readouts row): *Ramp* a second band under its scale (recovery down the climb, power along the flat, zero at the knee); *Arc* and *Dial* a ring inside / outside their band; *Standard* and *Vector* a strip of slanted segments under the rev bar; *80s digital* and *VFD* a row of bar-graph segments under the graph. Recovery green (blue on VFD) left of zero (to 40 kW), power right (to 80 kW, yellow near the end); no number (HV KW shows it). *Minimal* and *Split wings* have no readouts and no meter | the same as HV KW |
+| HV TEMP | hybrid battery temperature (blue under 5 °C, red over 45 °C) | `Efficiencytainment2.statusBatteryTemperature` |
+| HV VOLTS | pack voltage | `LSCDataSink.statusHighVoltageStorage` (or the SME's when it is read for power) |
+
+Each shows only while the car sends it. **Petrol and diesel cars never see the hybrid ones**: not on the
+HUD, not on *HUD looks*, not in Settings. They appear once the car shows a high-voltage battery: a 150–500 V
+pack voltage in its signals that changes over at least 10 s (a stuck or "no value" reading such as 409.5 V
+never counts), or the SME answering `DDBC` (asked once per start while the HUD is on, also while the driving
+mode hides it, until found; logged `electrical: no high-voltage battery unit` on a car without one). A battery temperature alone
+doesn't count: a 48 V mild hybrid, or a petrol car, may send one for another battery. Once found it is
+remembered, and the log says what found it, with the raw value
+(`electrical: high-voltage battery found (…)`). 2.0.12 clears it once: 2.0.0–2.0.8 could take a single odd
+voltage for a hybrid battery, and a real hybrid finds it again within a drive.
+
+**On a plug-in hybrid:** once the car is known to be one, its Hybrid, Electric and battery modes get their own
+setup, *In Hybrid / Electric* (Settings, and a third tab on *HUD looks*), which follows Sport by default, so the
+hybrid readouts and the power bar show in the car's everyday mode. Until then those modes count as Comfort.
+
+The UDS reads are read-only, on the gearbox reader's link, only while a readout that needs them is on, and
+only once that link is up. Each waits at most about a second for an answer, so a unit that stays quiet
+doesn't hold up the knock and gearbox reads on the same link; one that doesn't answer three times is asked
+once a minute.
+
+The electric share of the drive (KombiIF's power distribution) is left out until its scale is known: eDrive
+doesn't show it either.
+
+None is checked on a car yet: the 12 V ones can be checked on any car, the hybrid ones need a plug-in
+hybrid. The power's sign (+ drive, − regen) is eDrive's, checked only on an X5 45e. A 48 V mild hybrid
+shows only the 12 V ones (its 48 V battery is in eDrive).
+
+## Tyres
+
+Redline's own reading of the car's tyre pressure signals; nothing of Car Vitals is loaded or read. The
+scaling is the one Car Vitals worked out on cars:
+
+| Signal | What | Scaling |
+|---|---|---|
+| `TPMS.statusTyrePressure` | each tyre's pressure | 0.1 × raw in the car's pressure unit; 65532 and up = none |
+| `TPMS.statusTargetTyrePressure` | each tyre's target | the same |
+| `TPMS.statusTyreTemperature` | each tyre's temperature | the car's degrees + 40; 65535 = none |
+| `Vehicle.statusNewCurrentUnitsStatusExt` | the car's units (bar / kPa / psi, °C / °F) | until the car says, told from the value: bar 0.5–6, psi 7–60, kPa 60–600 (psi means °F too) |
+
+**Colours**, against each tyre's own target (Car Vitals' tyre card's bands): red under 85 %, orange
+under 93 % or over 115 %, green between. Without a target, white. The tyre temperature is blue under
+20 °C, orange over 90, red over 105.
+
+**The Tyres readout** shows TYRES over the four pressures in a 2x2 block, front over rear. Where readouts
+are a label and a value (Arc, Ramp, Dial) it is the worst tyre: the lowest against its target. While every
+tyre is green it is a plain readout, so with more than four on it gives way like one.
+
+**The tyre widget** is a second small picture beside the tach: the directions' (200×76, the glass's
+bottom right corner, the same layer and place). The directions come first: while they have a turn to
+show, the corner is theirs, and the tyres come back when it's done. In it: the car from above with the
+unit inside, a tyre at each corner, and beside each its pressure big, then the tyre's temperature under
+it. The colour says how each tyre is against its target, so the target itself is off by default; switched
+on (*Target*), it shows small after the pressure as "/2.5". The car and the temperatures can be switched
+off too; with no temperatures the pressures are bigger. Text that wouldn't fit its room (kPa,
+*Clearer* labels) is drawn smaller. It uses the HUD colours.
+
+**Warm-up:** each tyre in the car is blue while cold (20 °C and under) and turns green as it warms up,
+green from 40 °C; orange and red when it runs hot, as above. The temperature under each pressure follows
+it until the tyre is warm. The sensors measure the air in the tyre, which runs cooler than the tread.
+
+It shows **when a tyre is low** (the default: red, under 85 % of its target; it goes when the tyre is
+pumped up), **when low or warming up** (for a track day: up while any tyre is under 40 °C, gone once all
+four are warm), **always**, or **never**. Set it up on *HUD looks → TYRES*; its corner moves with *MOVE*
+there, which moves the directions too (*Directions left / right*, *up / down*). The TYRES tab, the Tyres
+readout switch and these settings show only once the car has sent a tyre pressure, so a car without
+tyre data never sees them. Logged `hud: low tyre RR: the tyre widget shows`.
+
+The car sends the tyres every few seconds while driving; a value over 10 minutes old isn't shown. The
+first raw values of each kind are logged (`tyres: raw pressure [...]`) to check the scaling on a new
+car. Not yet checked on a car.
+
 ## Launch score
 
 Each standing start is timed 0-100 km/h and 0-60 mph by the run timer Drag Timer uses
@@ -419,7 +616,9 @@ Everything lives in the app's `data/` folder on the head unit
 
 | File | What | Size | Written |
 |---|---|---|---|
-| `redline.log`, `redline.log.1` | the app's log, rotated at 256 KB | ≤ ~512 KB | on events, never per frame |
+| `redline.log`, `redline.log.1` | the app's log: at 256 KB it is renamed to `.1` over the older one | ≤ ~512 KB | on events, never per frame; the same kind of line at most every 10 min (`quietlog.js`) |
+| `redline-nav.log`, `redline-nav.log.1` | the navigation probe: the same, at 256 KB | ≤ ~512 KB | only while the HUD shows directions (and 10 s after) |
+| `redline-power.log`, `redline-power.log.1` | the car's own power meter and fuel-use displays, raw, with Redline's kW, l/h and speed beside them (to learn their scales) | ≤ ~512 KB | only while *Fuel* or the power bar is on, each value at most every 3 s, the first 30 min after each start |
 | `settings.json` | settings | small | when a setting changes |
 | `limiter.json` | learned redline | < 50 B | when it rises |
 | `shiftmap.json` | torque bins and gear ratios | ~0.5–10 KB | at most every 5 min while learning, at most once a minute when a shift point moves |
@@ -427,25 +626,41 @@ Everything lives in the app's `data/` folder on the head unit
 | `engine.json` | detected engine type | tiny | once |
 | `launch.json` | best launch times (0-100 km/h, 0-60 mph) | < 100 B | on a new best |
 
+Both logs keep at most two files, so Redline's logs never take more than about 1 MB: the oldest lines are
+dropped as new ones come. A line that would repeat (a unit not answering, knock, a low tyre, a plateau on the
+limiter) is written once, then again at most every 10 minutes with how many were held back (`(+12 like it)`);
+each shift is not logged at all.
+
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.
 
 To see what was learned, run this from a computer on the car's hotspot:
 
 ```sh
-ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox' /var/opt/public/oap/oap_*/data/redline*.log | tail -n 60"
+ssh root@172.16.222.97 "grep -h -E 'limiter|shiftmap|hud: |gearbox|electrical|tyres' /var/opt/public/oap/oap_*/data/redline*.log | tail -n 60"
 ```
 
 Useful lines:
 
 - `hud: target …`: what cluster-render reports (shown, parked behind BMW's content, disabled).
-- `hud: target hud: slot 0x323 …`: cluster-render's report on the HUD's slot (each change): whether Redline
-  or BMW's content (its navigation, with CarPlay) holds it.
+- `redline-nav.log` (beside `redline.log`): the navigation probe, read-only, behind Redline's own HUD
+  directions. What BMW's guidance service (`navigation.guiding.Guidance`: route state, which app
+  guides, the next manoeuvre with its distance) and the CarPlay / Android Auto managers send, each change
+  (the same turn or lanes getting nearer at most every 5 s), only while Redline's directions are on the glass
+  (not while it gives way to BMW's card, is hidden, paused or off), and once per kind of manoeuvre every key it has. Coordinates
+  are left out, street names are logged as their length only. The interfaces are the ones jaimeen77's Cluster
+  Redline (jaimeen77-cmyk/apps) reads; all optional, so a car without them installs Redline as before.
+  `dir: …` lines: what the directions show, one line per turn (`dir: turn LEFT 450 m <14 chars> lanes
+  *STRAIGHT_ON,NONE`), `dir: giving way to BMW (no turn data)`, `dir: event list <error>`.
+- `hud: route without readable turns, BMW's directions shown` / `hud: own directions`: Redline leaving the HUD
+  to BMW's card and coming back.
 - `hud: rpm samples every N ms`: how often the car sends rpm.
 - `limiter: learned …`
 - `shiftmap: 3>4 at 5550`
 - `hud: shift at … (N ms late), reaction lead now …`
 - `gearbox: EGS 6000 = … C`
+- `electrical: 12 V from 18:OBD 42`, `electrical: high-voltage battery found (…)`
+- `tyres: the car sends tyre pressures: …`, `tyres: car units: …`, `tyres: raw pressure [...]`, `hud: low tyre RR: …`
 
 ## For developers
 
@@ -454,9 +669,21 @@ Useful lines:
 | `main.js` | The app: the screen pages, settings, scoring, and the wiring of everything below |
 | `hud.js` | The HUD layer: connect, pace, smooth the rpm, decide what to show (readouts, grade, peak), send; `shiftCue()` (shared with the screen); the test pattern |
 | `hud-draw.js` | Drawing the HUD image: the six layouts, the palettes, 7-segment digits, lights, bar and bar graph, readouts, grade burst, shake, downshift arrows; the cached static layer |
+| `hud-theme.js` | What the HUD drawing files share: the grade colours, the grade burst's timing, label fitting |
+| `nav.js` | Directions, the data: decodes the route events, `conclusiveDart` and the lanes into the next turn; freshness (3 s) and giving way to BMW's card |
+| `navlog.js` | The navigation probe: subscribes to the guidance sources, asks the event list, writes `redline-nav.log`, hands every value to `nav.js` |
+| `hud-nav.js` | Directions, the picture (200x76, bottom right corner): thick white arrows, distance, street or lanes |
 | `limiter.js` | Learned rev limit |
 | `shiftmap.js` | Learned torque curve, gear ratios, per-gear shift points |
+| `files.js` | `writeAtomic`: the learned files written whole or not at all (temp file, then rename) |
+| `fuel.js` | Fuel use: the engine unit's fuel rate (read-only UDS / OBD), smoothed; the readout in l/100 km, mpg or km/l |
+| `powerlog.js` | The car's own power meter and fuel-use displays logged raw to `redline-power.log` (scale learning) |
+| `quietlog.js` | keeps redline.log small: the same kind of line at most every 10 minutes, with a count of the ones held back |
 | `gearbox.js` | Gearbox oil temperature (EGS `0x18` over read-only UDS 22, or SOME/IP BasicDataSet) |
+| `knock.js` | Knock retard from the engine unit (read-only UDS 22) |
+| `electrical.js` | 12 V and hybrid battery readouts (car signals and read-only UDS; hybrid found by the app) |
+| `tyres.js` | Tyre pressures, targets and temperatures from the car's signals; the Tyres readout and its colours |
+| `hud-tyres.js` | Drawing the tyre widget (200×76, the directions' corner): the car from above with its four tyres |
 | `cluster_render_client.js` | Vendored unchanged from robertnisipeanu/idrive-apps `native/cluster-render/js` (MPL-2.0) |
 
 **Flow.** Car samples (about 10–20 a second) go to `main.js` `onSample`. From there they feed the

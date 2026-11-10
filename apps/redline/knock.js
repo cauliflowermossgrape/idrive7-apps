@@ -30,6 +30,7 @@ class KnockWatch {
         if (this.timer) return;
         try {
             if (!this.rd) this.rd = new DidReader(this.linkOf(), { ecu: 0x12 });
+            this._wake();             // a new start (the engine on again): asked even if the link gave up on it
             this.timer = setInterval(() => this._poll(), POLL_MS);
             this._poll();
         } catch (e) { this.log.warn('knock: ' + (e && e.message || e)); }
@@ -37,9 +38,18 @@ class KnockWatch {
 
     stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
 
+    /** The link stops asking a unit after 5 misses in a row (other readers count too) until it is woken. */
+    _wake() { const l = this.rd && this.rd.diag; if (l && typeof l.wake === 'function') { try { l.wake(0x12); } catch (e) { /* never */ } } }
+
     _poll() {
         if (this.busy || !this.rd) return;
-        if (this.fails >= 3 && Date.now() - this.triedT < FAIL_RETRY_MS) return;     // not answering: once a minute
+        // the shared link not up yet: not a failed read (it would count towards "no knock retard" and the back-off)
+        const link = this.rd.diag;
+        if (link && (link.ready === false || link.available === false)) return;
+        if (this.fails >= 3) {
+            if (Date.now() - this.triedT < FAIL_RETRY_MS) return;     // not answering: once a minute,
+            this._wake();                                               // and that try really asks it
+        }
         this.busy = true;
         const now = () => Date.now();
         Promise.resolve().then(() => this.rd.value('knock', RETARD)).then((v) => {
@@ -70,5 +80,4 @@ class KnockWatch {
     }
 }
 
-KnockWatch.WARN_DEG = WARN_DEG;
 module.exports = KnockWatch;

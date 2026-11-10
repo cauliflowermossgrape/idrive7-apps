@@ -6,22 +6,15 @@
 // row is hidden there, or the README says the layout keeps its own look).
 //   node kit/tools/test_redline_features.js          (--table: print the whole matrix)
 
-const fs = require('fs');
 const path = require('path');
-const Module = require('module');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const ROOT = TH.ROOT;
 const APP = path.join(ROOT, 'apps', 'redline');
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit();
 const Hud = require(path.join(APP, 'hud'));
 const Draw = require(path.join(APP, 'hud-draw'));
 const { Canvas } = require(path.join(ROOT, 'kit', 'runtime', 'canvas'));
-const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
-const def = {};
-spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
+const { spec, def } = TH.redlineDefaults();
 
 const LAYOUTS = spec.settings.find((s) => s.key === 'hudStyle').options.map((o) => o[0]);
 const SEG7 = ['digital', 'vfd'], M = ['arc', 'ramp', 'dial'];
@@ -48,6 +41,17 @@ const NOT_ON = {
     hudShowOutside: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowKnock: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowLimit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowTyres: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudTyreUnit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowBattSoc: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowBattVolt: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvSoc: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvPower: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvTemp: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvVolt: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowHvBar: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowFuel: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudFuelUnit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudTempsMode: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudChip: { layouts: ['minimal', 'wings'], why: 'no grade drawn' },
     hudShowBar: { layouts: ['minimal', 'ramp', 'dial'], why: 'no bar (ramp, dial: the band is the shift lights too)' },
@@ -56,7 +60,10 @@ const NOT_ON = {
 
 // the data: revs counting in, a grade just made, temperatures hot / cold, every extra value there
 const D = { rpm: 5637, gear: 3, stage: 'D', oil: 95, coolant: 90 };
-const X = { torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3 };
+// (the electrical values too: a plug-in hybrid; test_redline_hud.js checks a petrol car shows none of the hybrid ones)
+// the tyres (as the demo has them: one a little under its target, one well under)
+const TY = Hud.demoAt(0).tyres;
+const X = { tyres: TY, torque: 400, gLat: 0.4, gLong: 0.3, outside: 2, pedal: 60, knock: 3, soc12: 82, v12: 14.2, hvSoc: 64, hvKw: -18, hvTemp: 27, hvVolt: 352, fuelLph: 9.6, kmh: 80 };
 function picture(over, style, state) {
     const settings = { get: (k) => (k in over ? over[k] : def[k]) };
     const o = Object.assign({}, Hud.optsFrom(settings), { style: style });
@@ -78,23 +85,33 @@ const shot = (over, style) => Buffer.concat(['count', 'shift', 'limiter', 'grade
 // a readout setting is checked with only its readout on (the row holds four), temperatures always shown
 const NONE = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false, hudShowOutside: false,
     hudShowTorque: false, hudShowPower: false, hudShowG: false, hudShowKnock: false, hudTempsMode: 'always' };
+// the hybrid readouts are checked on a car that has shown a hybrid battery
+const HY = { hudHybridSeen: true };
 const ALONE = {
     hudShowRpm: { hudShowRpm: true }, hudRpmFormat: { hudShowRpm: true }, hudBoost: { hudBoost: true }, hudBoostUnit: { hudBoost: true }, hudLabels: { hudBoost: true },
     hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
     hudShowOil: { hudShowOil: true }, hudShowWater: { hudShowWater: true }, hudShowGearbox: { hudShowGearbox: true }, hudTempUnit: { hudShowOil: true },
     hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' }, hudShowKnock: {},
+    hudShowTyres: {}, hudTyreUnit: { hudShowTyres: true },
+    hudShowBattSoc: {}, hudShowBattVolt: {}, hudShowHvSoc: HY, hudShowHvPower: HY, hudShowHvTemp: HY, hudShowHvVolt: HY,
+    hudShowHvBar: HY, hudShowFuel: {}, hudFuelUnit: { hudShowFuel: true },
 };
 const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 
 // every option that isn't the default, of the settings that change the picture
-const SKIP = ['hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle'];
+// hudHybridSeen: found by the app, not a choice (it only lets the hybrid switches work: test_redline_hud.js)
+// the tyre widget's settings: its own picture in the directions' corner, not the tach's (test_redline_hud.js,
+// test_redline_running.js); hudTyresSeen: found by the app
+const SKIP = ['hudHybridSeen', 'hudTyresSeen', 'hudTyreWidget', 'hudTyreCar', 'hudTyreTarget', 'hudTyreTemp', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hudHybridMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle',
+    // the directions: their own layer (test_redline_hud_nav.js), not the tach's picture
+    'hudNav', 'hudNavX', 'hudNavY'];
 const variants = [];
 spec.settings.filter((s) => s.key && (/^hud/.test(s.key) || s.key === 'lights') && SKIP.indexOf(s.key) < 0).forEach((s) => {
     if (s.type === 'bool') variants.push([s.key, !s.default]);
     else if (s.options) s.options.forEach((op) => { if (String(op[0]) !== String(s.default)) variants.push([s.key, op[0]]); });
 });
 
-let fails = 0, checks = 0;
+const tally = TH.counter();
 const table = [];
 const base = {};
 LAYOUTS.forEach((st) => { base[st] = shot({}, st); });
@@ -108,12 +125,11 @@ variants.forEach(([key, value]) => {
         const autoIs = key === 'hudGearFont' && Hud.gearFontOf('auto', st) === Hud.gearFontOf(value, st);
         const excused = autoIs || (n && n.layouts.indexOf(st) >= 0 && (!n.only || n.only === String(value)));
         row[st] = same ? (excused ? '-' : 'NO CHANGE') : 'ok';
-        checks++;
-        if (same && !excused) { fails++; console.log('FAIL ' + key + '=' + value + ' changes nothing on ' + st); }
+        tally.ok(!same || excused, key + '=' + value + ' changes nothing on ' + st);
     });
     table.push(row);
 });
 // the app-wide shift light style must change every layout's lights (the old Race-colours bug)
 if (process.argv.indexOf('--table') >= 0) console.table(table);
-console.log('Redline HUD features: ' + checks + ' setting x layout checks, ' + fails + ' with no change where there should be one');
-process.exit(fails ? 1 : 0);
+console.log('Redline HUD features: ' + tally.checks + ' setting x layout checks, ' + tally.fails + ' with no change where there should be one');
+process.exit(tally.fails ? 1 : 0);

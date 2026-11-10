@@ -5,47 +5,26 @@
 // - the HUD is one image layer (a picture) on every layout, never a shader (the cluster runs the HUD's
 //   shaders, and a heavy one restarted it on the car: README "HUD drawing");
 // - the Sport / Comfort profiles switch the running HUD with the driving mode, Don't show drops its layer;
-// - the HUD slot's report is asked for, and BMW's content waiting there doesn't move Redline;
-// - the knock warning and the launch time where the grade shows.
+// - the knock warning and the launch time where the grade shows;
+// - the tyre widget in the directions' corner: when a tyre is low (or always, or never), the directions first;
+// - "Play on HUD" and the HUD looks preview: the same demo frame (blink and shake);
+// - the HUD off stops every UDS reader (the electrical one too).
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const Module = require('module');
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-running-'));
-const SHM = process.env.MGU_HUD_CLAIMS = path.join(TMP, 'shm');
-const ROOT = path.join(__dirname, '..', '..');
+const TH = require('./redline_test_harness');
+const { TMP, SHM } = TH.claimsDir('redline-running-');
+const ROOT = TH.ROOT;
 
 // a stand-in cluster-render: ready at once; records layers and pixels
 let cr = null;
-class FakeCr {
-    constructor() { cr = this; this.ready = true; this.backend = 'test'; this.targets = 'hud'; this.n = 0; this.layers = {}; this.frames = []; this.h = {}; this.effects = 0; }
-    on(ev, fn) { this.h[ev] = fn; }
-    connect() {} close() {} removeAllListeners() {} set() {}
-    _add(kind, o) { this.n++; this.layers[this.n] = Object.assign({ kind: kind }, o); return this.n; }
-    image(o) { return this._add('image', o); }
-    effect(o) { this.effects++; return this._add('effect', o); }
-    uniform() {}
-    pixels(ref, rects, px) { this.frames.push({ ref: ref, rects: rects, px: Buffer.from(px) }); return true; }
-    drop(r) { delete this.layers[r]; }
-    status() { this.asked = (this.asked || 0) + 1; }
-    of(kind) { return Object.keys(this.layers).map(Number).filter((r) => this.layers[r].kind === kind); }
-}
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    if (req === './cluster_render_client') return { ClusterRender: FakeCr };
-    return load.call(this, req, parent, isMain);
-};
+TH.hookKit({ clusterRender: TH.fakeClusterRender({ onCreate: (c) => { cr = c; } }) });
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
-const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'app.json'), 'utf8'));
-const def = {};
-spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
+const HudNav = require(path.join(ROOT, 'apps', 'redline', 'hud-nav'));
+const def = TH.redlineDefaults().def;
 
-let fails = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
+const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
 const log = { info() {}, warn() {}, error() {} };
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 (async () => {
     // a claim from this boot, so the HUD stays on at start
@@ -55,11 +34,16 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     // (In Comfort / Eco Pro: Same as Sport, the OG default; this fork's own is Don't show, checked in test_redline_hud.js)
     const v = Object.assign({}, def, { hud: 'on', hudStyle: 'arc', hudRenderer: 'gpu', hudFps: 30, hudComfortMode: 'same' }), fns = [];
     const settings = { get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
-    let rpm = 3000, drive = 'sport';
-    const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: 80, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
+    let rpm = 3000, drive = 'sport', speed = 80;
+    const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: speed, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
         maxRpm: () => 8000, driveMode: () => drive,
         // a stand-in knock reader: started / stopped by the HUD, its last event's time set by the test
         knock: { on: false, at: 0, start() { this.on = true; }, stop() { this.on = false; }, value() { return { retard: null, at: this.at }; } },
+        // stand-ins for the electrical reader (started / stopped by the HUD) and the tyres (values set by the test)
+        electrical: { on: false, want: null, start(w) { this.on = true; this.want = w; }, stop() { this.on = false; }, value() { return {}; } },
+        tyres: { val: null, value() { return this.val; } },
+        // a stand-in for the directions: m is the turn shown (null: none)
+        nav: { m: null, view() { return { show: this.m, giveWay: false }; } },
         // a stand-in launch score: a run that finished `at`
         launch: (now, mph) => (launchRun && now - launchRun.at < 3000 ? Object.assign({ label: mph ? '0-60' : '0-100' }, launchRun) : null) };
     let launchRun = null;
@@ -71,7 +55,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     ok(img.length === 1 && cr.of('effect').length === 0, 'Arc (an old GPU setting set): one image layer, no shader');
     const I = cr.layers[img[0]] || {};
     ok(I.target === 'hud' && I.klass === 'overlay' && I.z === 0, 'the image: on the HUD, overlay');
-    for (const st of ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'ramp', 'dial', 'arc']) {
+    for (const st of ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'tyres', 'ramp', 'dial', 'arc']) {
         settings.set('hudStyle', st); rpm = 6400; await sleep(120);
         ok(cr.of('image').length === 1 && cr.of('effect').length === 0, st + ': the picture, no shader');
     }
@@ -91,16 +75,12 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     ok(h.frame().opts.style === 'arc' && cr.of('image').length === 1, 'back in Sport: the Arc');
     Hud.setComfortMode(settings, 'hide'); drive = 'comfort'; await sleep(200);
     ok(cr.of('image').length === 0, "Comfort, Don't show: Redline's layer gone");
+    // hidden, the car isn't read, but the one look for a hybrid battery may still run (a PHEV's Hybrid mode counts as
+    // Comfort): the electrical reader asked for nothing else (2026-11-10 review)
+    ok(!src.knock.on && src.electrical.on && JSON.stringify(src.electrical.want) === '{}', "Comfort, Don't show: no reads, the electrical reader only for its hybrid look (" + JSON.stringify(src.electrical.want) + ')');
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('image').length === 1, 'back in Sport: shown again');
     ok(cr.effects === 0, 'no shader made in the whole run (' + cr.effects + ')');
-
-    // the HUD slot's report is asked for while the tach is on, and BMW's content waiting there doesn't move Redline
-    const slot = (rows) => cr.h.status('targets: hud\nslot 0x323 status 2: ' + rows);
-    await sleep(2700);
-    ok(cr.asked > 0, 'the HUD slot report is asked for while the tach is on');
-    slot('0x1000400 class 0 map 1, 0x1000250 class 0 map 3'); await sleep(200);
-    ok(cr.of('image').length === 1, "BMW's content waiting in the slot: Redline stays");
 
     // the knock warning: the reader runs while the HUD shows (warning on by default); an event shows KNOCK
     // where the grade goes, for 1.5 s; switched off, the reader stops and nothing shows
@@ -130,8 +110,67 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     settings.set('hudLaunch', false);
     ok(!h.frame().chip, 'launch time off: nothing');
 
+    // the tyre widget: the directions' corner (their layer and place) when they have nothing; the directions first
+    settings.set('hudStyle', 'standard'); src.knock.at = 0;
+    const T = (rr) => ({ p: { FL: 2.5, FR: 2.5, RL: 2.7, RR: rr }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: { FL: 40, FR: 40, RL: 40, RR: 40 } });
+    const corners = () => cr.of('image').filter((r) => cr.layers[r].iw === 200 && cr.layers[r].ih === 76);
+    src.tyres.val = T(2.6); await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'tyres fine ("when a tyre is low"): no widget (' + h.corner() + ')');
+    src.tyres.val = T(2.0); await sleep(200);
+    ok(h.corner() === 'tyres' && corners().length === 1 && cr.of('image').length === 2, 'a tyre low: the widget in the corner, beside the tach (' + h.corner() + ')');
+    src.nav.m = HudNav.SAMPLE; await sleep(250);
+    ok(h.corner() === 'nav' && corners().length === 1, 'a turn to show: the directions take the corner (' + h.corner() + ')');
+    src.nav.m = null; await sleep(250);
+    ok(h.corner() === 'tyres', 'the turn done: the tyres again');
+    src.tyres.val = T(2.6); await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'the tyre pumped up: the widget goes');
+    settings.set('hudTyreWidget', 'always'); await sleep(200);
+    ok(h.corner() === 'tyres', 'widget "Always": shown with fine tyres');
+    src.tyres.val = null; await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'no tyre data: no widget');
+    settings.set('hudTyreWidget', 'off'); src.tyres.val = T(1.8); await sleep(200);
+    ok(h.corner() === '' && corners().length === 0, 'widget off: never, a low tyre neither');
+    settings.set('hudTyreWidget', 'low'); await sleep(200);
+    ok(h.corner() === 'tyres', 'back on "when a tyre is low"');
+    ok(cr.effects === 0, 'no shader made with the tyres either (' + cr.effects + ')');
+
+    // "Play on HUD" and the HUD looks preview draw one demo frame (hud.js demoFrame): the same blink and shake.
+    // The clock is held still and stepped by hand, so the HUD's timer can't step in between.
+    {
+        const main = fs.readFileSync(path.join(ROOT, 'apps', 'redline', 'main.js'), 'utf8');
+        const pv = main.slice(main.indexOf('const studioFrame'), main.indexOf('function lookLayer('));
+        ok(/Hud\.demoFrame\(now - studio\.t0, Hud\.optsFrom\(studioP\(\)\), studio\.cue, hud \? hud\.lead\(\) : 200, now\)/.test(pv) && !/blink|shake|SHAKE/.test(pv),
+            'the preview takes its frame from Hud.demoFrame, no blink or shake of its own');
+        settings.set('hudShake', true); speed = 0;
+        const realNow = Date.now;
+        let clock = realNow.call(Date), diff = null;
+        const shakes = {}, blinks = {}, phase = {};
+        Date.now = () => clock;
+        try {
+            h.play(30000, 'sport');
+            const t0 = clock, cue = {};
+            for (let t = 0; t < Hud.DEMO_MS && !diff; t += 10) {
+                clock = t0 + t;
+                const f = h.frame(), g = Hud.demoFrame(t, f.opts, cue, h.lead(), clock);
+                if (JSON.stringify(f) !== JSON.stringify(g)) diff = t + ' ms: ' + JSON.stringify(f).slice(0, 300) + ' / ' + JSON.stringify(g).slice(0, 300);
+                if (f.shake) shakes[f.shake.join()] = true;
+                if (f.cue.shift || f.cue.limiter) { blinks[f.blink] = true; phase[Math.floor(clock / 100) % 2 === 0] = f.blink; }
+            }
+        } finally { Date.now = realNow; }
+        h.stopPlay(); settings.set('hudShake', false); speed = 80;
+        ok(!diff, 'Play on HUD: its frame is Hud.demoFrame, frame by frame' + (diff ? ' (' + diff + ')' : ''));
+        ok(Object.keys(shakes).length === 6, 'demo frame: the shake steps through all 6 offsets (' + Object.keys(shakes).join(' ') + ')');
+        ok(blinks.true && blinks.false && phase.true === true && phase.false === false, 'demo frame: the flash blinks on the HUD rhythm (100 ms on, 100 ms off)');
+    }
+
+    // the HUD off: every reader stops, the electrical one too (it kept polling before 2.0's review)
+    ok(src.electrical.on, 'electrical reader started while the HUD shows');
+    settings.set('hud', 'off'); await sleep(200);
+    ok(!src.electrical.on && !src.knock.on, 'HUD off: the electrical and knock readers stopped');
+    ok(corners().length === 0 && h.corner() === '', 'HUD off: the tyre widget gone too');
+
     h.stop();
-    fs.rmdirSync && (function rm(p) { if (fs.statSync(p).isDirectory()) { fs.readdirSync(p).forEach((n) => rm(path.join(p, n))); fs.rmdirSync(p); } else fs.unlinkSync(p); })(TMP);
-    console.log('redline running: ' + checks + ' checks, ' + fails + ' failed');
-    process.exit(fails ? 1 : 0);
+    TH.rmTree(TMP);
+    console.log('redline running: ' + tally.checks + ' checks, ' + tally.fails + ' failed');
+    process.exit(tally.fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

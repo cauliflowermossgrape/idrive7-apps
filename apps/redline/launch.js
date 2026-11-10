@@ -10,6 +10,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { writeAtomic } = require('./files');
 const { RunTimer } = require('./kit/run_timer');
 
 const SPLITS = [{ key: 'kmh', label: '0-100', from: 0, to: 100 }, { key: 'mph', label: '0-60', from: 0, to: 60 * 1.609344 }];
@@ -53,13 +54,7 @@ class LaunchScore {
         if (Object.keys(pb).some((k) => pb[k])) this._save();
     }
 
-    _save() {
-        try {
-            const tmp = this.file + '.' + process.pid + '.tmp';
-            fs.writeFileSync(tmp, JSON.stringify({ best: this.best, at: Date.now() }));
-            fs.renameSync(tmp, this.file);
-        } catch (e) { this.log.warn('launch save: ' + e); }
-    }
+    _save() { writeAtomic(this.file, JSON.stringify({ best: this.best, at: Date.now() }), this.log, 'launch save'); }
 
     /** The run just finished, for the HUD (see the header), in the unit chosen. */
     last(now, mph) {
@@ -77,5 +72,4 @@ class LaunchScore {
     }
 }
 
-LaunchScore.SHOW_MS = SHOW_MS;
 module.exports = LaunchScore;

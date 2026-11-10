@@ -5,43 +5,20 @@
 // back while the tach is hidden in Comfort / Eco Pro.
 //   node kit/tools/test_hud_claim.js
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const Module = require('module');
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-claim-'));
-const SHM = process.env.MGU_HUD_CLAIMS = path.join(TMP, 'shm');
-const ROOT = path.join(__dirname, '..', '..');
-// a stand-in cluster-render: ready at once, layers counted
-const layers = new Set();
-class FakeCr {
-    constructor() { this.ready = true; this.backend = 'test'; this.targets = 'hud'; this.n = 0; }
-    on() {} connect() {} close() {} removeAllListeners() {} set() {} pixels() {} send() {}
-    image() { this.n++; layers.add(this.n); return this.n; }
-    drop(r) { layers.delete(r); }
-}
-const load = Module._load;
-Module._load = function (req, parent, isMain) {
-    if (req.startsWith('./kit/')) return load.call(this, path.join(ROOT, 'kit', 'runtime', req.slice(6)), parent, isMain);
-    if (req === './cluster_render_client') return { ClusterRender: FakeCr };
-    return load.call(this, req, parent, isMain);
-};
+const TH = require('./redline_test_harness');
+const { TMP, SHM } = TH.claimsDir('hud-claim-');
+const ROOT = TH.ROOT;
+// a stand-in cluster-render: ready at once; pixels() answers nothing (whole pictures each time), no slot reports
+TH.hookKit({ clusterRender: TH.fakeClusterRender({ pixels: undefined, status: false }) });
 const { HudClaim } = require(path.join(ROOT, 'kit', 'runtime', 'hud_claim'));
 const Hud = require(path.join(ROOT, 'apps', 'redline', 'hud'));
 
-let fails = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
+const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
 const log = { info() {}, warn() {}, error() {} };
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const until = (check, ms) => new Promise((res) => { const end = Date.now() + ms; const poll = () => (check() || Date.now() > end ? res() : setTimeout(poll, 50)); poll(); });
 const at = (id) => JSON.parse(fs.readFileSync(path.join(SHM, id), 'utf8')).at;
-// fs.rmSync is Node 14.14+; the head unit (and the node8-runtime CI job) is Node 8.16.2. The claims folder is flat.
-const rm = (p) => {
-    let st;
-    try { st = fs.lstatSync(p); } catch (e) { return; }
-    if (!st.isDirectory()) return fs.unlinkSync(p);
-    fs.readdirSync(p).forEach((f) => rm(path.join(p, f)));
-    fs.rmdirSync(p);
-};
+const rm = TH.rmTree;   // the head unit (and the node8-runtime CI job) is Node 8.16.2: no fs.rmSync
 
 (async () => {
     const a = new HudClaim('a', log);
@@ -141,6 +118,6 @@ const rm = (p) => {
     fs.writeFileSync(SHM, 'not a folder');
     HudClaim.standing('robertn_waze_cluster', true);
     ok(new HudClaim('redline', log).thisBoot(), 'an unwritable claim folder: not a new start');
-    console.log('hud claim: ' + checks + ' checks, ' + fails + ' failed');
-    process.exit(fails ? 1 : 0);
+    console.log('hud claim: ' + tally.checks + ' checks, ' + tally.fails + ' failed');
+    process.exit(tally.fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });   // Node 8 exits 0 on a rejection
