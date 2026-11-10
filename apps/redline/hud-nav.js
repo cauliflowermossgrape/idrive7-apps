@@ -436,8 +436,31 @@ function fit(cv, s, size, w, opts) {
     return n > 1 ? s.slice(0, n).trim() + '…' : '';
 }
 
-/** Text sizes: the distance (its unit smaller), the street. */
-const DIST = 34, UNIT = 20, ROAD = 18;
+/**
+ * s on up to `lines` lines of w px at size, broken between words (a word too long for a line broken where it must);
+ * what still doesn't fit ends the last line with …. Returns the lines ([] for nothing).
+ */
+function wrap(cv, s, size, w, opts, lines) {
+    const words = String(s || '').split(/\s+/).filter(Boolean), out = [];
+    let cur = '';
+    const width = (t) => cv.textWidth(t, size, opts);
+    while (words.length && out.length < lines) {
+        const word = words[0], next = cur ? cur + ' ' + word : word;
+        if (width(next) <= w) { cur = next; words.shift(); continue; }
+        if (cur) { out.push(cur); cur = ''; continue; }
+        // one word wider than a line: as much of it as fits, the rest on the next line
+        let n = word.length;
+        while (n > 1 && width(word.slice(0, n)) > w) n--;
+        out.push(word.slice(0, n)); words[0] = word.slice(n);
+    }
+    if (cur && out.length < lines) out.push(cur);
+    else if (cur) words.unshift(cur);
+    if (words.length && out.length) out[out.length - 1] = fit(cv, out[out.length - 1] + ' ' + words.join(' ') + ' ', size, w, opts);
+    return out;
+}
+
+/** Text sizes: the distance (its unit smaller), the street (one line; two a little smaller when it's long). */
+const DIST = 34, UNIT = 20, ROAD = 18, ROAD2 = 15;
 const DOPTS = { font: 'bold', literal: true }, UOPTS = { font: 'bold', literal: true }, ROPTS = { font: 'label', literal: true };
 const AW = 68, GAP = 6, TEXT_MIN = 92;
 // "then": its words, its small arrow (box, scale)
@@ -470,8 +493,12 @@ function drawNav(cv, m, opts) {
     // the distance instead
     const th = m.then || null, thLine = th && !nL, thGap = th ? gapText(th.gap, unit, m.uk) : '';
     const thW = thLine ? cv.textWidth('then', THEN_T, ROPTS) + 4 + THEN_A + (thGap ? 4 + cv.textWidth(thGap, THEN_T, ROPTS) : 0) : 0;
-    const road = !nL && !th && m.road ? fit(cv, foldText(m.road), ROAD, textMax, ROPTS) : '';
-    const roadW = road ? cv.textWidth(road, ROAD, ROPTS) : 0;
+    // the street: one line when it fits, else two a size smaller (2026-11-11: "On your left: 32..." was cut short)
+    const roadS = !nL && !th && m.road ? foldText(m.road) : '';
+    const big = !!roadS && cv.textWidth(roadS, ROAD, ROPTS) <= textMax;
+    const roadLines = !roadS ? [] : big ? [roadS] : wrap(cv, roadS, ROAD2, textMax, ROPTS, 2);
+    const roadSize = big ? ROAD : ROAD2, road = roadLines.join(' ');
+    const roadW = roadLines.reduce((a, l) => Math.max(a, cv.textWidth(l, roadSize, ROPTS)), 0);
     // at least TEXT_MIN wide, so the arrow stays put while the distance counts down (800 m, 50 m, 1.2 km)
     const tw = Math.min(textMax, Math.max(distW + (th && nL ? 4 + THEN_A : 0), roadW, nL * lw, thW, dist ? TEXT_MIN : 0));
     let x = Math.round(NW - 2 - tw - (tw ? GAP : 0) - AW);
@@ -481,11 +508,14 @@ function drawNav(cv, m, opts) {
     // the distance on top, the street, "then" or the lanes under it; alone: in the middle
     const under = !!(road || nL || thLine);
     let dEnd = x;
+    // (with two street lines the distance sits a little higher)
+    const two = roadLines.length > 1, dy = under ? (two ? 29 : 32) : 50;
     if (dist) {
-        const dw = cv.text(dist, x, under ? 32 : 50, DIST, col, DOPTS);
-        dEnd = x + dw + 4 + cv.text(unit, x + dw + 4, under ? 32 : 50, UNIT, col, UOPTS);
+        const dw = cv.text(dist, x, dy, DIST, col, DOPTS);
+        dEnd = x + dw + 4 + cv.text(unit, x + dw + 4, dy, UNIT, col, UOPTS);
     }
-    if (road) cv.text(road, x, dist ? 60 : 46, ROAD, withAlpha(col, 0.85), ROPTS);
+    if (two) roadLines.forEach((l, i) => cv.text(l, x, (dist ? 50 : 36) + i * 17, ROAD2, withAlpha(col, 0.85), ROPTS));
+    else if (road) cv.text(road, x, dist ? 60 : 46, roadSize, withAlpha(col, 0.85), ROPTS);
     if (thLine) {
         const y = dist ? 60 : 46, tx = x + cv.text('then', x, y, THEN_T, withAlpha(col, 0.85), ROPTS) + 4;
         drawArrow(cv, th, tx + THEN_A / 2, y - 7, THEN_S, col, dim);
@@ -513,4 +543,4 @@ const TURN_DIRECTIONS = ['STRAIGHT_ON', 'SLIGHT_LEFT', 'LEFT', 'HARD_LEFT', 'UTU
 const SAMPLE = { kind: 'turn', dir: 'STRAIGHT_ON', dist: '700', unit: 'm', road: 'Example Road',
         lanes: { lanes: [{ follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'STRAIGHT_ON', others: [], hi: true, info: 'NONE' }, { follow: 'NONE', others: ['RIGHT'], hi: false, info: 'NONE' }], rec: 1, markers: ['SOLID', 'DASHED', 'DASHED', 'SOLID'] } };
 
-module.exports = { gapText, roundaboutPlan, roundaboutGeom, laneWindow, HEAD_RUN, drawLaneArrows, drawNav, drawArrow, navKey, foldText, shapeOf, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };
+module.exports = { wrap, gapText, roundaboutPlan, roundaboutGeom, laneWindow, HEAD_RUN, drawLaneArrows, drawNav, drawArrow, navKey, foldText, shapeOf, exitAngleOf, SAMPLE, NW, NH, TURN_DIRECTIONS };

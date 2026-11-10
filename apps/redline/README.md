@@ -372,6 +372,8 @@ glass's edge. Checked for every size and position the settings allow.
   after a failed call the next waits 2 s, and a failed connection is tried again every 30 s. The timings use a
   clock that doesn't jump when the head unit sets its time. A picture is about 0.1 ms to draw and is redrawn only
   when what it shows changes. A directions layer the renderer fails is made again after 5 s.
+- **The street line:** under the distance; one too long for the line wraps onto a second, a size smaller ("On your
+  left: 32 / Example Street"), and only what doesn't fit in two lines ends with "…".
 - **Then:** a turn close behind the next one is shown as "then" + a small arrow on the second line (the street's
   place), so you can pick the lane for both. CarPlay sends it without a distance, also for a turn kilometres on:
   shown after a turn, not after a straight on (a roundabout's straight-on exit included), and never the turn just

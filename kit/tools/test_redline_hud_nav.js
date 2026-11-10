@@ -108,6 +108,21 @@ ok(N.foldText('Example Straße') === 'Example Strasse' && N.foldText('Café Ély
 // another script in it: no fragments ("ul. Lenina 5" came out ". 5"), no name; control characters and odd spaces cleaned
 ok(N.foldText('ул. Ленина 5') === '' && N.foldText('国道1号 Route 1') === '' && N.foldText('רחוב 12') === '', 'a name in another script: left out, not fragments');
 ok(N.foldText('King\u0007 St\u001b[31m') === 'King St[31m' && N.foldText('King St') === 'King St' && N.foldText('King​St') === 'KingSt', 'control characters out, odd spaces plain (' + N.foldText('King St') + ')');
+// 2026-11-11 (photos): a long street line wraps onto a second line, a size smaller, instead of being cut with ...
+{
+    const wc = new Canvas(N.NW, N.NH), o = { font: 'label', literal: true };
+    const L = N.wrap(wc, 'On your left: 32 Example Street', 15, 124, o, 2);
+    ok(L.length === 2 && L.join(' ') === 'On your left: 32 Example Street' && L.every((l) => wc.textWidth(l, 15, o) <= 124), 'wrap: two whole lines, nothing lost (' + JSON.stringify(L) + ')');
+    const LL = N.wrap(wc, 'Continue on the Western Distributor towards the Sydney Harbour Bridge', 15, 124, o, 2);
+    ok(LL.length === 2 && /…$/.test(LL[1]) && !/…/.test(LL[0]) && LL.every((l) => wc.textWidth(l, 15, o) <= 124), 'wrap: too long for two lines: the second ends with ... (' + JSON.stringify(LL) + ')');
+    ok(N.wrap(wc, 'High St', 15, 124, o, 2).join('|') === 'High St' && N.wrap(wc, '', 15, 124, o, 2).length === 0, 'wrap: short and empty');
+    const inkRight = (m) => { const c = new Canvas(N.NW, N.NH); N.drawNav(c, m, { palette: 'colour' }); let mx = -1; for (let y = 0; y < N.NH; y++) for (let x = 0; x < N.NW; x++) if (c.d[(y * N.NW + x) * 4 + 3] > 40) mx = Math.max(mx, x); return { mx: mx, c: c }; };
+    const rows = (c, x0) => { const r = []; for (let y = 0; y < N.NH; y++) { let on = false; for (let x = x0; x < N.NW; x++) if (c.d[(y * N.NW + x) * 4 + 3] > 40) on = true; r.push(on); } return r; };
+    const long = inkRight({ kind: 'destination', dir: 'LEFT', side: 'left', flag: true, dist: '60', unit: 'm', road: 'On your left: 32 Example Street' });
+    const r = rows(long.c, 120), runs = r.reduce((a, v, k) => a + (v && !r[k - 1] ? 1 : 0), 0);
+    ok(long.mx <= N.NW - 1 && runs >= 3, 'a long street: inside the picture, the distance and two text lines (' + runs + ' rows of text)');
+    ok(inkRight({ kind: 'turn', dir: 'STRAIGHT_ON', dist: '5', unit: 'm', road: 'Proceed to the route' }).mx <= N.NW - 2, 'one line that fits only smaller: drawn smaller, inside the picture');
+}
 ok(N.navKey(C.SAMPLES.left, {}) !== N.navKey(Object.assign({}, C.SAMPLES.left, { dist: '400' }), {}) && N.navKey(C.SAMPLES.left, {}) === N.navKey(Object.assign({}, C.SAMPLES.left), {}), 'the key changes with the distance, not otherwise');
 ok(N.navKey(C.SAMPLES.left, { palette: 'amber' }) !== N.navKey(C.SAMPLES.left, { palette: 'colour' }), 'the key changes with the palette');
 ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).n > 300, 'Night amber: in amber, not white');
