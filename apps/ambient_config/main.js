@@ -103,7 +103,7 @@ mgu.run({
             setLook({ upper: l.upper, lower: l.lower });
             return redraw();
         };
-        const stepHue = (d) => { const c = partColour(look()); return setRgb(S.hsv((S.hueOf(c.rgb) + d + 360) % 360, 1, 1)); };
+        const stepHue = (d) => { const c = partColour(look()); return setRgb(S.hsv(S.stepHue(S.hueOf(c.rgb), d), 1, 1)); };
 
         function status(cv, t, x, y) {
             const n = lights.lights.length;
@@ -277,7 +277,7 @@ mgu.run({
             ctx.onTap((x, y) => {
                 if (page !== 0) return null;
                 const dx = x - RING.cx, dy = y - RING.cy, d = Math.sqrt(dx * dx + dy * dy);
-                if (d >= RING.r - 12 && d <= RING.R + 12) return setRgb(S.hsv((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360, 1, 1));
+                if (d >= RING.r - 12 && d <= RING.R + 12) return setRgb(S.hsv(S.snapHue((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360), 1, 1));
                 const ex = x - DIAL.cx, ey = y - DIAL.cy, e = Math.sqrt(ex * ex + ey * ey);
                 if (e >= DIAL.r - 14 && e <= DIAL.R + 14) {
                     const a = Math.atan2(ex, -ey) * 180 / Math.PI;

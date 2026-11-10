@@ -26,6 +26,15 @@ const reply = (did, locs, fault) => {
     for (let i = 0; i < 26; i++) b.push.apply(b, locs[i] ? [locs[i], 254, 60, 120, 100, 0, fault === i ? 1 : 0, 0, 0, 0] : [0xff, 0xff, 0xff, 0xff, 0x7f, 3, 7, 7, 7, 7]);
     return b.concat([2]);
 };
+// the ring: a tap near red / green / blue gives exactly that colour; the < / > steps land on them (#135)
+const same = (a, b) => a.join() === b.join();
+ok(same(S.hsv(S.snapHue(3), 1, 1), [255, 0, 0]) && same(S.hsv(S.snapHue(357.5), 1, 1), [255, 0, 0]), 'a tap 3 degrees off red is red');
+ok(same(S.hsv(S.snapHue(118), 1, 1), [0, 255, 0]) && same(S.hsv(S.snapHue(244), 1, 1), [0, 0, 255]), 'near green / blue: exactly green / blue');
+ok(S.snapHue(20) === 20 && S.snapHue(90) === 90, 'a hue between them stays as tapped');
+let h = S.hueOf([120, 60, 255]), seen = [];      // the default violet, 258.5 degrees
+for (let i = 0; i < 24; i++) { h = S.stepHue(h, 15); seen.push(h); }
+ok(seen.indexOf(0) >= 0 && seen.indexOf(120) >= 0 && seen.indexOf(240) >= 0 && seen.every((x) => x % 15 === 0 && x >= 0 && x < 360), '> from violet comes to 0, 120, 240 exactly');
+ok(S.stepHue(0, -15) === 345 && S.stepHue(345, 15) === 0, '< from red wraps to 345, > back to red');
 const bus1 = L.parseStatus(0, reply([0xda, 0x5f], [0x0f, 0x0e, 0x0c], 1));
 ok(bus1.length === 3 && bus1[2].nad === 3 && bus1[2].name === 'Passenger front door line' && bus1[2].part === 'upper' && bus1[1].part === 'lower', 'status: lights, places, upper / lower');
 ok(bus1[0].rgb.join() === '120,60,254' && bus1[0].bright === 100 && bus1[1].fault && !bus1[0].fault, 'status: colour read red, green, blue; a fault');

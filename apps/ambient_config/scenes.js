@@ -27,6 +27,14 @@ function hueOf(rgb) {
     const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
     return (h * 60 + 360) % 360;
 }
+/** A hue picked on the ring: within 5 degrees of red, yellow, green, cyan, blue or magenta, exactly that one (a
+ * finger is not that precise, and a little green in a red shows orange on the car's LEDs); others as they are. */
+function snapHue(h) {
+    const s = (Math.round(h / 60) * 60) % 360;
+    return Math.abs(((h - s + 540) % 360) - 180) <= 5 ? s : (h + 360) % 360;
+}
+/** The < / > buttons: the next multiple of 15 degrees (d +-15), so red, green and blue come up exactly. */
+const stepHue = (h, d) => ((Math.round((h + d) / 15) * 15) % 360 + 360) % 360;
 const mix = (a, b, f) => a.map((x, i) => Math.round(x + (b[i] - x) * f));
 const hex = (rgb) => '#' + rgb.map((x) => ('0' + Math.max(0, Math.min(255, x | 0)).toString(16)).slice(-2)).join('');
 
@@ -69,4 +77,4 @@ function lightAt(scene, light, t) {
     }
 }
 
-module.exports = { KINDS, NAMES, lightAt, lasts, moves, hsv, hueOf, hex, mix };
+module.exports = { KINDS, NAMES, lightAt, lasts, moves, hsv, hueOf, snapHue, stepHue, hex, mix };
