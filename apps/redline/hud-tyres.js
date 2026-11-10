@@ -76,14 +76,46 @@ function widgetKey(ty, w, palette) {
     return ['tyres', T.join(','), w.car, w.target, w.temp, w.unit, w.fahrenheit, w.clear, palette].join('|');
 }
 
+// the widget's right edge (its widest right-hand value) this far in from the box's right: where the directions'
+// distance and lanes end, so in the corner it lines up with them (2026-11-10)
+const RIGHT_IN = 26;
+
+/**
+ * Where the widget's parts go for ty, w, measured on cv: { cx (the car's middle), gap, cells (each corner's numbers
+ * and their sizes), rows, sub, two }.
+ */
+function layoutOf(cv, ty, w) {
+    const tw = (s, size) => (cv.textWidth ? cv.textWidth(s, size, { font: 'bold' }) : s.length * size * 0.55);
+    const gap = w.car ? BODY_W / 2 + 2 + TYRE_W + 5 : 20;
+    const sub = w.clear ? 15 : 13, two = w.temp;
+    const big = two ? 24 : 30;
+    const rows = two ? { F: [24, 37], R: [62, 75] } : { F: [30, 0], R: [68, 0] };
+    // each corner's numbers, sized to fit the room either side of the car (made smaller together when pressure and
+    // target don't fit: kPa at Clearer)
+    const room = CX - gap - 2;
+    const cells = Tyres.CORNERS.map((c) => {
+        const p = ty.p[c], tgt = ty.tgt[c];
+        const ps = Tyres.fmtP(p, w.unit), ts = w.target && isNum(tgt) ? '/' + Tyres.fmtP(tgt, w.unit) : '';
+        const need = tw(ps, big) + (ts ? tw(ts, sub) + 1 : 0), k = need > room ? room / need : 1;
+        const bs = big * k, ss = sub * k, pw = tw(ps, bs), tsw = ts ? tw(ts, ss) + 1 : 0;
+        return { c: c, p: p, tgt: tgt, ps: ps, ts: ts, bs: bs, ss: ss, pw: pw, tsw: tsw };
+    });
+    // moved right so the widest right-hand value ends RIGHT_IN from the edge (the left side only gains room); never
+    // left of the middle
+    const tempW = (c) => (two && isNum(ty.t[c]) ? tw(Math.round(w.fahrenheit ? ty.t[c] * 9 / 5 + 32 : ty.t[c]) + '°', sub) : 0);
+    const rightW = Math.max.apply(null, cells.filter((e) => e.c[1] === 'R').map((e) => Math.max(e.pw + e.tsw, tempW(e.c))));
+    const cx = Math.round(Math.max(CX, TW - RIGHT_IN - gap - rightW));
+    return { cx: cx, gap: gap, cells: cells, rows: rows, sub: sub, two: two };
+}
+
 /** Draws the widget into cv (TW x TH) for ty (tyres.js value()), w (widgetOf), palette name. */
 function drawWidget(cv, ty, w, palette) {
     if (cv.clear) cv.clear();
     if (!ty) return;
     const P = PALETTES[palette] || PALETTES.colour;
-    const x0 = CX - BODY_W / 2, x1 = CX + BODY_W / 2;
-    const tw = (s, size) => (cv.textWidth ? cv.textWidth(s, size, { font: 'bold' }) : s.length * size * 0.55);
     const uName = (Tyres.UNITS[w.unit] || Tyres.UNITS.bar)[2];
+    const L = layoutOf(cv, ty, w), cx = L.cx, gap = L.gap, rows = L.rows, sub = L.sub, two = L.two;
+    const x0 = cx - BODY_W / 2, x1 = cx + BODY_W / 2;
     // the car: a rounded body, windscreen and rear window, a tyre at each corner; the unit inside
     if (w.car) {
         cv.roundRect(x0, BODY_Y, BODY_W, BODY_H, 10, withAlpha(P.text, 0.08));
@@ -97,24 +129,14 @@ function drawWidget(cv, ty, w, palette) {
         });
     }
     const us = w.clear ? 13 : 11;
-    cv.text(uName, CX, TH / 2 + us / 2 - 1, us, w.clear ? P.text : withAlpha(P.text, 0.8), { align: 'center', font: 'bold' });
+    cv.text(uName, cx, TH / 2 + us / 2 - 1, us, w.clear ? P.text : withAlpha(P.text, 0.8), { align: 'center', font: 'bold' });
     // the numbers: right-aligned against the car on the left, left-aligned on the right
-    const gap = w.car ? BODY_W / 2 + 2 + TYRE_W + 5 : 20;
-    const room = CX - gap - 2;
-    const sub = w.clear ? 15 : 13, two = w.temp;
-    const big = two ? 24 : 30;
-    const rows = two ? { F: [24, 37], R: [62, 75] } : { F: [30, 0], R: [68, 0] };
-    Tyres.CORNERS.forEach((c) => {
-        const left = c[1] === 'L', r = rows[c[0]], edge = left ? CX - gap : CX + gap;
-        const p = ty.p[c], tgt = ty.tgt[c], temp = ty.t[c];
-        const ps = Tyres.fmtP(p, w.unit), ts = w.target && isNum(tgt) ? '/' + Tyres.fmtP(tgt, w.unit) : '';
-        // made smaller together when pressure and target don't fit their room (kPa at Clearer)
-        const need = tw(ps, big) + (ts ? tw(ts, sub) + 1 : 0), k = need > room ? room / need : 1;
-        const bs = big * k, ss = sub * k, pw = tw(ps, bs), tsw = ts ? tw(ts, ss) + 1 : 0;
-        const pc = P[Tyres.toneOf(p, tgt)] || withAlpha(P.text, isNum(p) ? 1 : 0.5);
-        const px = left ? edge - tsw - pw : edge;
-        cv.text(ps, px, r[0], bs, pc, { align: 'left', font: 'bold' });
-        if (ts) cv.text(ts, px + pw + 1, r[0], ss, w.clear ? P.text : withAlpha(P.text, 0.75), { align: 'left', font: 'bold' });
+    L.cells.forEach((e) => {
+        const left = e.c[1] === 'L', r = rows[e.c[0]], edge = left ? cx - gap : cx + gap, temp = ty.t[e.c];
+        const pc = P[Tyres.toneOf(e.p, e.tgt)] || withAlpha(P.text, isNum(e.p) ? 1 : 0.5);
+        const px = left ? edge - e.tsw - e.pw : edge;
+        cv.text(e.ps, px, r[0], e.bs, pc, { align: 'left', font: 'bold' });
+        if (e.ts) cv.text(e.ts, px + e.pw + 1, r[0], e.ss, w.clear ? P.text : withAlpha(P.text, 0.75), { align: 'left', font: 'bold' });
         if (two && isNum(temp)) {
             const s = Math.round(w.fahrenheit ? temp * 9 / 5 + 32 : temp) + '°';
             // white once warm, like any value; blue to green while warming up, orange or red when hot
@@ -127,4 +149,4 @@ function drawWidget(cv, ty, w, palette) {
 /** Sample tyres for the previews (one a little under its target, one well under). */
 const SAMPLE = { p: { FL: 2.4, FR: 2.4, RL: 2.5, RR: 2.1 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: { FL: 59, FR: 61, RL: 69, RR: 70 } };
 
-module.exports = { drawWidget, widgetKey, widgetOf, widgetShows, tempTone, warmth, coldCorners, COLD_C, WARM_C, SAMPLE, TW, TH };
+module.exports = { drawWidget, layoutOf, RIGHT_IN, widgetKey, widgetOf, widgetShows, tempTone, warmth, coldCorners, COLD_C, WARM_C, SAMPLE, TW, TH };

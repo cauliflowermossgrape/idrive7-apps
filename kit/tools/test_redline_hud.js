@@ -530,7 +530,12 @@ const labels = (items) => items.map((r) => r.label).join(',');
         const tag = 'widget ' + [car ? 'car' : '', tg ? 'target' : '', tp ? 'temp' : '', un, cl ? 'clearer' : 'normal'].filter(Boolean).join('/');
         let cv;
         try { cv = widget(w, v); } catch (e) { ok(false, tag + ' threw: ' + e.message); return; }
-        ok(litW(cv, 0, 0, 90, 38) > 60 && litW(cv, 110, 0, 200, 38) > 60 && litW(cv, 0, 38, 90, 76) > 60 && litW(cv, 110, 38, 200, 76) > 60, tag + ': a pressure at each corner');
+        const m = HudTyres.layoutOf(cv, v, w).cx;
+        ok(litW(cv, 0, 0, m - 10, 38) > 60 && litW(cv, m + 10, 0, 200, 38) > 60 && litW(cv, 0, 38, m - 10, 76) > 60 && litW(cv, m + 10, 38, 200, 76) > 60, tag + ': a pressure at each corner');
+        // in the corner: right of the middle, lined up with the directions (their right edge RIGHT_IN in), never past it
+        let lastX = -1; for (let x = WW - 1; x >= 0 && lastX < 0; x--) if (litW(cv, x, 0, x + 1, 76) > 0) lastX = x;
+        // (too wide to move, as with targets or kPa: it stays in the middle and fills the box)
+        ok(m >= 100 && lastX < WW && (m === 100 || lastX <= WW - HudTyres.RIGHT_IN + 1), tag + ': in the right part of the box (middle ' + m + ', right edge ' + lastX + ')');
         ok(litW(cv, 0, 0, 1, 76) === 0 && litW(cv, 199, 0, 200, 76) === 0, tag + ': nothing runs off the sides');
     })))));
     // each part shows: switching it off changes the picture
@@ -566,7 +571,7 @@ const labels = (items) => items.map((r) => r.label).join(',');
     ok(!HudTyres.widgetShows(W0, warmT(25)) && !HudTyres.widgetShows(WW0, fineT), 'widget "when low" ignores cold tyres; no temperatures: not warming up');
     ok(HudTyres.widgetOf(settingsOf({ hudTyreWidget: 'warm' })).show === 'warm', 'the "warm" setting is read');
     // a cold front-left tyre is drawn blue, a warm one green (the tyre in the car, left of the body)
-    const tyreCol = (c) => { const cv = widget(W0, warmT(c)), i = ((6 + 8) * WW + (100 - 13 - 2 - 3)) * 4; return [cv.d[i], cv.d[i + 1], cv.d[i + 2]]; };
+    const tyreCol = (c) => { const ty = warmT(c), cv = widget(W0, ty), m = HudTyres.layoutOf(cv, ty, W0).cx, i = ((6 + 8) * WW + (m - 13 - 2 - 3)) * 4; return [cv.d[i], cv.d[i + 1], cv.d[i + 2]]; };
     const cold = tyreCol(10), warm = tyreCol(50);
     ok(cold[2] > cold[1] && warm[1] > warm[2] && warm[1] > warm[0], 'warm-up: the cold tyre blue (' + cold + '), the warm one green (' + warm + ')');
     // the demo drive has tyres for the previews
