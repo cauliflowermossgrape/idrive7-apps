@@ -9,6 +9,7 @@ on:
       - 'kit/runtime/**'
       - 'kit/tools/test_*'
       - 'kit/tools/redline_*.js' # the tests' shared harness and sample turns
+      - 'kit/tools/fixtures/**'   # recorded car data the tests replay (redline-nav-carplay-*.txt)
       - 'kit/localization/**'
       - 'kit/tools/build.py'
       - 'kit/tools/pack_data.py'
@@ -25,6 +26,7 @@ on:
       - 'kit/runtime/**'
       - 'kit/tools/test_*'
       - 'kit/tools/redline_*.js' # the tests' shared harness and sample turns
+      - 'kit/tools/fixtures/**'   # recorded car data the tests replay (redline-nav-carplay-*.txt)
       - 'kit/localization/**'
       - 'kit/tools/build.py'
       - 'kit/tools/pack_data.py'

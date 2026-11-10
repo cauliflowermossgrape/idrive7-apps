@@ -151,6 +151,29 @@ async function poll(w) { w.busy = false; w._poll(); await sleep(15); }
     ok(it(3.785411784 * 2, 0, 'mpgus') === 'GAL/H 2.0 text', 'slow mpgus: US gal/h (' + it(3.785411784 * 2, 0, 'mpgus') + ')');
     ok(it(-1, 50) === 'null', 'negative -> null');
 
+    // 2026-11-10 review: the density asked on every read (a diesel found after the start); the link not up yet is not a
+    // failed read; worked() once a rate came
+    {
+        let diesel = false;
+        const d = await make(both, { diesel: () => diesel });
+        ok(near(d.w.value().lph, 10 / 0.745) && d.w.worked(), 'diesel getter: petrol until found, worked() after a rate');
+        diesel = true; d.w.t = 0; d.w.lph = null;
+        await poll(d.w);
+        ok(near(d.w.value().lph, 10 / 0.835), 'diesel found later: its density from the next read (' + d.w.value().lph + ')');
+        const n = await make(() => null);
+        ok(!n.w.worked(), 'worked(): false while nothing has answered');
+        const down = fakeLink(both); down.ready = false;
+        const logs = [], w = new FuelWatch({ log: { info: (m) => logs.push(m), warn: (m) => logs.push(m) } }, () => down);
+        w.start(); w.stop();
+        for (let i = 0; i < 5; i++) await poll(w);
+        ok(down.asked.length === 0 && w.fails === 0 && !logs.some((m) => /no fuel rate/.test(m)), 'link not up: nothing asked, no fails counted, no "no fuel rate" (' + down.asked.length + ', ' + w.fails + ')');
+        down.ready = true; down.available = false;
+        await poll(w);
+        ok(down.asked.length === 0, 'link not available: nothing asked');
+        down.available = true;
+        await poll(w);
+        ok(near(w.value().lph, 10 / 0.745), 'link up: read');
+    }
     console.log('redline fuel: ' + tally.checks + ' checks, ' + tally.fails + ' failed');
     process.exit(tally.fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e.stack || e)); process.exit(1); });

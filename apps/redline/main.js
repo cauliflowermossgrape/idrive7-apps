@@ -115,7 +115,7 @@ mgu.run({
         // knock from the engine unit, on the gearbox reader's diagnostics link; polled only while the HUD wants it
         const knock = new KnockWatch(ctx, () => gearbox.diag());
         // fuel use from the engine unit, the same link; polled only while the fuel readout is on and the engine runs
-        const fuel = new FuelWatch(ctx, () => gearbox.diag(), { diesel: engine.profile() === 'diesel' });
+        const fuel = new FuelWatch(ctx, () => gearbox.diag(), { diesel: () => engine.profile() === 'diesel' });
         // 12 V and hybrid battery from the car (signals, and read-only UDS on the same link); hybrid ones only on a hybrid
         const electrical = new Electrical(ctx, () => gearbox.diag());
         // tyre pressures, targets and temperatures from the car's own signals (no requests to any unit)
@@ -176,7 +176,9 @@ mgu.run({
         // the car's own power / fuel displays, logged raw for a drive while the readouts that would use them are on
         const powerLog = PowerLog.start({
             dataDir: ctx.dataDir,
-            wanted: () => settings.get('hudShowFuel') === true || (settings.get('hudHybridSeen') === true && settings.get('hudShowHvBar') === true),
+            // only while the HUD is on and the setup in use (Sport or Comfort's own) shows the fuel readout or the
+            // power bar (2026-11-10 review: it logged with the HUD off, and went by Sport's switches only)
+            wanted: () => { if (settings.get('hud') !== 'on') return false; const o = Hud.optsFrom(settings, driveMode.v || 'sport'); return !!(o.fuel || o.hvBar); },
             now: () => ({ hvKw: electrical.value().hvKw, lph: fuel.value().lph, kmh: car ? car.data().speed : null }),
         });
         // one watch per interface: handler sets that share an interface are merged field by field (a plain
@@ -656,7 +658,8 @@ mgu.run({
             });
             const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.fuel, o.oil, o.coolant, o.gearbox, o.outside, o.tyres,
                 o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvBar, o.hvTemp, o.hvVolt].filter(Boolean).length;
-            const over = studio.panel === 'readouts' && nOn > Hud.MAX_READOUTS;
+            // the power bar takes no place in the row on the layouts that draw it along their gauge (2026-11-10 review)
+            const over = studio.panel === 'readouts' && nOn - (o.hvBar && Hud.METER_STYLES.indexOf(o.style) >= 0 ? 1 : 0) > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
             const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(P)) : {};
             const offText = Object.keys(off).map((k) => k + ' ' + off[k] + ' px').join(', ');
@@ -961,7 +964,9 @@ mgu.run({
                 gLat: fresh(extra.gLat, 2000), gLong: fresh(extra.gLong, 2000),
                 outside: fresh(extra.outside, 600000),
                 knock: knock.value().retard,
-                fuelLph: fuel.value().lph, kmh: car.data().speed,
+                // the engine off (electric driving, auto start-stop) uses no fuel: 0, once the engine unit has given
+                // a rate this run, rather than the readout dropping out (2026-11-10 review)
+                fuelLph: G.isNum(car.data().rpm) && car.data().rpm <= 400 && fuel.worked() ? 0 : fuel.value().lph, kmh: car.data().speed,
             })),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));

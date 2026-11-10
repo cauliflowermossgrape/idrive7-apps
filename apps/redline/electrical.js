@@ -23,7 +23,9 @@
  * Settings). It turns true, and is kept (setting hudHybridSeen), once the car shows a high-voltage battery:
  * a pack voltage (150-500 V) in its signals, or the SME answering DDBC. A battery temperature alone is not
  * enough (a 48 V mild hybrid, or a petrol car, may send one for another battery). That one read is asked
- * once per start while the HUD shows, and only until it is known; what found it is logged with its raw value.
+ * while the HUD shows, once the link is available, until a reply settles it (a charge: hybrid; a refusal: not);
+ * a try with no reply is tried again a minute later, 3 tries an app run. What found it is logged with its raw value.
+ * The signal values (12 V charge, HV temperature, the signal's pack voltage) come on change only: kept 30 min.
  *
  * The UDS reads are read-only (UDS 22 / OBD 01) on the gearbox reader's link (one link to the car), only while
  * the HUD shows a readout that needs them, and only once that link is up (a read before then fails at once and
@@ -65,7 +67,16 @@ const POWER_SIGN = -1;                // eDrive's powerSign: kW = V x A / 1000 x
 const VOLT_TIMEOUT_MS = 1500, PROBE_TIMEOUT_MS = 1500;
 const POLL_MS = 500;                  // HV power; the charge and the 12 V every SLOW_MS
 const SLOW_MS = 5000, V12_MS = 2000, FAIL_RETRY_MS = 60000;
-const STALE_MS = 3000, SLOW_STALE_MS = 20000, SIGNAL_STALE_MS = 120000, RANK = { ok: 0, new: 1, nrc: 2, bad: 2, none: 3 };
+const STALE_MS = 3000, SLOW_STALE_MS = 20000, RANK = { ok: 0, new: 1, nrc: 2, bad: 2, none: 3 };
+// the car sends these signals on change only: a steady 12 V charge or pack temperature is sent once and then
+// not again for many minutes, so it is kept 30 min (or until the signal says none) (2026-11-10 review)
+const SIGNAL_KEEP_MS = 30 * 60000;
+// the look for a hybrid battery: a try that got no reply (link busy, unit not awake yet) is tried again a
+// minute later, at most this many tries per app run; a reply (a charge, or a refusal) settles it (2026-11-10 review)
+const PROBE_TRIES = 3;
+// the 12 V search asks at most this many candidates a turn, so the HV power (first each turn) stays fresh
+// while a search runs (9 candidates x 1.5 s held it up ~13 s) (2026-11-10 review)
+const SEARCH_PER_TURN = 1;              // one: two that both time out (2 x 1.5 s) outlast STALE_MS
 
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 /** every entry holding key, however the list arrives (plain, wrapped in the field's name, single) - as eDrive */
@@ -108,9 +119,14 @@ class Electrical {
         this.rd = null; this.timer = null; this.busy = false; this.want = {};
         this.s = {};                  // name -> { v, t } from the signals and the reads
         this.fails = { soc: 0, kw: 0, v12: 0 }; this.tried = { soc: 0, kw: 0, v12: 0 }; this.slowT = 0; this.v12T = 0;
-        this.vs = { pick: null, miss: 0, res: {} };
-        this.probed = false;
+        this.vs = { pick: null, miss: 0, res: {}, order: null, at: 0 };
+        this.probed = false;          // true once the look for a hybrid battery is settled (or out of tries)
+        this.probeN = 0; this.probeT = 0;
+        this.gen = 0;                 // stop() counts it up: a turn started before stops asking
     }
+
+    /** Is the look for a hybrid battery due now? (not known yet, tries left, a minute after a try with no reply) */
+    _probeDue(now) { return !this.hybrid() && !this.probed && (this.probeN === 0 || now - this.probeT >= FAIL_RETRY_MS); }
 
     /** true once this car has shown a high-voltage battery (kept across restarts). */
     hybrid() { return !!(this.settings && this.settings.get('hudHybridSeen')); }
@@ -123,21 +139,33 @@ class Electrical {
 
     _put(name, v) { if (v !== null && v !== undefined) this.s[name] = { v: v, t: Date.now() }; }
 
+    /**
+     * A value from a signal: kept (SIGNAL_KEEP_MS); the field there but invalid (255 = none, 0 V) clears it, as
+     * the car then says it has none. Car's watches tell the handlers nothing of availability (2026-11-10 review).
+     */
+    _sig(name, v, present) {
+        if (v !== null && v !== undefined) this._put(name, v);
+        else if (present) delete this.s[name];
+    }
+
     /** Signal handlers for Car's extra watches (each field on its interface's one watch). */
     handlers() {
         const guard = (fn) => (v) => { try { fn(v); } catch (e) { /* never throw from a signal */ } };
+        const has = (v, key) => entries(v, key).length > 0;
         return {
             'de.bmw.infotainment.vehicle.CDS': {
-                statusBattery2: guard((v) => this._put('soc12', decode.soc12(v))),
+                statusBattery2: guard((v) => this._sig('soc12', decode.soc12(v), has(v, 'conditionBatteryChargingCondition'))),
             },
             // kept, but shown only once the car is known to be a hybrid (value()): never proof of one by itself
             'de.bmw.infotainment.drivingexcitement.Efficiencytainment2': {
-                statusBatteryTemperature: guard((v) => this._put('hvTemp', decode.hvTemp(v))),
+                statusBatteryTemperature: guard((v) => this._sig('hvTemp', decode.hvTemp(v), has(v, 'actualValueTemperatureHighVoltageStorage'))),
             },
+            // the signal's pack voltage is kept apart from the SME read's (hvVoltUds): each its own staleness
             'de.bmw.infotainment.lsc.LSCDataSink': {
                 statusHighVoltageStorage: guard((v) => {
                     const x = decode.hvVolt(v);
-                    if (x !== null) { this._put('hvVolt', x); this._seen('pack voltage signal, raw ' + JSON.stringify(decode.rawVolt(v))); }
+                    this._sig('hvVoltSig', x, has(v, 'actualValueVoltageHighVoltageStorage'));
+                    if (x !== null) this._seen('pack voltage signal, raw ' + JSON.stringify(decode.rawVolt(v)));
                 }),
             },
         };
@@ -152,7 +180,7 @@ class Electrical {
         const w = want || {};
         this.want = { v12: !!w.v12, hvSoc: w.hvSoc !== undefined ? !!w.hvSoc : !!w.hv, hvKw: w.hvKw !== undefined ? !!w.hvKw : !!w.hv };
         this.want.hv = this.want.hvSoc || this.want.hvKw;
-        const any = this.want.v12 || (this.want.hv && this.hybrid()) || (!this.hybrid() && !this.probed);
+        const any = this.want.v12 || (this.want.hv && this.hybrid()) || this._probeDue(Date.now());
         if (!any) return this.stop();
         if (this.timer) return;
         try {
@@ -165,7 +193,8 @@ class Electrical {
         } catch (e) { this.log.warn('electrical: ' + (e && e.message || e)); }
     }
 
-    stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
+    // a turn still running (a 12 V search) stops asking too: the link is shared, and the HUD is off (2026-11-10 review)
+    stop() { if (this.timer) clearInterval(this.timer); this.timer = null; this.gen++; }
 
     /** Let the link ask these units again (it stops after 5 misses in a row, until woken). */
     _wake(ecus) {
@@ -176,24 +205,37 @@ class Electrical {
     _poll() {
         if (this.busy || !this.rd) return;
         this.busy = true;
-        Promise.resolve().then(() => this._turn()).catch((e) => this.log.warn('electrical: ' + (e && e.message || e)))
+        const gen = this.gen;
+        Promise.resolve().then(() => this._turn(gen)).catch((e) => this.log.warn('electrical: ' + (e && e.message || e)))
             .then(() => { this.busy = false; });
     }
 
-    /** One turn: the probe (once), HV power (each turn), HV charge (every SLOW_MS), 12 V (every V12_MS). */
-    async _turn() {
-        const now = Date.now();
+    /**
+     * One turn: the probe (until settled), HV power (each turn), HV charge (every SLOW_MS), 12 V (every V12_MS,
+     * each turn while a search runs). gen: the start it belongs to; after a stop() it asks nothing more.
+     */
+    async _turn(gen) {
+        const now = Date.now(), g = gen === undefined ? this.gen : gen, live = () => this.gen === g;
+        if (!live()) return;
         // the link is made on the HUD's first tick and comes up a moment later: until then every read fails at
-        // once, which would use up the one look for a hybrid battery and start the minute-long back-off
+        // once, which would use up a look for a hybrid battery and start the minute-long back-off. ready is true
+        // as soon as the proxy is there, before the transport is available, so both (2026-11-10 review)
         const link = this.rd.diag;
-        if (link && link.ready === false) return;
-        if (!this.hybrid() && !this.probed) {
-            this.probed = true;
+        if (link && (link.ready === false || link.available === false)) return;
+        if (this._probeDue(now)) {
+            this.probeN++; this.probeT = now;
             this._wake([SME]);
             const v = await this.rd.read(Object.assign({}, HV_SOC[0], { timeoutMs: PROBE_TIMEOUT_MS }));
-            if (v !== null) { this._put('hvSoc', v); this._seen('battery unit DDBC, ' + ((this.rd.raws[this.rd.key(HV_SOC[0])] || {}).bytes || '')); }
-            else this.log.info('electrical: no high-voltage battery unit (' + ((this.rd.raws[this.rd.key(HV_SOC[0])] || {}).why || '?') + ')');
-            if (!this.want.v12 && !(this.want.hv && this.hybrid())) this.stop();
+            const raw = this.rd.raws[this.rd.key(HV_SOC[0])] || {};
+            // settled only by a reply (bytes): a charge in range is a hybrid, a refusal or odd reply is not.
+            // No reply or a transport error (busy, not up, unit asleep) is tried again a minute later
+            if (v !== null) { this.probed = true; this._put('hvSoc', v); this._seen('battery unit DDBC, ' + (raw.bytes || '')); }
+            // a refusal that means "not now" (21 busy, 22 conditions not correct, 78 pending) is no answer either
+            else if ((raw.bytes && !/^NRC (21|22|78)\b/.test(raw.why || '')) || this.probeN >= PROBE_TRIES) {
+                this.probed = true;
+                this.log.info('electrical: no high-voltage battery unit (' + (raw.why || '?') + (raw.bytes ? '' : ', ' + this.probeN + ' tries') + ')');
+            }
+            if (live() && !this.want.v12 && !(this.want.hv && this.hybrid())) this.stop();
             return;
         }
         // the power and the charge each counted on their own: a unit that gives the charge but not the power
@@ -201,22 +243,25 @@ class Electrical {
         const w = this.want, wantKw = w.hvKw !== undefined ? w.hvKw : w.hv, wantSoc = w.hvSoc !== undefined ? w.hvSoc : w.hv;
         if (wantKw && this.hybrid() && this._may('kw', now, [SME])) {
             const volts = await this.rd.value('hvV', HV_V);
-            const amps = volts === null ? null : await this.rd.value('hvA', HV_A);
+            const amps = volts === null || !live() ? null : await this.rd.value('hvA', HV_A);
             const kw = decode.hvKw(volts, amps);
-            if (kw !== null) { this._put('hvKw', kw); this._put('hvVolt', volts); }
-            this._result('kw', kw !== null, 'the battery unit (SME 0x07) gives no power');
+            if (kw !== null) { this._put('hvKw', kw); this._put('hvVoltUds', volts); }
+            if (live()) this._result('kw', kw !== null, 'the battery unit (SME 0x07) gives no power');
         }
+        if (!live()) return;
         if (wantSoc && this.hybrid() && now - this.slowT >= SLOW_MS && this._may('soc', now, [SME])) {
             this.slowT = now;
             const soc = await this.rd.value('hvSoc', HV_SOC);
             this._put('hvSoc', soc);
-            this._result('soc', soc !== null, 'the battery unit (SME 0x07) gives no charge');
+            if (live()) this._result('soc', soc !== null, 'the battery unit (SME 0x07) gives no charge');
         }
-        if (this.want.v12 && now - this.v12T >= V12_MS && this._may('v12', now, V12_ECUS)) {
+        if (!live()) return;
+        if (this.want.v12 && (this.vs.order !== null || now - this.v12T >= V12_MS) && this._may('v12', now, V12_ECUS)) {
             this.v12T = now;
-            const v = await this._volt();
+            const v = await this._volt(live);
             this._put('v12', v);
-            this._result('v12', v !== null, 'no unit gives the 12 V voltage (F442 / OBD 42)');
+            // a search part-way through (or cut short by a stop) is no failure yet: only one that ended without an answer
+            if (live() && (v !== null || this.vs.order === null)) this._result('v12', v !== null, 'no unit gives the 12 V voltage (F442 / OBD 42)');
         }
     }
 
@@ -233,9 +278,14 @@ class Electrical {
         if (++this.fails[k] === 3) this.log.info('electrical: ' + why + '; asked once a minute');
     }
 
-    /** The 12 V voltage: the candidate that answered keeps being asked (two misses before a search), as battery12.js. */
-    async _volt() {
+    /**
+     * The 12 V voltage: the candidate that answered keeps being asked (two misses before a search), as battery12.js.
+     * A search asks SEARCH_PER_TURN candidates a turn and goes on from there the next turn (vs.order / vs.at);
+     * live() false (stopped): it asks no more.
+     */
+    async _volt(live) {
         const list = V12.map((c) => Object.assign({ timeoutMs: VOLT_TIMEOUT_MS }, c)), vs = this.vs, rd = this.rd;
+        const alive = live || (() => true);
         const ask = async (i) => {
             const v = await rd.read(list[i]);
             const why = (rd.raws[rd.key(list[i])] || {}).why || '';
@@ -243,32 +293,40 @@ class Electrical {
             return v;
         };
         const p = vs.pick;
-        if (p !== null) {
-            const v = await ask(p);
-            if (v !== null) { vs.miss = 0; return v; }
-            if (++vs.miss < 2) return null;
+        if (vs.order === null) {
+            if (p !== null) {
+                const v = await ask(p);
+                if (v !== null) { vs.miss = 0; return v; }
+                if (++vs.miss < 2) return null;
+            }
+            if (!alive()) return null;
+            vs.order = list.map((c, i) => i).filter((i) => i !== p).sort((a, b) => RANK[vs.res[a] || 'new'] - RANK[vs.res[b] || 'new'] || a - b);
+            if (p !== null) vs.order.push(p);
+            vs.at = 0;
         }
-        const order = list.map((c, i) => i).filter((i) => i !== p).sort((a, b) => RANK[vs.res[a] || 'new'] - RANK[vs.res[b] || 'new'] || a - b);
-        if (p !== null) order.push(p);
-        for (let k = 0; k < order.length; k++) {
-            const v = await ask(order[k]);
+        for (let n = 0; n < SEARCH_PER_TURN && vs.at < vs.order.length && alive(); n++) {
+            const i = vs.order[vs.at++];
+            const v = await ask(i);
             if (v !== null) {
-                if (vs.pick !== order[k]) this.log.info('electrical: 12 V from ' + rd.key(list[order[k]]));
-                vs.pick = order[k]; vs.miss = 0;
+                if (vs.pick !== i) this.log.info('electrical: 12 V from ' + rd.key(list[i]));
+                vs.pick = i; vs.miss = 0; vs.order = null;
                 return v;
             }
         }
+        if (vs.at >= vs.order.length) vs.order = null;           // all asked, none answered: the next search starts over
         return null;
     }
 
-    /** What the HUD shows; the hybrid values only on a hybrid. */
+    /** What the HUD shows; the hybrid values only on a hybrid. Signal values kept longer than read ones. */
     value() {
         const now = Date.now(), hy = this.hybrid();
         const get = (k, ms) => (this.s[k] && now - this.s[k].t < ms ? this.s[k].v : null);
+        // the pack voltage: the SME read while fresh, else the signal's
+        const uds = get('hvVoltUds', SLOW_STALE_MS), volt = uds !== null ? uds : get('hvVoltSig', SIGNAL_KEEP_MS);
         return {
-            soc12: get('soc12', SIGNAL_STALE_MS), v12: get('v12', V12_MS * 4),
+            soc12: get('soc12', SIGNAL_KEEP_MS), v12: get('v12', V12_MS * 4),
             hvSoc: hy ? get('hvSoc', SLOW_STALE_MS) : null, hvKw: hy ? get('hvKw', STALE_MS) : null,
-            hvTemp: hy ? get('hvTemp', SIGNAL_STALE_MS) : null, hvVolt: hy ? get('hvVolt', SLOW_STALE_MS) : null,
+            hvTemp: hy ? get('hvTemp', SIGNAL_KEEP_MS) : null, hvVolt: hy ? volt : null,
         };
     }
 }

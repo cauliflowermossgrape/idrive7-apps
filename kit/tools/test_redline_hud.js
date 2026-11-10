@@ -588,6 +588,7 @@ function electricalChecks() {
         const r = replies[key];
         if (r === undefined) return Promise.resolve(null);
         if (r === 'nrc') return Promise.resolve([0x7F, sid, 0x31]);
+        if (r === 'nrc22') return Promise.resolve([0x7F, sid, 0x22]);      // conditions not correct: not now
         return Promise.resolve((sid === 1 ? [0x41] : [0x62]).concat(data, r));
     } });
     const handle = (e, iface, f, v) => e.handlers()[iface][f](v);
@@ -605,7 +606,11 @@ function electricalChecks() {
     return p._turn().then(() => {
         ok(linkP.asked.join() === '7:DDBC', 'petrol: one look for a battery unit (' + linkP.asked.join() + ')');
         ok(p.hybrid() === false && sP.vals.hudHybridSeen === false, 'petrol: not taken for a hybrid');
-        return p._turn();
+        // the 12 V search asks 1 candidate a turn: F442 (refused), the SME's, then OBD 42 answers
+        return p._turn().then(() => {
+            ok(linkP.asked.slice(1).join() === '12:F442' && p.v12T > 0 && p.fails.v12 === 0, 'petrol: the 12 V search asks 1 a turn, no failure part-way (' + linkP.asked.slice(1).join() + ')');
+            return p._turn();
+        }).then(() => p._turn());
     }).then(() => {
         const v = p.value();
         ok(v.hvSoc === null && v.hvKw === null && v.hvTemp === null && v.hvVolt === null, 'petrol: no hybrid values (' + JSON.stringify(v) + ')');
@@ -674,6 +679,117 @@ function electricalChecks() {
             w.fails.soc = 3; w.tried.soc = Date.now() - 61000; w.slowT = 0; linkW.woke = []; linkW.asked = [];
             return w._turn();
         }).then(() => ok(linkW.woke.indexOf(0x07) >= 0 && linkW.asked.join() === '7:DDBC' && w.fails.soc === 0, 'the once-a-minute try wakes the unit and asks it (' + linkW.woke.join() + ' / ' + linkW.asked.join() + ')'));
+    }).then(() => {
+        // (2026-11-10 review) a clock the checks move: electrical.js and the reads stamp with Date.now; put back after
+        const realNow = Date.now;
+        let clock = realNow.call(Date);
+        Date.now = () => clock;
+        const lines = [], logL = { info: (m) => lines.push(m), warn: (m) => lines.push('W ' + m) };
+        const wait = () => new Promise((res) => setTimeout(res, 20));
+        const mk = (s, link) => { const e = new Electrical({ log: logL, settings: s }, () => link); e.rd = new DidReader(link, { ecu: 7 }); return e; };
+        // the look for a hybrid battery: a transport error is no answer, asked again a minute later
+        const linkR = linkFor({ '7:DDBC': [0x02, 0x84] }), physR = linkR.physical;
+        let refuse = true;
+        linkR.physical = function () { if (refuse) { this.asked.push('refused'); return Promise.reject(new Error('transport refused')); } return physR.apply(this, arguments); };
+        linkR.available = true;
+        const r = mk(settingsFake(), linkR);
+        r.want = { v12: false, hv: true };
+        return r._turn().then(() => {
+            ok(r.probed === false && r.probeN === 1 && r.hybrid() === false && lines.length === 0, 'probe: a transport error is no answer, nothing logged (' + lines.join('|') + ')');
+            ok(r._probeDue(clock + 1000) === false && r._probeDue(clock + 60000) === true, 'probe: due again a minute later');
+            refuse = false; clock += 30000;
+            return r._turn();
+        }).then(() => {
+            ok(linkR.asked.join() === 'refused', 'probe: not asked again within the minute (' + linkR.asked.join() + ')');
+            clock += 31000;
+            return r._turn();
+        }).then(() => {
+            ok(linkR.asked.join() === 'refused,7:DDBC' && r.hybrid() === true && r.probed === true, 'probe: the retry finds the battery unit (' + linkR.asked.join() + ')');
+            // a refusal settles it: no unit, one line, never asked again (nor started for it)
+            const linkN = linkFor({ '7:DDBC': 'nrc' }), e = mk(settingsFake(), linkN);
+            e.want = { v12: false, hv: true }; lines.length = 0;
+            return e._turn().then(() => { clock += 61000; return e._turn(); }).then(() => { clock += 61000; return e._turn(); }).then(() => {
+                ok(linkN.asked.join() === '7:DDBC' && e.probed === true && e.hybrid() === false, 'probe: a refusal settles it, not asked again (' + linkN.asked.join() + ')');
+                ok(lines.length === 1 && /no high-voltage battery unit \(NRC 31/.test(lines[0]), 'probe: one line for no unit (' + lines.join('|') + ')');
+                e.start({ hv: true });
+                ok(e.timer === null && e.rd !== null && linkN.asked.length === 1, 'probe: settled, start() asks nothing');
+            });
+        }).then(() => {
+            // "not now" (NRC 22, the unit not ready): tried again a minute later, not taken as no unit
+            const link22 = linkFor({ '7:DDBC': 'nrc22' }), n22 = mk(settingsFake(), link22);
+            n22.want = { v12: false, hv: true };
+            return n22._turn().then(() => {
+                ok(n22.probed === false && n22.hybrid() === false, 'probe: NRC 22 is no answer yet');
+                link22.physical = linkFor({ '7:DDBC': [0x02, 0x6C] }).physical.bind(link22);
+                clock += 61000;
+                return n22._turn();
+            }).then(() => ok(n22.hybrid() === true, 'probe: after NRC 22 the retry finds the battery unit'));
+        }).then(() => {
+            // no reply: 3 tries a minute apart, then one line, then no more
+            const linkQ = linkFor({}), q = mk(settingsFake(), linkQ);
+            q.want = { v12: false, hv: true }; lines.length = 0;
+            let c = Promise.resolve();
+            for (let i = 0; i < 5; i++) c = c.then(() => q._turn()).then(() => { clock += 61000; });
+            return c.then(() => ok(linkQ.asked.join() === '7:DDBC,7:DDBC,7:DDBC' && q.probed === true && lines.length === 1 && /no reply, 3 tries/.test(lines[0]),
+                'probe: no reply, 3 tries then no unit (' + linkQ.asked.join() + ' / ' + lines.join('|') + ')'));
+        }).then(() => {
+            // the link there but not available yet: nothing asked, no try used
+            const linkA = linkFor({ '7:DDBC': [0x02, 0x84] }), a = mk(settingsFake(), linkA);
+            linkA.available = false; a.want = { v12: true, hv: true };
+            return a._turn().then(() => ok(linkA.asked.length === 0 && a.probeN === 0, 'probe: link not available, nothing asked, no try used'));
+        }).then(() => {
+            // steady signals (sent on change only) stay shown; a read's value goes stale; the signal saying none clears it
+            const t = mk(settingsFake({ hudHybridSeen: true }), linkFor({}));
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            handle(t, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', { conditionBatteryChargingCondition: 81 });
+            handle(t, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: 3524 });
+            t._put('hvVoltUds', 360);
+            ok(t.value().hvVolt === 360, 'pack voltage: the fresh SME read first');
+            clock += 5 * 60000;
+            let v = t.value();
+            ok(v.hvTemp === 26 && v.soc12 === 81 && v.hvVolt === 352.4, 'steady signals still shown after 5 min, the SME read gone (' + JSON.stringify(v) + ')');
+            clock += 26 * 60000;
+            v = t.value();
+            ok(v.hvTemp === null && v.soc12 === null && v.hvVolt === null, 'signals: gone after 31 min');
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 255 });
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { other: 1 });
+            ok(t.value().hvTemp === null, 'signals: 255 (none) clears the temperature');
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
+            handle(t, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { other: 1 });
+            ok(t.value().hvTemp === 26, 'signals: a message without the field keeps it');
+        }).then(() => {
+            // stop() during a 12 V search: no further reads; the next start goes on where it stopped
+            const linkS = linkFor({}), physS = linkS.physical, st = mk(settingsFake({ hudHybridSeen: true }), linkS);
+            st.rd = null;
+            linkS.physical = function () { const x = physS.apply(this, arguments); if (this.asked.length === 1) st.stop(); return x; };
+            st.start({ v12: true });
+            return wait().then(() => {
+                ok(linkS.asked.join() === '12:F442' && st.timer === null && st.busy === false, 'stop() during the 12 V search: no further reads (' + linkS.asked.join() + ')');
+                st.start({ v12: true });
+                return wait();
+            }).then(() => {
+                st.stop();
+                ok(/^12:F442,7:F442/.test(linkS.asked.join()) && st.fails.v12 === 0, 'the next start goes on with the search, 1 a turn (' + linkS.asked.join() + ')');
+            });
+        }).then(() => {
+            // a hybrid whose 12 V isn't found: the power is read every turn of the search, and stays fresh
+            const linkP2 = linkFor({ '7:DDB4': [0x89, 0xA8], '7:DD69': [0xFF, 0xFF, 0xD8, 0xF0] }), physP = linkP2.physical;
+            linkP2.physical = function () { const x = physP.apply(this, arguments); if (!/DD/.test(this.asked[this.asked.length - 1])) clock += 1000; return x; };
+            const k = mk(settingsFake({ hudHybridSeen: true }), linkP2);
+            k.want = { v12: true, hvKw: true, hvSoc: false };
+            const turns = [], fresh = [];
+            let c = Promise.resolve();
+            for (let i = 0; i < 10; i++) {
+                c = c.then(() => { const n = linkP2.asked.length; return k._turn().then(() => { turns.push(linkP2.asked.slice(n)); fresh.push(k.value().hvKw !== null); clock += 100; }); });
+            }
+            return c.then(() => {
+                const v12n = turns.map((x) => x.filter((key) => !/DD/.test(key)).length);
+                ok(turns.slice(0, 9).every((x) => x[0] === '7:DDB4' && x[1] === '7:DD69'), 'search: the power read first every turn (' + turns.map((x) => x.join(' ')).join(' | ') + ')');
+                ok(v12n.slice(0, 9).every((n) => n === 1) && fresh.every(Boolean), 'search: 1 candidate a turn, the power fresh after each (' + v12n.join() + ' / ' + fresh.join() + ')');
+                ok(k.fails.v12 === 1, 'search: one failure for the whole search, not one a turn (' + k.fails.v12 + ')');
+            });
+        }).then(() => { Date.now = realNow; }, (e) => { Date.now = realNow; throw e; });
     }).then(() => {
         // knock: its start and its once-a-minute try wake the engine unit (electrical's 12 V reads ask it too)
         const KnockWatch = require(path.join(APP, 'knock'));

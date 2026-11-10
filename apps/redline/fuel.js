@@ -63,10 +63,16 @@ function fuelItem(lph, kmh, unit) {
 }
 
 class FuelWatch {
-    /** linkOf: () => a ReadOnlyDiag (the gearbox reader's, shared). opts: { diesel: bool } (density of 4521). */
+    /**
+     * linkOf: () => a ReadOnlyDiag (the gearbox reader's, shared). opts: { diesel: bool or () => bool } (density of
+     * 4521): a function is asked on every read, so a diesel found after the start (engine type on Auto, the first
+     * run) or set by hand gets its density at once (2026-11-10 review).
+     */
     constructor(ctx, linkOf, opts) {
         this.ctx = ctx; this.log = ctx.log; this.linkOf = linkOf;
-        this.cands = candidates(!!(opts && opts.diesel));
+        this.dieselOf = typeof (opts && opts.diesel) === 'function' ? opts.diesel : () => !!(opts && opts.diesel);
+        this.diesel = !!this.dieselOf();
+        this.cands = candidates(this.diesel);
         this.rd = null; this.timer = null; this.busy = false;
         this.lph = null; this.t = 0; this.triedT = 0; this.fails = 0; this.logged = false;
     }
@@ -88,6 +94,13 @@ class FuelWatch {
 
     _poll() {
         if (this.busy || !this.rd) return;
+        // the shared link not up yet (it comes up a moment after the first reader makes it): not a failed read, which
+        // would count towards "no fuel rate on this car" and the minute-long back-off (2026-11-10 review)
+        const link = this.rd.diag;
+        if (link && (link.ready === false || link.available === false)) return;
+        let diesel = this.diesel;
+        try { diesel = !!this.dieselOf(); } catch (e) { /* keep the last */ }
+        if (diesel !== this.diesel) { this.diesel = diesel; this.cands = candidates(diesel); }
         if (this.fails >= 3) {
             if (Date.now() - this.triedT < FAIL_RETRY_MS) return;     // not answering: once a minute,
             this._wake();                                               // and that try really asks it
@@ -110,6 +123,9 @@ class FuelWatch {
         }).catch((e) => { this.triedT = Date.now(); this.fails++; this.log.warn('fuel: ' + (e && e.message || e)); })
             .then(() => { this.busy = false; });
     }
+
+    /** Whether the engine unit has given a fuel rate this run (so with the engine off, 0 l/h is the right reading). */
+    worked() { return this.logged; }
 
     /** { lph }: smoothed litres per hour, null when stale or never read. */
     value() {

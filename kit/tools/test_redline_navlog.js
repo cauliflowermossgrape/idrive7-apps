@@ -79,6 +79,21 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
     await sleep(50);
     ok(!fs.existsSync(path.join(dir3, 'redline-nav.log')), 'no directions on the glass: no nav log written');
     noGlass.stop();
+    // values and a manoeuvre kind that arrive off the glass are written, once, when they arrive again on it
+    const dir4 = fs.mkdtempSync(path.join(os.tmpdir(), 'redline-nav-late-'));
+    let glass = false;
+    const late = NavLog.start({ signals: signals, dataDir: dir4 }, { info() {}, warn() {} }, null, { wanted: () => true, onGlass: () => glass });
+    await sleep(50);
+    H.Guidance.guidanceState('ACTIVE'); H.Guidance.guidingProvider('CAR_PLAY'); H.Guidance.conclusiveDart(dart(250));
+    ok(!fs.existsSync(path.join(dir4, 'redline-nav.log')), 'off the glass: nothing written yet');
+    glass = true;
+    H.Guidance.guidanceState('ACTIVE'); H.Guidance.guidingProvider('CAR_PLAY'); H.Guidance.conclusiveDart(dart(250));
+    H.Guidance.guidanceState('ACTIVE'); H.Guidance.conclusiveDart(dart(250));
+    const lateText = fs.readFileSync(path.join(dir4, 'redline-nav.log'), 'utf8');
+    ok(/guidanceState = "ACTIVE"/.test(lateText) && /guidingProvider = "CAR_PLAY"/.test(lateText) && /conclusiveDart = /.test(lateText), 'on the glass: the values dropped before are written');
+    ok((lateText.match(/ shape intersection: /g) || []).length === 1, 'on the glass: the shape line is written, once');
+    ok((lateText.match(/guidanceState = /g) || []).length === 1, 'on the glass: a repeated value is written once');
+    late.stop();
     // no signals (the preview): nothing breaks
     const q = NavLog.start({ dataDir: dir }, null);
     ok(typeof q.stop === 'function' && typeof q.write === 'function', 'no signals: a quiet stub');

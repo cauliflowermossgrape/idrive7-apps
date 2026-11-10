@@ -43,6 +43,9 @@ class KnockWatch {
 
     _poll() {
         if (this.busy || !this.rd) return;
+        // the shared link not up yet: not a failed read (it would count towards "no knock retard" and the back-off)
+        const link = this.rd.diag;
+        if (link && (link.ready === false || link.available === false)) return;
         if (this.fails >= 3) {
             if (Date.now() - this.triedT < FAIL_RETRY_MS) return;     // not answering: once a minute,
             this._wake();                                               // and that try really asks it

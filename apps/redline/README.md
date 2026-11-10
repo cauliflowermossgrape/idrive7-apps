@@ -261,12 +261,15 @@ below list them by what they do.
 | Launch time | on (default) / off: after a standing start, the 0-100 km/h (0-60 mph) time and its difference to your best, for 3 s ([Launch score](#launch-score)) |
 | Knock warning | on (default) / off: KNOCK when the engine pulls timing ([Knock](#knock)) |
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
+| Fuel use (experimental) | off (default) / on: the engine's fuel use, per 100 km while moving, per hour when stopped ([Fuel use](#fuel-use)) |
+| Fuel use unit | l/100 km (default) / mpg (UK) / mpg (US) / km/l |
 | Tyres | off (default) / on: TYRES over the four pressures in a 2x2 block (front over rear), each coloured against its target; on Arc, Ramp and Dial the worst tyre (TYRE RR 2.1) ([Tyres](#tyres)) |
 | Tyre widget | when a tyre is low (default) / low or warming up / always / off: the four tyres in the directions' corner, when they have no turn ([Tyres](#tyres)) |
 | Tyre widget: the car, tyre temperatures | on (default) / off each |
 | Tyre widget: each tyre's target | off (default) / on: the target pressure small after each pressure, as "/2.5" |
 | 12 V battery charge, 12 V battery voltage | off (default) / on each, on every car ([Electrical](#electrical)) |
 | Hybrid battery charge, power, temperature, voltage | off (default) / on each; listed only on a plug-in hybrid ([Electrical](#electrical)) |
+| Recovery / power bar ("Power bar" on HUD looks) | off (default) / on: regen and drive power drawn along the layout's own gauge; only on a plug-in hybrid ([Electrical](#electrical)) |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
 | Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
@@ -500,7 +503,7 @@ yet checked on a car.
 second while the readout is on and the engine runs (the gearbox reader's link), smoothed over about 2 s. First
 that answers: `5656` (fuel volume flow, ml/s), OBD `5E` (fuel rate, l/h), `4521` (fuel mass flow, over the
 fuel's density). Shown as **L/100KM** while moving (or **MPG**, **MPG US**, **KM/L**: *Fuel use unit* in
-Units), and as **L/H** (or **GAL/H**) under 5 km/h. Coasting with the fuel cut shows 0.0. A car whose engine
+Units), and as **L/H** (or **GAL/H**) under 5 km/h. Coasting with the fuel cut shows 0.0, and so does the engine off once it has given a rate (electric driving, auto start-stop). A car whose engine
 unit answers none of them shows nothing (logged once). Not yet checked on a car.
 
 ## Electrical

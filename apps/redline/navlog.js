@@ -122,13 +122,16 @@ function start(ctx, log, tap, opts) {
         if (on) glassAt = mono();
         return mono() - glassAt < GLASS_GRACE_MS;
     };
+    // true only when the line was written (callers mark once-only state then, so a line dropped off the glass is retried)
     const write = (msg) => {
         try {
-            if (!writing()) return;
+            if (!writing()) return false;
             const st = fs.existsSync(file) ? fs.statSync(file) : null;
             if (st && st.size > MAX_BYTES) fs.renameSync(file, file + '.1');
             fs.appendFileSync(file, new Date().toISOString() + ' nav: ' + msg + '\n');
+            return true;
         } catch (e) { /* the log is best effort */ }
+        return false;
     };
     const last = {}, shapes = {}, subs = [];
     const lastDist = {};
@@ -145,16 +148,15 @@ function start(ctx, log, tap, opts) {
             if (field === 'projectedGuidanceActive') route[src === 'carplay' ? 'carplay' : 'aa'] = v === true;
             if (field === 'conclusiveDart') {
                 const kind = kindOf(v);
-                if (!shapes[kind]) { shapes[kind] = true; write('shape ' + kind + ': ' + paths(clean(v, 0), '', []).join(' ')); }
+                if (!shapes[kind] && write('shape ' + kind + ': ' + paths(clean(v, 0), '', []).join(' '))) shapes[kind] = true;
             }
             const s = json(v);
             if (last[key] === s) return;
             // the same thing getting nearer (a turn, the lanes): at most every DIST_MS per field
             const core = withoutDistance(v);
             if (last[key + ':core'] === core && mono() - (lastDist[key] || -Infinity) < DIST_MS) return;
-            last[key + ':core'] = core; lastDist[key] = mono();
-            last[key] = s;
-            write(src + ' ' + field + ' = ' + s);
+            // marked only once written (off the glass the same value is tried again)
+            if (write(src + ' ' + field + ' = ' + s)) { last[key + ':core'] = core; lastDist[key] = mono(); last[key] = s; }
         } catch (e) { write('error reading ' + src + '.' + field + ': ' + e); }
     };
     if (!ctx.signals || !ctx.signals.watch) { write('no signals here (preview)'); return { stop() {}, write: write }; }
@@ -197,13 +199,12 @@ function start(ctx, log, tap, opts) {
             const views = reply && reply.viewContent, events = views && views[0] && views[0].eventsInView;
             if (Array.isArray(events)) events.forEach((e) => {
                 const k = kindOf({ maneuver: e && (e.maneuver || e) });
-                if (!shapes['event ' + k]) { shapes['event ' + k] = true; write('shape event ' + k + ': ' + paths(clean(e, 0), '', []).join(' ')); }
+                if (!shapes['event ' + k] && write('shape event ' + k + ': ' + paths(clean(e, 0), '', []).join(' '))) shapes['event ' + k] = true;
             });
             const s = json(reply, 8000), core = withoutDistance(reply);
             if (s === lastEl) return;
             if (core === lastElCore && mono() - lastElAt < DIST_MS) return;
-            lastEl = s; lastElCore = core; lastElAt = mono();
-            write('events = ' + s);
+            if (write('events = ' + s)) { lastEl = s; lastElCore = core; lastElAt = mono(); }
         }).catch((e) => {
             const m = String(e && e.message || e).slice(0, 200);
             if (elProxy) {
@@ -212,7 +213,7 @@ function start(ctx, log, tap, opts) {
                 if (++callFails >= FAILS_RECONNECT) { elProxy = null; callFails = 0; proxyFailedAt = mono(); }
             }
             tapped('events', 'error', m);
-            if (m !== elErr) { elErr = m; write('events error: ' + m); }
+            if (m !== elErr && write('events error: ' + m)) elErr = m;
         }).then(() => { asking = false; });
     };
     const elTimer = setInterval(ask, QUERY_MS);
