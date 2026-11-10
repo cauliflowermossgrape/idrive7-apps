@@ -91,8 +91,8 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
 - **Pill** (a sim-racing telemetry look): one rounded panel. At its left the gear in a ring that fills
   round with the revs (green, yellow through the count-in, red at the shift point); the shift lights as
   a row of small dots along its top; up to three readouts as a small label over big 7-segment digits.
-  From the shift point (shift lights on) and on the limiter the whole panel turns red, grey again after
-  the upshift. It follows *HUD colours*, the light fill and colours, the peak, the grade and the power
+  Through the count-in the panel reddens; from the shift point (shift lights on) and on the limiter it
+  flashes, solid red then grey with the ring and dots in red, and is grey again after the upshift. It follows *HUD colours*, the light fill and colours, the peak, the grade and the power
   bar (along its bottom).
 
 *Shift light style* (Settings) works on Arc, Ramp and Dial as on the other layouts: M is the cars' own colours,

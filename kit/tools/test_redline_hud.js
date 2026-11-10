@@ -73,12 +73,16 @@ LAYOUTS.filter((s) => ['minimal', 'ramp', 'dial'].indexOf(s) < 0).forEach((style
         ok(px(false) === px(true) && (a.d[i] !== b.d[i] || a.d[i + 1] !== b.d[i + 1]), 'pill: Rev bar off removes the ring round the gear, the panel stays');
     } else ok(px(false) < px(true) * 0.6, style + ': Rev bar off still draws most of the bar');
 });
-// pill: the panel turns red from the shift point (shift lights on) and on the limiter, grey otherwise
+// pill: the panel reddens through the count-in; from the shift point and on the limiter it flashes (solid red, then
+// grey), grey below the count-in and with the shift lights off
 {
-    const red = (cue, lights) => { const cv = new Canvas(Draw.IW, Draw.IH);
-        Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'pill', lights: lights !== false }), { readouts: [], chip: null, cue: Object.assign({ from: 4400, at: 5550, shift: false, limiter: false }, cue) }), 'bg');
-        const i = (70 * Draw.IW + 250) * 4; return cv.d[i] > cv.d[i + 1] + 60; };
-    ok(!red({}) && red({ shift: true }) && red({ limiter: true }) && !red({ shift: true }, false), 'pill: red panel at the shift point and on the limiter, grey otherwise (and with the shift lights off)');
+    const panel = (rpm, cue, extra) => { const cv = new Canvas(Draw.IW, Draw.IH);
+        Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'pill', lights: !(extra && extra.off) }),
+            { d: { rpm: rpm, gear: 3, stage: 'D' }, readouts: [], chip: null, peak: 0, blink: !(extra && extra.dark), cue: Object.assign({ from: 4400, at: 5550, shift: false, limiter: false }, cue) }), 'both');
+        const i = (112 * Draw.IW + 250) * 4; return cv.d[i] - cv.d[i + 1]; };
+    const low = panel(3000), half = panel(4975), at = panel(5600, { shift: true }), dark = panel(5600, { shift: true }, { dark: true });
+    ok(low < 20 && half > low + 40 && at > half + 40 && dark < 20 && panel(6560, { limiter: true }) > half + 40 && panel(5600, { shift: true }, { off: true }) < 20,
+        'pill: grey (' + low + '), redder through the count-in (' + half + '), flashing solid red (' + at + ') and grey (' + dark + ') from the shift point; grey with the shift lights off');
 }
 // only the shift lights (everything else off) still draws something
 {

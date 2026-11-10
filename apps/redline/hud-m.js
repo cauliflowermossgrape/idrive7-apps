@@ -417,14 +417,19 @@ function drawDial(cv, f, layer, h) {
 /*
  * One rounded panel across the picture: at its left the gear in a ring that fills round with the revs (the low
  * colour, the mid colour through the count-in, red at the shift point), shift lights as a row of small dots
- * along its top, and up to three readouts as a small label over big 7-segment digits. At the shift point (shift
- * lights on) and on the limiter the whole panel turns red (on the static layer: its key has the shift and limiter
- * state), back to grey after the upshift. The power meter runs along the panel's bottom (not in the list).
+ * along its top, and up to three readouts as a small label over big 7-segment digits. Through the count-in the panel
+ * reddens; from the shift point and on the limiter it flashes (bright red alone, then grey with the ring and dots
+ * red), back to grey after the upshift (2026-11-10, from the user's video). The power meter runs along the panel's bottom (not in the list).
  */
 // (the dots and the readouts stop where the panel's rounded right end starts closing in)
 const PL = { x: 4, y: 20, w: 392, h: 100, gx: 54, gy: 70, r0: 33, r1: 41, dx0: 112, dx1: 352, dy: 34, rad: 4.2,
     vx: 112, slots: [0, 96, 180], room: [90, 78, 78], ly: 58, vy: 64, vh: 28, cw: 14, ct: 3.6, cg: 4, mx0: 112, mx1: 352, my: 106, mh: 5 };
 const PC = { panel: '#2e3238', red: '#d42a26', ring: '#ffffff' };
+/** Colour a..b at k (0..1), both '#rrggbb'. */
+function mixHex(a, b, k) {
+    const c = (x, i) => parseInt(x.slice(1 + 2 * i, 3 + 2 * i), 16), t = clamp(k, 0, 1);
+    return '#' + [0, 1, 2].map((i) => ('0' + Math.round(c(a, i) + (c(b, i) - c(a, i)) * t).toString(16)).slice(-2)).join('');
+}
 /** A readout's value as 7-segment digits (with a decimal point) from x, a suffix such as ° or % after it as text. */
 function segValue(cv, str, x, y, c, h) {
     const m = /^(-?[0-9][0-9.]*)(.*)$/.exec(String(str));
@@ -451,38 +456,44 @@ function pillMeter(cv, bar, P, layer) {
     else if (vx > z + 1.5) cv.roundRect(z + 1, PL.my, vx - z - 1, PL.mh, PL.mh / 2, bar.v >= 0.85 * hi ? P.warm || P.mid : P.text);
 }
 function drawPill(cv, f, layer, h) {
-    const o = f.opts, d = f.d, cue = f.cue, P = h.P, BG = layer !== 'fg', fg = layer !== 'bg', fl = flashOn(o, cue);
+    // all of it on the moving layer: the panel's colour follows the revs (the static layer would cover nothing)
+    if (layer === 'bg') return;
+    const o = f.opts, d = f.d, cue = f.cue, P = h.P, fl = flashOn(o, cue);
     const flashCol = cue.limiter ? P.limit : o.lightStyle === 'f1' ? h.RACE_BLUE : P.limit;
     const meter = (f.readouts || []).filter((it) => it.bar)[0];
-    // the panel: grey, red from the shift point (shift lights on) and on the limiter
-    if (BG) cv.roundRect(PL.x, PL.y, PL.w, PL.h, PL.h / 2, withAlpha(fl ? PC.red : PC.panel, fl ? 0.8 : 0.7));
+    // the count-in (shift lights on): the panel reddens from grey as the shift point nears. From the shift point and on
+    // the limiter it flashes: solid bright red with no ring or dots, then grey with the ring and the dots in red
+    const count = o.lights && isNum(d.rpm) ? clamp((d.rpm - cue.from) / Math.max(1, cue.at - cue.from), 0, 1) : 0;
+    const solid = fl && f.blink;
+    const panel = solid ? withAlpha(PC.red, 0.92) : fl ? withAlpha(PC.panel, 0.7) : withAlpha(mixHex(PC.panel, PC.red, count), 0.7 + 0.15 * count);
+    cv.roundRect(PL.x, PL.y, PL.w, PL.h, PL.h / 2, panel);
     // the ring round the gear: a faint track, filled round from the top with the revs to the redline
     // (the light style's first colour, its middle one through the count-in, the flash's at the shift point)
     const ringCol = fl ? flashCol : isNum(d.rpm) && d.rpm >= cue.from ? h.lightCol(o.lightStyle, P, 0.5) : h.lightCol(o.lightStyle, P, 0);
-    if (o.bar !== false) {
-        if (BG) cv.arc(PL.gx, PL.gy, PL.r0, PL.r1, 0, 360, withAlpha(PC.ring, o.dim ? 0.18 : 0.1));
-        if (fg && isNum(d.rpm) && d.rpm > 50) {
+    if (o.bar !== false && !solid) {
+        cv.arc(PL.gx, PL.gy, PL.r0, PL.r1, 0, 360, withAlpha(PC.ring, o.dim ? 0.18 : 0.1));
+        if (isNum(d.rpm) && d.rpm > 50) {
             const a = 360 * clamp(d.rpm / Math.max(1, f.redline), 0, 1);
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, P) : null;
-            const c = fl ? (f.blink ? flashCol : withAlpha(flashCol, 0.35)) : pop || ringCol;
-            if (a > 0.5) cv.arc(PL.gx, PL.gy, PL.r0, PL.r1, 0, a, c, { round: true });
+            if (a > 0.5) cv.arc(PL.gx, PL.gy, PL.r0, PL.r1, 0, a, fl ? flashCol : pop || ringCol, { round: true });
         }
-        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) {
+        if (isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) {
             const pa = 360 * clamp(f.peak / Math.max(1, f.redline), 0, 1);
             cv.arc(PL.gx, PL.gy, PL.r0 - 2, PL.r1 + 2, pa - 1.5, pa + 1.5, '#ffffff');
         }
     }
-    // the shift lights: small dots along the top, in the app's light fill (GT3 or left to right) and colours
-    if (o.lights) {
+    // the shift lights: small dots along the top, in the app's light fill (GT3 or left to right) and colours; in the
+    // flash's grey half all in the flash colour, in its red half none
+    if (o.lights && !solid) {
         const n = 14, pts = [], pitch = (PL.dx1 - PL.dx0) / (n - 1);
         for (let i = 0; i < n; i++) pts.push([PL.dx0 + i * pitch, PL.dy]);
         h.drawLights(cv, pts, pts.map((p, i) => (o.gt3 ? Math.min(i, n - 1 - i) : i)), o.gt3 ? n / 2 : n, PL.rad,
-            { rpm: d.rpm, cue: cue, blink: f.blink, dim: o.dim, style: o.lightStyle, P: P, layer: layer });
+            { rpm: d.rpm, cue: cue, blink: true, dim: o.dim, style: o.lightStyle, P: P, layer: 'both' });
     }
-    if (meter) pillMeter(cv, meter.bar, P, layer);
-    if (!fg) return;
+    if (meter) pillMeter(cv, meter.bar, P, 'both');
     if (f.chip) ring(cv, PL.gx, PL.gy, PL.r1 + 2, PL.r1 + 30, f.chip, P);
-    if (o.gear) cv.text(h.gearText(d), PL.gx, PL.gy + 19, 52, cue.limiter && f.blink ? P.limit : P.text, { align: 'center', font: h.gearFont(o) });
+    // (white throughout: the panel itself flashes red)
+    if (o.gear) cv.text(h.gearText(d), PL.gx, PL.gy + 19, 52, P.text, { align: 'center', font: h.gearFont(o) });
     // the gearbox mode under the ring's right side, clear of the dots
     if (f.mode && o.gear) cv.text(f.mode, PL.gx + 38, PL.gy + 44, 14, withAlpha(P.text, 0.85), { font: 'bold' });
     h.drawDown(cv, PL.gx, PL.gy + 30, f.down || 0, 0.7, P.arrow);
