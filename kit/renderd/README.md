@@ -261,7 +261,8 @@ crashing, the renderer stopping, a clock jump backwards) opens it.
 sh mgu-app-install.sh inputgate             # copy next to the renderer + boot guard: loads at the next head-unit start
 sh mgu-app-install.sh inputgate --now       # VM / bench only: restart the HMI with it now (on a car that reboots the unit)
 sh mgu-app-install.sh inputgate-status      # loaded / set up / left out by the boot guard
-sh mgu-app-install.sh inputgate-remove      # take it out (the HMI drops it at the next start; --now: restart it)
+sh mgu-app-install.sh inputgate-remove      # take it out: gone after a head-unit reboot (systemctl reboot or hold the
+                                            # volume knob; an ignition cycle is not one); --reboot: reboot now; --now: restart the HMI (VM)
 ```
 
 The HMI is never restarted on a car: `hmi.service` stops with SIGABRT and the head unit's crash

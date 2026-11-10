@@ -89,8 +89,15 @@ const asBuffer = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
  * rpmShow (optional): the rpm drawn, between samples moved on along the climb (the HUD smooths it);
  * the count, the flash and the limiter go by it, the climb rate only by the real samples (rpm).
  */
-function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
+function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow, revFrom) {
     if (!isNum(rpm)) { st.rate = 0; st.on = false; st.fall = null; return { from: shift - 1500, at: shift, shift: false, limiter: false, rate: 0, fallSince: null }; }
+    // Shift lights as a plain rev bar (setting lightMode "rev", issue #133): an even count from revFrom to the
+    // redline, the flash at the redline; no lead, no climb rate, nothing learned
+    if (isNum(revFrom)) {
+        st.on = false; st.fall = null; st.rate = 0;
+        const r = isNum(rpmShow) ? rpmShow : rpm, from = clamp(revFrom, 0, redline - 500);
+        return { from: from, at: redline, shift: r >= redline, limiter: rpm >= redline - 40, rate: 0, fallSince: null };
+    }
     let rising = false;
     // the same reading again (a frame drawn between two rpm samples) is no news: the rate is only
     // updated on a new sample, measured over the time since the last one; a reading unchanged for
@@ -132,6 +139,8 @@ function shiftCue(st, rpm, tMs, shift, redline, leadMs, gear, rpmShow) {
 }
 
 const numOf = (settings, k, d) => { const v = Number(settings.get(k)); return isFinite(v) ? v : d; };
+/** Setting lightMode "rev": the rpm the plain rev bar starts at (setting lightStart), else null (the shift count). */
+const revOf = (settings) => (settings.get('lightMode') === 'rev' ? numOf(settings, 'lightStart', 4000) : null);
 
 /**
  * The driver's reaction time from one hand upshift: flash = { rate (rpm/s), target (rpm), lead (ms asked
@@ -365,7 +374,7 @@ function optsFrom(settings, drive) {
         peak: on('hudPeak'),
         chip: (() => { const c = settings.get('hudChip'); return c === false || c === 'off' ? 'off' : c === 'simple' ? 'simple' : 'burst'; })(),
         shake: settings.get('hudShake') === true,
-        lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim',
+        lights: lights !== 'off', gt3: lights === 'gt3', dim: settings.get('hudUnlit') === 'dim', rev: revOf(settings),
         lightStyle: settings.get('lights'), warmOil: numOf(settings, 'warmOil', 80),
         mode: on('hudShowMode'),
         // knock (the engine unit's ignition retard): the warning on by default, the readout off
@@ -562,7 +571,7 @@ function demoFrame(tMs, o, cueState, lead, now) {
     const dm = demoAt(tMs), redline = 6550;
     const d = { rpm: dm.rpm, gear: dm.gear, stage: dm.stage, oil: dm.oil, coolant: dm.coolant, demo: true };
     const sp = { rpm: dm.shift, cold: false };
-    const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, d.rpm);
+    const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, d.rpm, o.rev);
     return {
         d: d, shift: sp.rpm, redline: redline, max: 8000, blink: cue.shift || cue.limiter ? Math.floor(now / BLINK_MS) % 2 === 0 : true, cue: cue,
         down: dm.down,
@@ -843,9 +852,10 @@ function start(ctx, src) {
         // the lights count into the shift and flash for it, early by the reaction time; 5 Hz flash
         const was = cueState.on, lead = leadMs();
         const show = smooth(d.rpm, now, Math.min(redline - 50, src.maxRpm()));
-        const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, show);
-        // the reaction time is learned only from flashes the driver could see: lights on, HUD shown
-        if (cue.shift && !was) {
+        const cue = shiftCue(cueState, d.rpm, now, sp.rpm, redline, lead, d.gear, show, o.rev);
+        // the reaction time is learned only from flashes the driver could see: lights on, HUD shown (not from the
+        // plain rev bar's flash at the redline: it has no lead)
+        if (cue.shift && !was && !isNum(o.rev)) {
             const seen = lights && target && target.state === 'shown';
             flashInfo = seen ? { t: Date.now(), rate: cue.rate, target: sp.rpm, lead: lead, fall: null } : null;
         }
@@ -1213,4 +1223,4 @@ function start(ctx, src) {
 }
 
 // writeAtomic: kept here too (it moved to files.js in 2.0) for code that calls Hud.writeAtomic
-module.exports = { start, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };
+module.exports = { start, revOf, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };

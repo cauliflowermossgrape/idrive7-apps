@@ -111,8 +111,13 @@ then no tab appears and nothing is sent. Code: `xdrive.js`.
   (not READY) the engine counts as off whatever the rpm says: on some cars the rpm signal stays
   above 50 for minutes after switching off (issue #28). The button has to be pressed twice
   within 6 s.
-- A VIP that answers NRC `33` (security access, G05 xDrive45e `0F2530`) wants an unlock this app
-  doesn't do; the tab says so. The ICE G05's `0F2520` answers it only with the engine running.
+- The G05 xDrive45e has the same VIP (`0F2520`) and takes the job the same way, with the engine off
+  and the ignition on (confirmed in diagnostic mode, issue #52). Another VIP that answers NRC `33`
+  may want an unlock this app doesn't do; the tab suggests diagnostic mode first.
+- **Diagnostic mode:** where the DSC answers NRC `33` (security access) with every check green,
+  switch the ignition on in diagnostic mode (press Start three times quickly, without the brake)
+  and press again. That is how the write went through on a G26 (DSC_G20 `0F2510`, issue #63) and
+  a G20 330e (issue #52); the tab says so.
 - The mode comes from the transfer case itself when it has been read: the requested-torque
   qualifier in `22 DB 32` (bytes 7-8, also the last byte of `DB31`) is `0x20` / `0x21` while the
   LMV is active and `0xE8` after the OFF write (`(q & 0xC0) == 0xC0` = off; the same two values are

@@ -30,7 +30,8 @@
 #                                                       guard leaves it out if the HMI fails with it.
 #                                                       --now: restart the HMI now (VM / bench only:
 #                                                       on a car an HMI restart reboots the unit)
-#   sh mgu-app-install.sh inputgate-remove [--now]      take it out again (next start / --now)
+#   sh mgu-app-install.sh inputgate-remove [--now|--reboot]  take it out again (gone after a head-unit reboot;
+#                                                       --reboot: reboot now; --now: restart the HMI, VM / bench)
 #   sh mgu-app-install.sh inputgate-status              loaded / set up / left out
 #
 # Options (env):  NO_RESTART=1  don't restart oapcontroller after changes
@@ -753,7 +754,9 @@ gate_loaded() {
     [ -n "$p" ] && grep -q mgu-inputgate "/proc/$p/maps" 2>/dev/null
 }
 gate_state() {    # one line for status
-    if gate_loaded; then echo "loaded"
+    # removed while the HMI runs: it keeps its mapped copy until the head unit reboots (issue #117)
+    if gate_loaded && [ ! -f "/etc/systemd/system/$GATE_DROPIN_NAME" ]; then echo "removed, still loaded in the running HMI until the head unit reboots"
+    elif gate_loaded; then echo "loaded"
     elif [ -f "/etc/systemd/system/$GATE_DROPIN_NAME" ]; then
         n=$(cat "$RENDERD_DIR/inputgate.strikes" 2>/dev/null || echo 0)
         if [ "${n:-0}" -ge 2 ] 2>/dev/null; then echo "left out by the boot guard (the HMI failed with it) - install again to retry"
@@ -826,7 +829,10 @@ remove_inputgate() {
     rm -f "$GATE_SO"      # (a running HMI keeps its mapped copy; without the drop-in it is not loaded again)
     [ $had = 1 ] || { say "controller gate not installed"; return 0; }
     if [ "${1:-}" = "--now" ]; then say "restarting the HMI without the controller gate (VM / bench only)..."; systemctl restart hmi.service 2>/dev/null; fi
-    say "controller gate removed - the HMI drops it the next time the head unit starts"
+    # switching the car off and on is not a head-unit start: the HMI keeps running with the gate (issue #117)
+    say "controller gate removed - the HMI drops it when the head unit reboots (systemctl reboot, or hold the volume knob);"
+    say "  switching the car off and on does not restart the head unit. Or: sh $0 inputgate-remove --reboot"
+    if [ "${1:-}" = "--reboot" ]; then say "rebooting the head unit..."; sync; systemctl reboot; fi
 }
 
 apply() {

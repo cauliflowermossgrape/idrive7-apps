@@ -145,9 +145,10 @@ class Ambient extends EventEmitter {
         this.emit('change');
     }
 
-    /* The colour the driving mode asks for, or the driver's own back; nothing while not following. */
+    /* The colour the driving mode asks for, or the driver's own back; nothing while not following, or while any colour
+     * is possible (slotsOff: the driving modes have looks of their own then, main.js). */
     follow() {
-        if (!this.settings.get('follow') || !this._mode) return;
+        if (this.slotsOff || !this.settings.get('follow') || !this._mode) return;
         const n = Number(this.settings.get(this._mode)) || 0;
         if (n >= 1 && n <= SLOTS) this._write(n, 'mode');
         else if (this.settings.get('restore') !== false && this._ours !== null && this._own !== null) this._write(this._own, 'own');

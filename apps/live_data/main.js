@@ -1242,9 +1242,11 @@ mgu.run({
 
         /** Trips: page 1 this trip (or the last) and the last 5, page 2 the totals and the fuel price */
         const f1 = (x) => (x === null || x === undefined ? '--' : x.toFixed(1)), f2 = (x) => (x === null || x === undefined ? '--' : x.toFixed(2));
-        function titleButtons(cv, t, title, list) {
+        /** buttons right of a panel's title; y: the panel's top (each panel's own row, not the first one's) */
+        function titleButtons(cv, t, title, list, y) {
             let bx = 42 + cv.textWidth(title, 26, { font: 'bold' }) + 28;
-            list.forEach((b) => { bx += G.button(cv, t, bx, 62, 0, 38, b.label, b.run, b) + 12; });
+            const by = (y === undefined ? 52 : y) + 10;
+            list.forEach((b) => { bx += G.button(cv, t, bx, by, 0, 38, b.label, b.run, b) + 12; });
         }
         function drawTrips(cv, t, pg) {
             const now = Date.now(), cur = tc.cur, last = tc.trips[tc.trips.length - 1], tr = cur || last, cu = currency();
@@ -1303,7 +1305,7 @@ mgu.run({
             G.table(cv, t, 48, 108, 1504, [{ label: '', w: 470 }, { label: 'Trips', w: 130, align: 'right' }, { label: 'Distance', w: 220, align: 'right' },
                 { label: 'Fuel', w: 200, align: 'right' }, { label: 'l/100 km', w: 200, align: 'right' }, { label: 'Cost', w: 284, align: 'right' }], rows, { rowH: 36, size: 24 });
             G.panel(cv, t, 24, 364, 1552, 148, 'Fuel price');
-            titleButtons(cv, t, 'Fuel price', [{ label: 'Change', run: openPrice, key: 'price' }]);
+            titleButtons(cv, t, 'Fuel price', [{ label: 'Change', run: openPrice, key: 'price' }], 364);
             G.readout(cv, t, 48, 414, { text: tc.price ? tc.price.toFixed(2) : 'not set', unit: tc.price ? cu + ' a litre' : '', size: 56 });
             const tx = 560;
             cv.text((cv.own ? 'Change it with the knob or the buttons.' : 'The Fuel price button, then the knob.') + ' This trip, and trips that had no price, follow it; the others keep theirs.', tx, 426, 20, t.dim);

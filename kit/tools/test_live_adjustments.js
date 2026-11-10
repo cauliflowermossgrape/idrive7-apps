@@ -101,6 +101,7 @@ function dsc(kind) {
         } else if (sid === 0x2E && data[0] === 0xDB && data[1] === 0xE1) {
             if ((kind === 'session' || kind === 'nosession' || kind === 'session7e') && st.session !== 3) r = [0x7F, 0x2E, kind === 'session7e' ? 0x7E : 0x7F];
             else if (kind === 'refuse' || (st.engine && !g01)) r = [0x7F, 0x2E, st.engine ? 0x33 : 0x22];
+            else if (kind === 'dsc33') r = [0x7F, 0x2E, 0x33];      // G26 outside diagnostic mode (issue #63)
             else { st.lmv = data[2]; st.written = true; r = [0x6E, 0xDB, 0xE1]; }
         } else r = [0x7F, sid, 0x31];
         if (accept) assert(accept(r), 'reply filter rejects the answer to ' + req);
@@ -391,6 +392,12 @@ async function xdriveChecks() {
     await s.x.requestOff(); await s.x.requestOff();
     assert.deepStrictEqual(writes(s.d), ['dsc 2e db e1 00']);
 
+    // NRC 33 with the engine off and every check green (G26 outside diagnostic mode, issue #63): the tab says
+    // to try diagnostic mode, nothing recorded as done
+    s = await mk('on', 'dsc33');
+    await s.x.requestOff(); await s.x.requestOff();
+    assert(/DSC refused: .*diagnostic mode: press Start 3 times without the brake/.test(s.x.note), s.x.note);
+    assert.strictEqual(s.x.requested, false);
     // the DSC refuses the write (e.g. parking brake off): shown, nothing recorded as done
     s = await mk('on', 'refuse');
     await s.x.requestOff(); await s.x.requestOff();
