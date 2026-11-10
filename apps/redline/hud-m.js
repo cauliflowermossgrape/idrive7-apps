@@ -416,7 +416,7 @@ function drawDial(cv, f, layer, h) {
 /* ---------- pill (a sim-racing telemetry overlay's look) ---------- */
 /*
  * One rounded panel across the picture: at its left the gear in a ring that fills round with the revs (the low
- * colour, the mid colour through the count-in, the high one at the shift point), shift lights as a row of small dots
+ * colour, the mid colour through the count-in, red at the shift point), shift lights as a row of small dots
  * along its top, and up to three readouts as a small label over big 7-segment digits. At the shift point (shift
  * lights on) and on the limiter the whole panel turns red (on the static layer: its key has the shift and limiter
  * state), back to grey after the upshift. The power meter runs along the panel's bottom (not in the list).
@@ -457,8 +457,8 @@ function drawPill(cv, f, layer, h) {
     // the panel: grey, red from the shift point (shift lights on) and on the limiter
     if (BG) cv.roundRect(PL.x, PL.y, PL.w, PL.h, PL.h / 2, withAlpha(fl ? PC.red : PC.panel, fl ? 0.8 : 0.7));
     // the ring round the gear: a faint track, filled round from the top with the revs to the redline
-    const count = isNum(d.rpm) ? clamp((d.rpm - cue.from) / Math.max(1, cue.at - cue.from), 0, 1) : 0;
-    const ringCol = fl ? flashCol : isNum(d.rpm) && d.rpm >= cue.from ? h.lightCol(o.lightStyle, P, 0.34 + 0.66 * count) : h.lightCol(o.lightStyle, P, 0);
+    // (the light style's first colour, its middle one through the count-in, the flash's at the shift point)
+    const ringCol = fl ? flashCol : isNum(d.rpm) && d.rpm >= cue.from ? h.lightCol(o.lightStyle, P, 0.5) : h.lightCol(o.lightStyle, P, 0);
     if (o.bar !== false) {
         if (BG) cv.arc(PL.gx, PL.gy, PL.r0, PL.r1, 0, 360, withAlpha(PC.ring, o.dim ? 0.18 : 0.1));
         if (fg && isNum(d.rpm) && d.rpm > 50) {
