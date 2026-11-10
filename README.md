@@ -19,7 +19,8 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/redline_hud_banner.gif" alt="Redline on the windscreen head-up display: Standard, Arc, Ramp, Dial, 80s digital and VFD layouts on the demo drive" width="100%">
+  <img src="docs/media/redline-hud.webp" alt="Redline on the windscreen head-up display: Comfort set up as a small Pill in the corner on the HUD looks page, Sport flicking through the layouts, graded shifts, then the tyre widget and directions in the corner" width="100%"><br>
+  <sub>Redline on the head-up display, set up on the centre screen. <a href="docs/media/redline-hud.mp4">Watch in HD</a></sub>
 </p>
 
 Real electric range, battery health and a charge log for plug-in hybrids, and live battery
