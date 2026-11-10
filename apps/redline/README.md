@@ -419,6 +419,11 @@ The 12 lights are a **shift** light, not a rev scale:
 The yellow mark is the shift point itself. The flash comes before it on purpose: in 1st, the revs
 climb about 3000 rpm/s, so a 240 ms reaction means a flash about 700 rpm early.
 
+**Rev bar instead** (Settings → Shift point → *Shift lights*: *Rev bar*, issue #133): the lights are a
+plain rev scale. They fill evenly from *From* (4,000 rpm by default) to the redline, the same in every
+gear and at any climb rate, and flash at the redline. No count-in, no early flash, and nothing is
+learned from it. The centre screen and the HUD both follow it.
+
 ## Learning
 
 All of it is on by default and can be frozen with **Learning (experimental) → Learn from

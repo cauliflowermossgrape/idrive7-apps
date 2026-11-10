@@ -302,7 +302,7 @@ mgu.run({
             while (recent.length && t - recent[0][0] > 1200) recent.shift();
             // the screen's shift cue, the same as the HUD's (count-in by climb rate, early flash,
             // lift handling), updated on each sample so a fast screen doesn't see repeated readings
-            screenCue = Hud.shiftCue(cueState, d.rpm, t, shiftPoint(d.oil, d.gear).rpm, redline(), hud ? hud.lead() : 200, d.gear);
+            screenCue = Hud.shiftCue(cueState, d.rpm, t, shiftPoint(d.oil, d.gear).rpm, redline(), hud ? hud.lead() : 200, d.gear, undefined, Hud.revOf(settings));
             // the moment the cue flashes: the ambient light flashes red too (real drives only)
             if (screenCue.shift && !cueShift && !car.data().demo) Hud.writeAtomic(AMBIENT_FLASH, JSON.stringify({ rgb: [255, 0, 0], ms: 1200 }) + '\n');
             cueShift = !!screenCue.shift;
@@ -429,7 +429,7 @@ mgu.run({
             cv.fillRect(sx + BAR.slant - 2, BAR.y0 - 14, 4, 12, t.warn);
             const rpm = d.rpm;
             // the cue from the last sample; before any sample, the plain shift point
-            const cue = screenCue || Hud.shiftCue({}, rpm, now, sp.rpm, redline(), 0);
+            const cue = screenCue || Hud.shiftCue({}, rpm, now, sp.rpm, redline(), 0, undefined, undefined, Hud.revOf(settings));
             const shiftNow = G.isNum(rpm) && cue.shift;
             // setting "flash" on: lights, gear and SHIFT blink (GPU renderer: 8 Hz clock phase;
             // software, few fps: alternate every frame) and the screen flashes red. Off: they

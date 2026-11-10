@@ -157,6 +157,24 @@ ok(c[c.length - 1].limiter && !c[1].limiter, 'limiter within 40 of the redline o
 c = drive([[0, null, 3], [50, undefined, 3]], 5550, 200);
 ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
 
+/* ---------- shift lights as a plain rev bar (setting lightMode "rev", issue #133) ---------- */
+{
+    // redline 7000, from 4000: an even count, the same whatever the climb rate, the flash only at the redline
+    const st = {}, q = [[0, 4000], [50, 5500], [100, 6900], [150, 7000]].map((s) => Hud.shiftCue(st, s[1], s[0], 6000, 7000, 200, 3, s[1], 4000));
+    ok(q.every((x) => x.from === 4000 && x.at === 7000), 'rev bar: counts from the start rpm to the redline');
+    ok(!q[1].shift && !q[2].shift && q[3].shift, 'rev bar: the flash only at the redline, not at the shift point or early by the lead');
+    ok((5500 - q[1].from) / (q[1].at - q[1].from) === 0.5, 'rev bar: half way at 5500 of 4000-7000');
+    const slow = Hud.shiftCue({}, 5500, 0, 6000, 7000, 200, 3, 5500, 4000);
+    ok(slow.from === q[1].from && slow.at === q[1].at, 'rev bar: no climb rate or lead in the count');
+    ok(Hud.shiftCue({}, 5000, 0, 6000, 6000, 0, 3, 5000, 6000).from === 5500, 'rev bar: a start above the redline is kept 500 under it');
+    ok(Hud.shiftCue({}, null, 0, 6000, 7000, 0, 3, null, 4000).shift === false, 'rev bar: no rpm, nothing lit');
+    const S = (v) => ({ get: (k) => v[k] });
+    ok(Hud.revOf(S({ lightMode: 'rev', lightStart: 4500 })) === 4500 && Hud.revOf(S({ lightMode: 'rev' })) === 4000, 'rev bar: the start from lightStart (4000 by default)');
+    ok(Hud.revOf(S({})) === null && Hud.revOf(S({ lightMode: 'shift', lightStart: 4500 })) === null, 'shift mode (the default): the count into the shift point as before');
+    const defs = {}; spec.settings.forEach((x) => { defs[x.key] = x.default; });
+    ok(Hud.optsFrom(S(Object.assign({}, defs, { lightMode: 'rev', lightStart: 3500 }))).rev === 3500 && Hud.optsFrom(S(defs)).rev === null, 'rev bar: the setting reaches the HUD');
+}
+
 /* ---------- driving mode (Comfort / Eco Pro) ---------- */
 [[1, 'sport'], [2, 'sport'], [3, 'sport'], [4, 'comfort'], [5, 'comfort'], [6, 'comfort'], [7, 'eco'], [9, 'eco'], [10, 'comfort'], [0, null], [63, null],
     [15, 'sport'], [23, 'sport'], [28, 'sport'], [17, 'hybrid'], [18, 'hybrid'], [20, 'hybrid'], [21, 'hybrid'], [22, 'hybrid'],
