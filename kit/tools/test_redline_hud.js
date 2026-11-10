@@ -890,6 +890,43 @@ function electricalChecks() {
                 ok(v12n.slice(0, 9).every((n) => n === 1) && fresh.every(Boolean), 'search: 1 candidate a turn, the power fresh after each (' + v12n.join() + ' / ' + fresh.join() + ')');
                 ok(k.fails.v12 === 1, 'search: one failure for the whole search, not one a turn (' + k.fails.v12 + ')');
             });
+        }).then(() => {
+            // 2026-11-11 (an X5 45e: the recovery / power meter vanished after a while): the battery unit goes quiet for
+            // a few seconds mid-drive, behind a link that, like the real one, skips a unit after 5 misses in a row
+            // until woken. The power is back within seconds, not a minute, and the other voltages are never searched
+            const base = linkFor({ '7:DDB4': [0x89, 0xA8], '7:DD69': [0xFF, 0xFF, 0xD8, 0xF0] }), phys = base.physical;
+            let quiet = false;
+            const link = { asked: base.asked, misses: 0, woke: 0, ready: true, available: true,
+                wake() { this.misses = 0; this.woke++; },
+                physical(ecu, sid, data) {
+                    if (this.misses >= 5) { base.asked.push('skipped'); return Promise.resolve(null); }
+                    if (quiet) { this.misses++; base.asked.push('quiet'); return Promise.resolve(null); }
+                    this.misses = 0; return phys.apply(base, arguments);
+                } };
+            const k = mk(settingsFake({ hudHybridSeen: true }), link);
+            k.want = { v12: false, hvSoc: false, hvKw: true };
+            const turnAt = (dt) => { clock += dt; return k._turn(); };
+            let c = turnAt(0).then(() => turnAt(500));
+            const shown = [];
+            return c.then(() => {
+                ok(k.kwWorked && Math.abs(k.value().hvKw - 35.24) < 1e-9, 'quiet unit: the power read first (' + k.value().hvKw + ')');
+                quiet = true; link.asked.length = 0;
+                // 4 s quiet (8 turns), then answering again; a turn every 500 ms for 8 s more
+                let q = Promise.resolve();
+                for (let i = 0; i < 24; i++) q = q.then(() => { if (i === 8) quiet = false; return turnAt(500); }).then(() => { shown.push(k.value().hvKw !== null); });
+                return q;
+            }).then(() => {
+                const back = shown.indexOf(true, 8);
+                ok(back >= 8 && back <= 14, 'quiet unit: the meter back within 3 s of the unit answering again (turn ' + back + ' of ' + shown.length + ', ' + shown.map((x) => (x ? 1 : 0)).join('') + ')');
+                ok(link.asked.indexOf('7:DD68') < 0 && link.asked.indexOf('7:DD66') < 0 && link.asked.indexOf('7:DDEF') < 0, 'quiet unit: the other voltages not searched on a hiccup (' + link.asked.slice(0, 12).join(' ') + ')');
+                ok(link.woke >= 1 && lines.some((l) => /stopped giving the power; asked again every 2 s/.test(l)), 'quiet unit: woken for the retries, one line (' + lines.filter((l) => /power/.test(l)).join('|') + ')');
+                // a unit that never gave the power keeps the once-a-minute back-off
+                const never = mk(settingsFake({ hudHybridSeen: true }), linkFor({}));
+                never.want = { v12: false, hvSoc: false, hvKw: true };
+                return never._turn().then(() => never._turn()).then(() => never._turn()).then(() => {
+                    ok(never.fails.kw === 3 && !never._may('kw', clock + 5000, [], never.kwWorked ? Electrical.KW_RETRY_MS : 60000) && never._may('kw', clock + 61000, []), 'never answered: asked once a minute, as before');
+                });
+            });
         }).then(() => { Date.now = realNow; }, (e) => { Date.now = realNow; throw e; });
     }).then(() => {
         // knock: its start and its once-a-minute try wake the engine unit (electrical's 12 V reads ask it too)

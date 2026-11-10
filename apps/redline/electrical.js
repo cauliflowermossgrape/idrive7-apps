@@ -78,6 +78,11 @@ const SIGNAL_KEEP_MS = 30 * 60000;
 const PROBE_TRIES = 3;
 // the 12 V search asks at most this many candidates a turn, so the HV power (first each turn) stays fresh
 // while a search runs (9 candidates x 1.5 s held it up ~13 s) (2026-11-10 review)
+// the power read, once it has worked this drive (2026-11-11: an X5 45e's meter vanished for up to a minute at a time):
+// a miss of the voltage that answered is a hiccup, so it alone is asked again until KW_SEARCH_AFTER misses in a row (a
+// search on one miss asked the other three, each a miss of its own, and five in a row silenced the battery unit on the
+// link); and after misses it is asked again every KW_RETRY_MS (the unit woken), not once a minute
+const KW_SEARCH_AFTER = 4, KW_RETRY_MS = 2000;
 const SEARCH_PER_TURN = 1;              // one: two that both time out (2 x 1.5 s) outlast STALE_MS
 
 const isNum = (v) => typeof v === 'number' && isFinite(v);
@@ -121,6 +126,7 @@ class Electrical {
         this.rd = null; this.timer = null; this.busy = false; this.want = {};
         this.s = {};                  // name -> { v, t } from the signals and the reads
         this.fails = { soc: 0, kw: 0, v12: 0 }; this.tried = { soc: 0, kw: 0, v12: 0 }; this.slowT = 0; this.v12T = 0;
+        this.kwWorked = false; this.kwMiss = 0;   // the power read has answered this run; its misses in a row since
         this.vs = { pick: null, miss: 0, res: {}, order: null, at: 0 };
         this.probed = false;          // true once the look for a hybrid battery is settled (or out of tries)
         this.probeN = 0; this.probeT = 0;
@@ -257,12 +263,16 @@ class Electrical {
         // the power and the charge each counted on their own: a unit that gives the charge but not the power
         // keeps its charge read every SLOW_MS
         const w = this.want, wantKw = w.hvKw !== undefined ? w.hvKw : w.hv, wantSoc = w.hvSoc !== undefined ? w.hvSoc : w.hv;
-        if (wantKw && this.hybrid() && this._may('kw', now, [SME])) {
-            const volts = await this.rd.value('hvV', HV_V);
+        if (wantKw && this.hybrid() && this._may('kw', now, [SME], this.kwWorked ? KW_RETRY_MS : FAIL_RETRY_MS)) {
+            // the voltage that answered, alone, through a few misses; the others only after KW_SEARCH_AFTER in a row
+            const pick = this.rd.pick.hvV;
+            const volts = this.kwWorked && pick !== undefined && this.kwMiss < KW_SEARCH_AFTER ? await this.rd.read(HV_V[pick]) : await this.rd.value('hvV', HV_V);
             const amps = volts === null || !live() ? null : await this.rd.value('hvA', HV_A);
             const kw = decode.hvKw(volts, amps);
-            if (kw !== null) { this._put('hvKw', kw); this._put('hvVoltUds', volts); }
-            if (live()) this._result('kw', kw !== null, 'the battery unit (SME 0x07) gives no power');
+            if (kw !== null) { this._put('hvKw', kw); this._put('hvVoltUds', volts); this.kwWorked = true; this.kwMiss = 0; }
+            else this.kwMiss++;
+            if (live()) this._result('kw', kw !== null, this.kwWorked ? 'the battery unit (SME 0x07) stopped giving the power; asked again every ' + KW_RETRY_MS / 1000 + ' s'
+                : 'the battery unit (SME 0x07) gives no power');
         }
         if (!live()) return;
         if (wantSoc && this.hybrid() && now - this.slowT >= SLOW_MS && this._may('soc', now, [SME])) {
@@ -281,17 +291,17 @@ class Electrical {
         }
     }
 
-    /** May path k ask now: yes until it failed 3 times, then once a minute (waking its units for that try). */
-    _may(k, now, ecus) {
+    /** May path k ask now: yes until it failed 3 times, then every retryMs (a minute by default; waking its units for that try). */
+    _may(k, now, ecus, retryMs) {
         if (this.fails[k] < 3) return true;
-        if (now - this.tried[k] < FAIL_RETRY_MS) return false;
+        if (now - this.tried[k] < (retryMs || FAIL_RETRY_MS)) return false;
         this._wake(ecus || []);
         return true;
     }
     _result(k, ok, why) {
         this.tried[k] = Date.now();
         if (ok) { this.fails[k] = 0; return; }
-        if (++this.fails[k] === 3) this.log.info('electrical: ' + why + '; asked once a minute');
+        if (++this.fails[k] === 3) this.log.info('electrical: ' + why + (/every \d/.test(why) ? '' : '; asked once a minute'));
     }
 
     /**
@@ -348,5 +358,6 @@ class Electrical {
 }
 
 Electrical.V12 = V12; Electrical.HV_SOC = HV_SOC; Electrical.HV_V = HV_V; Electrical.HV_A = HV_A;
+Electrical.KW_SEARCH_AFTER = KW_SEARCH_AFTER; Electrical.KW_RETRY_MS = KW_RETRY_MS;
 Electrical.decode = decode;
 module.exports = Electrical;

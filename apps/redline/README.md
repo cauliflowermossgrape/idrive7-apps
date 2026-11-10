@@ -563,7 +563,9 @@ hybrid readouts and the power bar show in the car's everyday mode. Until then th
 The UDS reads are read-only, on the gearbox reader's link, only while a readout that needs them is on, and
 only once that link is up. Each waits at most about a second for an answer, so a unit that stays quiet
 doesn't hold up the knock and gearbox reads on the same link; one that doesn't answer three times is asked
-once a minute.
+once a minute. The hybrid battery's power, once it has answered in a drive, is treated as a hiccup when it misses:
+the same reading is asked again (no search through the others), and every 2 s after a run of misses, so the
+recovery / power meter is back within seconds rather than gone for up to a minute (seen on an X5 45e).
 
 The electric share of the drive (KombiIF's power distribution) is left out until its scale is known: eDrive
 doesn't show it either.
