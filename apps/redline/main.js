@@ -551,11 +551,11 @@ mgu.run({
          * Left: the HUD at twice its size playing the scripted drive (hud.js demoAt: count-in, flash, a
          * shift graded in turn spot on / early / late, the limiter, braking with the downshift cue),
          * drawn by the HUD's own code with the current settings, so a change shows in it at once.
-         * Right: the nine layouts, small; tap one to use it. Under them: colours, shift lights, the grade,
+         * Right: the layouts, small, three rows scrolling sideways; tap one to use it. Under them: colours, shift lights, the grade,
          * peak and shake, each a row of buttons. "Play on HUD" runs the same drive on the glass. */
         const LOOKS = [['standard', 'Standard'], ['minimal', 'Minimal'], ['wings', 'Split wings'],
             ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade'],
-            ['arc', 'Arc (F80 M3/M4)'], ['ramp', 'Ramp (G80 M3/M4)'], ['dial', 'Dial (E60 M5)']];
+            ['arc', 'Arc (F80 M3/M4)'], ['ramp', 'Ramp (G80 M3/M4)'], ['dial', 'Dial (E60 M5)'], ['pill', 'Pill']];
         const TILE_K = 0.45;            // the tiles' thumbnails: the HUD at 45 %
         // profile: the setup being edited, 'sport', 'comfort' or (a plug-in hybrid) 'hybrid' (on opening the page:
         // the driving mode's own);
@@ -639,15 +639,40 @@ mgu.run({
                     : comfort && cmode === 'same' ? modeName + ' uses the Sport HUD. Change anything here to give it its own.'
                         : comfort && cmode === 'own' ? 'Changes here only affect ' + modeName + '. Size and place are shared.' : '';
             cv.text(status, 40, 348, 15, missing || !on ? t.warn : t.dim, { font: 'bold' });
-            // the nine layouts, small, to tap: three by three, the name under each
+            // the layouts, small, to tap, the name under each: three rows, a column of three at a time; with more than
+            // three columns' worth they scroll sideways (the arrows either side, by touch or the controller) at the
+            // same size rather than shrink; the chosen one is brought into view whenever it changes
+            const TCOLS = 3, ncol = Math.ceil(LOOKS.length / 3), maxOff = Math.max(0, ncol - TCOLS);
+            const selCol = Math.floor(LOOKS.map((l) => l[0]).indexOf(o.style) / 3);
+            if (studio.tileSel !== o.style) {
+                studio.tileSel = o.style;
+                if (selCol >= 0) studio.tileOff = selCol < (studio.tileOff || 0) ? selCol : selCol >= (studio.tileOff || 0) + TCOLS ? selCol - TCOLS + 1 : studio.tileOff || 0;
+            }
+            studio.tileOff = Math.max(0, Math.min(maxOff, studio.tileOff || 0));
+            const tx0 = maxOff ? 880 : 864, tw = maxOff ? 216 : 228, tp = tw + 14;
             LOOKS.forEach((l, i) => {
-                const x = 864 + (i % 3) * 242, y = 48 + Math.floor(i / 3) * 94, w = 228, h = 88, sel = l[0] === o.style;
+                const col = Math.floor(i / 3) - studio.tileOff;
+                if (col < 0 || col >= TCOLS) return;
+                const x = tx0 + col * tp, y = 48 + (i % 3) * 94, w = tw, h = 88, sel = l[0] === o.style;
                 cv.roundRect(x, y, w, h, 10, withAlpha('#ffffff', 0.05));
                 if (sel) cv.strokeRoundRect(x, y, w, h, 10, 3, t.accent);
                 cv.blit(lookLayer(l[0]), x + Math.round((w - HudDraw.IW * TILE_K) / 2), y + 4);
                 cv.text(l[1], x + w / 2, y + 80, 15, sel ? t.accent : t.dim, { align: 'center', font: 'bold' });
                 cv.target(x, y, w, h, () => { P.set('hudStyle', l[0]); return render(); }, 'look_' + l[0]);
             });
+            if (maxOff) {
+                // the arrows: a tall strip either side, dim at the end; a column per press
+                const arrow = (x, dir, can, key) => {
+                    cv.roundRect(x, 48, 28, 276, 8, withAlpha('#ffffff', can ? 0.08 : 0.03));
+                    const cx = x + 14, c = can ? t.text : withAlpha(t.dim, 0.5);
+                    cv.polyline([[cx + 5 * dir * -1, 168], [cx + 5 * dir, 186], [cx + 5 * dir * -1, 204]], 3, c);
+                    cv.target(x, 48, 28, 276, () => { if (can) studio.tileOff += dir; return render(); }, key);
+                };
+                arrow(846, -1, studio.tileOff > 0, 'looks_left');
+                arrow(tx0 + TCOLS * tp - 8, 1, studio.tileOff < maxOff, 'looks_right');
+                // where the view is: a dot per column page
+                for (let k = 0; k <= maxOff; k++) cv.circle(tx0 + (TCOLS * tp - 14) / 2 + (k - maxOff / 2) * 14, 336, 3.5, k === studio.tileOff ? t.accent : withAlpha(t.dim, 0.5));
+            }
             // the editor under the preview: tabs, then that panel's buttons
             // category tabs: text with an underline on a divider (like the page tabs), not pills, so they
             // read as categories and the pills below as the things you change

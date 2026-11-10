@@ -45,7 +45,7 @@ ok(optsDefault.bar === true && optsDefault.rpm === true && optsDefault.lights ==
 ok(optsDefault.torque === false && optsDefault.power === false && optsDefault.g === false && optsDefault.throttle === false && optsDefault.outside === false, 'defaults: the extra readouts are off');
 
 /* ---------- drawing: every layout, palette and switch, both layers ---------- */
-const LAYOUTS = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'];
+const LAYOUTS = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial', 'pill'];
 const lit = (cv) => { let n = 0; for (let i = 3; i < cv.d.length; i += 4) if (cv.d[i]) n++; return n; };
 function frame(o, extra) {
     return Object.assign({
@@ -64,10 +64,22 @@ LAYOUTS.forEach((style) => ['colour', 'amber', 'ice'].forEach((palette) => [true
 })));
 // the Rev bar switch removes the bar (minimal has none to remove; on ramp and dial the band is the shift
 // lights too, so it stays while they are on)
+// (pill: its panel is most of the picture, so only its ring goes: fewer lit pixels, the panel kept)
 LAYOUTS.filter((s) => ['minimal', 'ramp', 'dial'].indexOf(s) < 0).forEach((style) => {
     const px = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return lit(cv); };
-    ok(px(false) < px(true) * 0.6, style + ': Rev bar off still draws most of the bar');
+    if (style === 'pill') {
+        const pic = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return cv; };
+        const a = pic(true), b = pic(false), i = (Math.round(70 - 37) * Draw.IW + 54) * 4;   // the ring's top
+        ok(px(false) === px(true) && (a.d[i] !== b.d[i] || a.d[i + 1] !== b.d[i + 1]), 'pill: Rev bar off removes the ring round the gear, the panel stays');
+    } else ok(px(false) < px(true) * 0.6, style + ': Rev bar off still draws most of the bar');
 });
+// pill: the panel turns red from the shift point (shift lights on) and on the limiter, grey otherwise
+{
+    const red = (cue, lights) => { const cv = new Canvas(Draw.IW, Draw.IH);
+        Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'pill', lights: lights !== false }), { readouts: [], chip: null, cue: Object.assign({ from: 4400, at: 5550, shift: false, limiter: false }, cue) }), 'bg');
+        const i = (70 * Draw.IW + 250) * 4; return cv.d[i] > cv.d[i + 1] + 60; };
+    ok(!red({}) && red({ shift: true }) && red({ limiter: true }) && !red({ shift: true }, false), 'pill: red panel at the shift point and on the limiter, grey otherwise (and with the shift lights off)');
+}
 // only the shift lights (everything else off) still draws something
 {
     const o = Object.assign({}, optsDefault, { style: 'vfd', bar: false, rpm: false, gear: false, mode: false });

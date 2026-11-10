@@ -55,7 +55,7 @@ const log = { info() {}, warn() {}, error() {} };
     ok(img.length === 1 && cr.of('effect').length === 0, 'Arc (an old GPU setting set): one image layer, no shader');
     const I = cr.layers[img[0]] || {};
     ok(I.target === 'hud' && I.klass === 'overlay' && I.z === 0, 'the image: on the HUD, overlay');
-    for (const st of ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'tyres', 'ramp', 'dial', 'arc']) {
+    for (const st of ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'tyres', 'ramp', 'dial', 'pill', 'arc']) {
         settings.set('hudStyle', st); rpm = 6400; await sleep(120);
         ok(cr.of('image').length === 1 && cr.of('effect').length === 0, st + ': the picture, no shader');
     }

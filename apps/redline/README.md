@@ -88,8 +88,14 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
 - **Dial** (after the E60 M5): a ¾ dial round the gear: yellow-green, then an orange advance
   warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
   dial's orange; the first readout bottom right (where the car shows the speed).
+- **Pill** (a sim-racing telemetry look): one rounded panel. At its left the gear in a ring that fills
+  round with the revs (green, yellow through the count-in, red at the shift point); the shift lights as
+  a row of small dots along its top; up to three readouts as a small label over big 7-segment digits.
+  From the shift point (shift lights on) and on the limiter the whole panel turns red, grey again after
+  the upshift. It follows *HUD colours*, the light fill and colours, the peak, the grade and the power
+  bar (along its bottom).
 
-*Shift light style* (Settings) works on all three as on the other layouts: M is the cars' own colours,
+*Shift light style* (Settings) works on Arc, Ramp and Dial as on the other layouts: M is the cars' own colours,
 Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
 lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
 right make no difference here: Arc fills left to right like the F80, Ramp and Dial along their band.
@@ -136,7 +142,9 @@ missing falls back to Ubuntu.
   It counts in, flashes, shifts (graded spot on, early or late in turn), hits the limiter, then
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
-- **Picking:** on the right, the nine layouts; tap one to use it.
+- **Picking:** on the right, the layouts in three rows; tap one to use it. With more than nine they
+  scroll sideways a column at a time (the arrows either side, by touch or the controller) instead of
+  getting smaller, and the one in use is brought into view.
 - **Sport or Comfort:** under the preview, **SPORT** and **COMFORT / ECO PRO** pick the setup you're
   looking at and changing; with Comfort picked, *Same as Sport*, *Its own* or *Don't show* beside it.
   Everything on the page then shows and changes that setup (size and position are shared).

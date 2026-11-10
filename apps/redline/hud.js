@@ -219,7 +219,7 @@ function gearFontOf(choice, style) {
     return M_STYLES.indexOf(style) >= 0 ? 'gear_barlow' : 'gear';
 }
 
-const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'];
+const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial', 'pill'];
 /*
  * The HUD's two setups ("profiles"): Sport, the HUD settings themselves (Sport / Sport+, and a mode not known),
  * and Comfort (Comfort / Eco Pro), which "hudComfortMode" makes the same as Sport, its own ("hudComfortSetup":
@@ -424,7 +424,7 @@ const MAX_READOUTS = 4;
 const HV_BAR_KW = [40, 80];
 // the layouts that draw the power bar along their own gauge (hud-m.js; hud-draw.js under the bar), outside the
 // readouts row (Minimal and Split wings have no readouts, and so no power bar)
-const METER_STYLES = ['ramp', 'arc', 'dial', 'standard', 'vector', 'digital', 'vfd'];
+const METER_STYLES = ['ramp', 'arc', 'dial', 'standard', 'vector', 'digital', 'vfd', 'pill'];
 /** The RPM readout for format f: '10' (to 10, the default), '50', or 'k' (thousands, 4.5). */
 function rpmItem(rpm, f) {
     const r = Math.max(0, rpm), step = f === '50' ? 50 : 10;
