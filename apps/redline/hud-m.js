@@ -103,6 +103,51 @@ function cbox(cv, cx, cy, a0, a1, r0, r1, c, w) {
     cv.arc(cx, cy, r1 - w, r1, a0, a1, c); cv.arc(cx, cy, r0, r0 + w, a0, a1, c);
     cv.arc(cx, cy, r0, r1, a0, a0 + da, c); cv.arc(cx, cy, r0, r1, a1 - da, a1, c);
 }
+const arcBands = [];
+/**
+ * Where drawArc may copy the lit band in, per row: spans of the band's own ring (a pixel either side: the lights
+ * over it share these rows), 3 px clear of its start and colour joins (a piece's start edge shades a hair
+ * differently with where the piece ends) and of the lit end (angle aDeg). null when there's nothing to copy or no
+ * static layer to copy over. The ring and joins part is worked out once per scale (kept in bandRows).
+ */
+let bandRows = { key: '', rows: null };
+function band(cv, base, seams, aDeg) {
+    if (!base || !cv.d || cv.w !== base.w || cv.h !== base.h) return null;
+    const key = seams.join('|') + '|' + cv.h;
+    if (bandRows.key !== key) {
+        const sp = A.span * Math.PI / 180, ts = seams.map((a) => Math.tan(a * Math.PI / 180));
+        const x0 = Math.max(0, Math.floor(A.cx - (A.b1 + 2) * Math.sin(sp)) - 2);
+        const y0 = Math.max(0, Math.floor(A.cy - A.b1 - 2)), y1 = Math.min(cv.h - 1, Math.ceil(A.cy - A.b0 * Math.cos(sp) + 2));
+        const rA = A.b0 - 1, rB = A.b1 + 1, rows = [];
+        for (let py = y0; py <= y1; py++) {
+            const dy = py + 0.5 - A.cy;
+            if (Math.abs(dy) > rB) continue;
+            const xl = Math.max(x0, Math.floor(A.cx - Math.sqrt(rB * rB - dy * dy)) - 1);
+            const xr = Math.abs(dy) < rA ? Math.ceil(A.cx - Math.sqrt(rA * rA - dy * dy)) + 1 : Math.ceil(A.cx + Math.sqrt(rB * rB - dy * dy)) + 1;
+            let spans = [[xl, xr]];
+            ts.forEach((t) => {
+                const xs = A.cx - dy * t, a = Math.floor(xs - 3), b = Math.ceil(xs + 3);
+                spans = [].concat.apply([], spans.map((q) => [[q[0], Math.min(q[1], a)], [Math.max(q[0], b), q[1]]]));
+            });
+            spans = spans.filter((q) => q[1] > q[0]).sort((p, q) => p[0] - q[0]);
+            if (spans.length) rows.push({ py: py, dy: dy, spans: spans });
+        }
+        bandRows = { key: key, rows: rows };
+    }
+    // this frame: each span up to 3 px short of where the lit end's radial line crosses its row
+    const ta = Math.tan(aDeg * Math.PI / 180), copy = [];
+    let any = false;
+    bandRows.rows.forEach((r) => {
+        const cut = Math.min(cv.w, Math.floor(A.cx - r.dy * ta - 3)), out = [];
+        for (let i = 0; i < r.spans.length; i++) {
+            const q = r.spans[i];
+            if (q[0] >= cut) break;
+            out.push(q[1] <= cut ? q : [q[0], cut]);
+        }
+        if (out.length) { any = true; copy[r.py] = out; }
+    });
+    return any ? { copy: copy } : null;
+}
 function drawArc(cv, f, layer, h) {
     const o = f.opts, d = f.d, cue = f.cue, bg = layer !== 'fg', fg = layer !== 'bg', R = (r) => aAng(r / f.max);
     if (o.lights) {
@@ -126,9 +171,29 @@ function drawArc(cv, f, layer, h) {
         }
         if (fg && isNum(d.rpm) && d.rpm > 50) {
             const top = Math.min(d.rpm, f.max), lim = cue.limiter, c = lim ? (f.blink ? AC.zone : withAlpha(AC.zone, 0.4)) : AC.fill;
-            cv.arc(A.cx, A.cy, A.b0, A.b1, R(0), R(Math.min(top, warn)), c);
-            if (top > warn) cv.arc(A.cx, A.cy, A.b0, A.b1, R(warn), R(Math.min(top, f.redline)), lim ? c : AC.warn);
-            if (top > f.redline) cv.arc(A.cx, A.cy, A.b0, A.b1, R(f.redline), R(top), lim ? c : AC.zone);
+            const fill = (t, on, opts) => {
+                on.arc(A.cx, A.cy, A.b0, A.b1, R(0), R(Math.min(t, warn)), c, opts);
+                if (t > warn) on.arc(A.cx, A.cy, A.b0, A.b1, R(warn), R(Math.min(t, f.redline)), lim ? c : AC.warn, opts);
+                if (t > f.redline) on.arc(A.cx, A.cy, A.b0, A.b1, R(f.redline), R(t), lim ? c : AC.zone, opts);
+            };
+            // drawHud's frames (h.base: the static layer under them): the band drawn lit to the end once over that
+            // layer, its pixels left of the lit end copied in, only the rest drawn (the band was over half a frame)
+            const base = layer === 'fg' && h.base, B = band(cv, base, [R(0), R(warn), R(f.redline)], R(top));
+            if (!B) fill(top, cv);
+            else {
+                const key = [lim, lim && f.blink, f.redline, f.max].join('|');
+                let lit = arcBands.filter((e) => e.key === key && e.base === base)[0];
+                if (!lit) {
+                    lit = { key: key, base: base, cv: new base.constructor(base.w, base.h) };
+                    lit.cv.d.set(base.d);
+                    fill(f.max, lit.cv);
+                    arcBands.unshift(lit); arcBands.length = Math.min(arcBands.length, 4);
+                }
+                const W4 = cv.w * 4;
+                B.copy.forEach((spans, py) => { if (spans) spans.forEach((c) => cv.d.set(lit.cv.d.subarray(py * W4 + c[0] * 4, py * W4 + c[1] * 4), py * W4 + c[0] * 4)); });
+                // the rest: all but what was copied
+                fill(top, cv, { skip: (py) => B.copy[py] || null });
+            }
         }
         if (bg) {
             cv.arc(A.cx, A.cy, A.b1, A.b1 + A.rim, R(0) - 0.4, R(f.max) + 0.4, AC.rim);

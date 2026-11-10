@@ -272,7 +272,8 @@ class Canvas {
      * opts.ramp = [c0, c1, ...] colours the ring by angle instead of c, spread
      * over opts.rampFrom..opts.rampTo (default a0..a1; rampTo < rampFrom runs it
      * anticlockwise), so a value arc keeps the
-     * colour of its position on the scale.
+     * colour of its position on the scale. opts.skip(py) = [[xa, xb], ...] (in order) or null: row py's pixels
+     * xa..xb-1 left untouched (for a caller that copied them in already).
      */
     arc(cx, cy, r0, r1, a0, a1, c, opts) {
         c = rgba(c);
@@ -304,9 +305,15 @@ class Canvas {
         const x0 = Math.max(0, Math.floor(bx0 - 1)), x1 = Math.min(this.w, Math.ceil(bx1 + 1));
         const y0 = Math.max(0, Math.floor(by0 - 1)), y1 = Math.min(this.h, Math.ceil(by1 + 1));
         const mid = ((a0 + a1) / 2) * RAD, half = ((a1 - a0) / 2) * RAD;
+        const skipOf = opts && opts.skip;
         for (let py = y0; py < y1; py++) {
-            const dy = py + 0.5 - cy;
+            const dy = py + 0.5 - cy, sk = skipOf ? skipOf(py) : null;
+            let si = 0;
             for (let px = x0; px < x1; px++) {
+                if (sk) {
+                    while (si < sk.length && sk[si][1] <= px) si++;
+                    if (si < sk.length && px >= sk[si][0]) { px = sk[si][1] - 1; continue; }
+                }
                 const dx = px + 0.5 - cx;
                 const dd = Math.sqrt(dx * dx + dy * dy);
                 if (dd > r1 + 1 || dd < r0 - 1) continue;
@@ -471,18 +478,31 @@ class Canvas {
 
     /** Blit an alpha glyph from the atlas, scaled (bilinear) and tinted. */
     _blit(f, gx, gy, gw, gh, dx, dy, scale, c) {
+        // the same sums as a per-pixel lookup helper, with what only changes per row worked out once per row and no
+        // function made per pixel (about a fifth of a frame; the pixels are the same)
         const A = f.alpha, AW = f.atlasW;
         const tw = gw * scale, th = gh * scale;
         const x0 = Math.floor(dx), y0 = Math.floor(dy);
+        const pxA = Math.max(0, x0), pxB = Math.min(this.w, Math.ceil(dx + tw));
         for (let py = Math.max(0, y0); py < Math.min(this.h, Math.ceil(dy + th)); py++) {
             const sy = (py + 0.5 - dy) / scale - 0.5;
-            for (let px = Math.max(0, x0); px < Math.min(this.w, Math.ceil(dx + tw)); px++) {
+            if (scale === 1) {
+                const ry = Math.round(sy), rowOk = ry >= 0 && ry < gh, rb = (gy + ry) * AW + gx;
+                for (let px = pxA; px < pxB; px++) {
+                    const rx = Math.round((px + 0.5 - dx) / scale - 0.5);
+                    const v = rowOk && rx >= 0 && rx < gw ? A[rb + rx] : 0;
+                    if (v > 0) this._blend(px, py, c, v / 255);
+                }
+                continue;
+            }
+            const iy = Math.floor(sy), fy = sy - iy;
+            const r0 = iy >= 0 && iy < gh, r1 = iy + 1 >= 0 && iy + 1 < gh, b0 = (gy + iy) * AW + gx, b1 = b0 + AW;
+            for (let px = pxA; px < pxB; px++) {
                 const sx = (px + 0.5 - dx) / scale - 0.5;
-                const ix = Math.floor(sx), iy = Math.floor(sy), fx = sx - ix, fy = sy - iy;
-                const at = (xx, yy) => (xx < 0 || yy < 0 || xx >= gw || yy >= gh) ? 0 : A[(gy + yy) * AW + gx + xx];
-                const v = scale === 1
-                    ? at(Math.round(sx), Math.round(sy))
-                    : at(ix, iy) * (1 - fx) * (1 - fy) + at(ix + 1, iy) * fx * (1 - fy) + at(ix, iy + 1) * (1 - fx) * fy + at(ix + 1, iy + 1) * fx * fy;
+                const ix = Math.floor(sx), fx = sx - ix;
+                const c0 = ix >= 0 && ix < gw, c1 = ix + 1 >= 0 && ix + 1 < gw;
+                const v = (r0 && c0 ? A[b0 + ix] : 0) * (1 - fx) * (1 - fy) + (r0 && c1 ? A[b0 + ix + 1] : 0) * fx * (1 - fy)
+                    + (r1 && c0 ? A[b1 + ix] : 0) * (1 - fx) * fy + (r1 && c1 ? A[b1 + ix + 1] : 0) * fx * fy;
                 if (v > 0) this._blend(px, py, c, v / 255);
             }
         }

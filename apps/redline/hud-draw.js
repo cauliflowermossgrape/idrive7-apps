@@ -138,11 +138,11 @@ function drawBar(cv, x, y, w, h, s) {
     const markH = 6, barY = y + markH + 2, barH = h - markH - 2;
     const slant = Math.round(barH * 0.32), X = (r) => x + clamp(r / s.max, 0, 1) * (w - slant);
     // vector: segments as outlines; a lit one also gets a faint fill
-    const seg = (a, b, c) => {
-        const xa = X(a) + 2, xb = X(b) - 2;
+    const seg = (a, b, c, on) => {
+        const xa = X(a) + 2, xb = X(b) - 2, t = on || cv;
         if (!(xb > xa)) return;
         const q = [[xa + slant, barY], [xb + slant, barY], [xb, barY + barH], [xa, barY + barH]];
-        if (s.outline) { cv.polyline(q.concat([q[0]]), 1.6, c); if (c !== s.trackCol) cv.quad(q, withAlpha(c, 0.22)); } else cv.quad(q, c);
+        if (s.outline) { t.polyline(q.concat([q[0]]), 1.6, c); if (c !== s.trackCol) t.quad(q, withAlpha(c, 0.22)); } else t.quad(q, c);
     };
     const mark = (r, c) => cv.fillRect(Math.round(X(r) + slant) - 1, y, 3, markH, c);
     s.trackCol = withAlpha(P.text, s.outline ? 0.3 : 0.12);
@@ -153,11 +153,34 @@ function drawBar(cv, x, y, w, h, s) {
     if (fg && isNum(rpm) && rpm > 50) {
         // low below the shift point, mid past it, high into the redline; all flashing on the limiter
         const top = Math.min(rpm, s.max);
-        for (let r = 0; r < top; r += 500) {
+        const col = (r) => {
             const mid = r + 250;
-            const c = cue.limiter ? (s.blink ? P.limit : withAlpha(P.limit, 0.35)) : mid >= s.redline ? P.high : mid >= s.shift ? P.mid : P.low;
-            seg(r, Math.min(top, r + 500), c);
+            return cue.limiter ? (s.blink ? P.limit : withAlpha(P.limit, 0.35)) : mid >= s.redline ? P.high : mid >= s.shift ? P.mid : P.low;
+        };
+        // the whole segments copied from the bar drawn lit once over the static layer (drawHud's frames only: the
+        // pixels under the bar are then that layer's), only the last part-lit one drawn: same pixels, a fraction of
+        // the time (the lit segments were over half of a frame)
+        const full = Math.floor(top / 500), base = s.layer === 'fg' && fgBase;
+        let r0 = 0;
+        if (base && full > 0 && cv.d && cv.w === base.w && cv.h === base.h) {
+            const key = [x, y, w, h, s.max, s.redline, s.shift, cue.limiter, cue.limiter && s.blink, s.outline, P === undefined ? '' : Object.keys(PALETTES).filter((k) => PALETTES[k] === P)[0]].join('|');
+            // a few kept: on the limiter it flashes between two
+            let lit = litBars.filter((e) => e.key === key && e.base === base)[0];
+            if (!lit) {
+                lit = { key: key, base: base, cv: new Canvas(base.w, base.h) };
+                lit.cv.d.set(base.d);
+                for (let r = 0; r < s.max; r += 500) seg(r, Math.min(s.max, r + 500), col(r), lit.cv);
+                litBars.unshift(lit); litBars.length = Math.min(litBars.length, LIT_KEEP);
+            }
+            // per row, up to the middle of the gap after the last whole segment (4 px wide, slanted with the bar)
+            const xg = X(full * 500), W4 = cv.w * 4, src = lit.cv.d, dst = cv.d, x0 = Math.max(0, Math.floor(x));
+            for (let py = Math.max(0, Math.floor(barY) - 1); py <= Math.min(cv.h - 1, Math.ceil(barY + barH)); py++) {
+                const cut = Math.min(cv.w, Math.floor(xg + slant * (1 - (py + 0.5 - barY) / barH)) + 1);
+                if (cut > x0) dst.set(src.subarray(py * W4 + x0 * 4, py * W4 + cut * 4), py * W4 + x0 * 4);
+            }
+            r0 = full * 500;
         }
+        for (let r = r0; r < top; r += 500) seg(r, Math.min(top, r + 500), col(r));
     }
     // peak: a thin slanted line where the revs peaked, while they are below it
     if (fg && isNum(s.peak) && s.peak > 0 && !(isNum(rpm) && rpm >= s.peak - 50)) {
@@ -336,7 +359,7 @@ function lightsRow(x, y, w, d) {
 function drawLayer(cv, f, layer) {
     const o = f.opts, d = f.d, P = palette(o.style === 'vfd' ? 'vfd' : o.palette), cue = f.cue;
     if (o.style === 'arc' || o.style === 'ramp' || o.style === 'dial') {
-        M.drawM(cv, f, layer, { P: P, gearText: gearText, drawDown: drawDown, lightCol: lightCol, RACE_BLUE: RACE_BLUE, gearFont: gearFont });
+        M.drawM(cv, f, layer, { P: P, gearText: gearText, drawDown: drawDown, lightCol: lightCol, RACE_BLUE: RACE_BLUE, gearFont: gearFont, base: layer === 'fg' ? fgBase : null });
         return;
     }
     // the gearbox mode (D / S / M) as a small letter by the gear
@@ -432,6 +455,10 @@ function bgKey(f) {
 }
 
 const bgCache = { key: '', cv: null };
+// drawHud's static layer while it draws the moving one over it (drawBar copies its lit segments from litBars, the bar
+// drawn lit over that layer); null otherwise (drawLayer called on its own draws everything)
+let fgBase = null;
+const litBars = [], LIT_KEEP = 4;
 /** The whole HUD image into cv (IW x IH): the cached static part, then what moves. */
 function drawHud(cv, f) {
     const key = bgKey(f);
@@ -441,16 +468,31 @@ function drawHud(cv, f) {
         bgCache.key = key; bgCache.cv = b;
     }
     if (cv.d && cv.d.length === bgCache.cv.d.length) cv.d.set(bgCache.cv.d); else { cv.clear(); cv.blit(bgCache.cv, 0, 0); }
-    drawLayer(cv, f, 'fg');
+    fgBase = bgCache.cv;
+    try { drawLayer(cv, f, 'fg'); } finally { fgBase = null; }
     // redline shake: f.shake = [dx, dy] moves the whole picture a few px (on the limiter)
-    if (f.shake && (f.shake[0] || f.shake[1]) && cv.d) {
-        if (!shakeBuf || shakeBuf.d.length !== cv.d.length) shakeBuf = new Canvas(IW, IH);
-        shakeBuf.d.set(cv.d);
-        cv.clear();
-        cv.blit(shakeBuf, f.shake[0], f.shake[1]);
-    }
+    if (f.shake && (f.shake[0] || f.shake[1]) && cv.d) shift(cv, Math.round(f.shake[0]), Math.round(f.shake[1]));
 }
-let shakeBuf = null;
+
+/**
+ * Move the whole picture by (dx, dy) whole px in place, the uncovered edge left transparent: a row copy each
+ * (copyWithin), rows taken in the order that never reads one already overwritten. Was a copy, a clear and a
+ * blend per pixel: about a quarter of a frame, right on the limiter.
+ */
+function shift(cv, dx, dy) {
+    const W = cv.w, H = cv.h, d = cv.d, row = W * 4;
+    const x0 = Math.max(0, dx), x1 = Math.min(W, W + dx), n = (x1 - x0) * 4;
+    if (n <= 0 || Math.abs(dy) >= H) { d.fill(0); return; }
+    const one = (py) => {
+        const o = py * row, sy = py - dy;
+        if (sy < 0 || sy >= H) { d.fill(0, o, o + row); return; }
+        const so = sy * row + (x0 - dx) * 4;
+        d.copyWithin(o + x0 * 4, so, so + n);
+        if (x0 > 0) d.fill(0, o, o + x0 * 4);
+        if (x1 < W) d.fill(0, o + x1 * 4, o + row);
+    };
+    if (dy > 0) for (let py = H - 1; py >= 0; py--) one(py); else for (let py = 0; py < H; py++) one(py);
+}
 
 /**
  * A drawing surface that scales by k and moves by (ox, oy) on the way to r: the HUD's drawing at
