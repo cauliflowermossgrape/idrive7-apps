@@ -709,15 +709,21 @@ mgu.run({
             const km = G.isNum(soc) ? estimate(soc, live.ambient, null, paceNow(), comfortKw()).mid : null;
             return (G.isNum(km) ? Math.round(D(km)) : '--') + ' ' + dU();
         };
-        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, kind: () => kind(), page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]) });
+        let share = () => {};          // (below) the power, charge and range for other apps
+        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, kind: () => kind(), page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]),
+            onPower: () => share() });
         const isLive = (p) => lv.PAGES.indexOf(p) >= 0;
 
-        /* ---------- for other apps (Cluster functions' HUD): the power now and the range, four times a second ----------
+        /* ---------- for other apps (Cluster functions' HUD and cluster): the power now, the charge and the range ----------
          * SHARED, a file anyone may read (an app cannot read another's data folder): { t, kw (+ the battery gives power,
          * - it takes it; null while not read), soc, rangeKm (the range at this charge, as the Range page has it) }.
-         * Nothing while the demo runs. */
-        const SHARED = '/tmp/mgu-edrive.json';
-        setInterval(() => {
+         * Written at each new power reading (at most every SHARE_MIN_MS) and four times a second; nothing while the
+         * demo runs. live.js reads the power fast while another app asks for it (its WANTED). */
+        const SHARED = '/tmp/mgu-edrive.json', SHARE_MIN_MS = 80;
+        let sharedAt = 0;
+        share = () => {
+            if (Date.now() - sharedAt < SHARE_MIN_MS) return;
+            sharedAt = Date.now();
             try {
                 const d = data();
                 if (d.demo) return;
@@ -729,7 +735,8 @@ mgu.run({
                 fs.chmodSync(SHARED + '.tmp', 0o644);
                 fs.renameSync(SHARED + '.tmp', SHARED);
             } catch (e) { /* the next write tries again */ }
-        }, 250);
+        };
+        setInterval(share, 250);
         // the first bar button: "Read now", on the live pages their own action (this drive's totals, the scan)
         let actionText = 'Read now';
         const actionLabel = () => {

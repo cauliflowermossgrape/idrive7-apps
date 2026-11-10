@@ -324,7 +324,7 @@ function optsFrom(settings, drive) {
         // fuel use from the engine unit (fuel.js), off unless switched on; l/100 km, mpg (UK / US) or km/l
         fuel: settings.get('hudShowFuel') === true,
         fuelUnit: ['mpguk', 'mpgus', 'kml'].indexOf(settings.get('hudFuelUnit')) >= 0 ? settings.get('hudFuelUnit') : 'l100',
-        torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
+        torqueUnit: ['lbft', 'kgm'].indexOf(settings.get('hudTorqueUnit')) >= 0 ? settings.get('hudTorqueUnit') : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
@@ -356,10 +356,16 @@ function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower || o.hvBar), 
  */
 function driveModeOf(raw) {
     if (raw === undefined || raw === null) return null;
+    // a plug-in hybrid's modes and Adaptive count as Comfort (only Sport and XtraBoost are Sport): wire numbers
+    // 10 Adaptive, 15/16/23 PHEV Sport, 17-22 PHEV Hybrid / Electric / battery control, 28 Boost
     const n = Number(raw);
-    if (!isNaN(n) && String(raw).trim() !== '') return n >= 1 && n <= 3 ? 'sport' : n >= 4 && n <= 6 ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : null;
+    if (!isNaN(n) && String(raw).trim() !== '') {
+        return (n >= 1 && n <= 3) || n === 15 || n === 16 || n === 23 || n === 28 ? 'sport'
+            : (n >= 4 && n <= 6) || n === 10 || (n >= 17 && n <= 22) ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : null;
+    }
     const s = String(raw).toUpperCase();
-    return /SPORT/.test(s) ? 'sport' : /ECO/.test(s) ? 'eco' : /COMFORT|TRAFFIC/.test(s) ? 'comfort' : null;
+    return /SPORT|BOOST/.test(s) ? 'sport' : /HYBRID|ELECTRIC|BATTERY|ADAPTIV/.test(s) ? 'comfort' : /ECO/.test(s) ? 'eco'
+        : /COMFORT|TRAFFIC/.test(s) ? 'comfort' : null;
 }
 /**
  * What the HUD does in this driving mode (setting hudComfort): 'all', 'lights' (shift lights, rev
@@ -379,8 +385,8 @@ function calmOpts(o) {
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
 // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
 const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
-// torque from Nm, power from kW: [factor, label]
-const TORQUE_UNITS = { nm: [1, 'TORQUE'], lbft: [0.737562, 'LB-FT'] };
+// torque from Nm: [factor, label, rounded to] (Nm and lb-ft to 5, kgm to 1); power from kW: [factor, label]
+const TORQUE_UNITS = { nm: [1, 'TORQUE', 5], lbft: [0.737562, 'LB-FT', 5], kgm: [1 / 9.80665, 'KGM', 1] };
 const POWER_UNITS = { hp: [1.34102, 'HP'], kw: [1, 'KW'], ps: [1.35962, 'PS'] };
 const MAX_READOUTS = 4;
 // the recovery / power bar's ends, kW: regen to 40, drive to 80 (a 330e's e-motor gives about 80 with XtraBoost);
@@ -402,7 +408,7 @@ const roundTo = (v, step) => Math.round(v / step) * step;
  * soc12 %, v12 V, hvSoc %, hvKw, hvTemp °C, hvVolt V; any may be null).
  * In the order of the switches; at most four. When more are on, the last plain ones give way first:
  * a cold, warming or hot temperature (and the cold limit) keeps its place.
- * Fast values are rounded (torque to 5, throttle to 5 %, g to 0.05) so the row doesn't flicker.
+ * Fast values are rounded (torque to 5, 1 in kgm, throttle to 5 %, g to 0.05) so the row doesn't flicker.
  */
 function readoutsFor(d, gb, boost, sp, o, x) {
     const items = [];
@@ -416,7 +422,7 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     }
     if (o.torque && isNum(x.torque)) {
         const u = TORQUE_UNITS[o.torqueUnit] || TORQUE_UNITS.nm;
-        items.push({ label: u[1], value: String(roundTo(Math.max(0, x.torque) * u[0], 5)), tone: 'text' });
+        items.push({ label: u[1], value: String(roundTo(Math.max(0, x.torque) * u[0], u[2])), tone: 'text' });
     }
     // power from torque x rpm (kW = Nm x rpm / 9549)
     if (o.power && isNum(x.torque) && isNum(d.rpm)) {
@@ -1042,8 +1048,10 @@ function start(ctx, src) {
      * parked) or the head unit starts again; off (the default), it stays on.
      */
     const claim = new HudClaim('redline', log);
+    // With In Comfort / Eco Pro on Don't show, Redline already gives the HUD back outside Sport (a drive starts in
+    // Comfort: the standing app's HUD first, Redline's in Sport), so its HUD stays on and nothing is handed back.
     const handBack = (why) => {
-        if (mode() === 'off' || !settings.get('hudHandBack') || !HudClaim.standingOn('redline')) return false;
+        if (mode() === 'off' || !settings.get('hudHandBack') || comfortMode(settings) === 'hide' || !HudClaim.standingOn('redline')) return false;
         log.info('hud: ' + why + ': off, the HUD back to the app that stands on it');
         settings.set('hud', 'off');
         return true;

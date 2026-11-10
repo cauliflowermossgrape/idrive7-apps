@@ -49,8 +49,13 @@ const RANGE = {
  * next start shows them straight away.
  */
 // (tyre temperatures are not doubtful any more: with the right scaling a car's "no data" is 65535)
-/** boostMax setting -> the boost dial's top in bar and in psi */
-const BOOST_MAX = { '2.0': [2, 30], '2.5': [2.5, 36], '3.0': [3, 44], '3.5': [3.5, 50] };
+/** boostMax setting -> the boost dial's top in bar, in psi and in kPa */
+const BOOST_MAX = { '2.0': [2, 30, 200], '2.5': [2.5, 36, 250], '3.0': [3, 44, 300], '3.5': [3.5, 50, 350] };
+/**
+ * Pressure units (values arrive in bar): [factor from bar, label, decimals for boost / LPFP / tyres].
+ * kPa reads in whole numbers like psi (1 bar = 100 kPa = 14.5038 psi).
+ */
+const PRESS = { bar: [1, 'bar', 2, 1, 1], psi: [14.5038, 'psi', 1, 0, 0], kpa: [100, 'kPa', 0, 0, 0] };
 const MOVE = { gearbox: 1, egs: 1, boostFes: 0.03, boostDme: 0.03 };
 /** Remembered per car: which groups sent real data (the "Auto" setting shows only those). */
 const GROUP = { gearbox: 'gearbox', boostFes: 'boost', boostDme: 'boost', tFL: 'tyreTemp', tFR: 'tyreTemp', tRL: 'tyreTemp', tRR: 'tyreTemp',
@@ -579,8 +584,10 @@ mgu.run({
         /* ---------- units ---------- */
         const T = (c) => (c == null ? null : settings.get('tempUnit') === 'f' ? c * 9 / 5 + 32 : c);
         const tU = () => (settings.get('tempUnit') === 'f' ? '°F' : '°C');
-        const Pt = (b) => (b == null ? null : settings.get('pressUnit') === 'psi' ? b * 14.5038 : b);
-        const P = (b) => (b == null ? null : settings.get('pressUnit') === 'psi' ? b * 14.5038 : b);
+        const pressU = () => PRESS[settings.get('pressUnit')] || PRESS.bar;
+        const P = (b) => (b == null ? null : b * pressU()[0]);
+        const Pt = P;
+        const pU = () => pressU()[1];
         const V = (k) => (k == null ? null : settings.get('speedUnit') === 'mph' ? k * 0.621371 : k);
 
         /* ---------- drawing ---------- */
@@ -683,10 +690,11 @@ mgu.run({
                 G.bar(cv, t, x, y + gap, w, 92, Object.assign({ label: 'Torque', value: TQ(d.torque), unit: tqU(), decimals: settings.get('torqueUnit') === 'kgm' ? 1 : 0, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null }, tqScale()));
             };
             if (shown('boost')) {
-                const psi = settings.get('pressUnit') === 'psi', bmax = BOOST_MAX[settings.get('boostMax')] || BOOST_MAX['2.5'], pmax = psi ? bmax[1] : bmax[0];
+                const pu = settings.get('pressUnit'), psi = pu === 'psi', kpa = pu === 'kpa';
+                const bmax = BOOST_MAX[settings.get('boostMax')] || BOOST_MAX['2.5'], pmax = psi ? bmax[1] : kpa ? bmax[2] : bmax[0];
                 G.segBar(cv, t, 24, G.TOP + 242 + half, 1062, 226 - half, {
-                    label: 'Boost', value: P(d.boost), unit: settings.get('pressUnit'), decimals: psi ? 1 : 2, min: 0, max: pmax,
-                    step: psi ? 2 : 0.125, scale: { every: psi ? (pmax > 40 ? 10 : 6) : 0.5, decimals: psi ? 0 : 1 }, ramp: 'hot', limit: pmax * 0.85,
+                    label: 'Boost', value: P(d.boost), unit: pU(), decimals: pressU()[2], min: 0, max: pmax,
+                    step: psi ? 2 : kpa ? 12.5 : 0.125, scale: { every: psi ? (pmax > 40 ? 10 : 6) : kpa ? 50 : 0.5, decimals: psi || kpa ? 0 : 1 }, ramp: 'hot', limit: pmax * 0.85,
                     marks: [{ value: pmax * 0.85, color: 'warn' }], peak: showPk ? P(pk.boost) : null,
                 });
                 if (!G.isNum(d.boost) && !usingDemo()) cv.text(boostWhy(), 48, G.pageBottom(cv) - 14, 22, t.dim);
@@ -826,7 +834,7 @@ mgu.run({
         function drawFuel(cv, t, d) {
             fuelSeen = Date.now();
             kickFuel();
-            const pu = settings.get('pressUnit'), running = G.isNum(d.rpm) && d.rpm > 500;
+            const pu = pU(), pd = pressU(), running = G.isNum(d.rpm) && d.rpm > 500;
             const val = (k) => {
                 const fk = GROUP[k] && PAIR[GROUP[k]] ? GROUP[k] : k;
                 return usingDemo() || (fuelT[fk] && Date.now() - fuelT[fk] < 15000) ? d[k] : null;
@@ -841,9 +849,9 @@ mgu.run({
                 shown('hpfp') && { label: 'High pressure fuel', value: P(val('hpfp')), unit: pu, decimals: 0, history: hist.hpfp.map(P),
                     zones: running ? [{ from: -99, to: P(20), color: 'crit' }] : [],
                     sub: G.isNum(val('hpfp')) ? mm(hist.hpfp, P, 0) + off : fuelWhy('hpfp') },
-                shown('lpfp') && { label: 'Low pressure fuel', value: P(val('lpfp')), unit: pu, decimals: pu === 'psi' ? 0 : 1, history: hist.lpfp.map(P),
+                shown('lpfp') && { label: 'Low pressure fuel', value: P(val('lpfp')), unit: pu, decimals: pd[3], history: hist.lpfp.map(P),
                     zones: running ? [{ from: -99, to: P(3), color: 'crit' }, { from: P(3), to: P(4), color: 'warn' }] : [],
-                    sub: G.isNum(val('lpfp')) ? mm(hist.lpfp, P, 1) + off : fuelWhy('lpfp') },
+                    sub: G.isNum(val('lpfp')) ? mm(hist.lpfp, P, pu === 'kPa' ? 0 : 1) + off : fuelWhy('lpfp') },
                 shown('iat') && { label: 'Intake air above outside', value: dT(iatRise), unit: tU(), decimals: 0, history: hist.iatRise.map(dT),
                     zones: [{ from: dT(25), to: dT(40), color: 'warn' }, { from: dT(40), to: 999, color: 'crit' }],
                     sub: G.isNum(iatRise) ? mm(hist.iatRise, dT, 0, 'heat soak') : 'needs IAT + outside temperature' },
@@ -851,7 +859,7 @@ mgu.run({
                     sub: G.isNum(val('timing')) ? mm(hist.timing, (x) => x, 1) : fuelWhy('timing') },
                 shown('boostCtl') && { draw: (c, th, x, y, w, h) => pairTile(c, th, x, y, w, h, {
                     label: 'Boost: target vs actual', targetLabel: 'TARGET', actual: P(val('boostActual')), target: P(val('boostTarget')),
-                    unit: pu, decimals: pu === 'psi' ? 1 : 2, tol: P(0.15), idle: P(0.2), why: fuelWhy('boostCtl'),
+                    unit: pu, decimals: pd[2], tol: P(0.15), idle: P(0.2), why: fuelWhy('boostCtl'),
                     histA: hist.boostActual.map(P), histT: hist.boostTarget.map(P) }) },
                 shown('load') && { draw: (c, th, x, y, w, h) => pairTile(c, th, x, y, w, h, {
                     label: 'Air charge: requested vs actual', targetLabel: 'REQUESTED', actual: val('loadActual'), target: val('loadTarget'),
@@ -899,7 +907,7 @@ mgu.run({
         function drawTyres(cv, t, x, y, w, h, d) {
             const temps = shown('tyreTemp');
             const p = G.panel(cv, t, x, y, w, h, 'Tyres');
-            const unitP = settings.get('pressUnit'), dec = unitP === 'psi' ? 0 : 1;
+            const unitP = pU(), dec = pressU()[4];
             const cx = x + w / 2, top = y + 70, bh = h - 100 + G.toMargin(p.h - h, 26), bw = 150;     // rear tyres: G.MARGIN over the panel's real bottom
             // body: rounded shell, windscreen + rear window, FRONT marker
             cv.roundRect(cx - bw / 2, top, bw, bh, 52, withAlpha(t.track, 0.9));

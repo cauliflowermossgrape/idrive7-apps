@@ -142,7 +142,7 @@
   "settings": [
     {"key": "hud", "label": "Show on HUD (experimental)", "type": "choice", "default": "off", "options": [["off", "Off"], ["on", "On"], ["test", "Test pattern"]]},
     {"key": "hudStyle", "label": "HUD layout", "type": "choice", "default": "standard", "when": {"hud": ["on", "test"]}, "options": [["standard", "Standard"], ["minimal", "Minimal (lights and gear)"], ["wings", "Split wings"], ["digital", "80s digital dash"], ["vfd", "VFD glow (teal)"], ["vector", "Vector arcade (outlines)"], ["arc", "Arc (after the F80 / F82 M3 and M4)"], ["ramp", "Ramp (after the G80 / G82 M3 and M4)"], ["dial", "Dial (after the E60 M5)"]]},
-    {"key": "hudComfortMode", "label": "In Comfort / Eco Pro", "type": "choice", "default": "same", "when": {"hud": ["on", "test"]}, "options": [["same", "Same HUD as Sport"], ["own", "Its own HUD (set up on HUD looks)"], ["hide", "Don't show (BMW's own HUD)"]]},
+    {"key": "hudComfortMode", "label": "In Comfort / Eco Pro", "type": "choice", "default": "hide", "reset": 1, "when": {"hud": ["on", "test"]}, "options": [["same", "Same HUD as Sport"], ["own", "Its own HUD (set up on HUD looks)"], ["hide", "Don't show (BMW's own HUD)"]]},
     {"key": "hudComfortSetup", "label": "Comfort HUD setup", "type": "object", "default": {}, "hidden": true},
     {"key": "hudNav", "label": "Directions on the HUD (experimental)", "type": "choice", "default": "route", "when": {"hud": ["on", "test"]}, "options": [["route", "While a route runs"], ["near", "Near turns (under 1 km, and lanes)"], ["off", "Off"]]},
     {"key": "hudNavX", "label": "Directions left / right", "type": "number", "unit": "px", "default": 0, "labels": {"0": "Bottom right corner"}, "when": {"hud": ["on", "test"], "hudNav": ["route", "near"], "advanced": [true]}, "steps": [-240, -200, -160, -120, -80, -40, -20, 0, 20], "group": "Advanced"},
@@ -167,7 +167,7 @@
     {"key": "learnRedline", "label": "Learn redline from the limiter", "type": "bool", "default": true, "when": {"learn": true}, "group": "Learning (experimental)"},
     {"key": "speedUnit", "label": "Speed unit", "type": "choice", "default": "kmh", "options": [["kmh", "km/h"], ["mph", "mph"]], "group": "Units"},
     {"key": "hudTempUnit", "label": "Temperature unit", "type": "choice", "default": "c", "options": [["c", "°C"], ["f", "°F"]], "group": "Units"},
-    {"key": "hudTorqueUnit", "label": "Torque unit", "type": "choice", "default": "nm", "options": [["nm", "Nm"], ["lbft", "lb-ft"]], "group": "Units"},
+    {"key": "hudTorqueUnit", "label": "Torque unit", "type": "choice", "default": "nm", "options": [["nm", "Nm"], ["lbft", "lb-ft"], ["kgm", "kgm"]], "group": "Units"},
     {"key": "hudPowerUnit", "label": "Power unit", "type": "choice", "default": "hp", "options": [["hp", "hp"], ["ps", "PS"], ["kw", "kW"]], "group": "Units"},
     {"key": "hudBoostUnit", "label": "Boost unit", "type": "choice", "default": "bar", "options": [["bar", "bar"], ["psi", "psi"], ["kpa", "kPa"]], "group": "Units"},
     {"key": "hudFuelUnit", "label": "Fuel use unit", "type": "choice", "default": "l100", "options": [["l100", "l/100 km"], ["mpguk", "mpg (UK)"], ["mpgus", "mpg (US)"], ["kml", "km/l"]], "group": "Units"},
@@ -224,6 +224,6 @@
     {"key": "speedRate", "label": "Speed display rate", "type": "number", "unit": "fps", "default": 10, "reset": 1, "markDefault": true, "steps": [5, 10, 15, 30, 60], "when": {"advanced": [true]}, "group": "Advanced"},
     {"key": "hudFps", "label": "HUD frame rate", "type": "number", "unit": "fps", "default": 20, "when": {"hud": ["on", "test"], "advanced": [true]}, "steps": [10, 20, 30], "group": "Advanced"},
     {"key": "hudReadoutRate", "label": "HUD readouts refresh (faster: more work for the head unit)", "type": "number", "unit": "/s", "default": 4, "when": {"hud": ["on", "test"], "advanced": [true]}, "steps": [4, 10, 20], "group": "Advanced"},
-    {"key": "hudHandBack", "label": "Give the HUD back to Cluster functions at switch-off", "type": "bool", "default": false, "when": {"hud": ["on", "test"], "advanced": [true]}, "group": "Advanced"}
+    {"key": "hudHandBack", "label": "Give the HUD back to Cluster functions at switch-off", "type": "bool", "default": true, "when": {"hud": ["on", "test"], "advanced": [true]}, "group": "Advanced"}
   ]
 }

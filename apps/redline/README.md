@@ -44,11 +44,15 @@ The HUD output is by [@biscotit](https://github.com/biscotit).
 ### With Cluster functions
 
 Cluster functions (the HUD map, turn signals and gear) stands on the HUD whenever it is on. Turning
-Redline's HUD on takes the HUD over: Cluster functions gives way, except while Redline's tach is hidden in
-Comfort / Eco Pro. Redline's HUD stays on from drive to drive. With *HUD position and size* → *Give the HUD back
-to Cluster functions at switch-off* (off by default) on, Redline's *Show on HUD* goes back to *Off* when the car is
-switched off or the head unit starts again, and Cluster functions has the HUD again. Without Cluster functions
-installed, Redline's HUD stays on either way.
+Redline's HUD on takes the HUD over: Cluster functions gives way, except while Redline's tach is hidden.
+
+In this fork *In Comfort / Eco Pro* is *Don't show* by default: Redline's HUD shows only in Sport (and
+XtraBoost); in Comfort, Eco Pro, Adaptive and a plug-in hybrid's Hybrid and Electric it is hidden, and Cluster
+functions has the HUD. A drive starts in Comfort, so it starts with Cluster functions, and Sport brings Redline's
+tach up. *Give the HUD back to Cluster functions at switch-off* (on by default here) matters only when Redline
+shows in Comfort too: then Redline's *Show on HUD* goes back to *Off* when the car is switched off or the head unit
+starts again; turned off, Redline's HUD stays on from drive to drive.
+Without Cluster functions installed, Redline's HUD stays on either way.
 Both apps keep their state in `/dev/shm/mgu-hud` (`kit/runtime/hud_claim.js`), cleared at each head-unit start;
 where it cannot be written, nothing is handed back. Cluster functions' side: TheoneLT83/Cluster-apps
 `apps/robertn_waze_cluster/app/main.js` (`HudClaim.others`, `HudClaim.standing`, app id `robertn_waze_cluster`).
@@ -193,7 +197,7 @@ HUD looks opens on the setup of the mode the car is in; *Play on HUD* plays the 
 **The readouts row** (standard layout), left to right:
 
 - **RPM:** the engine speed as a number (7-segment digits in the digital and VFD layouts).
-- **Torque** (Nm or lb-ft) from the engine's own torque signal, and **power** (hp, PS or kW)
+- **Torque** (Nm, lb-ft or kgm) from the engine's own torque signal, and **power** (hp, PS or kW)
   worked out from torque and rpm. Both off by default.
 - **Throttle** is left out for now: the accelerator pedal signal's scaling isn't confirmed (on a
   G21 it read 60-96 % at a light touch). It comes back once checked against the engine unit.
@@ -272,7 +276,7 @@ below list them by what they do.
 | Recovery / power bar ("Power bar" on HUD looks) | off (default) / on: regen and drive power drawn along the layout's own gauge; only on a plug-in hybrid ([Electrical](#electrical)) |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
-| Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
+| Torque unit | Nm / lb-ft / kgm, on the HUD and the Learned page's torque curve |
 | Tyre pressure unit | bar (default) / psi / kPa, on the HUD |
 
 At most four readouts fit the row; past that the last one gives way.
