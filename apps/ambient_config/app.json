@@ -1,8 +1,8 @@
 {
   "id": "ambient_config",
   "title": "Ambient config",
-  "description": "The ambient light's colour: set it here, or let each driving mode choose one",
-  "version": "1.3.0",
+  "description": "Any colour on the ambient light, animations, and a look for each driving mode",
+  "version": "2.0.3",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -15,6 +15,19 @@
     "de.bmw.infotainment.drivingexcitement.FES": {
       "_optional": "the driving mode: colours by mode",
       "statusFESVehicleDynamicSwitchHMI": "rs"
+    },
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "_instances": "SystemFunctionsInternalTasuInst1",
+      "_methods": [
+        "sendTasuRequest"
+      ],
+      "_broadcasts": [
+        "sendTasuResponse"
+      ]
+    },
+    "de.bmw.infotainment.vehicle.Vehicle": {
+      "_optional": "day or night: dimmer at night",
+      "statusDayNightChangeOver": "rs"
     }
   },
   "screens": [
@@ -23,26 +36,86 @@
       "kind": "canvas",
       "title": "Ambient config",
       "buttons": [
-        ["BTN_SETTINGS", "Settings"]
+        [
+          "BTN_SETTINGS",
+          "Settings"
+        ]
       ]
     }
   ],
   "settings": [
-    {"key": "carKind", "label": "Car type", "type": "choice", "default": "ice", "hidden": true,
-     "options": [["ice", "Petrol or diesel"], ["hybrid", "Plug-in hybrid"]]},
-    {"key": "follow", "label": "Colour by driving mode", "type": "bool", "default": true},
-    {"key": "sport", "label": "Sport", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-     "labels": {"0": "Leave as is"}, "when": {"follow": true}, "group": "Colour by driving mode"},
-    {"key": "hybrid", "label": "Hybrid", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "hybrid"}, "group": "Colour by driving mode"},
-    {"key": "electric", "label": "Electric", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "hybrid"}, "group": "Colour by driving mode"},
-    {"key": "comfort", "label": "Comfort", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "ice"}, "group": "Colour by driving mode"},
-    {"key": "eco", "label": "Eco Pro", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-     "labels": {"0": "Leave as is"}, "when": {"follow": true, "carKind": "ice"}, "group": "Colour by driving mode"},
-    {"key": "adaptive", "label": "Adaptive", "type": "number", "default": 0, "steps": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-     "labels": {"0": "Leave as is"}, "when": {"follow": true}, "group": "Colour by driving mode"},
-    {"key": "restore", "label": "Leave as is gives my own colour back", "type": "bool", "default": true, "when": {"follow": true}}
+    {
+      "key": "carKind",
+      "label": "Car type",
+      "type": "choice",
+      "default": "ice",
+      "hidden": true,
+      "options": [
+        [
+          "ice",
+          "Petrol or diesel"
+        ],
+        [
+          "hybrid",
+          "Plug-in hybrid"
+        ]
+      ]
+    },
+    {
+      "key": "follow",
+      "label": "Look by driving mode",
+      "type": "bool",
+      "default": true,
+      "hidden": true
+    },
+    {
+      "key": "welcome",
+      "label": "Welcome sweep at start",
+      "type": "bool",
+      "default": false,
+      "hidden": true
+    },
+    {
+      "key": "sportPulse",
+      "label": "Sport pulse",
+      "type": "bool",
+      "default": false,
+      "hidden": true
+    },
+    {
+      "key": "nightDim",
+      "label": "Dimmer at night",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "keep",
+      "label": "My colour back at each start",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "flashAlerts",
+      "label": "Redline shift flash",
+      "type": "bool",
+      "default": true,
+      "hidden": true
+    },
+    {
+      "key": "drive",
+      "label": "Steering wheel",
+      "type": "choice",
+      "default": "lhd",
+      "options": [
+        [
+          "lhd",
+          "Left"
+        ],
+        [
+          "rhd",
+          "Right"
+        ]
+      ]
+    }
   ]
 }
