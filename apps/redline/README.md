@@ -330,7 +330,8 @@ glass's edge. Checked for every size and position the settings allow.
 - **Where it comes from:** BMW's guidance service, read-only, the same way for CarPlay, Android Auto and BMW's own
   navigation: the route's next events (`GuidanceEventList.queryContent`, asked once a second while a route runs),
   the lanes (`currentLaneGuiding`) and, for BMW's navigation, `conclusiveDart`. Proven on a G21 with CarPlay /
-  Apple Maps; BMW navigation and Android Auto not yet. The interfaces are the ones jaimeen77's Cluster Redline
+  Apple Maps; BMW navigation and Android Auto not yet. Waze over CarPlay gives the car no turns (checked on the
+  G21, 2026-11-10), so it shows no directions: only apps that send their turns to the car can. The interfaces are the ones jaimeen77's Cluster Redline
   (jaimeen77-cmyk/apps, MPL-2.0) reads; Redline's decoder and drawing are its own (`nav.js`, `hud-nav.js`).
 - **Safety:** a turn older than 3 s isn't shown: a slow or failed reply, a reply without a turn or a busy head unit
   shows the tach without an arrow, never a stale one. An old turn never comes back after a route ends or changes
