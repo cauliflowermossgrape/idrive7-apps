@@ -1918,6 +1918,12 @@ Clearer (bigger, brighter)	선명하게 (더 크고 밝게)
 Outside temp (blue at 3 °C / 37 °F and below)	외기 온도 (3 °C / 37 °F 이하 파란색)
 Ambient config	앰비언트 설정
 Colour by driving mode	주행 모드별 색상
+Look by driving mode	주행 모드별 조명
+Welcome sweep at start	시동 시 웰컴 효과
+Sport pulse	스포츠 맥동 효과
+Dimmer at night	야간에 어둡게
+My colour back at each start	시동마다 내 색상으로 복원
+Redline shift flash	Redline 변속 시점 깜빡임
 Leave as is	그대로 두기
 Leave as is gives my own colour back	그대로 두기: 내 색상으로 복원
 By driving mode	주행 모드별
