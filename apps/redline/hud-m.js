@@ -222,7 +222,7 @@ function rSeg(cv, a, b, max, c, g, outline) {
  * The ramp's Recovery / Power meter (a readout with .bar, hud.js): not in the list but a thin second band under
  * the ramp's scale, the same shape and length (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter).
  * Zero at the knee; recovery fills down the climb towards 0, power along the flat towards the end (yellow from
- * 85 % of bar.hi). Track and zero tick bg, fill fg.
+ * 85 % of bar.hi). Track bg (no zero tick: the knee is the zero), fill fg.
  */
 // t: the thickness, the climb (recovery) the same as the flat (power), clear of the scale's numbers and the gear;
 // start: where the climb begins, clear of the 0
@@ -237,8 +237,7 @@ function rampMeter(cv, bar, P, layer) {
     };
     if (layer !== 'fg') {
         quad(A, K, withAlpha(RC.line, 0.6), 1.1); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
-        // the zero at the knee: bold, so it reads at a glance where recovery ends and power starts
-        cv.line(K[0] + RM.slant / 2, K[1] - RM.t - 2, K[0], K[1] + 3, 2.8, RC.line);
+        // no zero tick: the knee itself shows where recovery ends and power starts (a tick there met the scale's 2)
     }
     if (layer === 'bg' || !isNum(bar.v)) return;
     const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
