@@ -21,7 +21,7 @@ const plain = (f) => { const c = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(c,
 const same = (a, b) => Buffer.from(a.d).equals(Buffer.from(b.d));
 
 const cv = new Canvas(Draw.IW, Draw.IH);
-['standard', 'vector', 'wings', 'minimal', 'digital', 'vfd', 'arc', 'ramp', 'dial'].forEach((st) => {
+['standard', 'vector', 'wings', 'minimal', 'digital', 'vfd', 'arc', 'ramp', 'dial', 'pill'].forEach((st) => {
     [{ blink: true }, { blink: false, dim: true, lights: false }, { blink: true, palette: 'amber', lightStyle: 'f1', peak: 7000 }].forEach((o, k) => {
         let bad = [];
         for (let rpm = 0; rpm <= 8100; rpm += 37) {

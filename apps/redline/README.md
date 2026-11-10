@@ -88,8 +88,14 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
 - **Dial** (after the E60 M5): a ¾ dial round the gear: yellow-green, then an orange advance
   warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
   dial's orange; the first readout bottom right (where the car shows the speed).
+- **Pill** (a sim-racing telemetry look): one rounded panel. At its left the gear in a ring that fills
+  round with the revs (green, yellow through the count-in, red at the shift point); the shift lights as
+  a row of small dots along its top; up to three readouts as a small label over big 7-segment digits.
+  Through the count-in the panel reddens; from the shift point (shift lights on) and on the limiter it
+  flashes, solid red then grey with the ring and dots in red, and is grey again after the upshift. It follows *HUD colours*, the light fill and colours, the peak, the grade and the power
+  bar (along its bottom).
 
-*Shift light style* (Settings) works on all three as on the other layouts: M is the cars' own colours,
+*Shift light style* (Settings) works on Arc, Ramp and Dial as on the other layouts: M is the cars' own colours,
 Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
 lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
 right make no difference here: Arc fills left to right like the F80, Ramp and Dial along their band.
@@ -136,7 +142,9 @@ missing falls back to Ubuntu.
   It counts in, flashes, shifts (graded spot on, early or late in turn), hits the limiter, then
   brakes with the downshift arrows counting up. It uses the HUD's own drawing code and your
   current settings, so every change shows in it at once.
-- **Picking:** on the right, the nine layouts; tap one to use it.
+- **Picking:** on the right, the layouts in three rows; tap one to use it. With more than nine they
+  scroll sideways a column at a time (the arrows either side, by touch or the controller) instead of
+  getting smaller, and the one in use is brought into view.
 - **Sport or Comfort:** under the preview, **SPORT** and **COMFORT / ECO PRO** pick the setup you're
   looking at and changing; with Comfort picked, *Same as Sport*, *Its own* or *Don't show* beside it.
   Everything on the page then shows and changes that setup (size and position are shared).
@@ -192,8 +200,9 @@ as Live Data shows it) picks which one shows.
 - **Hybrid / Electric** (only on a car known to be a plug-in hybrid): its Hybrid, Electric and battery modes, the
   same three choices (*In Hybrid / Electric*), but *Same HUD as Sport* by default: on a hybrid these are the everyday
   modes, where the power bar matters most. Its own tab on HUD looks.
-- Shared by all: size and position, units, the light colours and the downshift
-  arrows (the centre screen uses those too).
+- Each setup of its own also has its own size and position (PLACE on HUD looks, with that mode's tab picked): a
+  small HUD in a corner for Comfort, say, and the full one for Sport. The HUD moves when the driving mode changes.
+- Shared by all: units, the light colours and the downshift arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
   becomes Comfort's own setup without readouts or alerts.
 
@@ -346,9 +355,11 @@ glass's edge. Checked for every size and position the settings allow.
   direction is ignored. Lanes stay with the turn they came with and go with it.
   Two phones and no telling whose route (both say they're guiding, or BMW names one while the other is guiding): no
   arrow and no giving way, the tach stays (the check jaimeen77's Cluster Redline makes).
-- **Giving way to BMW's card:** only when a route certainly runs and Redline has had no readable turn for 15 s
-  (from the route's start, the last turn, or the directions coming back on), and never for a phone (or BMW's
-  navigation) whose turns it has already read this drive: a reroute (a U-turn, Apple Maps working out the new route)
+- **Giving way to BMW's card:** only for BMW's own navigation, when its route certainly runs and Redline has had
+  no readable turn for 15 s (from the route's start, the last turn, or the directions coming back on). Never for a
+  phone's route (CarPlay, Android Auto): BMW's card for it comes from the same turns Redline reads, so with none
+  readable (Waze, for one) there is no card either, and stepping aside only left the HUD empty (issue #91). The tach
+  then stays, without an arrow. And never for BMW's navigation once its turns have been read this drive: a reroute (a U-turn, Apple Maps working out the new route)
   shows the tach without an arrow until the new turns come, rather than BMW's card stuck on "Calculating Route" for
   the rest of the trip. Redline then leaves the HUD (tach
   included) for the rest of the route. It's for the route because of how the HUD slot works (cluster-render's

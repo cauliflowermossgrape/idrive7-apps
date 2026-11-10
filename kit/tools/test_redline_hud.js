@@ -45,7 +45,7 @@ ok(optsDefault.bar === true && optsDefault.rpm === true && optsDefault.lights ==
 ok(optsDefault.torque === false && optsDefault.power === false && optsDefault.g === false && optsDefault.throttle === false && optsDefault.outside === false, 'defaults: the extra readouts are off');
 
 /* ---------- drawing: every layout, palette and switch, both layers ---------- */
-const LAYOUTS = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial'];
+const LAYOUTS = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial', 'pill'];
 const lit = (cv) => { let n = 0; for (let i = 3; i < cv.d.length; i += 4) if (cv.d[i]) n++; return n; };
 function frame(o, extra) {
     return Object.assign({
@@ -64,10 +64,26 @@ LAYOUTS.forEach((style) => ['colour', 'amber', 'ice'].forEach((palette) => [true
 })));
 // the Rev bar switch removes the bar (minimal has none to remove; on ramp and dial the band is the shift
 // lights too, so it stays while they are on)
+// (pill: its panel is most of the picture, so only its ring goes: fewer lit pixels, the panel kept)
 LAYOUTS.filter((s) => ['minimal', 'ramp', 'dial'].indexOf(s) < 0).forEach((style) => {
     const px = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return lit(cv); };
-    ok(px(false) < px(true) * 0.6, style + ': Rev bar off still draws most of the bar');
+    if (style === 'pill') {
+        const pic = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return cv; };
+        const a = pic(true), b = pic(false), i = (Math.round(70 - 37) * Draw.IW + 54) * 4;   // the ring's top
+        ok(px(false) === px(true) && (a.d[i] !== b.d[i] || a.d[i + 1] !== b.d[i + 1]), 'pill: Rev bar off removes the ring round the gear, the panel stays');
+    } else ok(px(false) < px(true) * 0.6, style + ': Rev bar off still draws most of the bar');
 });
+// pill: the panel reddens through the count-in; from the shift point and on the limiter it flashes (solid red, then
+// grey), grey below the count-in and with the shift lights off
+{
+    const panel = (rpm, cue, extra) => { const cv = new Canvas(Draw.IW, Draw.IH);
+        Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: 'pill', lights: !(extra && extra.off) }),
+            { d: { rpm: rpm, gear: 3, stage: 'D' }, readouts: [], chip: null, peak: 0, blink: !(extra && extra.dark), cue: Object.assign({ from: 4400, at: 5550, shift: false, limiter: false }, cue) }), 'both');
+        const i = (112 * Draw.IW + 250) * 4; return cv.d[i] - cv.d[i + 1]; };
+    const low = panel(3000), half = panel(4975), at = panel(5600, { shift: true }), dark = panel(5600, { shift: true }, { dark: true });
+    ok(low < 20 && half > low + 40 && at > half + 40 && dark < 20 && panel(6560, { limiter: true }) > half + 40 && panel(5600, { shift: true }, { off: true }) < 20,
+        'pill: grey (' + low + '), redder through the count-in (' + half + '), flashing solid red (' + at + ') and grey (' + dark + ') from the shift point; grey with the shift lights off');
+}
 // only the shift lights (everything else off) still draws something
 {
     const o = Object.assign({}, optsDefault, { style: 'vfd', bar: false, rpm: false, gear: false, mode: false });
@@ -191,9 +207,13 @@ ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'hide') === '
     ok(Hud.optsFrom(cf).torque === true, 'profiles: Comfort own starts as a copy of Sport (torque readout kept)');
     sp.set('hudShowTorque', false);
     ok(Hud.optsFrom(cf).torque === true && Hud.optsFrom(sp).torque === false, 'profiles: after that, Sport changes stay in Sport');
-    // shared keys (place, units, light colours) are one for both, whichever profile changes them
-    cf.set('hudSize', 120);
-    ok(st.get('hudSize') === 120 && !('hudSize' in st.get('hudComfortSetup')), 'profiles: size is shared');
+    // shared keys (units, light colours) are one for both, whichever profile changes them
+    cf.set('hudTempUnit', 'f');
+    ok(st.get('hudTempUnit') === 'f' && !('hudTempUnit' in st.get('hudComfortSetup')), 'profiles: units are shared');
+    // size and place are each setup's own (2026-11-10: a small HUD in a corner for Comfort)
+    cf.set('hudSize', 70); cf.set('hudX', 120); cf.set('hudY', 40);
+    const pc = Hud.placeOf(cf), ps = Hud.placeOf(sp);
+    ok(st.get('hudComfortSetup').hudSize === 70 && pc.w === 280 && pc.x > ps.x && pc.y > ps.y && ps.w === 400, 'profiles: Comfort\'s own size and place (' + JSON.stringify(pc) + '), Sport\'s kept (' + JSON.stringify(ps) + ')');
     // the driving mode picks the profile; Sport+ and an unknown mode use Sport
     ok(Hud.optsFrom(st, 'comfort').style === 'dial' && Hud.optsFrom(st, 'eco').style === 'dial' && Hud.optsFrom(st, 'sport').style === 'arc' && Hud.profileOf(null) === 'sport', 'profiles: the mode picks one');
     // Same as Sport again: Comfort's setup is kept (back with Its own), Sport shows

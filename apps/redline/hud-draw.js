@@ -358,8 +358,9 @@ function lightsRow(x, y, w, d) {
  */
 function drawLayer(cv, f, layer) {
     const o = f.opts, d = f.d, P = palette(o.style === 'vfd' ? 'vfd' : o.palette), cue = f.cue;
-    if (o.style === 'arc' || o.style === 'ramp' || o.style === 'dial') {
-        M.drawM(cv, f, layer, { P: P, gearText: gearText, drawDown: drawDown, lightCol: lightCol, RACE_BLUE: RACE_BLUE, gearFont: gearFont, base: layer === 'fg' ? fgBase : null });
+    if (o.style === 'arc' || o.style === 'ramp' || o.style === 'dial' || o.style === 'pill') {
+        M.drawM(cv, f, layer, { P: P, gearText: gearText, drawDown: drawDown, lightCol: lightCol, RACE_BLUE: RACE_BLUE, gearFont: gearFont, base: layer === 'fg' ? fgBase : null,
+            drawLights: drawLights, seg7: seg7 });
         return;
     }
     // the gearbox mode (D / S / M) as a small letter by the gear

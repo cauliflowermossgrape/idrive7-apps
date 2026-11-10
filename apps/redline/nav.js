@@ -467,7 +467,11 @@ function Tracker() {
             }
             const m = self.current(now);
             if (!m) {
-                if (routeSure(route) && !readable[guide()] && now - Math.max(route.sureSince, lastTurnAt, resumedAt) >= GIVE_WAY_MS) gaveWay = true;
+                // never for a phone's route (CarPlay, Android Auto): BMW's card for it is drawn from the same turns
+                // Redline reads, so with none readable there's no card either, and stepping aside left the HUD empty
+                // (2026-11-10, issue #91: Waze guiding, Cluster functions' map held off too). The tach stays, no arrow.
+                const g = guide();
+                if (g !== 'CAR_PLAY' && g !== 'ANDROID_AUTO' && routeSure(route) && !readable[g] && now - Math.max(route.sureSince, lastTurnAt, resumedAt) >= GIVE_WAY_MS) gaveWay = true;
                 return { show: null, giveWay: gaveWay };
             }
             if (mode === 'near') {
