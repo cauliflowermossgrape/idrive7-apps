@@ -800,7 +800,7 @@ mgu.run({
             readouts: 'Up to four show, in this order; a cold or hot one keeps its place. Units: Settings',
             alerts: 'After an upshift, on knock, after a standing start; Shake: on the limiter. And the downshift arrows',
             tyres: 'Where the directions go, when they have no turn; it moves with them. Shown big here',
-            place: 'Where the HUD sits, for both Sport and Comfort',
+            place: 'Where the HUD of this setup sits on the glass',
         };
         /**
          * A segmented switch: [value, text] options in one quiet pill, the current one white (not red like the choice
