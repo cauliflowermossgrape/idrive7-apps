@@ -179,8 +179,9 @@ missing falls back to Ubuntu.
 as Live Data shows it) picks which one shows.
 
 - **Sport** is used in Sport, Sport+, Sport Individual and XtraBoost, a mode it doesn't know, or when the car
-  doesn't send the mode, so the HUD never disappears for lack of a signal. Adaptive and a plug-in hybrid's Hybrid,
-  Electric and battery modes count as Comfort.
+  doesn't send the mode, so the HUD never disappears for lack of a signal. Adaptive counts as Comfort, and so do a
+  plug-in hybrid's Hybrid, Electric and battery modes until the car is known to be a hybrid (then they have their own,
+  below).
 - **Comfort / Eco Pro** is one of three (*In Comfort / Eco Pro*, in Settings and on HUD looks):
   - *Same HUD as Sport*: one HUD for every mode.
   - *Its own HUD*: a setup of its own: layout, colours, readouts, alerts, everything on HUD looks.
@@ -188,7 +189,10 @@ as Live Data shows it) picks which one shows.
     anything makes Comfort its own, so nothing needs switching on first.
   - *Don't show* (the default): Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as
     soon as the mode is Sport. Comfort's own setup, if it has one, is kept for later.
-- Shared by both: size and position, units, the light colours and the downshift
+- **Hybrid / Electric** (only on a car known to be a plug-in hybrid): its Hybrid, Electric and battery modes, the
+  same three choices (*In Hybrid / Electric*), but *Same HUD as Sport* by default: on a hybrid these are the everyday
+  modes, where the power bar matters most. Its own tab on HUD looks.
+- Shared by all: size and position, units, the light colours and the downshift
   arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
   becomes Comfort's own setup without readouts or alerts.
@@ -536,9 +540,9 @@ remembered, and the log says what found it, with the raw value
 (`electrical: high-voltage battery found (…)`). 2.0.12 clears it once: 2.0.0–2.0.8 could take a single odd
 voltage for a hybrid battery, and a real hybrid finds it again within a drive.
 
-**Testing on a plug-in hybrid:** its Hybrid and Electric modes count as Comfort, where Redline's HUD is hidden by
-default. To see the hybrid readouts and the power bar there, set *In Comfort / Eco Pro* to *Same HUD as Sport*
-(or *Its own HUD*), or drive in Sport.
+**On a plug-in hybrid:** once the car is known to be one, its Hybrid, Electric and battery modes get their own
+setup, *In Hybrid / Electric* (Settings, and a third tab on *HUD looks*), which follows Sport by default, so the
+hybrid readouts and the power bar show in the car's everyday mode. Until then those modes count as Comfort.
 
 The UDS reads are read-only, on the gearbox reader's link, only while a readout that needs them is on, and
 only once that link is up. Each waits at most about a second for an answer, so a unit that stays quiet

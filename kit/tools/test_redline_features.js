@@ -102,7 +102,7 @@ const ctxOf = (key) => (ALONE[key] ? Object.assign({}, NONE, ALONE[key]) : {});
 // hudHybridSeen: found by the app, not a choice (it only lets the hybrid switches work: test_redline_hud.js)
 // the tyre widget's settings: its own picture in the directions' corner, not the tach's (test_redline_hud.js,
 // test_redline_running.js); hudTyresSeen: found by the app
-const SKIP = ['hudHybridSeen', 'hudTyresSeen', 'hudTyreWidget', 'hudTyreCar', 'hudTyreTarget', 'hudTyreTemp', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle',
+const SKIP = ['hudHybridSeen', 'hudTyresSeen', 'hudTyreWidget', 'hudTyreCar', 'hudTyreTarget', 'hudTyreTemp', 'hudAll', 'hudKnockWarn', 'hudLaunch', 'hudComfortMode', 'hudHybridMode', 'hud', 'hudSize', 'hudX', 'hudY', 'hudFps', 'hudReadoutRate', 'hudLead', 'hudHandBack', 'hudComfort', 'hudStyle',
     // the directions: their own layer (test_redline_hud_nav.js), not the tach's picture
     'hudNav', 'hudNavX', 'hudNavY'];
 const variants = [];

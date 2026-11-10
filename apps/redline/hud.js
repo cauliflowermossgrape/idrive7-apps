@@ -232,10 +232,30 @@ const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hud
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
     'hudShowTyres', 'hudShowFuel', 'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvBar', 'hudShowHvTemp', 'hudShowHvVolt',
     'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake'];
-/** The profile a driving mode uses ('sport', 'comfort', 'eco' or null). */
-function profileOf(drive) { return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport'; }
+/*
+ * The setups besides Sport: Comfort (Comfort / Eco Pro, Adaptive) and, on a car known to be a plug-in hybrid
+ * (hudHybridSeen), Hybrid (its Hybrid, Electric and battery modes; 2026-11-10: a hybrid's everyday mode, where its
+ * power bar matters most, so it follows Sport by default where Comfort is hidden). Each: its mode setting ('same' as
+ * Sport, 'own' or 'hide') and its own values over Sport's.
+ */
+const SETUPS = { comfort: { mode: 'hudComfortMode', setup: 'hudComfortSetup' }, hybrid: { mode: 'hudHybridMode', setup: 'hudHybridSetup' } };
+/**
+ * The profile a driving mode uses ('sport', 'comfort' or 'hybrid'): drive is 'sport', 'comfort', 'eco', 'hybrid' or
+ * null. A hybrid mode is Comfort's until the car is known to be a hybrid (settings: hudHybridSeen).
+ */
+function profileOf(drive, settings) {
+    if (drive === 'hybrid') return settings && settings.get('hudHybridSeen') === true ? 'hybrid' : 'comfort';
+    return drive === 'comfort' || drive === 'eco' ? 'comfort' : 'sport';
+}
+/** A setup's mode: 'same' (as Sport), 'own' or 'hide' (Sport: always 'same'). */
+function setupMode(settings, which) {
+    const S = SETUPS[which];
+    if (!S) return 'same';
+    const m = settings.get(S.mode);
+    return m === 'own' || m === 'hide' ? m : 'same';
+}
 /** Comfort: 'same' (as Sport), 'own' or 'hide'. */
-function comfortMode(settings) { const m = settings.get('hudComfortMode'); return m === 'own' || m === 'hide' ? m : 'same'; }
+function comfortMode(settings) { return setupMode(settings, 'comfort'); }
 /** Sport's values of the profile keys (a copy: Comfort's own starts from it). */
 function profileSnapshot(settings) { const o = {}; PROFILE_KEYS.forEach((k) => { o[k] = settings.get(k); }); return o; }
 /**
@@ -244,12 +264,12 @@ function profileSnapshot(settings) { const o = {}; PROFILE_KEYS.forEach((k) => {
  * looks page nothing needs unlocking before it can be changed.
  */
 function profileView(settings, which) {
-    const comfort = which === 'comfort';
-    const store = () => { const v = settings.get('hudComfortSetup'); return v && typeof v === 'object' ? v : {}; };
+    const S = SETUPS[which], comfort = !!S;
+    const store = () => { const v = S && settings.get(S.setup); return v && typeof v === 'object' ? v : {}; };
     // its own setup: while it is its own, and while hidden when it has one (so it shows as it will come back)
-    const own = () => comfort && (comfortMode(settings) === 'own' || (comfortMode(settings) === 'hide' && Object.keys(store()).length > 0));
+    const own = () => comfort && (setupMode(settings, which) === 'own' || (setupMode(settings, which) === 'hide' && Object.keys(store()).length > 0));
     return {
-        profile: comfort ? 'comfort' : 'sport',
+        profile: comfort ? which : 'sport',
         get(k) {
             if (own() && PROFILE_KEYS.indexOf(k) >= 0) { const st = store(); if (Object.prototype.hasOwnProperty.call(st, k)) return st[k]; }
             return settings.get(k);
@@ -258,19 +278,22 @@ function profileView(settings, which) {
             if (!comfort || PROFILE_KEYS.indexOf(k) < 0) return settings.set(k, v);
             const st = Object.assign(profileSnapshot(settings), own() ? store() : {});
             st[k] = v;
-            settings.set('hudComfortSetup', st);
-            if (!own()) settings.set('hudComfortMode', 'own');
+            settings.set(S.setup, st);
+            if (!own()) settings.set(S.mode, 'own');
             return undefined;
         },
         item: (k) => (settings.item ? settings.item(k) : null),
     };
 }
-/** Comfort made its own (or back): its setup starts as Sport's when it has none. */
-function setComfortMode(settings, mode) {
-    const st = settings.get('hudComfortSetup');
-    if (mode === 'own' && !(st && typeof st === 'object' && Object.keys(st).length)) settings.set('hudComfortSetup', profileSnapshot(settings));
-    settings.set('hudComfortMode', mode);
+/** A setup (Comfort, Hybrid) made its own (or back): its setup starts as Sport's when it has none. */
+function setSetupMode(settings, which, mode) {
+    const S = SETUPS[which];
+    if (!S) return;
+    const st = settings.get(S.setup);
+    if (mode === 'own' && !(st && typeof st === 'object' && Object.keys(st).length)) settings.set(S.setup, profileSnapshot(settings));
+    settings.set(S.mode, mode);
 }
+function setComfortMode(settings, mode) { setSetupMode(settings, 'comfort', mode); }
 /**
  * Once, from 1.14 / 1.15's "In Comfort / Eco Pro" (hudComfort: all, lights, hide): hide stays hidden; "shift lights
  * and gear only" becomes Comfort's own setup without readouts and alerts. Returns what it did, or null.
@@ -298,7 +321,7 @@ function migrateProfiles(settings) {
  * (profileView); drive ('sport', 'comfort', 'eco' or none): that mode's profile.
  */
 function optsFrom(settings, drive) {
-    if (drive) settings = profileView(settings, profileOf(drive));
+    if (drive) settings = profileView(settings, profileOf(drive, settings));
     const lights = settings.get('hudLightStyle') || 'gt3', on = (k) => settings.get(k) !== false;
     const layout = settings.get('hudStyle');
     const style = STYLES.indexOf(layout) > 0 ? layout : 'standard';
@@ -362,15 +385,16 @@ function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower || o.hvBar), 
  */
 function driveModeOf(raw) {
     if (raw === undefined || raw === null) return null;
-    // a plug-in hybrid's modes and Adaptive count as Comfort (only Sport and XtraBoost are Sport): wire numbers
+    // Adaptive counts as Comfort, a plug-in hybrid's Hybrid / Electric / battery modes as 'hybrid' (Comfort's
+    // setup until the car is known to be a hybrid: profileOf); only Sport and XtraBoost are Sport. Wire numbers:
     // 10 Adaptive, 15/16/23 PHEV Sport, 17-22 PHEV Hybrid / Electric / battery control, 28 Boost
     const n = Number(raw);
     if (!isNaN(n) && String(raw).trim() !== '') {
         return (n >= 1 && n <= 3) || n === 15 || n === 16 || n === 23 || n === 28 ? 'sport'
-            : (n >= 4 && n <= 6) || n === 10 || (n >= 17 && n <= 22) ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : null;
+            : n >= 17 && n <= 22 ? 'hybrid' : (n >= 4 && n <= 6) || n === 10 ? 'comfort' : n >= 7 && n <= 9 ? 'eco' : null;
     }
     const s = String(raw).toUpperCase();
-    return /SPORT|BOOST/.test(s) ? 'sport' : /HYBRID|ELECTRIC|BATTERY|ADAPTIV/.test(s) ? 'comfort' : /ECO/.test(s) ? 'eco'
+    return /SPORT|BOOST/.test(s) ? 'sport' : /HYBRID|ELECTRIC|BATTERY/.test(s) ? 'hybrid' : /ADAPTIV/.test(s) ? 'comfort' : /ECO/.test(s) ? 'eco'
         : /COMFORT|TRAFFIC/.test(s) ? 'comfort' : null;
 }
 /**
@@ -378,7 +402,7 @@ function driveModeOf(raw) {
  * bar and gear only) or 'hide'. Sport and an unknown mode always 'all'.
  */
 function calmFor(drive, mode) {
-    if (drive !== 'comfort' && drive !== 'eco') return 'all';
+    if (drive !== 'comfort' && drive !== 'eco' && drive !== 'hybrid') return 'all';
     return mode === 'hide' ? 'hide' : 'all';
 }
 /** o (optsFrom) with only the shift lights, rev bar and gear left on (Comfort / Eco Pro on "lights"). */
@@ -928,7 +952,11 @@ function start(ctx, src) {
         return optsFrom(settings, src.driveMode ? src.driveMode() || 'sport' : 'sport');
     }
     /** What the driving mode asks of the HUD now ('all', 'lights', 'hide'); "Play on HUD" always shows all. */
-    function calm(playing) { return playing ? 'all' : calmFor(src.driveMode ? src.driveMode() : null, comfortMode(settings)); }
+    function calm(playing) {
+        if (playing) return 'all';
+        const drive = src.driveMode ? src.driveMode() : null;
+        return calmFor(drive, setupMode(settings, profileOf(drive, settings)));
+    }
 
     /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
     function sample() {
@@ -1155,7 +1183,7 @@ function start(ctx, src) {
 
     /** "Play on HUD": the scripted drive (demoAt) on the HUD for ms (two loops by default). */
     // profile: which setup plays ('sport' / 'comfort': the HUD looks page's)
-    const play = safe('play', (ms, profile) => { playProfile = profile === 'comfort' ? 'comfort' : 'sport'; demoStart = Date.now(); demoUntil = demoStart + (ms || 2 * DEMO_MS); first = true; log.info('hud: playing the demo (' + playProfile + ')'); });
+    const play = safe('play', (ms, profile) => { playProfile = SETUPS[profile] ? profile : 'sport'; demoStart = Date.now(); demoUntil = demoStart + (ms || 2 * DEMO_MS); first = true; log.info('hud: playing the demo (' + playProfile + ')'); });
     const stopPlay = () => { demoUntil = 0; first = true; };
 
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
@@ -1165,4 +1193,4 @@ function start(ctx, src) {
 }
 
 // writeAtomic: kept here too (it moved to files.js in 2.0) for code that calls Hud.writeAtomic
-module.exports = { start, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, profileOf, comfortMode, profileView, setComfortMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };
+module.exports = { start, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };

@@ -34,7 +34,7 @@ const used = {};
 src.replace(/settings\.(?:get|set)\('(hud[A-Za-z]*)'/g, (m, k) => { used[k] = true; return m; });
 src.replace(/on\('(hud[A-Za-z]*)'\)/g, (m, k) => { used[k] = true; return m; });
 Object.keys(used).forEach((k) => ok(declared[k], 'setting ' + k + ' is used but not in app.json'));
-Object.keys(declared).filter((k) => /^hud/.test(k)).forEach((k) => ok(used[k] || k === 'hudAll' || /hudLead|hudFps|hudSize|hudX|hudY|hudUnlit|hudStyle|hudPalette|hudChip|hudPeak|hudShake|hudLightStyle|hudTempsMode|hudTempUnit|hudBoostUnit|hudTorqueUnit|hudPowerUnit/.test(k) && src.indexOf("'" + k + "'") >= 0,
+Object.keys(declared).filter((k) => /^hud/.test(k)).forEach((k) => ok(used[k] || k === 'hudAll' || /hudLead|hudFps|hudSize|hudX|hudY|hudUnlit|hudStyle|hudPalette|hudChip|hudPeak|hudShake|hudLightStyle|hudTempsMode|hudTempUnit|hudBoostUnit|hudTorqueUnit|hudPowerUnit|hudHybridMode|hudHybridSetup/.test(k) && src.indexOf("'" + k + "'") >= 0,
     'setting ' + k + ' is in app.json but never read'));
 
 const settingsOf = (over) => ({
@@ -143,11 +143,35 @@ ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
 
 /* ---------- driving mode (Comfort / Eco Pro) ---------- */
 [[1, 'sport'], [2, 'sport'], [3, 'sport'], [4, 'comfort'], [5, 'comfort'], [6, 'comfort'], [7, 'eco'], [9, 'eco'], [10, 'comfort'], [0, null], [63, null],
-    [15, 'sport'], [23, 'sport'], [28, 'sport'], [17, 'comfort'], [18, 'comfort'], [20, 'comfort'], [21, 'comfort'],
+    [15, 'sport'], [23, 'sport'], [28, 'sport'], [17, 'hybrid'], [18, 'hybrid'], [20, 'hybrid'], [21, 'hybrid'], [22, 'hybrid'],
     ['SPORT_DYNAMIC', 'sport'], ['SPORT_EXPERT', 'sport'], ['ECO_PRO_EFFICIENT', 'eco'], ['COMFORT', 'comfort'], ['ADAPTIVE', 'comfort'],
-    ['PHEV_SPORT_STANDARD', 'sport'], ['BOOST', 'sport'], ['PHEV_HYBRID_STANDARD', 'comfort'], ['PHEV_HYBRID_ECO', 'comfort'],
-    ['PHEV_ELECTRIC_STANDARD', 'comfort'], [null, null], [undefined, null], ['', null]]
+    ['PHEV_SPORT_STANDARD', 'sport'], ['BOOST', 'sport'], ['PHEV_HYBRID_STANDARD', 'hybrid'], ['PHEV_HYBRID_ECO', 'hybrid'],
+    ['PHEV_ELECTRIC_STANDARD', 'hybrid'], [null, null], [undefined, null], ['', null]]
     .forEach((c) => ok(Hud.driveModeOf(c[0]) === c[1], 'driving mode ' + JSON.stringify(c[0]) + ' -> ' + Hud.driveModeOf(c[0]) + ', not ' + c[1]));
+
+/* ---------- a plug-in hybrid's Hybrid / Electric modes: their own setup, once the car is known to be a hybrid ---------- */
+{
+    const mk = (over) => { const v = Object.assign({ hudComfortMode: 'hide', hudHybridMode: 'same', hudStyle: 'arc', hudComfortSetup: {}, hudHybridSetup: {} }, over || {});
+        return { v: v, get: (k) => v[k], set: (k, x) => { v[k] = x; } }; };
+    const pet = mk(), phev = mk({ hudHybridSeen: true });
+    ok(Hud.profileOf('hybrid', pet) === 'comfort' && Hud.profileOf('hybrid', phev) === 'hybrid' && Hud.profileOf('hybrid') === 'comfort',
+        'hybrid modes: Comfort\'s setup until the car is known to be a hybrid, then their own');
+    ok(Hud.profileOf('comfort', phev) === 'comfort' && Hud.profileOf('sport', phev) === 'sport' && Hud.profileOf('eco', phev) === 'comfort', 'the other modes keep their setups on a hybrid');
+    // defaults: Comfort hidden (main), Hybrid follows Sport
+    ok(Hud.calmFor('hybrid', Hud.setupMode(phev, Hud.profileOf('hybrid', phev))) === 'all' && Hud.calmFor('hybrid', Hud.setupMode(pet, Hud.profileOf('hybrid', pet))) === 'hide',
+        'by default a hybrid shows Redline in its Hybrid mode (Same as Sport); before it is known, hidden as Comfort');
+    ok(Hud.optsFrom(phev, 'hybrid').style === 'arc', 'Hybrid, same as Sport: Sport\'s layout');
+    // its own setup: starts as Sport's, changed apart from Sport and Comfort
+    Hud.profileView(phev, 'hybrid').set('hudStyle', 'ramp');
+    ok(phev.v.hudHybridMode === 'own' && phev.v.hudHybridSetup.hudStyle === 'ramp' && phev.v.hudStyle === 'arc' && Object.keys(phev.v.hudComfortSetup).length === 0,
+        'a change on the Hybrid tab gives Hybrid its own setup, Sport and Comfort untouched');
+    ok(Hud.optsFrom(phev, 'hybrid').style === 'ramp' && Hud.optsFrom(phev, 'sport').style === 'arc' && Hud.optsFrom(phev, 'comfort').style === 'arc', 'each mode draws its own setup');
+    Hud.setSetupMode(phev, 'hybrid', 'hide');
+    ok(Hud.calmFor('hybrid', Hud.setupMode(phev, 'hybrid')) === 'hide' && Hud.profileView(phev, 'hybrid').get('hudStyle') === 'ramp', "Hybrid on Don't show: hidden, its setup kept");
+    const fresh = mk({ hudHybridSeen: true });
+    Hud.setSetupMode(fresh, 'hybrid', 'own');
+    ok(fresh.v.hudHybridSetup.hudStyle === 'arc', 'Hybrid made its own: starts as a copy of Sport');
+}
 ok(Hud.calmFor('sport', 'hide') === 'all' && Hud.calmFor(null, 'hide') === 'all', 'Sport and an unknown mode show everything');
 ok(Hud.calmFor('comfort', 'hide') === 'hide' && Hud.calmFor('eco', 'hide') === 'hide' && Hud.calmFor('comfort', 'own') === 'all' && Hud.calmFor('comfort', undefined) === 'all', 'Comfort / Eco Pro: hidden only when set so');
 
@@ -244,7 +268,8 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     page.replace(/'([a-zA-Z]+)'/g, (m, k) => { onPage[k] = true; return m; });
     spec.settings.filter((s) => /^HUD: /.test(s.group || '') || s.key === 'hudStyle').forEach((s) => ok(onPage[s.key], 'setting ' + s.key + ' (' + s.group + ') is not on the HUD looks page'));
     // and Settings' top level is short: the HUD's details are behind "All HUD options here"
-    const top = spec.settings.filter((s) => !s.group && !s.hidden);
+    // (a row only some cars get, as In Hybrid / Electric on a plug-in hybrid, isn't counted)
+    const top = spec.settings.filter((s) => !s.group && !s.hidden && !(s.when && (s.when.hudHybridSeen || s.when.hudTyresSeen)));
     ok(top.length <= 6, 'Settings top level has ' + top.length + ' rows besides the groups: ' + top.map((s) => s.key).join(', '));
     spec.settings.filter((s) => /^HUD: /.test(s.group || '')).forEach((s) => ok(s.when && s.when.hudAll && s.when.hudAll[0] === true, s.key + ' shows in Settings without "All HUD options here"'));
 }

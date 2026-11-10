@@ -557,7 +557,8 @@ mgu.run({
             ['digital', '80s digital dash'], ['vfd', 'VFD glow'], ['vector', 'Vector arcade'],
             ['arc', 'Arc (F80 M3/M4)'], ['ramp', 'Ramp (G80 M3/M4)'], ['dial', 'Dial (E60 M5)']];
         const TILE_K = 0.45;            // the tiles' thumbnails: the HUD at 45 %
-        // profile: the setup being edited, 'sport' or 'comfort' (on opening the page: the driving mode's own);
+        // profile: the setup being edited, 'sport', 'comfort' or (a plug-in hybrid) 'hybrid' (on opening the page:
+        // the driving mode's own);
         // P: that profile as settings (Hud.profileView), so every control on the page reads and changes it
         const studio = { cue: {}, t0: Date.now(), panel: 'look', profile: 'sport', drawnAt: 0, readouts: 'engine' };
         const studioP = () => Hud.profileView(settings, studio.profile);
@@ -591,9 +592,13 @@ mgu.run({
         function drawLooks(cv, t) {
             const now = Date.now();
             // back on the page after a while: edit the profile of the mode the car is in
-            if (now - studio.drawnAt > 3000) studio.profile = Hud.profileOf(driveMode.v);
+            if (now - studio.drawnAt > 3000) studio.profile = Hud.profileOf(driveMode.v, settings);
             studio.drawnAt = now;
-            const P = studioP(), o = Hud.optsFrom(P), comfort = studio.profile === 'comfort', cmode = Hud.comfortMode(settings);
+            // the Hybrid / Electric tab only on a car known to be a plug-in hybrid
+            const hybrid = settings.get('hudHybridSeen') === true;
+            if (studio.profile === 'hybrid' && !hybrid) studio.profile = 'comfort';
+            const P = studioP(), o = Hud.optsFrom(P), comfort = studio.profile !== 'sport', cmode = Hud.setupMode(settings, studio.profile);
+            const modeName = studio.profile === 'hybrid' ? 'Hybrid / Electric' : 'Comfort / Eco Pro';
             studio.P = P;
             const on = settings.get('hud') === 'on' || settings.get('hud') === 'test';
             // the live preview, twice the HUD's size, on black like the glass
@@ -610,16 +615,17 @@ mgu.run({
             // Comfort / Eco Pro on Don't show: say so over the preview (the setup under it stays)
             if (comfort && cmode === 'hide') {
                 cv.roundRect(24, 48, 816, 276, 12, withAlpha('#000000', 0.9));
-                cv.text("Redline's HUD is off in Comfort / Eco Pro", 432, 176, 26, t.text, { align: 'center', font: 'bold' });
+                cv.text("Redline's HUD is off in " + modeName, 432, 176, 26, t.text, { align: 'center', font: 'bold' });
                 cv.text("BMW's own HUD shows instead. Pick Same as Sport or Its own to bring it back", 432, 212, 18, t.dim, { align: 'center' });
             }
             // the strip above the preview: which HUD this page edits (and, for Comfort, what it shows), in a quiet
             // switch so it reads as "where am I", not as a setting; Play on HUD is the strip's one red button
             const HY = 6;
-            let hx = 40 + segmented(cv, t, 40, HY, [['sport', 'Sport'], ['comfort', 'Comfort / Eco Pro']], studio.profile, (v) => { studio.profile = v; }, 'studio_profile_');
+            const tabs = hybrid ? [['sport', 'Sport'], ['comfort', 'Comfort / Eco'], ['hybrid', 'Hybrid / Electric']] : [['sport', 'Sport'], ['comfort', 'Comfort / Eco Pro']];
+            let hx = 40 + segmented(cv, t, 40, HY, tabs, studio.profile, (v) => { studio.profile = v; }, 'studio_profile_');
             if (comfort) {
                 cv.text('SHOWS', hx + 28, HY + 23, 14, t.dim, { font: 'bold', spacing: 1 });
-                segmented(cv, t, hx + 92, HY, [['same', 'Same as Sport'], ['own', 'Its own'], ['hide', "Don't show"]], cmode, (v) => Hud.setComfortMode(settings, v), 'studio_cmode_');
+                segmented(cv, t, hx + 92, HY, [['same', 'Same as Sport'], ['own', 'Its own'], ['hide', "Don't show"]], cmode, (v) => Hud.setSetupMode(settings, studio.profile, v), 'studio_cmode_');
             }
             const playing = hud && hud.playing();
             // switched on but cluster-render isn't there: say where to get it
@@ -630,8 +636,8 @@ mgu.run({
             // under the preview: what's wrong, or what the Comfort HUD is doing
             const status = missing ? 'The HUD needs cluster-render: install Cluster renderer from the MGU Store'
                 : !on ? 'Show on HUD is off (Settings)' : playing ? 'Playing on the HUD...' : hud && hud.status() === 'HUD: on' && !still ? 'Stop the car to play it on the HUD'
-                    : comfort && cmode === 'same' ? 'Comfort uses the Sport HUD. Change anything here to give it its own.'
-                        : comfort && cmode === 'own' ? 'Changes here only affect Comfort / Eco Pro. Size and place are shared.' : '';
+                    : comfort && cmode === 'same' ? modeName + ' uses the Sport HUD. Change anything here to give it its own.'
+                        : comfort && cmode === 'own' ? 'Changes here only affect ' + modeName + '. Size and place are shared.' : '';
             cv.text(status, 40, 348, 15, missing || !on ? t.warn : t.dim, { font: 'bold' });
             // the nine layouts, small, to tap: three by three, the name under each
             LOOKS.forEach((l, i) => {
@@ -955,7 +961,7 @@ mgu.run({
             chip: () => (lastShift && graded(lastShift) && Date.now() - lastShift.at < 1500 ? { verdict: lastShift.verdict, at: lastShift.at } : null),
             mode: modeNow,
             launch: (now, mph) => launch.last(now, mph),
-            // 'sport', 'comfort', 'eco' or null (unknown, Adaptive, the demo data): the HUD shows as set up
+            // 'sport', 'comfort', 'eco', 'hybrid' or null (unknown, the demo data): the HUD shows as set up
             driveMode: () => (car.data().demo ? null : driveMode.v),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
