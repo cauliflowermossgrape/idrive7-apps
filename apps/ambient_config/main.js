@@ -166,15 +166,15 @@ mgu.run({
 
         // the body controller did not answer: BMW's own colours, as BMW's menu has them
         function drawBmwColours(cv, t) {
-            cv.text('Any colour needs the body module, which did not answer.', 796, 100, 20, t.warn);
-            cv.text('BMW\'s own colours meanwhile:', 796, 128, 20, t.dim);
+            cv.text('Any colour needs the body module, which did not answer.', 796, 136, 20, t.warn);
+            cv.text('BMW\'s own colours meanwhile:', 796, 164, 20, t.dim);
             const now = ambient.slot();
             for (let i = 0; i < SLOTS; i++) {
                 const n = i + 1;
-                G.button(cv, t, 796 + (i % 4) * 132, 150 + Math.floor(i / 4) * 62, 120, 50, String(n), () => { ambient.setSlot(n); return redraw(); },
+                G.button(cv, t, 796 + (i % 4) * 132, 186 + Math.floor(i / 4) * 62, 120, 50, String(n), () => { ambient.setSlot(n); return redraw(); },
                     { primary: n === now, busy: !ambient.available, key: 'slot-' + n });
             }
-            G.button(cv, t, 796, 350, 0, 48, 'Look again', () => { lights.find(); return redraw(); }, { key: 'again' });
+            G.button(cv, t, 796, 386, 0, 48, 'Look again', () => { lights.find(); return redraw(); }, { key: 'again' });
         }
 
         function drawAnimations(cv, t) {
