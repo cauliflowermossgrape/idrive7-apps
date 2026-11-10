@@ -286,7 +286,7 @@ At most four readouts fit the row; past that the last one gives way.
 | Setting | Values |
 |---|---|
 | Size | 70–130 %, scaled about the top centre |
-| Position left / right, up / down | px; moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
+| Position left / right, up / down | px (up as far as −120, so Minimal's lights can sit over BMW's own rev gauge); moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
 ### Directions (experimental)

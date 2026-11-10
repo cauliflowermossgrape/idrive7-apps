@@ -661,7 +661,7 @@ mgu.run({
             // the power bar takes no place in the row on the layouts that draw it along their gauge (2026-11-10 review)
             const over = studio.panel === 'readouts' && nOn - (o.hvBar && Hud.METER_STYLES.indexOf(o.style) >= 0 ? 1 : 0) > Hud.MAX_READOUTS;
             // PLACE: say when the size or position puts part of the tach off the windshield's window
-            const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(P)) : {};
+            const off = studio.panel === 'place' ? Hud.outsideGlass(Hud.placeOf(P), o.style) : {};
             const offText = Object.keys(off).map((k) => k + ' ' + off[k] + ' px').join(', ');
             const hint = over ? nOn + ' on: the first ' + Hud.MAX_READOUTS + ' that have a value show'
                 : offText ? 'Partly outside the windshield (' + offText + '), as measured on one car' : STUDIO_HINT[studio.panel];

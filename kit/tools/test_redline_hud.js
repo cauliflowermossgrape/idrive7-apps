@@ -348,6 +348,9 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     const at = (o) => Hud.placeOf(settingsOf(o));
     ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');
     ok(Hud.outsideGlass(at({ hudSize: 140 })).right === 75 && Hud.outsideGlass(at({ hudY: -60 })).top === 20, 'place: off the glass, per side');
+    // Minimal's dots can go up over BMW's own ramp (2026-11-10, an X3 M40i): Up reaches -120, and the empty top of its
+    // picture isn't counted as off the glass
+    ok(at({ hudY: -120 }).y === 20 && Hud.outsideGlass(at({ hudY: -60 }), 'minimal').top === undefined && Hud.outsideGlass(at({ hudY: -100 }), 'minimal').top === 36, 'place: Minimal up to -120, its empty top not counted off the glass');
     // reaction time: a slow climb takes the lead as asked; a fast one only the 800 rpm it really had
     ok(Hud.reactionMs({ rate: 1000, target: 6000, lead: 300 }, 6000) === 300, 'reaction: on time at 1000 rpm/s');
     ok(Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6000) === 200 && Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6200) === 250, 'reaction: capped lead on a fast climb');

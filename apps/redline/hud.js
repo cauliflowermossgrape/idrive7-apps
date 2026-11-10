@@ -195,8 +195,13 @@ function navModeOf(settings) { const m = settings.get('hudNav'); return m === 'o
  * (github.com/bimmer-lab/apps shared/visible.js, MIT, 2026-11-05; it moves with the driver's eye height).
  */
 const HUD_WINDOW = { x: 120, y: 100, w: 485, h: 278 };
-/** How far a place (placeOf) reaches outside HUD_WINDOW, in px per side ({} when it is all visible). */
-function outsideGlass(r) {
+/**
+ * How far a place (placeOf) reaches outside HUD_WINDOW, in px per side ({} when it is all visible). style: Minimal
+ * draws nothing in the picture's top MINIMAL_TOP px, so only what's under them counts at the top.
+ */
+const MINIMAL_TOP = 24;
+function outsideGlass(r, style) {
+    if (style === 'minimal') { const d = Math.round(MINIMAL_TOP * r.h / IH); r = { x: r.x, y: r.y + d, w: r.w, h: r.h - d }; }
     const W = HUD_WINDOW, o = {};
     if (r.x < W.x) o.left = W.x - r.x;
     if (r.x + r.w > W.x + W.w) o.right = r.x + r.w - (W.x + W.w);
