@@ -178,15 +178,16 @@ missing falls back to Ubuntu.
 **Sport and Comfort** (two HUD setups): the car's driving mode (FES `statusFESVehicleDynamicSwitchHMI`,
 as Live Data shows it) picks which one shows.
 
-- **Sport** is used in Sport, Sport+ and Sport Individual, and also in Adaptive, a mode it doesn't
-  know, or when the car doesn't send the mode, so the HUD never disappears for lack of a signal.
+- **Sport** is used in Sport, Sport+, Sport Individual and XtraBoost, a mode it doesn't know, or when the car
+  doesn't send the mode, so the HUD never disappears for lack of a signal. Adaptive and a plug-in hybrid's Hybrid,
+  Electric and battery modes count as Comfort.
 - **Comfort / Eco Pro** is one of three (*In Comfort / Eco Pro*, in Settings and on HUD looks):
-  - *Same HUD as Sport* (the default): one HUD for every mode.
+  - *Same HUD as Sport*: one HUD for every mode.
   - *Its own HUD*: a setup of its own: layout, colours, readouts, alerts, everything on HUD looks.
     It starts as a copy of Sport's. On HUD looks, with **COMFORT / ECO PRO** picked, changing
     anything makes Comfort its own, so nothing needs switching on first.
-  - *Don't show*: Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as soon as the mode
-    is Sport. Comfort's own setup, if it has one, is kept for later.
+  - *Don't show* (the default): Redline steps aside (BMW's own HUD shows) in Comfort and Eco Pro; it comes back as
+    soon as the mode is Sport. Comfort's own setup, if it has one, is kept for later.
 - Shared by both: size and position, units, the light colours and the downshift
   arrows (the centre screen uses those too).
 - From 1.14 / 1.15, *In Comfort / Eco Pro: Hide* stays hidden, and *Shift lights and gear only*
@@ -528,11 +529,16 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 Each shows only while the car sends it. **Petrol and diesel cars never see the hybrid ones**: not on the
 HUD, not on *HUD looks*, not in Settings. They appear once the car shows a high-voltage battery: a 150–500 V
 pack voltage in its signals that changes over at least 10 s (a stuck or "no value" reading such as 409.5 V
-never counts), or the SME answering `DDBC` (asked once per start while the HUD shows, until
-found; logged `electrical: no high-voltage battery unit` on a car without one). A battery temperature alone
+never counts), or the SME answering `DDBC` (asked once per start while the HUD is on, also while the driving
+mode hides it, until found; logged `electrical: no high-voltage battery unit` on a car without one). A battery temperature alone
 doesn't count: a 48 V mild hybrid, or a petrol car, may send one for another battery. Once found it is
 remembered, and the log says what found it, with the raw value
-(`electrical: high-voltage battery found (…)`).
+(`electrical: high-voltage battery found (…)`). 2.0.12 clears it once: 2.0.0–2.0.8 could take a single odd
+voltage for a hybrid battery, and a real hybrid finds it again within a drive.
+
+**Testing on a plug-in hybrid:** its Hybrid and Electric modes count as Comfort, where Redline's HUD is hidden by
+default. To see the hybrid readouts and the power bar there, set *In Comfort / Eco Pro* to *Same HUD as Sport*
+(or *Its own HUD*), or drive in Sport.
 
 The UDS reads are read-only, on the gearbox reader's link, only while a readout that needs them is on, and
 only once that link is up. Each waits at most about a second for an answer, so a unit that stays quiet

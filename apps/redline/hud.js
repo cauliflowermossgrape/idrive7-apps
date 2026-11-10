@@ -197,9 +197,10 @@ function navModeOf(settings) { const m = settings.get('hudNav'); return m === 'o
 const HUD_WINDOW = { x: 120, y: 100, w: 485, h: 278 };
 /**
  * How far a place (placeOf) reaches outside HUD_WINDOW, in px per side ({} when it is all visible). style: Minimal
- * draws nothing in the picture's top MINIMAL_TOP px, so only what's under them counts at the top.
+ * draws nothing in the picture's top MINIMAL_TOP px (its lights from 26, the D / S / M letter by the gear from
+ * about 10), so only what's under them counts at the top.
  */
-const MINIMAL_TOP = 24;
+const MINIMAL_TOP = 9;
 function outsideGlass(r, style) {
     if (style === 'minimal') { const d = Math.round(MINIMAL_TOP * r.h / IH); r = { x: r.x, y: r.y + d, w: r.w, h: r.h - d }; }
     const W = HUD_WINDOW, o = {};
@@ -747,7 +748,13 @@ function start(ctx, src) {
     });
 
     // the UDS readers (gearbox, knock, electrical): stopped together whenever the tach isn't drawing
-    const stopReads = () => { [src.gearbox, src.knock, src.fuel, src.electrical].forEach((r) => { if (r) r.stop(); }); };
+    // probe: hidden by the driving mode, but the one look for a hybrid battery still runs (start with nothing wanted
+    // does only that, then stops): a plug-in hybrid's Hybrid / Electric modes count as Comfort, hidden by default, so
+    // without it a hybrid would only be found in Sport (2026-11-10 review)
+    const stopReads = (probe) => {
+        [src.gearbox, src.knock, src.fuel].forEach((r) => { if (r) r.stop(); });
+        if (src.electrical) { if (probe) src.electrical.start({}); else src.electrical.stop(); }
+    };
     const stopTimer = () => { if (timer) clearInterval(timer); timer = null; stopReads(); };
 
     const dropLayer = safe('drop', () => { stopTimer(); dropNav(); if (cr && layer) cr.drop(layer); layer = 0; shown = ''; hiddenLogged = false; navGiving = false; });
@@ -956,7 +963,7 @@ function start(ctx, src) {
                     // stop), so a layer made again isn't held back waiting for a target event
                     if (target) target = { state: '', holder: '', disabled: target.disabled };
                 }
-                stopReads();
+                stopReads(true);
                 // nothing of Redline's on the HUD. Comfort's hide: the standing app (Cluster functions) may show. Giving
                 // way: keep the claim, so it's BMW's card that shows, not Cluster functions' map over it (2026-11-09 review)
                 claim.hold(!!nv.giveWay);
@@ -1051,7 +1058,7 @@ function start(ctx, src) {
      * Shared with a standing HUD app (Cluster functions, kit/hud_claim.js): while Redline draws on the HUD it holds
      * it and the other gives way (not while its tach is hidden in Comfort / Eco Pro). With one there and setting
      * hudHandBack on, Redline's HUD lasts until the car is switched off (vehicle state from drive or ignition back to
-     * parked) or the head unit starts again; off (the default), it stays on.
+     * parked) or the head unit starts again (on by default); off, it stays on.
      */
     const claim = new HudClaim('redline', log);
     // With In Comfort / Eco Pro on Don't show, Redline already gives the HUD back outside Sport (a drive starts in

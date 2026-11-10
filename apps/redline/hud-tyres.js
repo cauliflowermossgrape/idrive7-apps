@@ -72,7 +72,8 @@ function widgetShows(w, ty) {
 
 /** Everything the picture depends on (the numbers as drawn). */
 function widgetKey(ty, w, palette) {
-    const T = Tyres.CORNERS.map((c) => [Tyres.fmtP(ty.p[c], w.unit), Tyres.fmtP(ty.tgt[c], w.unit), isNum(ty.t[c]) ? Math.round(ty.t[c]) : '-'].join('/'));
+    // the temperature as drawn (in °F when chosen: 36.6 and 37.4 °C are both 37 °C but 98 and 99 °F)
+    const T = Tyres.CORNERS.map((c) => [Tyres.fmtP(ty.p[c], w.unit), Tyres.fmtP(ty.tgt[c], w.unit), isNum(ty.t[c]) ? Math.round(w.fahrenheit ? ty.t[c] * 9 / 5 + 32 : ty.t[c]) : '-'].join('/'));
     return ['tyres', T.join(','), w.car, w.target, w.temp, w.unit, w.fahrenheit, w.clear, palette].join('|');
 }
 

@@ -40,7 +40,7 @@ const log = { info() {}, warn() {}, error() {} };
         // a stand-in knock reader: started / stopped by the HUD, its last event's time set by the test
         knock: { on: false, at: 0, start() { this.on = true; }, stop() { this.on = false; }, value() { return { retard: null, at: this.at }; } },
         // stand-ins for the electrical reader (started / stopped by the HUD) and the tyres (values set by the test)
-        electrical: { on: false, start() { this.on = true; }, stop() { this.on = false; }, value() { return {}; } },
+        electrical: { on: false, want: null, start(w) { this.on = true; this.want = w; }, stop() { this.on = false; }, value() { return {}; } },
         tyres: { val: null, value() { return this.val; } },
         // a stand-in for the directions: m is the turn shown (null: none)
         nav: { m: null, view() { return { show: this.m, giveWay: false }; } },
@@ -75,6 +75,9 @@ const log = { info() {}, warn() {}, error() {} };
     ok(h.frame().opts.style === 'arc' && cr.of('image').length === 1, 'back in Sport: the Arc');
     Hud.setComfortMode(settings, 'hide'); drive = 'comfort'; await sleep(200);
     ok(cr.of('image').length === 0, "Comfort, Don't show: Redline's layer gone");
+    // hidden, the car isn't read, but the one look for a hybrid battery may still run (a PHEV's Hybrid mode counts as
+    // Comfort): the electrical reader asked for nothing else (2026-11-10 review)
+    ok(!src.knock.on && src.electrical.on && JSON.stringify(src.electrical.want) === '{}', "Comfort, Don't show: no reads, the electrical reader only for its hybrid look (" + JSON.stringify(src.electrical.want) + ')');
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('image').length === 1, 'back in Sport: shown again');
     ok(cr.effects === 0, 'no shader made in the whole run (' + cr.effects + ')');

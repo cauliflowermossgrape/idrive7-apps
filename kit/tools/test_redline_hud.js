@@ -350,7 +350,7 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     ok(Hud.outsideGlass(at({ hudSize: 140 })).right === 75 && Hud.outsideGlass(at({ hudY: -60 })).top === 20, 'place: off the glass, per side');
     // Minimal's dots can go up over BMW's own ramp (2026-11-10, an X3 M40i): Up reaches -120, and the empty top of its
     // picture isn't counted as off the glass
-    ok(at({ hudY: -120 }).y === 20 && Hud.outsideGlass(at({ hudY: -60 }), 'minimal').top === undefined && Hud.outsideGlass(at({ hudY: -100 }), 'minimal').top === 36, 'place: Minimal up to -120, its empty top not counted off the glass');
+    ok(at({ hudY: -120 }).y === 20 && Hud.outsideGlass(at({ hudY: -60 }), 'minimal').top === 11 && Hud.outsideGlass(at({ hudY: -40 }), 'minimal').top === undefined, 'place: Minimal up to -120, only its empty top (above the D / S / M letter) not counted off the glass');
     // reaction time: a slow climb takes the lead as asked; a fast one only the 800 rpm it really had
     ok(Hud.reactionMs({ rate: 1000, target: 6000, lead: 300 }, 6000) === 300, 'reaction: on time at 1000 rpm/s');
     ok(Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6000) === 200 && Hud.reactionMs({ rate: 4000, target: 6000, lead: 300 }, 6200) === 250, 'reaction: capped lead on a fast climb');
@@ -574,6 +574,9 @@ const labels = (items) => items.map((r) => r.label).join(',');
     const tyreCol = (c) => { const ty = warmT(c), cv = widget(W0, ty), m = HudTyres.layoutOf(cv, ty, W0).cx, i = ((6 + 8) * WW + (m - 13 - 2 - 3)) * 4; return [cv.d[i], cv.d[i + 1], cv.d[i + 2]]; };
     const cold = tyreCol(10), warm = tyreCol(50);
     ok(cold[2] > cold[1] && warm[1] > warm[2] && warm[1] > warm[0], 'warm-up: the cold tyre blue (' + cold + '), the warm one green (' + warm + ')');
+    // the tyre widget redraws when a temperature as drawn changes, also in °F
+    { const ty = (t) => ({ p: { FL: 2.5, FR: 2.5, RL: 2.5, RR: 2.5 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.5, RR: 2.5 }, t: { FL: t, FR: 40, RL: 40, RR: 40 } }), wF = Object.assign({}, HudTyres.widgetOf(settingsOf({})), { fahrenheit: true });
+      ok(HudTyres.widgetKey(ty(36.6), wF, 'colour') !== HudTyres.widgetKey(ty(37.4), wF, 'colour'), 'tyre widget key: 98 and 99 °F differ (both 37 °C)'); }
     // the demo drive has tyres for the previews
     ok(Hud.demoAt(0).tyres && Tyres.lowCorners(Hud.demoAt(0).tyres).join() === 'RR', 'demo: tyres, the rear right low');
 }
