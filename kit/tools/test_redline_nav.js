@@ -288,15 +288,25 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
 
 // ---- giving way: rare, and for the route (the HUD slot: 3 s blank, then BMW's card until the route ends) ---------
 {
+    // (BMW's own navigation: a phone's route never gives way, below)
     const T = Nav.Tracker(), t0 = 2000000;
-    T.field('carplay', 'projectedGuidanceActive', true, t0);
-    ok(!drive(T, t0, t0 + Nav.GIVE_WAY_MS - 200).giveWay && drive(T, t0 + Nav.GIVE_WAY_MS - 200, t0 + Nav.GIVE_WAY_MS).giveWay, 'a route, no readable turn for ' + Nav.GIVE_WAY_MS + ' ms: give way');
+    T.field('guidance', 'guidanceState', 'ACTIVE', t0);
+    ok(!drive(T, t0, t0 + Nav.GIVE_WAY_MS - 200).giveWay && drive(T, t0 + Nav.GIVE_WAY_MS - 200, t0 + Nav.GIVE_WAY_MS).giveWay, 'a BMW route, no readable turn for ' + Nav.GIVE_WAY_MS + ' ms: give way');
+    // 2026-11-10, issue #91: Waze guiding over the phone, no turns Redline can read: BMW's card has none either, so the
+    // tach stays (no arrow) rather than an empty HUD, for CarPlay and for Android Auto
+    ['carplay', 'androidauto'].forEach((src) => {
+        const W = Nav.Tracker(), wEmpty = { GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [] }] };
+        W.field(src, 'projectedGuidanceActive', true, 0);
+        let gave = false;
+        for (let t = 0; t < 90000; t += 1000) { W.events(wEmpty, t, t - 100); if (drive(W, t, t + 800).giveWay) gave = true; }
+        ok(!gave && W.routing(), src + ' route, no readable turn for 90 s: never steps aside, the tach stays');
+    });
     // turns coming back don't bring Redline back (the slot would be BMW's anyway): no flapping
     T.events(replies[0].v, t0 + 16000, t0 + 15900);
     ok(drive(T, t0 + 16000, t0 + 30000).giveWay, 'turns again: still out for the route (no flapping)');
     // one failed call every other second never gave way at all: a separate tracker
     const F = Nav.Tracker();
-    F.field('carplay', 'projectedGuidanceActive', true, 0);
+    F.field('guidance', 'guidanceState', 'ACTIVE', 0);
     let flaps = 0, prev = false;
     for (let t = 0; t < 120000; t += 200) {
         if (t % 2000 === 0 && t % 4000 !== 0) F.events(replies[0].v, t, t - 100);
@@ -306,7 +316,7 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
     }
     ok(flaps === 0, 'every other call failing for 2 minutes: never gives way (' + flaps + ' changes)');
     // the route ends: back at once
-    T.field('carplay', 'projectedGuidanceActive', false, t0 + 30200);
+    T.field('guidance', 'guidanceState', 'IDLE', t0 + 30200);
     ok(!drive(T, t0 + 30200, t0 + 30400).giveWay, 'the route ended: back');
     // a phone gone with its "guiding" flag left on (unplugged): after BACK_MS with nothing answering, back
     const U = Nav.Tracker();
@@ -315,7 +325,7 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
     ok(!drive(U, 0, 1000 + Nav.BACK_MS + 400).giveWay, 'unplugged mid-route after its turns were read, the flag left on: the tach stays, no giving way');
     // never read (a route whose turns the event list doesn't give): gives way, back after BACK_MS of silence
     const U2 = Nav.Tracker(), empty = { GuidanceEventListError: 'NO_ERROR', viewContent: [{ eventsInView: [] }] };
-    U2.field('carplay', 'projectedGuidanceActive', true, 0);
+    U2.field('guidance', 'guidanceState', 'ACTIVE', 0);
     U2.events(empty, 1000, 900);
     ok(drive(U2, 0, 1000 + Nav.GIVE_WAY_MS).giveWay, 'no turn ever read: gives way after ' + Nav.GIVE_WAY_MS + ' ms');
     ok(!drive(U2, 1000 + Nav.GIVE_WAY_MS, 1000 + Nav.BACK_MS + 400).giveWay, 'nothing answered for ' + Nav.BACK_MS + ' ms: back (behind the BMW card if there is one)');
