@@ -263,7 +263,7 @@ function optsFrom(settings, drive) {
         // throttle: off until the accelerator pedal's scaling is checked on a car (readoutsFor keeps it)
         throttle: false, g: settings.get('hudShowG') === true,
         outside: settings.get('hudShowOutside') === true,
-        torqueUnit: settings.get('hudTorqueUnit') === 'lbft' ? 'lbft' : 'nm',
+        torqueUnit: ['lbft', 'kgm'].indexOf(settings.get('hudTorqueUnit')) >= 0 ? settings.get('hudTorqueUnit') : 'nm',
         powerUnit: ['kw', 'ps'].indexOf(settings.get('hudPowerUnit')) >= 0 ? settings.get('hudPowerUnit') : 'hp',
         smartTemps: settings.get('hudTempsMode') !== 'always',
         boostUnit: settings.get('hudBoostUnit') || 'bar', fahrenheit: settings.get('hudTempUnit') === 'f',
@@ -318,8 +318,8 @@ function calmOpts(o) {
 const TEMPS = [['OIL', 'oil', { cold: 60, hot: 130, warmOil: true }], ['WATER', 'coolant', { cold: 60, hot: 112 }], ['GEARBOX', 'gearbox', { cold: 50, hot: 120 }]];
 // boost in the unit chosen: bar (1 decimal), psi or kPa (whole numbers); temperatures in °C or °F
 const BOOST_UNITS = { bar: [1, 1, 'BOOST'], psi: [14.5038, 0, 'BOOST PSI'], kpa: [100, 0, 'BOOST KPA'] };
-// torque from Nm, power from kW: [factor, label]
-const TORQUE_UNITS = { nm: [1, 'TORQUE'], lbft: [0.737562, 'LB-FT'] };
+// torque from Nm: [factor, label, rounded to] (Nm and lb-ft to 5, kgm to 1); power from kW: [factor, label]
+const TORQUE_UNITS = { nm: [1, 'TORQUE', 5], lbft: [0.737562, 'LB-FT', 5], kgm: [1 / 9.80665, 'KGM', 1] };
 const POWER_UNITS = { hp: [1.34102, 'HP'], kw: [1, 'KW'], ps: [1.35962, 'PS'] };
 const MAX_READOUTS = 4;
 /** The RPM readout for format f: '10' (to 10, the default), '50', or 'k' (thousands, 4.5). */
@@ -334,7 +334,7 @@ const roundTo = (v, step) => Math.round(v / step) * step;
  * ({ rpm, cold }), x (the extras: torque Nm, pedal %, gLat / gLong g, outside °C; any may be null).
  * In the order of the switches; at most four. When more are on, the last plain ones give way first:
  * a cold, warming or hot temperature (and the cold limit) keeps its place.
- * Fast values are rounded (torque to 5, throttle to 5 %, g to 0.05) so the row doesn't flicker.
+ * Fast values are rounded (torque to 5, 1 in kgm, throttle to 5 %, g to 0.05) so the row doesn't flicker.
  */
 function readoutsFor(d, gb, boost, sp, o, x) {
     const items = [];
@@ -348,7 +348,7 @@ function readoutsFor(d, gb, boost, sp, o, x) {
     }
     if (o.torque && isNum(x.torque)) {
         const u = TORQUE_UNITS[o.torqueUnit] || TORQUE_UNITS.nm;
-        items.push({ label: u[1], value: String(roundTo(Math.max(0, x.torque) * u[0], 5)), tone: 'text' });
+        items.push({ label: u[1], value: String(roundTo(Math.max(0, x.torque) * u[0], u[2])), tone: 'text' });
     }
     // power from torque x rpm (kW = Nm x rpm / 9549)
     if (o.power && isNum(x.torque) && isNum(d.rpm)) {
