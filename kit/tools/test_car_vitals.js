@@ -3,6 +3,7 @@
 // M Vitals' misfire counter Reset against stubbed kit modules (mgu, the diagnostic link) in demo mode: the button on
 // the Fuel & ignition page (where the kit runs the screen), its confirm step, the counts from then on, kept across a
 // restart, and given up when the engine unit starts a new driving cycle. Nothing is sent to the car.
+// Also the pressure units: every page in bar, psi and kPa (the unit shown, the numbers converted, no NaN).
 //   node kit/tools/test_car_vitals.js
 
 const assert = require('assert');
@@ -35,12 +36,13 @@ Module._load = function (req, parent, isMain) {
 };
 
 /** One start of M Vitals in demo mode; draw() renders a frame, as the kit running the screen does (own). */
-async function boot(dir) {
+async function boot(dir, over) {
     delete require.cache[MAIN];
     require(MAIN);
     const S = {};
     SPEC.settings.forEach((s) => { S[s.key] = s.default; });
     S.demo = 'on';
+    Object.assign(S, over || {});
     const texts = [];
     let frame = null, last = null;
     const ctx = {
@@ -93,6 +95,29 @@ async function boot(dir) {
         t = await b.page(fuel);
         assert(t.includes('this drive') && !fs.existsSync(path.join(dir, 'misfire.json')), 'a new driving cycle: this drive again');
         console.log('M Vitals misfire reset checks passed (confirm, since reset, kept across a restart, a new driving cycle).');
+
+        // pressure units: the boost dial, the fuel pressures and the tyres in the unit chosen, its numbers converted
+        const pages = { engine: 0, fuel, chassis: 3 };
+        const shown = {};
+        for (const unit of ['bar', 'psi', 'kpa']) {
+            fs.rmSync(path.join(dir, 'misfire.json'), { force: true });
+            b = await boot(dir, { pressUnit: unit, showBoost: 'on', showHpfp: 'on', showLpfp: 'on', showBoostCtl: 'on', showTyres: 'on' });
+            const label = { bar: 'bar', psi: 'psi', kpa: 'kPa' }[unit];
+            shown[unit] = {};
+            for (const [name, i] of Object.entries(pages)) {
+                await b.page(i);
+                t = await b.draw();
+                assert(!t.some((x) => /NaN|undefined/.test(x)), unit + ' ' + name + ': no NaN / undefined: ' + t.join(' | '));
+                assert(t.some((x) => x.trim() === label || x.trim().endsWith(' ' + label)), unit + ' ' + name + ': the unit ' + label + ' shown: ' + t.join(' | '));
+                const other = ['bar', 'psi', 'kPa'].filter((u) => u !== label);
+                assert(!t.some((x) => other.indexOf(x.trim()) >= 0), unit + ' ' + name + ': no other pressure unit: ' + t.join(' | '));
+                shown[unit][name] = t;
+            }
+        }
+        // the boost scale: 0-2.5 bar, 0-36 psi, 0-250 kPa by default (Boost gauge max 2.5)
+        assert(shown.kpa.engine.includes('250') && shown.kpa.engine.includes('200'), 'the kPa boost scale ends at 250: ' + shown.kpa.engine.join(' | '));
+        assert(shown.bar.engine.includes('2.5'), 'the bar boost scale ends at 2.5: ' + shown.bar.engine.join(' | '));
+        console.log('M Vitals pressure unit checks passed (bar, psi, kPa on the Engine, Fuel & ignition and Chassis pages).');
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }

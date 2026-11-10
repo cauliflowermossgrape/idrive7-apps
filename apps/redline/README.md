@@ -190,7 +190,7 @@ HUD looks opens on the setup of the mode the car is in; *Play on HUD* plays the 
 **The readouts row** (standard layout), left to right:
 
 - **RPM:** the engine speed as a number (7-segment digits in the digital and VFD layouts).
-- **Torque** (Nm or lb-ft) from the engine's own torque signal, and **power** (hp, PS or kW)
+- **Torque** (Nm, lb-ft or kgm) from the engine's own torque signal, and **power** (hp, PS or kW)
   worked out from torque and rpm. Both off by default.
 - **Throttle** is left out for now: the accelerator pedal signal's scaling isn't confirmed (on a
   G21 it read 60-96 % at a light touch). It comes back once checked against the engine unit.
@@ -260,7 +260,7 @@ below list them by what they do.
 | Knock retard | off (default) / on: the degrees knock control takes, only while it takes some |
 | Temperatures | only when cold or hot / always |
 | Temperature unit | °C / °F, in the app and on the HUD (the cold and hot colours go by °C either way) |
-| Torque unit | Nm / lb-ft, on the HUD and the Learned page's torque curve |
+| Torque unit | Nm / lb-ft / kgm, on the HUD and the Learned page's torque curve |
 
 At most four readouts fit the row; past that the last one gives way.
 

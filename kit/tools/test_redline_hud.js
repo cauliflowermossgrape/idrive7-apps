@@ -90,6 +90,14 @@ ok(r.some((it) => it.label === 'LIMIT'), 'the cold limit keeps its place');
 ok(!r.some((it) => it.label === 'WATER'), 'water at operating temperature is hidden (smart temps)');
 r = Hud.readoutsFor({ rpm: 5500 }, null, null, null, Object.assign({}, o, { rpm: false, boost: false, oil: false, coolant: false, gearbox: false, outside: false, throttle: false, g: false, powerUnit: 'kw', torqueUnit: 'nm' }), { torque: 400 });
 ok(JSON.stringify(r) === JSON.stringify([{ label: 'TORQUE', value: '400', tone: 'text' }, { label: 'KW', value: '230', tone: 'text' }]), 'torque Nm and power kW: ' + JSON.stringify(r));
+// kgm: 420 Nm = 42.8 kgm, rounded to 1 (not to 5 as Nm and lb-ft); lb-ft: 420 Nm = 309.8, to 5
+const tqOnly = Object.assign({}, o, { rpm: false, boost: false, power: false, throttle: false, g: false, oil: false, coolant: false, gearbox: false, outside: false });
+r = Hud.readoutsFor({ rpm: 5500 }, null, null, null, Object.assign({}, tqOnly, { torqueUnit: 'kgm' }), { torque: 420 });
+ok(JSON.stringify(r) === JSON.stringify([{ label: 'KGM', value: '43', tone: 'text' }]), 'torque in kgm: ' + JSON.stringify(r));
+r = Hud.readoutsFor({ rpm: 5500 }, null, null, null, Object.assign({}, tqOnly, { torqueUnit: 'lbft' }), { torque: 420 });
+ok(JSON.stringify(r) === JSON.stringify([{ label: 'LB-FT', value: '310', tone: 'text' }]), 'torque in lb-ft: ' + JSON.stringify(r));
+ok(Hud.optsFrom(settingsOf({ hudTorqueUnit: 'kgm' })).torqueUnit === 'kgm' && Hud.optsFrom(settingsOf({ hudTorqueUnit: 'x' })).torqueUnit === 'nm',
+    'the Torque unit setting reaches the HUD (kgm kept, an unknown value is Nm)');
 r = Hud.readoutsFor({ rpm: 3000 }, null, null, null, Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, oil: false, coolant: false, gearbox: false, outside: false }), { pedal: 101.7, gLat: 0.31, gLong: 0.4 });
 ok(r[0] && r[0].value === '100%' && r[1] && r[1].label === 'G' && r[1].value === '0.50', 'throttle clamps to 100 %, g combined: ' + JSON.stringify(r));
 r = Hud.readoutsFor({ rpm: 5500, oil: 100, coolant: 90 }, 80, 1.0, { rpm: 5500, cold: false }, o, null);

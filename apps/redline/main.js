@@ -348,7 +348,9 @@ mgu.run({
         const mph = () => settings.get('speedUnit') === 'mph';
         // temperatures and torque in the units chosen in Settings (the HUD uses the same settings)
         const temp = (c) => (G.isNum(c) && settings.get('hudTempUnit') === 'f' ? c * 9 / 5 + 32 : c);
-        const lbft = () => settings.get('hudTorqueUnit') === 'lbft';
+        // torque: [factor from Nm, unit, curve top rounded to, grid step (none: the chart picks)] (1 Nm = 0.737562 lb-ft = 1 / 9.80665 kgm)
+        const TQ_UNITS = { nm: [1, 'Nm', 100], lbft: [0.737562, 'lb-ft', 100], kgm: [1 / 9.80665, 'kgm', 10, 10] };
+        const tqUnit = () => TQ_UNITS[settings.get('hudTorqueUnit')] || TQ_UNITS.nm;
         let page = 0;
 
         function ledColors(t) {
@@ -754,11 +756,11 @@ mgu.run({
             G.button(cv, t, 784 - 20 - 150, 56, 150, 40, 'Reset', () => { shiftMap.forget(); learnedView = null; return render(); }, { key: 'resetMap', confirm: true, color: t.warn });
             // the learned data changes every few seconds at most: read it once a second, not per frame
             if (!learnedView || Date.now() - learnedView.t > 1000) learnedView = { t: Date.now(), pts: shiftMap.curve(), table: shiftMap.table() };
-            const tk = lbft() ? 0.737562 : 1;
+            const tu = tqUnit(), tk = tu[0], ts = tu[2];
             const pts = learnedView.pts.filter((p) => p[0] >= 1000 && p[0] <= maxRpm()).map((p) => [p[0], p[1] * tk]), top = pts.reduce((m, p) => Math.max(m, p[1]), 0);
             G.chart(cv, t, 44, 116, 720, Math.max(200, cp.y + cp.h - 136), {
                 xMin: 1000, xMax: maxRpm(), xStep: 1000, xFmt: (v) => String(v / 1000), xUnit: 'x1000 rpm',
-                yMin: 0, yMax: Math.max(100, Math.ceil(top / 100) * 100 + 50), yUnit: lbft() ? 'lb-ft' : 'Nm', padTop: 22,
+                yMin: 0, yMax: Math.max(ts, Math.ceil(top / ts) * ts + ts / 2), yStep: tu[3], yUnit: tu[1], padTop: 22,
                 series: pts.length ? [{ pts: pts, color: t.accent, width: 3 }] : [],
                 empty: 'Nothing yet: full-throttle pulls, a few from low rpm, fill it in',
             });
