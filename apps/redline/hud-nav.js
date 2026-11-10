@@ -2,7 +2,7 @@
 /**
  * Part of Redline's experimental features; README.md in this folder has the whole picture.
  *
- * Drawing Redline's own directions on the HUD (hud-own-directions-plan.md, phase 3): the next turn's arrow, its
+ * Drawing Redline's own directions on the HUD: the next turn's arrow, its
  * distance, the street and the lanes, as a picture (a 200x76 image layer in the bottom right corner of the glass,
  * clear of BMW's speed and limit sign at the bottom left; hud.js places and sends it). Not the GPU: since 1.16.1 the
  * GPU draws the Arc only (shaders restarted the cluster).

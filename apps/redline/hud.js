@@ -60,7 +60,7 @@ const BLINK_MS = 100;
 // the redline shake: offsets (px) stepped every 100 ms while on the limiter. Each step moves the whole
 // picture, so the whole frame goes out (~2 MB/s at 10 steps a second): off by default
 const SHAKE = [[2, 1], [-2, -1], [1, -1], [-1, 1], [2, -1], [-2, 1]];
-const WHITE = '#ffffff', GREEN = '#2fd27a', YELLOW = '#ffc21a', RED = '#ff2a2a', BLUE = '#2a7dff', COLD = '#3d8bff';
+const WHITE = '#ffffff', YELLOW = '#ffc21a';
 const CYAN = '#22e0ff', MAGENTA = '#ff3df0';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const isNum = (x) => typeof x === 'number' && isFinite(x);
@@ -933,7 +933,8 @@ function start(ctx, src) {
      */
     const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
     const tick = safe('tick', () => {
-        if (!cr || !cr.ready) return;
+        // cluster-render not up (lost, or not yet back): nothing is drawn, so nothing is read from the car either
+        if (!cr || !cr.ready) { stopReads(); return; }
         // Comfort / Eco Pro on "Hide": the image is dropped (BMW's own HUD shows), the timer keeps
         // running to bring it back when the mode changes
         let nv = { show: null, giveWay: false };

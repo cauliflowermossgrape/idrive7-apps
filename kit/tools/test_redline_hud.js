@@ -652,8 +652,21 @@ function electricalChecks() {
             const s2 = settingsFake(), e2 = new Electrical({ log: log, settings: s2 }, () => linkH);
             handle(e2, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2', 'statusBatteryTemperature', { actualValueTemperatureHighVoltageStorage: 76 });
             ok(e2.hybrid() === false && e2.value().hvTemp === null, 'a battery temperature alone: not taken for a hybrid, not shown');
-            handle(e2, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: 3524 });
-            ok(e2.hybrid() === true && e2.value().hvVolt === 352.4 && e2.value().hvTemp === 26, 'hybrid: found from the pack voltage signal, then its temperature shows');
+            // the pack voltage signal counts once it moves: two different plausible values 10 s apart (2026-11-10 review)
+            const realNow2 = Date.now, t2 = realNow2.call(Date);
+            const volt = (e, raw, at) => { Date.now = () => t2 + at; try { handle(e, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', { actualValueVoltageHighVoltageStorage: raw }); } finally { Date.now = realNow2; } };
+            volt(e2, 3524, 0);
+            ok(e2.hybrid() === false, 'one pack voltage message: not proof yet');
+            volt(e2, 3530, 5000);
+            ok(e2.hybrid() === false, 'a second value within 10 s: not yet');
+            volt(e2, 3524, 10000);
+            ok(e2.hybrid() === true && e2.value().hvVolt === 352.4 && e2.value().hvTemp === 26, 'hybrid: found from the pack voltage signal moving over 10 s, then its temperature shows');
+            // a "no value" pattern (4095 = 409.5 V) or one that never moves: never a hybrid
+            const s3 = settingsFake(), e3 = new Electrical({ log: log, settings: s3 }, () => linkH);
+            volt(e3, 4095, 0); volt(e3, 4095, 20000); volt(e3, 2047, 40000); volt(e3, 4095, 60000);
+            const s4 = settingsFake(), e4 = new Electrical({ log: log, settings: s4 }, () => linkH);
+            volt(e4, 480, 0); volt(e4, 480, 30000);
+            ok(e3.hybrid() === false && s3.vals.hudHybridSeen !== true && e4.hybrid() === false, 'pack voltage: sentinels and a value that never moves never mark a hybrid');
             // a signal handler never throws
             let threw = false;
             try { handle(e2, 'de.bmw.infotainment.lsc.LSCDataSink', 'statusHighVoltageStorage', undefined); handle(e2, 'de.bmw.infotainment.vehicle.CDS', 'statusBattery2', null); } catch (e) { threw = true; }

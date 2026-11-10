@@ -526,7 +526,8 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 
 Each shows only while the car sends it. **Petrol and diesel cars never see the hybrid ones**: not on the
 HUD, not on *HUD looks*, not in Settings. They appear once the car shows a high-voltage battery: a 150–500 V
-pack voltage in its signals, or the SME answering `DDBC` (asked once per start while the HUD shows, until
+pack voltage in its signals that changes over at least 10 s (a stuck or "no value" reading such as 409.5 V
+never counts), or the SME answering `DDBC` (asked once per start while the HUD shows, until
 found; logged `electrical: no high-voltage battery unit` on a car without one). A battery temperature alone
 doesn't count: a 48 V mild hybrid, or a petrol car, may send one for another battery. Once found it is
 remembered, and the log says what found it, with the raw value

@@ -14,7 +14,6 @@
  */
 const { withAlpha } = require('./kit/canvas');
 const Theme = require('./hud-theme');
-const IW = 400;
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const flashing = (cue) => cue.shift || cue.limiter;
@@ -31,26 +30,6 @@ const labelOf = (o, base) => (o.clearLabels ? { s: 16, c: base } : { s: 13, c: w
 function fitLabel(cv, text, x, y, size, col, room, opts) {
     const lo = Object.assign({ font: 'bold', spacing: 1 }, opts || {});
     cv.text(text, x, y, room ? Theme.fitSize(cv, text, size, room, lo) : size, col, lo);
-}
-/**
- * The Recovery / Power meter's bar (a readout with .bar = { v, lo, hi }: kW, + the battery drives, - it recovers):
- * a centre-zero track from x, w wide, th tall at y, its zero where lo..hi maps 0. layer 'bg': the outline and the
- * zero tick; 'fg': the fill, from zero leftwards in the palette's low colour (recovery) or rightwards in base
- * (warm from 85 % of hi); neither: both. v beyond lo / hi fills to the end; v 0 (or not a number) fills nothing.
- * Shared with hud-draw.js's readouts row.
- */
-function powerBar(cv, x, y, w, th, bar, P, base, layer) {
-    const lo = isNum(bar.lo) ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > lo ? bar.hi : lo + 1;
-    const at = (v) => x + w * clamp((v - lo) / (hi - lo), 0, 1), z = at(0), big = th >= 9;
-    const ins = big ? 2 : 1.5, tick = big ? 3 : 2;
-    if (layer !== 'fg') {
-        cv.strokeRoundRect(x, y, w, th, 2, 1.3, withAlpha(base, 0.75));
-        cv.fillRect(z - 1, y - tick, 2, th + 2 * tick, base);
-    }
-    if (layer === 'bg' || !isNum(bar.v)) return;
-    const vx = at(bar.v);
-    if (vx < z - 1.5) cv.fillRect(Math.max(x + ins, vx), y + ins, z - 1 - Math.max(x + ins, vx), th - 2 * ins, P.low);
-    else if (vx > z + 1.5) cv.fillRect(z + 1, y + ins, Math.min(x + w - ins, vx) - z - 1, th - 2 * ins, hi > 0 && bar.v >= 0.85 * hi ? P.warm : base);
 }
 /** A small readout: label then value on one line (row) or label over value (stack); align 'left' | 'right' | 'center'. */
 function small(cv, x, y, it, P, o, base, mode, align, vsize) {
@@ -373,4 +352,4 @@ function drawM(cv, f, layer, h) {
     const st = f.opts.style;
     if (st === 'arc') drawArc(cv, f, layer, h); else if (st === 'ramp') drawRamp(cv, f, layer, h); else drawDial(cv, f, layer, h);
 }
-module.exports = { drawM, powerBar };
+module.exports = { drawM };

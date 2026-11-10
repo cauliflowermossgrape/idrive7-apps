@@ -2,7 +2,7 @@
 /**
  * Part of Redline's experimental features; README.md in this folder has the whole picture.
  *
- * Redline's own directions on the HUD, the data side (hud-own-directions-plan.md, phase 2): what BMW's guidance
+ * Redline's own directions on the HUD, the data side: what BMW's guidance
  * service says about the next turn and the lanes, decoded into one small object the HUD draws (hud-nav.js).
  *
  * Where it comes from (proven on a G21 with CarPlay / Apple Maps, 2026-11-09, Redline 1.16.5 probe):
@@ -361,7 +361,16 @@ function Tracker() {
     let gaveWay = false, lastViewAt = -Infinity, resumedAt = -Infinity;
     // the guides whose turns Redline has read this drive (CAR_PLAY, ANDROID_AUTO, BMW): never given way to again
     const readable = {};
-    const guide = () => (route.carplay ? 'CAR_PLAY' : route.aa ? 'ANDROID_AUTO' : route.provider && route.provider !== 'NONE' && route.provider !== 0 ? String(route.provider) : 'BMW');
+    // a phone left named as the provider after its route was cancelled, on a car that sends the phones' "guiding"
+    // flags (sureSeen) with that flag off: it's BMW's own route now, not the phone's (2026-11-10 review: BMW's nav
+    // started after a cancelled CarPlay route counted as CarPlay, read this drive, so Redline never gave way to it)
+    const phoneOff = (p) => route.sureSeen && ((p === 'CAR_PLAY' && !route.carplay) || (p === 'ANDROID_AUTO' && !route.aa));
+    const guide = () => {
+        if (route.carplay) return 'CAR_PLAY';
+        if (route.aa) return 'ANDROID_AUTO';
+        const p = route.provider && route.provider !== 'NONE' && route.provider !== 0 ? String(route.provider) : 'BMW';
+        return phoneOff(p) ? 'BMW' : p;
+    };
     const keyOf = (m) => (m ? [m.kind, m.dir, m.geom, m.exit, m.exitAngle, m.road].join('|') : '');
     const seen = (m, now) => {
         if (!m) return;

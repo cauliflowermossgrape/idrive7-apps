@@ -21,7 +21,7 @@
  *
  * Petrol and diesel cars: hybrid() stays false, so nothing hybrid shows anywhere (HUD, HUD looks page,
  * Settings). It turns true, and is kept (setting hudHybridSeen), once the car shows a high-voltage battery:
- * a pack voltage (150-500 V) in its signals, or the SME answering DDBC. A battery temperature alone is not
+ * a pack voltage (150-500 V) in its signals that moves (two values 10 s apart, no "none" pattern), or the SME answering DDBC. A battery temperature alone is not
  * enough (a 48 V mild hybrid, or a petrol car, may send one for another battery). That one read is asked
  * while the HUD shows, once the link is available, until a reply settles it (a charge: hybrid; a refusal: not);
  * a try with no reply is tried again a minute later, 3 tries an app run. What found it is logged with its raw value.
@@ -38,6 +38,8 @@
  */
 const { DidReader } = require('./kit/dids');
 
+// the pack voltage signal: "no value" patterns never count; it must move over this long to count as a hybrid
+const VOLT_SENTINELS = [255, 2047, 4094, 4095, 65534, 65535], VOLT_PROOF_MS = 10000;
 const VOLT = { bytes: 2, at: 0, factor: 0.001, offset: 0, min: 5, max: 18 };
 // the same candidates, in the same order, as eDrive's config.battery.v12 (test_redline_hud.js checks it)
 const V12 = [
@@ -123,6 +125,7 @@ class Electrical {
         this.probed = false;          // true once the look for a hybrid battery is settled (or out of tries)
         this.probeN = 0; this.probeT = 0;
         this.gen = 0;                 // stop() counts it up: a turn started before stops asking
+        this.voltSeen = null;         // the pack voltage signal's first plausible value this run: { raw, t }
     }
 
     /** Is the look for a hybrid battery due now? (not known yet, tries left, a minute after a try with no reply) */
@@ -135,6 +138,19 @@ class Electrical {
         if (this.hybrid() || !this.settings) return;
         this.settings.set('hudHybridSeen', true);
         this.log.info('electrical: high-voltage battery found (' + why + '): hybrid readouts offered');
+    }
+
+    /**
+     * The pack voltage signal marks a hybrid only once it has moved: a plausible value, then another one, at least
+     * VOLT_PROOF_MS after the first this run, neither a "no value" pattern (4095 = 409.5 V, 2047, 255). A stuck sentinel or a
+     * single odd message (a 48 V system in 0.1 V) never sets hudHybridSeen for good (2026-11-10 review).
+     */
+    _voltProof(raw) {
+        if (this.hybrid() || !isNum(raw) || VOLT_SENTINELS.indexOf(raw) >= 0) return;
+        const now = Date.now(), f = this.voltSeen;
+        if (!f) { this.voltSeen = { raw: raw, t: now, moved: false }; return; }
+        if (raw !== f.raw) f.moved = true;
+        if (f.moved && now - f.t >= VOLT_PROOF_MS) this._seen('pack voltage signal, raw ' + f.raw + ', now ' + raw);
     }
 
     _put(name, v) { if (v !== null && v !== undefined) this.s[name] = { v: v, t: Date.now() }; }
@@ -165,7 +181,7 @@ class Electrical {
                 statusHighVoltageStorage: guard((v) => {
                     const x = decode.hvVolt(v);
                     this._sig('hvVoltSig', x, has(v, 'actualValueVoltageHighVoltageStorage'));
-                    if (x !== null) this._seen('pack voltage signal, raw ' + JSON.stringify(decode.rawVolt(v)));
+                    if (x !== null) this._voltProof(decode.rawVolt(v));
                 }),
             },
         };

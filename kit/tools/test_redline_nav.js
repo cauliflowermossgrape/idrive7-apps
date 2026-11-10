@@ -348,6 +348,10 @@ const drive = (T, from, to, mode) => { let v = null; for (let t = from; t <= to;
     C2.field('carplay', 'projectedGuidanceActive', false, 2000);
     ok(drive(C2, 2000, 2400).show === null && C2.events(replies[0].v, 2500, 1900).stale, 'cancelled, provider still CAR_PLAY: no arrow, the reply in flight dropped');
     ok(!C2.routing(), 'and no route (no polling on the provider alone once a flag was seen)');
+    // then BMW's own nav starts, the provider still CAR_PLAY: BMW's route, not CarPlay's (whose turns were read), so
+    // with no readable turn Redline gives way to BMW's card (2026-11-10 review)
+    C2.field('guidance', 'guidanceState', 'ACTIVE', 3000);
+    ok(C2.routing() && drive(C2, 3000, 3000 + Nav.GIVE_WAY_MS + 400).giveWay, 'BMW nav after a cancelled CarPlay route (provider left CAR_PLAY): gives way to BMW’s card');
     // the HUD or the directions off for a while, then on: the count starts again (no give way on the first frame)
     const R = Nav.Tracker();
     R.field('carplay', 'projectedGuidanceActive', true, 0);

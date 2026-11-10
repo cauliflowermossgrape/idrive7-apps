@@ -4,7 +4,7 @@
  *
  * Navigation probe: read-only. It records what BMW's guidance service and the CarPlay /
  * Android Auto managers send while a route runs, so Redline's own HUD directions can be built on what this car
- * really gives (hud-own-directions-plan.md, phase 1). It also hands every value to nav.js (the tap), which
+ * really gives. It also hands every value to nav.js (the tap), which
  * decodes the next turn and the lanes for Redline's own directions on the HUD. The interfaces are the ones jaimeen77's Cluster Redline
  * reads (jaimeen77-cmyk/apps, MPL-2.0; only the interface names are taken from it, the code here is Redline's).
  *

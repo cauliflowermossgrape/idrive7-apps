@@ -49,7 +49,6 @@
 const mgu = require('./kit/mgu');
 const { withAlpha, ramp } = require('./kit/canvas');
 const G = require('./kit/gauges');
-const { plural } = require('./kit/i18n');
 const Car = require('./kit/car');
 const Engine = require('./kit/engine');
 const Hud = require('./hud');
@@ -72,7 +71,7 @@ const BAR = { x0: 400, x1: 1200, y0: 213, y1: 275, slant: 22 };
 const GX = 800;                                     // centre column (rpm, bar, gear)
 const MPH = 1.609344;
 const GREEN = '#2fd27a', YELLOW = '#ffc21a', BLUE = '#2a7dff';
-const N_LEDS = 12, LED_RANGE = 2000;
+const N_LEDS = 12;
 // MDrive.dataDisplayGearbox programmes (names or wire numbers), as in Car Vitals
 const PROGRAMS = { S_MINUS_PROGRAMM: 'S', M_MINUS_PROGRAMM: 'M', 1: 'S', 2: 'M' };
 
@@ -225,7 +224,6 @@ mgu.run({
         };
         const minShift = () => { const v = settings.get('minShift'); return typeof v === 'number' && v > 0 ? Math.min(v, redline() - 150) : 0; };
         const normalShift = (gear) => Math.max(2500, minShift(), learnedShift(gear) || redline() - settings.get('shiftBefore'));
-        const shiftSource = (gear) => (learnedShift(gear) ? 'learned' : 'fixed');
         const limitsChanged = () => { car.setRedline(redline()); shiftMap.setRedline(redline()); };
         limitsChanged();
         engine.onChange(limitsChanged);
@@ -353,12 +351,12 @@ mgu.run({
             cv.quad([[x + off(BAR.y0) - 1.5, BAR.y0], [x + off(BAR.y0) + 1.5, BAR.y0], [x + off(BAR.y1) + 1.5, BAR.y1], [x + off(BAR.y1) - 1.5, BAR.y1]], col);
         }
         /** Static part of the tach page (cached layer; redrawn when the theme / limits change). */
-        function background(cv, t, sp) {
+        function background(cv, t) {
             // the shift mark is drawn over it (per gear and cold-oil step: a key each would fill the cache)
             const key = ['redline-bg', settings.get('theme'), maxRpm(), redline()].join('|');
-            cv.blit(G.layer(key, W, H, (c) => drawBackground(c, t, sp), cv.textScale), 0, 0);
+            cv.blit(G.layer(key, W, H, (c) => drawBackground(c, t), cv.textScale), 0, 0);
         }
-        function drawBackground(cv, t, sp) {
+        function drawBackground(cv, t) {
             cv.clear(t.bg);
             // angular frame lines (the G20's outline) around the centre
             const fl = withAlpha(t.tick, 0.55);
@@ -421,7 +419,7 @@ mgu.run({
 
         function drawTach(cv, t, d, now) {
             const sp = shiftPoint(d.oil, d.gear);
-            background(cv, t, sp);
+            background(cv, t);
             const sx = BAR.x0 + barX(sp.rpm);                                                   // shift point mark
             cv.fillRect(sx + BAR.slant - 2, BAR.y0 - 14, 4, 12, t.warn);
             const rpm = d.rpm;
