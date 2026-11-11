@@ -373,12 +373,15 @@ function rRail(cv, max, c) {
     const tab = (v) => ms.reduce((a, m) => Math.max(a, rTab(v - m.s, m)), 0);
     rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
-/** The band up to s1 (the revs), split at each mark; its top keeps the gap to the rail and round each tab. */
-function rBand(cv, s1, max, c) {
+/**
+ * The band from s0 to s1 (the revs; the needle the same way), split at each mark; its top keeps the gap to the rail
+ * and round each tab, so nothing drawn with it touches the rail or a tab.
+ */
+function rBand(cv, s0, s1, max, c) {
     const ms = rMarks(max), D1 = RP.rt + RP.ft, top = (v) => Math.min(D1, RD.rt + RD.gap + rTabGap(ms, v));
     for (let i = 0; i < ms.length - 1; i++) {
         // (the ends' tabs: the band starts and stops clear of them)
-        const a = i === 0 ? ms[0].s + reachOf(ms[0]) + RD.gap : ms[i].s + RD.split;
+        const a = Math.max(s0, i === 0 ? ms[0].s + reachOf(ms[0]) + RD.gap : ms[i].s + RD.split);
         const b = Math.min(s1, i === ms.length - 2 ? ms[i + 1].s - reachOf(ms[i + 1]) - RD.gap : ms[i + 1].s - RD.split);
         // (b is clear of the end cup's tab as it was of its old place)
         if (b > a) rShape(cv, rSamples(ms, a, b), top, () => D1, c);
@@ -507,8 +510,15 @@ function drawRamp(cv, f, layer, h) {
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null, c = pop || RC.fill;
             // the needle: a red bar the band's own height, a dark hair's gap after the band's end (as on the G80)
             const NW = 2.4, NG = 1.0;
-            rBand(cv, st - NW - NG, max, c);
-            if (st > NW) rStrip(cv, st - NW, st, D0, D1, RC.red);
+            // (drawn as the band is, clear of the rail; where it would reach a tab it steps to the near side of it, so it
+            // stays one bar the band's height rather than two slivers either side of the split)
+            let e = st;
+            rMarks(max).forEach((m) => {
+                const z = reachOf(m) + RD.gap;
+                if (e > m.s - z && e - NW < m.s + z) e = e <= m.s ? m.s - z : Math.max(e, m.s + z + NW);
+            });
+            rBand(cv, 0, e - NW - NG, max, c);
+            if (e > NW) rBand(cv, e - NW, e, max, RC.red);
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) rTick(cv, rS(Math.min(f.peak, max), max), D0, D1, 2.2, '#ffffff');
     }
