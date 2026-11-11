@@ -62,10 +62,10 @@ LAYOUTS.forEach((style) => ['colour', 'amber', 'ice'].forEach((palette) => [true
         catch (e) { ok(false, style + '/' + palette + '/' + layer + ' threw: ' + e.message); }
     });
 })));
-// the Rev bar switch removes the bar (minimal has none to remove; on ramp and dial the band is the shift
-// lights too, so it stays while they are on)
+// the Rev bar switch removes the bar (minimal has none to remove; on dial the band is the shift lights too, so it
+// stays while they are on; ramp's lights are their own row since 2.0.21, so its gauge goes)
 // (pill: its panel is most of the picture, so only its ring goes: fewer lit pixels, the panel kept)
-LAYOUTS.filter((s) => ['minimal', 'ramp', 'dial'].indexOf(s) < 0).forEach((style) => {
+LAYOUTS.filter((s) => ['minimal', 'dial'].indexOf(s) < 0).forEach((style) => {
     const px = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return lit(cv); };
     if (style === 'pill') {
         const pic = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return cv; };

@@ -345,10 +345,15 @@ function sqText(cv, str, x, y, h, c, align) {
  * the rail's shape (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter). Zero at the knee; recovery
  * fills down the climb towards 0, power along the flat towards the end (yellow from 85 % of bar.hi). Track bg, fill fg.
  */
-const RM = { d0: RP.rt + RP.ft + 2, d1: RP.rt + RP.ft + 6, start: 0.14 };
+// 3 px, a 3 px gap under the band (closer it read as a second rev band)
+const RM = { d0: RP.rt + RP.ft + 3, d1: RP.rt + RP.ft + 6, start: 0.14 };
 function rampMeter(cv, bar, P, layer, max) {
     const zero = RPATH.knee, s0 = zero * RM.start, end = RPATH.all;
-    if (layer !== 'fg') rStrip(cv, s0, end, RM.d0, RM.d1, withAlpha(RC.line, 0.25));
+    if (layer !== 'fg') {
+        rStrip(cv, s0, end, RM.d0, RM.d1, withAlpha(RC.line, 0.25));
+        // the zero: a short mark across the strip at the knee
+        rTick(cv, zero, RM.d0 - 1.5, RM.d1 + 1.5, 1.6, RC.line);
+    }
     if (layer === 'bg' || !isNum(bar.v)) return;
     const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
     if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) rStrip(cv, zero - (zero - s0) * k, zero, RM.d0, RM.d1, P.low); }
@@ -372,21 +377,24 @@ function drawRamp(cv, f, layer, h) {
     // with the meter under the band, the scale and everything under it 5 px lower
     const dn = meter ? 5 : 0, sq = o.gearFont === 'square';
     const D0 = RP.rt, D1 = RP.rt + RP.ft, GAP = 1.2;
-    if (o.bar !== false || o.lights) {
+    // the gauge: Rev bar off leaves the lights and the gear (the lights are their own row since 2.0.21)
+    if (o.bar !== false) {
         if (BG) {
             // the rail, its notches and the V at each end
             rStrip(cv, 0, RPATH.all, 0, RP.rt, RC.line);
             for (let r = 1000; r < max; r += 1000) rTick(cv, rS(r, max), RP.rt - 0.5, RP.rt + 4, 1.5, RC.line);
-            [0, RPATH.all].forEach((s) => {
-                const p = rAtS(s), tx = p[3], ty = -p[2], tip = off(p, RP.rt + 5);
-                cv.line(p[0] - tx * 2.5, p[1] - ty * 2.5, tip[0], tip[1], 1.4, RC.line);
-                cv.line(p[0] + tx * 2.5, p[1] + ty * 2.5, tip[0], tip[1], 1.4, RC.line);
+            // a small V hooked under the rail at each end, from the rail's middle and inside its length, so no cap
+            // sticks out past it (the 0's is under the band once it's lit, as on the G80)
+            [0.7, RPATH.all - 5.7].forEach((s) => {
+                const a = off(rAtS(s), RP.rt / 2), b = off(rAtS(s + 5), RP.rt / 2), tip = off(rAtS(s + 2.5), RP.rt + 5);
+                cv.line(a[0], a[1], tip[0], tip[1], 1.3, RC.line);
+                cv.line(b[0], b[1], tip[0], tip[1], 1.3, RC.line);
             });
             if (o.dim) for (let r = 0; r < max; r += 1000) rStrip(cv, rS(r, max) + GAP, rS(Math.min(max, r + 1000), max) - GAP, D0, D1, withAlpha(RC.line, 0.12));
             // the red zone: a thin red line inside the band from the redline, after a dash and a dot
             const zs = rS(f.redline, max), zm = (D0 + D1) / 2;
             if (zs < RPATH.all - 6) {
-                rStrip(cv, zs + 3, RPATH.all - 4, zm - 0.8, zm + 0.8, RC.red);
+                rStrip(cv, zs + 3, RPATH.all - 8, zm - 0.8, zm + 0.8, RC.red);
                 rStrip(cv, zs - 12, zs - 6, zm - 0.8, zm + 0.8, RC.line);
                 rStrip(cv, zs - 3.5, zs - 1.5, zm - 0.8, zm + 0.8, RC.line);
             }
@@ -403,7 +411,7 @@ function drawRamp(cv, f, layer, h) {
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null, c = pop || RC.fill;
             for (let r = 0; r < top; r += 1000) {
                 const a = rS(r, max) + (r > 0 ? GAP : 0), b = Math.min(st, rS(Math.min(max, r + 1000), max) - GAP);
-                if (b > a) rStrip(cv, a, b, D0, D1, c);
+                if (b > a) rStrip(cv, a, b, pop ? D0 : 0, D1, c);
             }
             if (st > 3) rStrip(cv, st - 2, st, D0, D1, RC.red);
         }

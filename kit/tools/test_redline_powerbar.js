@@ -85,7 +85,7 @@ const mostly = (cols, col) => cols.length > 0 && cols.filter((c) => isCol(c, col
     const rec = fill(-20), pwr = fill(40), full = fill(80), none = fill(0);
     ok(none.n === 0, 'ramp: 0 kW fills nothing');
     ok(rec.n > 0 && rec.maxX <= 116 && rec.minX >= 60 && rec.cols.filter((c) => isCol(c, P.low)).length >= 20, 'ramp: -20 kW fills half way down the climb, green (x ' + rec.minX + '..' + rec.maxX + ')');
-    ok(pwr.n > 0 && pwr.minX >= 100 && pwr.maxX > 220 && pwr.maxX < 250 && mostly(pwr.cols, '#f4f1e6'), 'ramp: +40 kW fills half way along the flat (x ' + pwr.minX + '..' + pwr.maxX + ')');
+    ok(pwr.n > 0 && pwr.minX >= 100 && pwr.maxX > 220 && pwr.maxX < 250 && mostly(pwr.cols.filter((c) => c[3] > 200), '#f4f1e6'), 'ramp: +40 kW fills half way along the flat (x ' + pwr.minX + '..' + pwr.maxX + ')');
     // (a 4 px strip: judged on its solid pixels, the edges are half blended)
     ok(full.maxX >= 370 && mostly(full.cols.filter((c) => c[3] > 200), '#ffd84a'), 'ramp: +80 kW fills the flat to the end, yellow');
     ok(fill(-100).minX >= 40 && fill(200).maxX <= 375, 'ramp: beyond lo / hi stays inside the track');

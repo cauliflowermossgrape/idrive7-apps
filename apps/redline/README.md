@@ -103,7 +103,7 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
 Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
 lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
 right make no difference here: Arc and Ramp fill left to right like the cars, Dial along its band.
-On Ramp and Dial the band stays with *Rev bar* off (on Dial it is the shift lights too).
+On Dial the band is the shift lights too, so it stays with *Rev bar* off; on Ramp *Rev bar* off leaves the lights and the gear.
 
 On all three the shift grade takes the first readout's place; with *Burst* a ring grows from the gear
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
@@ -272,6 +272,7 @@ below list them by what they do.
 | Setting | Values |
 |---|---|
 | Gear | on / off |
+| Speed | off (default) / on: KM/H or MPH (the app's *Speed unit*, also on HUD looks → Readouts) first in the readouts; on Ramp it sits under the gear like the G80's. Off by default as BMW's own HUD shows the speed |
 | RPM | on / off: a number in the readouts row; the 7-segment digits in the digital and VFD layouts |
 | RPM readout | Exact (to 10 rpm, default) / Steady (to 50 rpm) / Thousands (KRPM 4.5) |
 | Readouts refresh | 4 (default) / 10 / 20 a second. Faster sends more frames to the HUD while the numbers change (experimental) |
@@ -555,6 +556,7 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 
 | Readout | Shows | From |
 |---|---|---|
+| KM/H / MPH | the car's speed in the app's *Speed unit* (setting *Speed*, off by default) | the car's signal `Vehicle2.statusCarSpeed2`, as the launch timer uses |
 | 12V CHARGE | 12 V battery charge, % (yellow under 60, red under 40) | the car's signal `CDS.statusBattery2` |
 | 12V | 12 V battery voltage, 0.1 V (yellow under 12.0, red under 11.5 or over 15.0) | UDS `F442` from the engine unit (`0x12`), else OBD `42`, a second engine unit, the gearbox unit (`0x18`) or the battery sensor (`402B`, `5853`): eDrive's list, the one that answers is kept |
 | HV CHARGE | hybrid battery charge, % | UDS `DDBC` from the battery unit (SME `0x07`), every 5 s |
