@@ -305,18 +305,22 @@ function rTick(cv, s, d0, d1, w, c) { const p = rAtS(s), a = off(p, d0), b = off
  * shoulder radius;
  * the V's half-width and depth; the gap; the split's half-width.
  */
-const RD = { rt: 3.4, uw: 2.7, uwOdd: 2.1, rb: 1.5, td: 4.8, rf: 0.3, vw: 1.5, vd: 3.0, endVw: 1.5, endVd: 6.4, gap: 1.0, split: 0.55 };
+const RD = { rt: 3.4, uw: 2.7, uwOdd: 2.1, rb: 1.5, td: 4.8, rf: 0.3, vw: 1.5, vd: 3.0, endVw: 2.2, endVd: 5.0, endIn: 3.6, gap: 1.0, split: 0.55 };
 const RW = RD.uw + RD.rf;     // a numbered tab's half-width with its shoulders (the widest)
 /** The marks along the rail: { s (px), big (numbered: a V and the wider tab) }, one every 1,000 rpm and one at each end. */
 function rMarks(max) {
-    const lab = max <= 9000 ? 2000 : 3000, m = [{ s: RW, big: true, end: true }];
+    // (the ends' marks far enough in that the cup's outer arm keeps some weight)
+    const lab = max <= 9000 ? 2000 : 3000, m = [{ s: RD.endIn, big: true, end: true }];
     for (let r = 1000; r < max; r += 1000) m.push({ s: rS(r, max), big: r % lab === 0 });
-    m.push({ s: RPATH.all - RW, big: true, end: true });
+    m.push({ s: RPATH.all - RD.endIn, big: true, end: true });
     return m;
 }
-/** How far a tab reaches under the rail at t px from its middle: the round bottom, the straight sides, the shoulders. */
-function rTab(t, big) {
-    const a = Math.abs(t), uw = big ? RD.uw : RD.uwOdd, w = uw + RD.rf;
+/** A mark's tab half-width (to its walls): the ends' reach flush to the rail's end, the numbered ones wider than the rest. */
+const uwOf = (m) => (m.end ? RD.endIn : m.big ? RD.uw : RD.uwOdd);
+const reachOf = (m) => uwOf(m) + RD.rf;
+/** How far mark m's tab reaches under the rail at t px from its middle: the round bottom, the straight sides, the shoulders. */
+function rTab(t, m) {
+    const a = Math.abs(t), uw = uwOf(m), w = uw + RD.rf;
     if (a <= uw - RD.rb) return RD.td;
     if (a <= uw) { const k = a - (uw - RD.rb); return RD.td - RD.rb + Math.sqrt(RD.rb * RD.rb - k * k); }
     if (a < w) return RD.rf - Math.sqrt(Math.max(0, RD.rf * RD.rf - (w - a) * (w - a)));
@@ -329,8 +333,8 @@ const rVee = (t, m) => { const w = m.end ? RD.endVw : RD.vw, d = m.end ? RD.endV
 function rTabGap(ms, s) {
     let best = 0;
     ms.forEach((m) => {
-        if (Math.abs(s - m.s) > RW + RD.gap) return;
-        for (let k = -4; k <= 4; k++) { const du = RD.gap * k / 4; best = Math.max(best, rTab(s - m.s + du, m.big) + Math.sqrt(RD.gap * RD.gap - du * du) - RD.gap); }
+        if (Math.abs(s - m.s) > reachOf(m) + RD.gap) return;
+        for (let k = -4; k <= 4; k++) { const du = RD.gap * k / 4; best = Math.max(best, rTab(s - m.s + du, m) + Math.sqrt(RD.gap * RD.gap - du * du) - RD.gap); }
     });
     return best;
 }
@@ -339,58 +343,45 @@ function rSamples(ms, s0, s1) {
     const ss = [s0, s1];
     RPATH.len.forEach((l) => { if (l > s0 && l < s1) ss.push(l); });
     ms.forEach((m) => {
-        for (let v = Math.max(s0, m.s - RW - RD.gap); v <= Math.min(s1, m.s + RW + RD.gap); v += 0.2) ss.push(v);
-        const uw = m.big ? RD.uw : RD.uwOdd;
+        for (let v = Math.max(s0, m.s - reachOf(m) - RD.gap); v <= Math.min(s1, m.s + reachOf(m) + RD.gap); v += 0.2) ss.push(v);
+        const uw = uwOf(m);
         [-uw - 0.02, -uw + 0.02, uw - 0.02, uw + 0.02].forEach((d) => { if (m.s + d > s0 && m.s + d < s1) ss.push(m.s + d); });
     });
     return ss.sort((p, q) => p - q).filter((v, i, a) => i === 0 || v - a[i - 1] > 0.05);
 }
-/** A strip s0..s1 whose top (d0) and bottom (d1) are functions of s, as quads each reaching 0.8 px into the next. */
-function rStripF(cv, ss, d0, d1, c) {
-    for (let k = 1; k < ss.length; k++) {
-        // (0.8 px where the edges run straight on, 0.35 px round a curve, none across a wall: there it would slant it)
-        const end = ss[ss.length - 1], at = (r) => Math.min(end, ss[k] + r);
-        const step = (r) => Math.max(Math.abs(d0(at(r)) - d0(ss[k])), Math.abs(d1(at(r)) - d1(ss[k])));
-        const reach = k === ss.length - 1 ? 0 : step(0.8) < 0.05 ? 0.8 : step(0.35) < 0.6 ? 0.35 : 0;
-        const p0 = ss[k - 1], p1 = at(reach), q0 = rAtS(p0), q1 = rAtS(p1);
-        if (d1(p0) - d0(p0) < 0.05 && d1(p1) - d0(p1) < 0.05) continue;
-        cv.quad([off(q0, d0(p0)), off(q1, d0(p1)), off(q1, d1(p1)), off(q0, d1(p0))], c);
-    }
+/** The point d px under the rail at s, with the path's own normal at its bends (a smooth offset round the knee). */
+function rPt(v, d) {
+    const i = RPATH.len.findIndex((l) => Math.abs(l - v) < 1e-6);
+    if (i < 0) return off(rAtS(v), d);
+    const p = RPATH.pts[i], n = RPATH.ptN[i];
+    return [p[0] + n[0] * d, p[1] + n[1] * d];
 }
 /**
- * A strip a..b from d0 (a function of s near the marks ms, plain0 elsewhere) to d1: plain strips away from the marks
- * (clean edges), rStripF within z px of one (the shaped edge).
+ * The shape between d0(s) and d1(s) for the samples ss, as ONE polygon (canvas fill): pieces drawn side by side
+ * left hairline seams, and where they met a gap, a faint line across it. Quads where a canvas has no fill.
  */
-function rStripZ(cv, ms, a, b, z, d0, plain0, d1, c) {
-    let v = a;
-    ms.filter((m) => m.s + z > a && m.s - z < b).forEach((m) => {
-        const z0 = Math.max(a, m.s - z), z1 = Math.min(b, m.s + z);
-        if (z0 > v) rStrip(cv, v, z0 + 0.4, plain0, d1, c);
-        rStripF(cv, rSamples([m], z0, z1), d0, () => d1, c);
-        v = z1 - 0.4;
-    });
-    if (b > v) rStrip(cv, Math.max(a, v), b, plain0, d1, c);
+function rShape(cv, ss, d0, d1, c) {
+    const top = ss.map((v) => rPt(v, Math.min(d0(v), d1(v) - 0.05))), bot = ss.map((v) => rPt(v, d1(v)));
+    if (cv.fill) { cv.fill(top.concat(bot.reverse()), c); return; }
+    for (let k = 1; k < ss.length; k++) cv.quad([top[k - 1], top[k], bot[ss.length - k - 1], bot[ss.length - k]], c);
 }
+const veeAt = (ms) => { const big = ms.filter((m) => m.big); return (v) => big.reduce((a, m) => Math.max(a, rVee(v - m.s, m)), 0); };
 function rRail(cv, max, c) {
-    const ms = rMarks(max), big = ms.filter((m) => m.big);
-    // the rail, its top cut into a V at the numbered marks
-    const vee = (v) => big.reduce((a, m) => Math.max(a, rVee(v - m.s, m)), 0);
-    rStripZ(cv, big, 0, RPATH.all, RW + 0.5, (v) => Math.min(RD.rt, vee(v)), 0, RD.rt, c);
-    // the tabs (from a hair inside the rail, so they join it seamlessly)
-    ms.forEach((m) => rStripF(cv, rSamples([m], m.s - RW, m.s + RW), (v) => Math.max(RD.rt - 0.6, vee(v)), (v) => Math.max(vee(v), RD.rt + rTab(v - m.s, m.big)), c));
+    const ms = rMarks(max), vee = veeAt(ms);
+    // the rail with its tabs, one shape: its top cut into a V at the numbered marks (a cup at the ends), its bottom
+    // hanging into a tab at every mark
+    const tab = (v) => ms.reduce((a, m) => Math.max(a, rTab(v - m.s, m)), 0);
+    rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
 /** The band up to s1 (the revs), split at each mark; its top keeps the gap to the rail and round each tab. */
 function rBand(cv, s1, max, c) {
     const ms = rMarks(max), D1 = RP.rt + RP.ft, top = (v) => Math.min(D1, RD.rt + RD.gap + rTabGap(ms, v));
-    const L = RD.rt + RD.gap + RD.td + 0.6;
     for (let i = 0; i < ms.length - 1; i++) {
-        // (the ends' tabs: the band starts and stops clear of them, no split piece under them)
-        const a = i === 0 ? ms[0].s + RW + RD.gap : ms[i].s + RD.split;
-        const b = Math.min(s1, i === ms.length - 2 ? ms[i + 1].s - RW - RD.gap : ms[i + 1].s - RD.split);
-        if (b <= a) continue;
-        // under the tabs' reach one clean strip; above it, plain where no tab is near and following the tabs where one is
-        rStrip(cv, a, b, L, D1, c);
-        rStripZ(cv, ms, a, b, RW + RD.gap + 0.3, top, RP.rt, L + 0.6, c);
+        // (the ends' tabs: the band starts and stops clear of them)
+        const a = i === 0 ? ms[0].s + reachOf(ms[0]) + RD.gap : ms[i].s + RD.split;
+        const b = Math.min(s1, i === ms.length - 2 ? ms[i + 1].s - reachOf(ms[i + 1]) - RD.gap : ms[i + 1].s - RD.split);
+        // (b is clear of the end cup's tab as it was of its old place)
+        if (b > a) rShape(cv, rSamples(ms, a, b), top, () => D1, c);
     }
 }
 
@@ -493,24 +484,16 @@ function drawRamp(cv, f, layer, h) {
     // the gauge: Rev bar off leaves the lights and the gear (the lights are their own row since 2.0.21)
     if (o.bar !== false) {
         if (BG) {
-            // the rail, its notches and the V at each end all one line; under it nothing until the revs reach it (clear,
-            // as on the G80: no grey band)
-            rRail(cv, max, RC.line);
-            // the red zone: a thin red line inside the band from the redline, after a dash and a dot
+            // the red zone first, so the rail's tabs lie over it: a dash and a dot, then a thin red line from the redline
+            // on under the marks into the 8's cup
             const zs = rS(f.redline, max), zm = D0 + 2;
             if (zs < RPATH.all - 6) {
-                // (each piece broken round any tab it would cross, so a tab stands clear of it)
-                const ms = rMarks(max), clear = RW + RD.gap;
-                const seg = (a, b, col) => {
-                    let v = a;
-                    const piece = (p, q) => { if (q - p >= 3 || col !== RC.red) rStrip(cv, p, q, zm - 0.8, zm + 0.8, col); };
-                    ms.filter((m) => !m.end && m.s + clear > a && m.s - clear < b).forEach((m) => { if (m.s - clear > v) piece(v, m.s - clear); v = Math.max(v, m.s + clear); });
-                    if (b > v) piece(v, b);
-                };
-                seg(zs + 3, RPATH.all - RW - RD.endVw + 0.4, RC.red);
-                seg(zs - 12, zs - 6, RC.line);
-                seg(zs - 3.5, zs - 1.5, RC.line);
+                rStrip(cv, zs + 3, RPATH.all - RD.endIn - RD.endVw - 0.3, zm - 0.8, zm + 0.8, RC.red);
+                rStrip(cv, zs - 12, zs - 6, zm - 0.8, zm + 0.8, RC.line);
+                rStrip(cv, zs - 3.5, zs - 1.5, zm - 0.8, zm + 0.8, RC.line);
             }
+            // the rail with its tabs, V's and end cups; under it nothing until the revs reach it (clear, as on the G80)
+            rRail(cv, max, RC.line);
             // the scale under the band; the 0 under the climb's start
             const lab = max <= 9000 ? 2000 : 3000;
             for (let r = 0; r <= max; r += lab) {
