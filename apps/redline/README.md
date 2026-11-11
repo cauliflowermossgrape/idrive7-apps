@@ -81,10 +81,14 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
   style* Race or one colour uses those instead) over a curved band with a white rim and a tick per
   1000 rpm, ending in a yellow then red zone; the gear big under it. Readouts: the first beside the
   gear, two more at the far right, a fourth high on the left.
-- **Ramp** (after the G80 / G82 M3 and M4): the band climbs from the bottom left, then runs flat
-  along the top in slanted fields, with a 0–8 scale under it. The fields fill warm white, turn
-  yellow as the shift nears and red at it; a red strip marks the redline. The gear sits over a line
-  with the first readout under it (where the car shows the speed) and the others listed on the right.
+- **Ramp** (after the G80 / G82 M3 and M4, redrawn in 2.0.21 from a video of the car's HUD): a thick
+  rail climbs from the 0 at the bottom left, bends round at the 2 and runs flat to the 8, a notch
+  under it every 1000 rpm. The revs hang under the rail as a warm white band up to a red sliver; past
+  them only the rail shows. A thin red line inside the band marks the redline. Over the flat part 8
+  slanted shift lights (6 yellow, 1 red, then a wide red one) appear with the count-in, light left to
+  right and flash red at the shift. Squared digits for the scale, the gear and the first readout,
+  which sits under a line beneath the gear (where the car shows the speed); the others are listed on
+  the right.
 - **Dial** (after the E60 M5): a ¾ dial round the gear: yellow-green, then an orange advance
   warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
   dial's orange; the first readout bottom right (where the car shows the speed).
@@ -98,8 +102,8 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
 *Shift light style* (Settings) works on Arc, Ramp and Dial as on the other layouts: M is the cars' own colours,
 Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
 lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
-right make no difference here: Arc fills left to right like the F80, Ramp and Dial along their band.
-On Ramp and Dial the band is the shift lights too, so it stays with *Rev bar* off.
+right make no difference here: Arc and Ramp fill left to right like the cars, Dial along its band.
+On Ramp and Dial the band stays with *Rev bar* off (on Dial it is the shift lights too).
 
 On all three the shift grade takes the first readout's place; with *Burst* a ring grows from the gear
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
@@ -129,7 +133,7 @@ layer) was tried in 1.16 and left out, because of where the shader runs:
 So every layout is a picture. A GPU path would need shaders kept well inside what the cluster takes, made
 only while parked, and tested parked first.
 
-**Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
+**Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc and Dial, Redline's own squared digits on Ramp, Ubuntu on the others),
 Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
 font closest to the BMW Type digits these HUDs use; BMW's own font can't be shipped. A font that is
 missing falls back to Ubuntu.
@@ -254,7 +258,7 @@ below list them by what they do.
 | Setting | Values |
 |---|---|
 | Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
-| Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
+| Gear font | Auto (Barlow on Arc and Dial, squared on Ramp) / Ubuntu / Barlow |
 | Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
@@ -544,7 +548,7 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 | 12V | 12 V battery voltage, 0.1 V (yellow under 12.0, red under 11.5 or over 15.0) | UDS `F442` from the engine unit (`0x12`), else OBD `42`, a second engine unit, the gearbox unit (`0x18`) or the battery sensor (`402B`, `5853`): eDrive's list, the one that answers is kept |
 | HV CHARGE | hybrid battery charge, % | UDS `DDBC` from the battery unit (SME `0x07`), every 5 s |
 | HV KW | hybrid battery power, kW: + drives, − charging (regen) | pack voltage (`DDB4` / `DD68` / `DD66` / `DDEF`) × current (`DD69`) from the SME, twice a second |
-| POWER (meter) | the recovery / power meter, like BMW's hybrid power meter, drawn along each layout's own gauge (not in the readouts row): *Ramp* a second band under its scale (recovery down the climb, power along the flat, zero at the knee); *Arc* and *Dial* a ring inside / outside their band; *Standard* and *Vector* a strip of slanted segments under the rev bar; *80s digital* and *VFD* a row of bar-graph segments under the graph. Recovery green (blue on VFD) left of zero (to 40 kW), power right (to 80 kW, yellow near the end); no number (HV KW shows it). *Minimal* and *Split wings* have no readouts and no meter | the same as HV KW |
+| POWER (meter) | the recovery / power meter, like BMW's hybrid power meter, drawn along each layout's own gauge (not in the readouts row): *Ramp* a thin strip under its band (recovery down the climb, power along the flat, zero at the knee); *Arc* and *Dial* a ring inside / outside their band; *Standard* and *Vector* a strip of slanted segments under the rev bar; *80s digital* and *VFD* a row of bar-graph segments under the graph. Recovery green (blue on VFD) left of zero (to 40 kW), power right (to 80 kW, yellow near the end); no number (HV KW shows it). *Minimal* and *Split wings* have no readouts and no meter | the same as HV KW |
 | HV TEMP | hybrid battery temperature (blue under 5 °C, red over 45 °C) | `Efficiencytainment2.statusBatteryTemperature` |
 | HV VOLTS | pack voltage | `LSCDataSink.statusHighVoltageStorage` (or the SME's when it is read for power) |
 

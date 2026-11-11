@@ -54,7 +54,7 @@ const NOT_ON = {
     hudFuelUnit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudTempsMode: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudChip: { layouts: ['minimal', 'wings'], why: 'no grade drawn' },
-    hudShowBar: { layouts: ['minimal', 'ramp', 'dial'], why: 'no bar (ramp, dial: the band is the shift lights too)' },
+    hudShowBar: { layouts: ['minimal', 'ramp', 'dial'], why: 'no bar (ramp, dial: the band stays; on dial it is the shift lights too)' },
     hudPeak: { layouts: ['minimal'], why: 'no bar' },
 };
 

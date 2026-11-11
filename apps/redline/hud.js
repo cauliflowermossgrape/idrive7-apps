@@ -225,7 +225,7 @@ const M_STYLES = ['arc', 'ramp', 'dial'];
 function gearFontOf(choice, style) {
     if (choice === 'barlow') return 'gear_barlow';
     if (choice === 'ubuntu') return 'gear';
-    return M_STYLES.indexOf(style) >= 0 ? 'gear_barlow' : 'gear';
+    return style === 'ramp' ? 'square' : M_STYLES.indexOf(style) >= 0 ? 'gear_barlow' : 'gear';
 }
 
 const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc', 'ramp', 'dial', 'pill'];

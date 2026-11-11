@@ -7,8 +7,8 @@
  * and its burst, the peak, the downshift arrows and the limiter flash work as in the other layouts.
  * Draws on canvas.js Canvas (or hud-draw's scaled()); arc() angles are degrees clockwise from 12 o'clock.
  *   arc   after F80/F82 M3/M4 (2014-20): 8 curved lights (6 amber, 2 red) over a curved band, gear under it
- *   ramp  after G80/G82 M3/M4 (2021+): the band climbs from bottom left then runs flat; its fields turn
- *         yellow, then red, towards the shift; 0-8 scale; gear over a line, a readout under it
+ *   ramp  after G80/G82 M3/M4 (2021+): a thick rail climbs from bottom left then runs flat, the revs a band
+ *         under it; 8 slanted lights over the flat part (6 yellow, 2 red); squared digits; gear over a line
  *   dial  after E60 M5 (2005-10): a 3/4 dial round the gear, green / orange advance warning / red,
  *         a readout bottom right in the dial's orange-red
  */
@@ -232,125 +232,217 @@ function drawArc(cv, f, layer, h) {
 }
 
 /* ---------- ramp (G80) ---------- */
-// the band's lower edge: from bottom left up to the knee, then flat; rpm runs along it by length
-const RP = { x0: 34, y0: 74, kx: 104, ky: 30, x1: 372, t: 11, t0: 3, slant: 4 };
-const RC = { line: '#f4f1e6', fill: '#f4f1e6', yellow: '#ffc21a', red: '#ff2b1c', text: '#f4f1e6' };
-const rLen = (() => { const a = Math.hypot(RP.kx - RP.x0, RP.ky - RP.y0); return { a: a, all: a + (RP.x1 - RP.kx) }; })();
-function rAt(rpm, max) {
-    const s = clamp(rpm / max, 0, 1) * rLen.all;
-    if (s <= rLen.a) { const k = s / rLen.a; return [RP.x0 + (RP.kx - RP.x0) * k, RP.y0 + (RP.ky - RP.y0) * k]; }
-    return [RP.kx + (s - rLen.a), RP.ky];
-}
-/**
- * The band's thickness at rpm: thin at the start (t0), widening up the climb to t at the knee, then the same along
- * the flat (2026-11-10: like a ramp that grows). Its slant grows with it, so the fields keep their angle.
- */
-function rT(rpm, max) {
-    const s = clamp(rpm / max, 0, 1) * rLen.all;
-    return s >= rLen.a ? RP.t : RP.t0 + (RP.t - RP.t0) * s / rLen.a;
-}
-/** The band between rpm a and b (gaps g px at each end), as quads split at the knee. */
-function rSeg(cv, a, b, max, c, g, outline) {
-    const kneeR = rLen.a / rLen.all * max, parts = a < kneeR && b > kneeR ? [[a, kneeR], [kneeR, b]] : [[a, b]];
-    parts.forEach((p, i) => {
-        const pa = rAt(p[0], max), pb = rAt(p[1], max);
-        const ga = i === 0 ? g : 0, gb = i === parts.length - 1 ? g : 0;
-        const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) || 1, ux = (pb[0] - pa[0]) / L, uy = (pb[1] - pa[1]) / L;
-        const A0 = [pa[0] + ux * ga, pa[1] + uy * ga], B0 = [pb[0] - ux * gb, pb[1] - uy * gb];
-        const ta = rT(p[0], max), tb = rT(p[1], max), sa = RP.slant * ta / RP.t, sb = RP.slant * tb / RP.t;
-        const q = [[A0[0] + sa, A0[1] - ta], [B0[0] + sb, B0[1] - tb], B0, A0];
-        if (outline) cv.polyline(q.concat([q[0]]), outline, c); else cv.quad(q, c);
-    });
-}
 /*
- * The ramp's Recovery / Power meter (a readout with .bar, hud.js): not in the list but a thin second band under
- * the ramp's scale, the same shape and length (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter).
- * Zero at the knee; recovery fills down the climb towards 0, power along the flat towards the end (yellow from
- * 85 % of bar.hi). Track bg (no zero tick: the knee is the zero), fill fg.
+ * 2.0.21, redrawn from a video of the G80's own HUD. The gauge is one thick rail with no bottom edge: it climbs from
+ * the 0 at bottom left, bends round a rounded knee at the 2 and runs flat to the end, a T notch hanging under it every
+ * 1,000 rpm and a small V at each end. The rpm hangs under the rail as a cream band up to a red sliver; past it only
+ * the rail shows. The red zone is a thin red line inside the band, after a dash and a dot. Over the flat part a row
+ * of 8 slanted bars counts in to the shift (6 yellow, 1 red, then a red one twice as wide) and flashes all red at it.
+ * Digits are squared (sqText, our own), the gear left of centre over a line, the first readout under it.
  */
-// t: the thickness, the climb (recovery) the same as the flat (power), clear of the scale's numbers and the gear;
-// start: where the climb begins, clear of the 0
-const RM = { dy: 25, t: 6, slant: 2, start: 0.14 };
-function rampMeter(cv, bar, P, layer) {
-    const along = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
-    const A0 = [RP.x0, RP.y0 + RM.dy], K = [RP.kx, RP.ky + RM.dy], B = [RP.x1, RP.ky + RM.dy], A = along(A0, K, RM.start);
-    const quad = (a, b, c, line, ta, tb) => {
-        ta = ta || RM.t; tb = tb || ta;
-        const q = [[a[0] + RM.slant * ta / RM.t, a[1] - ta], [b[0] + RM.slant * tb / RM.t, b[1] - tb], b, a];
-        if (line) cv.polyline(q.concat([q[0]]), line, c); else cv.quad(q, c);
+// the rail's top edge: from (x0, y0) up to the knee (kx, ky), then flat to x1; rt the rail, ft the band under it,
+// kr the knee's radius
+// (the climb a little short of 2,000 rpm, so the 2 sits under the flat clear of it, as on the G80)
+const RP = { x0: 42, y0: 72, kx: 104, ky: 24, x1: 372, rt: 3, ft: 8, kr: 12 };
+const RC = { line: '#f4f1e6', fill: '#f4f1e6', yellow: '#ffd84a', red: '#ff4636', text: '#f4f1e6' };
+// the lights over the flat part: 8 bars (the last twice as wide), leaning right by slant
+const RL = { x0: 136, x1: 372, y0: 3, y1: 19, gap: 3, slant: 10, n: 8 };
+/** The rail's path (points, their normals pointing under it, the length to each), worked out once. */
+const RPATH = (() => {
+    const P0 = [RP.x0, RP.y0], K = [RP.kx, RP.ky], E = [RP.x1, RP.ky];
+    const cl = Math.hypot(K[0] - P0[0], K[1] - P0[1]), u = [(K[0] - P0[0]) / cl, (K[1] - P0[1]) / cl];
+    const turn = Math.acos(u[0]), dk = RP.kr * Math.tan(turn / 2);
+    const T1 = [K[0] - u[0] * dk, K[1] - u[1] * dk], C = [K[0] + dk, K[1] + RP.kr];
+    const pts = [P0, T1];
+    const a0 = Math.atan2(T1[1] - C[1], T1[0] - C[0]), a1 = -Math.PI / 2, N = 6;
+    for (let i = 1; i <= N; i++) { const a = a0 + (a1 - a0) * i / N; pts.push([C[0] + RP.kr * Math.cos(a), C[1] + RP.kr * Math.sin(a)]); }
+    pts.push(E);
+    const len = [0];
+    for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    // a segment's normal (-ty, tx) points under the rail; a point's is the mean of its segments'
+    const segN = [];
+    for (let i = 1; i < pts.length; i++) { const l = len[i] - len[i - 1]; segN.push([-(pts[i][1] - pts[i - 1][1]) / l, (pts[i][0] - pts[i - 1][0]) / l]); }
+    const ptN = pts.map((p, i) => {
+        const a = segN[Math.max(0, i - 1)], b = segN[Math.min(segN.length - 1, i)], m = Math.hypot(a[0] + b[0], a[1] + b[1]) || 1;
+        return [(a[0] + b[0]) / m, (a[1] + b[1]) / m];
+    });
+    // knee: half way round the bend (the meter's zero)
+    return { pts: pts, len: len, segN: segN, ptN: ptN, all: len[len.length - 1], knee: (len[1] + len[N + 1]) / 2 };
+})();
+const rS = (rpm, max) => clamp(rpm / max, 0, 1) * RPATH.all;
+/** The point s px along the rail and the normal there: [x, y, nx, ny]. */
+function rAtS(s) {
+    const L = RPATH.len;
+    let i = 1;
+    while (i < L.length - 1 && L[i] < s) i++;
+    const a = RPATH.pts[i - 1], b = RPATH.pts[i], k = clamp((s - L[i - 1]) / ((L[i] - L[i - 1]) || 1), 0, 1), n = RPATH.segN[i - 1];
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, n[0], n[1]];
+}
+const off = (p, d) => [p[0] + p[2] * d, p[1] + p[3] * d];
+/** The strip between d0 and d1 px under the rail from s0 to s1 px along it, as quads (bent round the knee). */
+function rStrip(cv, s0, s1, d0, d1, c) {
+    if (s1 - s0 < 0.3) return;
+    const pts = [rAtS(s0)];
+    RPATH.len.forEach((l, i) => { if (l > s0 + 0.01 && l < s1 - 0.01) { const p = RPATH.pts[i], n = RPATH.ptN[i]; pts.push([p[0], p[1], n[0], n[1]]); } });
+    pts.push(rAtS(s1));
+    for (let i = 1; i < pts.length; i++) cv.quad([off(pts[i - 1], d0), off(pts[i], d0), off(pts[i], d1), off(pts[i - 1], d1)], c);
+}
+/** A short stroke across the band at s (from d0 to d1 px under the rail). */
+function rTick(cv, s, d0, d1, w, c) { const p = rAtS(s), a = off(p, d0), b = off(p, d1); cv.line(a[0], a[1], b[0], b[1], w, c); }
+
+/*
+ * Squared digits (our own drawing, after the G80's look): 7-segment strokes joined at the corners, solid, plus
+ * N P R D M S. h tall, a width of 0.6 h, the stroke t. Returns false (drawing nothing) for a character it has no
+ * shape for.
+ */
+const SQ = { 0: 'abcdef', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abfgcd', '-': 'g', S: 'afgcd', P: 'abfge', N: 'efbc', R: 'abfge', M: 'efabc', D: 'abcdef' };
+function sqGlyph(cv, ch, x, y, h, c) {
+    const w = h * 0.6, t = Math.max(1.4, h * 0.17), hh = h / 2;
+    if (ch === '1') { cv.fillRect(x + w * 0.62 - t / 2, y, t, h, c); cv.fillRect(x + w * 0.3, y, w * 0.32, t, c); return true; }
+    const on = SQ[ch];
+    if (on === undefined) return false;
+    const R = {
+        a: [x, y, w, t], g: [x, y + hh - t / 2, w, t], d: [x, y + h - t, w, t],
+        f: [x, y, t, hh + t / 2], b: [x + w - t, y, t, hh + t / 2], e: [x, y + hh - t / 2, t, hh + t / 2], c: [x + w - t, y + hh - t / 2, t, hh + t / 2],
     };
-    if (layer !== 'fg') {
-        quad(A, K, withAlpha(RC.line, 0.6), 1.1); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
-        // no zero tick: the knee itself shows where recovery ends and power starts (a tick there met the scale's 2)
+    // D: the right-hand corners cut, so it isn't a 0
+    if (ch === 'D') { R.a = [x, y, w - t, t]; R.d = [x, y + h - t, w - t, t]; R.b = [x + w - t, y + t, t, hh]; R.c = [x + w - t, y + hh - t / 2, t, hh - t / 2]; }
+    for (const k of on) { const r = R[k]; cv.fillRect(r[0], r[1], r[2], r[3], c); }
+    if (ch === 'D') {
+        cv.quad([[x + w - t, y], [x + w, y + t], [x + w - t, y + t]], c); cv.quad([[x + w - t, y + h - t], [x + w, y + h - t], [x + w - t, y + h]], c);
     }
+    // N, R: a diagonal; M: a stem down the middle
+    const diag = (x0, y0, x1, y1) => cv.quad([[x0, y0], [x0 + t * 1.1, y0], [x1, y1], [x1 - t * 1.1, y1]], c);
+    if (ch === 'N') diag(x + t * 0.4, y, x + w - t * 0.4, y + h);
+    if (ch === 'R') diag(x + w * 0.35, y + hh, x + w - t * 0.1 + t * 0.55, y + h);
+    if (ch === 'M') cv.fillRect(x + w / 2 - t / 2, y, t, hh, c);
+    return true;
+}
+/** The width sqText takes for str at h. */
+const sqWidth = (str, h) => { const n = String(str).length; return n ? n * h * 0.6 + (n - 1) * h * 0.24 - (String(str).indexOf('.') >= 0 ? h * 0.5 : 0) : 0; };
+/**
+ * str in squared digits, top at y, h tall, from x (align 'left' | 'center' | 'right'). Characters it has no shape
+ * for end it: the rest is drawn in the bold font (a unit such as °).
+ */
+function sqText(cv, str, x, y, h, c, align) {
+    str = String(str);
+    let n = 0;
+    while (n < str.length && (str[n] === '.' || str[n] === '1' || SQ[str[n]] !== undefined)) n++;
+    const head = str.slice(0, n), tail = str.slice(n).trim();
+    const tailW = tail && cv.textWidth ? cv.textWidth(tail, h * 0.6, { font: 'bold' }) + 2 : 0;
+    const wAll = sqWidth(head, h) + tailW;
+    let px = align === 'center' ? x - wAll / 2 : align === 'right' ? x - wAll : x;
+    for (const ch of head) {
+        if (ch === '.') { const t = Math.max(1.4, h * 0.17); cv.fillRect(px, y + h - t, t, t, c); px += t + h * 0.24; continue; }
+        sqGlyph(cv, ch, px, y, h, c);
+        px += h * 0.6 + h * 0.24;
+    }
+    if (tail) cv.text(tail, px - h * 0.24 + 2, y + h * 0.6, h * 0.6, c, { font: 'bold' });
+}
+
+/*
+ * The ramp's Recovery / Power meter (a readout with .bar, hud.js): not in the list but a thin strip under the band,
+ * the rail's shape (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter). Zero at the knee; recovery
+ * fills down the climb towards 0, power along the flat towards the end (yellow from 85 % of bar.hi). Track bg, fill fg.
+ */
+const RM = { d0: RP.rt + RP.ft + 2, d1: RP.rt + RP.ft + 6, start: 0.14 };
+function rampMeter(cv, bar, P, layer, max) {
+    const zero = RPATH.knee, s0 = zero * RM.start, end = RPATH.all;
+    if (layer !== 'fg') rStrip(cv, s0, end, RM.d0, RM.d1, withAlpha(RC.line, 0.25));
     if (layer === 'bg' || !isNum(bar.v)) return;
     const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
-    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) quad(along(K, A, k), K, P.low); }
-    else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) quad(K, along(K, B, k), bar.v >= 0.85 * hi ? RC.yellow : RC.fill); }
+    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) rStrip(cv, zero - (zero - s0) * k, zero, RM.d0, RM.d1, P.low); }
+    else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) rStrip(cv, zero, zero + (end - zero) * k, RM.d0, RM.d1, bar.v >= 0.85 * hi ? RC.yellow : RC.fill); }
 }
+/** The 8 bars' corners (bottom left first); the last twice as wide. */
+const rBars = (() => {
+    const unit = (RL.x1 - RL.x0 - RL.slant - (RL.n - 1) * RL.gap) / (RL.n + 1), out = [];
+    let x = RL.x0;
+    for (let i = 0; i < RL.n; i++) {
+        const w = i === RL.n - 1 ? 2 * unit : unit;
+        out.push([[x, RL.y1], [x + w, RL.y1], [x + w + RL.slant, RL.y0], [x + RL.slant, RL.y0]]);
+        x += w + RL.gap;
+    }
+    return out;
+})();
 function drawRamp(cv, f, layer, h) {
     const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max;
-    const step = 500, fl = flashOn(o, cue), flashCol = flashColour(o, cue, h, RC.red);
-    // what colour the field from r..r+step is when lit
-    const fieldCol = (r) => {
-        const m = r + step / 2;
-        if (!o.lights || m < cue.from) return RC.fill;
-        if (!ownColours(o)) return m >= cue.at ? RC.red : RC.yellow;
-        // Race / one colour: the count-in as the app's lights, the last field the flash's colour
-        return m >= cue.at ? flashColour(o, { limiter: false }, h, RC.red) : h.lightCol(o.lightStyle, h.P, clamp((m - cue.from) / (cue.at - cue.from), 0, 1));
-    };
+    const fl = flashOn(o, cue), flashCol = flashColour(o, cue, h, RC.red);
+    const meter = (f.readouts || []).filter((it) => it.bar)[0];
+    // with the meter under the band, the scale and everything under it 5 px lower
+    const dn = meter ? 5 : 0, sq = o.gearFont === 'square';
+    const D0 = RP.rt, D1 = RP.rt + RP.ft, GAP = 1.2;
     if (o.bar !== false || o.lights) {
         if (BG) {
-            for (let r = 0; r < max; r += step) {
-                if (o.dim) rSeg(cv, r, Math.min(max, r + step), max, withAlpha(RC.line, 0.12), 1.2);
-                rSeg(cv, r, Math.min(max, r + step), max, withAlpha(RC.line, 0.75), 1.2, 1.3);
+            // the rail, its notches and the V at each end
+            rStrip(cv, 0, RPATH.all, 0, RP.rt, RC.line);
+            for (let r = 1000; r < max; r += 1000) rTick(cv, rS(r, max), RP.rt - 0.5, RP.rt + 4, 1.5, RC.line);
+            [0, RPATH.all].forEach((s) => {
+                const p = rAtS(s), tx = p[3], ty = -p[2], tip = off(p, RP.rt + 5);
+                cv.line(p[0] - tx * 2.5, p[1] - ty * 2.5, tip[0], tip[1], 1.4, RC.line);
+                cv.line(p[0] + tx * 2.5, p[1] + ty * 2.5, tip[0], tip[1], 1.4, RC.line);
+            });
+            if (o.dim) for (let r = 0; r < max; r += 1000) rStrip(cv, rS(r, max) + GAP, rS(Math.min(max, r + 1000), max) - GAP, D0, D1, withAlpha(RC.line, 0.12));
+            // the red zone: a thin red line inside the band from the redline, after a dash and a dot
+            const zs = rS(f.redline, max), zm = (D0 + D1) / 2;
+            if (zs < RPATH.all - 6) {
+                rStrip(cv, zs + 3, RPATH.all - 4, zm - 0.8, zm + 0.8, RC.red);
+                rStrip(cv, zs - 12, zs - 6, zm - 0.8, zm + 0.8, RC.line);
+                rStrip(cv, zs - 3.5, zs - 1.5, zm - 0.8, zm + 0.8, RC.line);
             }
-            // red zone: a strip over the band from the redline
-            const a = rAt(f.redline, max), b = rAt(max, max);
-            cv.fillRect(a[0] + RP.slant, a[1] - RP.t - 4, b[0] - a[0], 2.5, RC.red);
-            // ticks and the scale under the band
+            // the scale under the band; the 0 under the climb's start
             const lab = max <= 9000 ? 2000 : 3000;
-            for (let r = 0; r <= max; r += 1000) {
-                const p = rAt(r, max), big = r % lab === 0;
-                cv.line(p[0], p[1] + 1, p[0], p[1] + (big ? 5 : 3), 1.4, RC.line);
-                if (big) cv.text(String(r / 1000), p[0], p[1] + 17, 12, RC.text, { align: 'center', font: 'bold' });
+            for (let r = 0; r <= max; r += lab) {
+                const p = rAtS(rS(r, max)), x = r === 0 ? p[0] : p[0], y = r === 0 ? p[1] + 8 + dn : RP.ky + D1 + 4 + dn;
+                sqText(cv, String(r / 1000), x, y, 9, RC.text, 'center');
             }
         }
         if (fg && isNum(d.rpm) && d.rpm > 50) {
-            const top = Math.min(d.rpm, max);
-            // burst: the lit fields pop in the grade's colour for 300 ms
-            const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null;
-            for (let r = 0; r < top; r += step) {
-                const c = fl ? (f.blink ? flashCol : null) : pop || fieldCol(r);
-                if (c) rSeg(cv, r, Math.min(top, r + step), max, c, 1.2);
+            // the rpm: the band under the rail, split at the notches, a red sliver at its end
+            const top = Math.min(d.rpm, max), st = rS(top, max);
+            const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null, c = pop || RC.fill;
+            for (let r = 0; r < top; r += 1000) {
+                const a = rS(r, max) + (r > 0 ? GAP : 0), b = Math.min(st, rS(Math.min(max, r + 1000), max) - GAP);
+                if (b > a) rStrip(cv, a, b, D0, D1, c);
             }
+            if (st > 3) rStrip(cv, st - 2, st, D0, D1, RC.red);
         }
-        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) {
-            const pk = Math.min(f.peak, max), p = rAt(pk, max), t = rT(pk, max);
-            cv.line(p[0], p[1], p[0] + RP.slant * t / RP.t, p[1] - t, 2.2, '#ffffff');
-        }
+        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) rTick(cv, rS(Math.min(f.peak, max), max), D0, D1, 2.2, '#ffffff');
     }
-    // the power meter under the ramp (not in the list)
-    const meter = (f.readouts || []).filter((it) => it.bar)[0];
-    if (meter) rampMeter(cv, meter.bar, h.P, layer);
+    // the shift lights: hidden until the count-in, then lit left to right; unlit ones as outlines (Unlit: Dim)
+    if (fg && ((o.lights && isNum(d.rpm) && (d.rpm >= cue.from || cue.shift)) || cue.limiter)) {
+        const k = isNum(d.rpm) ? clamp((d.rpm - cue.from) / Math.max(1, cue.at - cue.from), 0, 1) : 0;
+        const lit = fl ? (f.blink ? RL.n : 0) : Math.max(1, Math.ceil(k * RL.n));
+        rBars.forEach((q, i) => {
+            const red = i >= RL.n - 2;
+            if (i < lit) {
+                const c = fl ? flashCol : !ownColours(o) ? (red ? RC.red : RC.yellow) : h.lightCol(o.lightStyle, h.P, i / (RL.n - 1));
+                cv.quad(q, c);
+            } else if (o.dim) cv.polyline(q.concat([q[0]]), 1, red ? withAlpha(RC.red, 0.6) : withAlpha(RC.line, 0.5));
+        });
+    }
+    if (meter) rampMeter(cv, meter.bar, h.P, layer, max);
     if (!fg) return;
-    const gx = 222, items = (f.readouts || []).filter((it) => !it.bar);
-    // with the meter under the band, everything below it 4 px lower (and the list's rows 1 px closer) so the gear,
-    // its mode letter and the list's first row keep a gap to it
-    const dn = meter ? 4 : 0, pitch = meter ? 25 : 26;
-    if (f.chip) ring(cv, gx, 74 + dn, 22, 58, f.chip, h.P);
+    const gx = 120, gy = 53 + dn, items = (f.readouts || []).filter((it) => !it.bar);
+    if (f.chip) ring(cv, gx, gy + 16, 20, 50, f.chip, h.P);
     // readouts 2-4: a list on the right, label left and value right
-    [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 284, 66 + dn + k * pitch, items[i], h.P, o, RC.text, 'row', 112); });
-    if (o.gear) cv.text(h.gearText(d), gx, 90 + dn, 44, cue.limiter && f.blink ? RC.red : RC.text, { align: 'center', font: h.gearFont(o) });
-    if (f.mode && o.gear) cv.text(f.mode, gx + 22, 66 + dn, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
-    cv.fillRect(gx - 30, 96 + dn, 60, 1.6, RC.text);
-    h.drawDown(cv, gx - 50, 62 + dn, f.down || 0, 1, h.P.arrow);
-    if (f.chip) grade(cv, gx, 124 + Math.min(dn, 3), f.chip, h.P, 22);
+    [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 262, 68 + dn + k * 21, items[i], h.P, o, RC.text, 'row', 132); });
+    const gearC = cue.limiter && f.blink ? RC.red : RC.text;
+    if (o.gear) {
+        if (sq) sqText(cv, h.gearText(d), gx, gy, 32, gearC, 'center');
+        else cv.text(h.gearText(d), gx, gy + 32, 42, gearC, { align: 'center', font: h.gearFont(o) });
+    }
+    if (f.mode && o.gear) cv.text(f.mode, gx + 18, gy + 11, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
+    cv.fillRect(gx - 48, gy + 36, 80, 1.6, RC.text);
+    h.drawDown(cv, gx + 58, gy + 6, f.down || 0, 1, h.P.arrow);
+    if (f.chip) grade(cv, gx, gy + 62, f.chip, h.P, 22);
     else {
         const it = items[0];
         if (it) {
-            cv.text(it.value, gx, 124 + Math.min(dn, 3), 24, toneCol(it, h.P, RC.text), { align: 'center', font: o.valFont || 'bold' });
-            fitLabel(cv, it.label.toLowerCase(), gx + 32, 102 + dn, labelOf(o, RC.text).s, RC.text, 284 - gx - 36, { spacing: 0 });
+            const vc = toneCol(it, h.P, RC.text);
+            if (sq) sqText(cv, it.value, gx - 8, gy + 41, 20, vc, 'center');
+            else cv.text(it.value, gx - 8, gy + 62, 22, vc, { align: 'center', font: o.valFont || 'bold' });
+            fitLabel(cv, it.label.toLowerCase(), gx + 35, gy + 40, labelOf(o, RC.text).s, RC.text, 262 - gx - 40, { spacing: 0 });
         }
     }
 }
