@@ -673,6 +673,24 @@ each shift is not logged at all.
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.
 
+### Shift values for other apps (`/dev/shm/redline/shift.json`)
+
+While the car is live (never on the demo drive) Redline writes its shift values for other apps on the head unit,
+so they needn't copy its scoring (bimmer-lab's HUD Widgets reads them, [bimmer-lab/apps#4](https://github.com/bimmer-lab/apps/issues/4)):
+
+```json
+{ "v": 1, "t": 1793560000000, "redline": 6550, "shiftPoints": { "1": 6200, "2": 6250, "3": 6300 },
+  "gear": 2, "shiftNow": 6250, "cold": false, "leadMs": 240, "mode": "M",
+  "lastShift": { "at": 1793559998000, "from": 2, "to": 3, "rpm": 6280, "target": 6250, "verdict": "SPOT ON" } }
+```
+
+`t` is when it was written (ms); a reader treats it as stale after a few seconds (Redline isn't running).
+`shiftPoints` has gears 1-8 (learned, else the redline less *Shift point before redline*), `shiftNow` is the
+current gear's point (lowered while the oil is cold: `cold`), `leadMs` the reaction lead, `mode` the gearbox
+programme (D / S / M, or null). It is written about once a second and at each shift, to a temp file renamed over
+it, so it's never read half-written; the folder is 0755 and the file 0644, readable by every app's user
+(`shareshift.js`).
+
 ### Logs on the screen (Settings → Logs)
 
 The last row of Settings, for when there's no SSH (a remote install). It shows the important lines, newest first:

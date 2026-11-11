@@ -75,6 +75,7 @@ jobs:
       - run: node kit/tools/test_redline_fuel.js
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js
+      - run: node kit/tools/test_redline_shareshift.js
       - run: node kit/tools/test_redline_meter_draw.js
       - run: node kit/tools/test_redline_meter_m.js
       - run: node kit/tools/test_redline_hud_cache.js
@@ -115,6 +116,7 @@ jobs:
       - run: node kit/tools/test_redline_fuel.js
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js
+      - run: node kit/tools/test_redline_shareshift.js
       - run: node kit/tools/test_redline_meter_draw.js
       - run: node kit/tools/test_redline_meter_m.js
       - run: node kit/tools/test_redline_hud_cache.js

@@ -64,6 +64,7 @@ const HudTyres = require('./hud-tyres');
 const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
+const { ShiftShare } = require('./shareshift');
 const LogView = require('./logview');
 const Sheet = require('./kit/sheet');
 
@@ -287,6 +288,25 @@ mgu.run({
         const graded = (s) => s.verdict !== 'CRUISE' && s.verdict !== 'AUTO';
         const VCOL = { 'SPOT ON': GREEN, EARLY: YELLOW, LATE: '#ff8a1a', LIMITER: '#ff2a2a', 'COLD REV': '#3d8bff', CRUISE: '#8a8f98', AUTO: '#8a8f98' };
 
+        /*
+         * The live shift values for other apps (shareshift.js, /dev/shm/redline/shift.json; bimmer-lab/apps#4): about
+         * once a second, and at each shift (force). Never from the demo drive. Every gear 1-8 has a point (learned, or
+         * the redline less "Shift point before redline" until it is).
+         */
+        const shiftShare = new ShiftShare({ log });
+        function shareShift(force) {
+            const d = car.data();
+            if (d.demo) return;
+            const pts = {};
+            [1, 2, 3, 4, 5, 6, 7, 8].forEach((g) => { pts[g] = normalShift(g); });
+            const sp = G.isNum(d.gear) && d.gear > 0 ? shiftPoint(d.oil, d.gear) : null;
+            shiftShare.write({
+                redline: redline(), shiftPoints: pts, gear: G.isNum(d.gear) ? d.gear : null,
+                shiftNow: sp ? sp.rpm : null, cold: sp ? sp.cold : false, leadMs: hud ? hud.lead() : null, mode: modeNow(),
+                lastShift: lastShift ? { at: lastShift.at, from: lastShift.from, to: lastShift.to, rpm: lastShift.rpm, target: lastShift.target, verdict: lastShift.verdict } : null,
+            }, force);
+        }
+
         function recordShift(t, from, to) {
             const win = recent.filter((r) => t - r[0] < 600);
             const rpm = Math.max.apply(null, win.map((r) => r[1]));
@@ -298,6 +318,7 @@ mgu.run({
             shifts.unshift(lastShift);
             shifts = shifts.slice(0, 60);
             log.debug('shift ' + from + '->' + to + ' @' + lastShift.rpm + ' ' + lastShift.verdict);
+            shareShift(true);
         }
 
         car.onSample((d, t) => {
@@ -341,6 +362,7 @@ mgu.run({
                 if (hi > 3000 && d.rpm < hi * 0.82 && (!lastShift || Date.now() - lastShift.at > 800)) recordShift(t, '?', '?');
             }
             if (G.isNum(g)) lastGear = g;
+            shareShift(false);
         }, () => { recent.length = 0; lastGear = null; screenCue = null; Object.keys(cueState).forEach((k) => { delete cueState[k]; }); });
 
         /* ---------- rev bar geometry + static background (cached) ---------- */
