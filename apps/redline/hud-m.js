@@ -374,7 +374,15 @@ function rRail(cv, max, c) {
     rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
 /**
- * The band from s0 to s1 (the revs; the needle the same way), split at each mark; its top keeps the gap to the rail
+ * The needle from s0 to s1: one bar down to the band's bottom, its top following the band's (the gap to the rail, and
+ * cut down round a tab as the band is), never split or moved: under a tab it is simply shorter.
+ */
+function rNeedle(cv, s0, s1, max, c) {
+    const ms = rMarks(max), D1 = RP.rt + RP.ft;
+    rShape(cv, rSamples(ms, s0, s1), (v) => Math.min(D1 - 0.5, RD.rt + RD.gap + rTabGap(ms, v)), () => D1, c);
+}
+/**
+ * The band from s0 to s1 (the revs), split at each mark; its top keeps the gap to the rail
  * and round each tab, so nothing drawn with it touches the rail or a tab.
  */
 function rBand(cv, s0, s1, max, c) {
@@ -510,15 +518,8 @@ function drawRamp(cv, f, layer, h) {
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null, c = pop || RC.fill;
             // the needle: a red bar the band's own height, a dark hair's gap after the band's end (as on the G80)
             const NW = 2.4, NG = 1.0;
-            // (drawn as the band is, clear of the rail; where it would reach a tab it steps to the near side of it, so it
-            // stays one bar the band's height rather than two slivers either side of the split)
-            let e = st;
-            rMarks(max).forEach((m) => {
-                const z = reachOf(m) + RD.gap;
-                if (e > m.s - z && e - NW < m.s + z) e = e <= m.s ? m.s - z : Math.max(e, m.s + z + NW);
-            });
-            rBand(cv, 0, e - NW - NG, max, c);
-            if (e > NW) rBand(cv, e - NW, e, max, RC.red);
+            rBand(cv, 0, st - NW - NG, max, c);
+            if (st > NW) rNeedle(cv, st - NW, st, max, RC.red);
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) rTick(cv, rS(Math.min(f.peak, max), max), D0, D1, 2.2, '#ffffff');
     }
