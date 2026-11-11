@@ -4,7 +4,6 @@
   "version": "2.1.11",
   "title": "GPU renderer",
   "description": "The apps' own GPU renderer (mgu-render): draws them at 60 fps, beside the MGU Store's Renderer; installed with the apps",
-  "mguProvides": "renderer",
   "mguHmi": ["ID7"],
   "optional": true,
   "uninstallable": true,
