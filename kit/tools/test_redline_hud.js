@@ -432,6 +432,27 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         let any = 0; for (let y = 2; y < 20; y++) for (let x = 121; x < 372; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) any++;
         ok(any === 0, 'ramp: HUD lights Off hides the bars');
     }
+    // Ramp's needle (2.0.32): one bar at every rpm, under a tab simply shorter, never in pieces (2x, around each mark)
+    {
+        const ro = Object.assign({}, Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })), { lights: false });
+        const K = 2, W = Draw.IW * K, H = Draw.IH * K, bad = [];
+        const isRed = (d, i) => d[i + 3] > 200 && d[i] > 200 && d[i + 1] < 110 && d[i + 2] < 110;
+        for (let mark = 1000; mark <= 6000; mark += 1000) for (let rpm = mark - 120; rpm <= mark + 120; rpm += 8) {
+            const cv = new Canvas(W, H);
+            Draw.drawLayer(Draw.scaled(cv, K, 0, 0), { d: { rpm: rpm, gear: 3, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: true,
+                cue: { from: 9000, at: 9500, shift: false, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: ro }, 'fg');
+            const red = new Uint8Array(W * H); let first = -1, count = 0;
+            for (let i = 0; i < W * H; i++) if (isRed(cv.d, i * 4)) { red[i] = 1; count++; if (first < 0) first = i; }
+            if (!count) { bad.push(rpm + ' none'); continue; }
+            const seen = new Uint8Array(W * H), st = [first]; seen[first] = 1; let got = 0;
+            while (st.length) {
+                const p = st.pop(), x = p % W, y = (p / W) | 0; got++;
+                [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach((q) => { const nx = x + q[0], ny = y + q[1], k = ny * W + nx; if (nx >= 0 && nx < W && ny >= 0 && ny < H && red[k] && !seen[k]) { seen[k] = 1; st.push(k); } });
+            }
+            if (got !== count) bad.push(String(rpm));
+        }
+        ok(bad.length === 0, 'ramp: the needle is one bar either side of every mark (in pieces at: ' + bad.slice(0, 8).join(', ') + ')');
+    }
     // placement and the windshield's window
     const at = (o) => Hud.placeOf(settingsOf(o));
     ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');

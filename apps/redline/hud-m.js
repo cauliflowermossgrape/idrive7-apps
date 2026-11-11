@@ -374,12 +374,16 @@ function rRail(cv, max, c) {
     rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
 /**
- * The needle from s0 to s1: one bar down to the band's bottom, its top following the band's (the gap to the rail, and
- * cut down round a tab as the band is), never split or moved: under a tab it is simply shorter.
+ * The needle from s0 to s1: one bar down to the band's bottom, cut down by one amount to keep the band's gap to the rail
+ * and to any tab it reaches (the lowest the band's top goes anywhere across its width). So under a tab it is simply
+ * shorter, never moved and never in pieces (a top that stepped across its width left a thin wedge that read as two).
  */
 function rNeedle(cv, s0, s1, max, c) {
     const ms = rMarks(max), D1 = RP.rt + RP.ft;
-    rShape(cv, rSamples(ms, s0, s1), (v) => Math.min(D1 - 0.5, RD.rt + RD.gap + rTabGap(ms, v)), () => D1, c);
+    let t = 0;
+    for (let v = s0; v <= s1 + 1e-6; v += 0.2) t = Math.max(t, rTabGap(ms, v));
+    const top = Math.min(D1 - 1, RD.rt + RD.gap + t);
+    rShape(cv, rSamples([], s0, s1), () => top, () => D1, c);
 }
 /**
  * The band from s0 to s1 (the revs), split at each mark; its top keeps the gap to the rail
