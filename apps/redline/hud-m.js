@@ -484,13 +484,13 @@ function drawRamp(cv, f, layer, h) {
     // the gauge: Rev bar off leaves the lights and the gear (the lights are their own row since 2.0.21)
     if (o.bar !== false) {
         if (BG) {
-            // the red zone first, so the rail's tabs lie over it: a dash and a dot, then a thin red line from the redline
+            // the red zone first, so the rail's tabs lie over it: a yellow dash and dot (the warning), then a thin red line from the redline
             // on under the marks into the 8's cup
             const zs = rS(f.redline, max), zm = D0 + 2;
             if (zs < RPATH.all - 6) {
                 rStrip(cv, zs + 3, RPATH.all - RD.endIn - RD.endVw - 0.3, zm - 0.8, zm + 0.8, RC.red);
-                rStrip(cv, zs - 12, zs - 6, zm - 0.8, zm + 0.8, RC.line);
-                rStrip(cv, zs - 3.5, zs - 1.5, zm - 0.8, zm + 0.8, RC.line);
+                rStrip(cv, zs - 12, zs - 6, zm - 0.8, zm + 0.8, RC.yellow);
+                rStrip(cv, zs - 3.5, zs - 1.5, zm - 0.8, zm + 0.8, RC.yellow);
             }
             // the rail with its tabs, V's and end cups; under it nothing until the revs reach it (clear, as on the G80)
             rRail(cv, max, RC.line);
