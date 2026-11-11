@@ -82,9 +82,11 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
   1000 rpm, ending in a yellow then red zone; the gear big under it. Readouts: the first beside the
   gear, two more at the far right, a fourth high on the left.
 - **Ramp** (after the G80 / G82 M3 and M4, redrawn in 2.0.21 from a video of the car's HUD): a thick
-  rail climbs from the 0 at the bottom left, bends round at the 2 and runs flat to the 8, a notch
-  under it every 1000 rpm. The revs hang under the rail as a warm white band up to a red sliver; past
-  them only the rail shows. A thin red line inside the band marks the redline. Over the flat part 8
+  rail climbs from the 0 at the bottom left, bends round at the 2 and runs flat to the 8. A small
+  rounded tab hangs from it every 1000 rpm, with a V cut into the rail over the numbered ones (0, 2,
+  4, 6, 8) and each end an open cup. The revs hang under the rail as a warm white band up to a red
+  sliver, a hairline gap wrapping each tab and splitting the band under it; past the revs the gauge
+  is clear, only the rail. A thin red line inside the band marks the redline. Over the flat part 8
   slanted shift lights (6 yellow, 1 red, then a wide red one) appear with the count-in, light left to
   right and flash red at the shift. Squared digits for the scale, the gear and the first readout,
   which sits under a line beneath the gear (where the car shows the speed); the others are listed on

@@ -507,6 +507,8 @@ function scaled(r, k, ox, oy) {
         fillRect: (x, y, w, h, c) => r.fillRect(X(x), Y(y), w * k, h * k, c),
         quad: (pts, c) => r.quad(P(pts), c),
         polyline: (pts, w, c) => r.polyline(P(pts), w * k, c),
+        // a path with round joins (Ramp's rail); a plain polyline where the canvas has no stroke
+        stroke: (pts, w, c) => (r.stroke ? r.stroke(P(pts), w * k, c) : r.polyline(P(pts), w * k, c)),
         line: (xa, ya, xb, yb, w, c) => r.line(X(xa), Y(ya), X(xb), Y(yb), w * k, c),
         text: (s, x, y, size, c, o) => r.text(s, X(x), Y(y), size * k, c, o && o.spacing ? Object.assign({}, o, { spacing: o.spacing * k }) : o),
         roundRect: (x, y, w, h, rad, c) => r.roundRect(X(x), Y(y), w * k, h * k, rad * k, c),

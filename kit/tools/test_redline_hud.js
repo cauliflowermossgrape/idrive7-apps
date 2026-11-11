@@ -415,9 +415,9 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
             const cv = new Canvas(Draw.IW, Draw.IH);
             Draw.drawLayer(cv, { d: { rpm: rpm, gear: 3, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: blink !== false,
                 cue: { from: 4800, at: 6400, shift: !!shift, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: ro }, 'fg');
-            // each bar's middle: x from 136 to 372, the last twice as wide; y 11
-            const unit = (372 - 136 - 10 - 7 * 3) / 9, out = [];
-            for (let i = 0, x = 136; i < 8; i++) { const w = i === 7 ? 2 * unit : unit; const px = Math.round(x + w / 2 + 5), o = (11 * cv.w + px) * 4;
+            // each bar's middle: x from 121 to 372, the last twice as wide; y 11
+            const unit = (372 - 121 - 10 - 7 * 3) / 9, out = [];
+            for (let i = 0, x = 121; i < 8; i++) { const w = i === 7 ? 2 * unit : unit; const px = Math.round(x + w / 2 + 5), o = (11 * cv.w + px) * 4;
                 out.push(cv.d[o + 3] < 128 ? '.' : cv.d[o] > 200 && cv.d[o + 1] < 120 ? 'R' : cv.d[o] > 200 && cv.d[o + 1] > 180 && cv.d[o + 2] < 140 ? 'Y' : '?'); x += w + 3; }
             return out.join('');
         };
@@ -429,7 +429,7 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         ok(bar(6500, true, true) === 'RRRRRRRR' && bar(6500, true, false) === '........', 'ramp: all red at the shift, flashing (' + bar(6500, true, true) + ' / ' + bar(6500, true, false) + ')');
         const noLights = Object.assign({}, ro, { lights: false }), cv = new Canvas(Draw.IW, Draw.IH);
         Draw.drawLayer(cv, { d: { rpm: 6400, gear: 3, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: true, cue: { from: 4800, at: 6400, shift: false, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: noLights }, 'fg');
-        let any = 0; for (let y = 2; y < 20; y++) for (let x = 136; x < 372; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) any++;
+        let any = 0; for (let y = 2; y < 20; y++) for (let x = 121; x < 372; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) any++;
         ok(any === 0, 'ramp: HUD lights Off hides the bars');
     }
     // placement and the windshield's window
