@@ -432,7 +432,7 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         let any = 0; for (let y = 2; y < 20; y++) for (let x = 121; x < 372; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) any++;
         ok(any === 0, 'ramp: HUD lights Off hides the bars');
     }
-    // Ramp's needle (2.0.32): one bar at every rpm, under a tab simply shorter, never in pieces (2x, around each mark)
+    // Ramp's needle (2.0.33): one bar at every rpm, its top easing under a tab, never in pieces (2x, around each mark)
     {
         const ro = Object.assign({}, Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })), { lights: false });
         const K = 2, W = Draw.IW * K, H = Draw.IH * K, bad = [];
@@ -444,12 +444,17 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
             const red = new Uint8Array(W * H); let first = -1, count = 0;
             for (let i = 0; i < W * H; i++) if (isRed(cv.d, i * 4)) { red[i] = 1; count++; if (first < 0) first = i; }
             if (!count) { bad.push(rpm + ' none'); continue; }
-            const seen = new Uint8Array(W * H), st = [first]; seen[first] = 1; let got = 0;
-            while (st.length) {
-                const p = st.pop(), x = p % W, y = (p / W) | 0; got++;
-                [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach((q) => { const nx = x + q[0], ny = y + q[1], k = ny * W + nx; if (nx >= 0 && nx < W && ny >= 0 && ny < H && red[k] && !seen[k]) { seen[k] = 1; st.push(k); } });
+            // pieces: 8-connected, a speck under 2 px (an anti-aliased corner pixel) not counted
+            const seen = new Uint8Array(W * H); let blobs = 0;
+            for (let i = 0; i < W * H; i++) if (red[i] && !seen[i]) {
+                const st = [i]; seen[i] = 1; let got = 0;
+                while (st.length) {
+                    const p = st.pop(), x = p % W, y = (p / W) | 0; got++;
+                    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy, k = ny * W + nx; if (nx >= 0 && nx < W && ny >= 0 && ny < H && red[k] && !seen[k]) { seen[k] = 1; st.push(k); } }
+                }
+                if (got >= 2) blobs++;
             }
-            if (got !== count) bad.push(String(rpm));
+            if (blobs !== 1) bad.push(String(rpm));
         }
         ok(bad.length === 0, 'ramp: the needle is one bar either side of every mark (in pieces at: ' + bad.slice(0, 8).join(', ') + ')');
     }

@@ -374,16 +374,29 @@ function rRail(cv, max, c) {
     rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
 /**
- * The needle from s0 to s1: one bar down to the band's bottom, cut down by one amount to keep the band's gap to the rail
- * and to any tab it reaches (the lowest the band's top goes anywhere across its width). So under a tab it is simply
- * shorter, never moved and never in pieces (a top that stepped across its width left a thin wedge that read as two).
+ * The needle from s0 to s1: one bar down to the band's bottom whose top follows a smooth curve round each tab: full
+ * depth (the tab's and the gap's) within the band's own clearance of it, easing back up over NEEDLE_EASE px either side
+ * (smoothstep, gentle: across its 2.4 px the top never drops much, so no thin spike). Always at or below the band's
+ * top, so it never touches the rail or a tab; and with no vertical step in
+ * it, no hair-thin sliver is left at full height beside a tab (that read as the needle in two pieces). As the revs
+ * move it glides under a tab: shorter, then taller again, never moved.
  */
+const NEEDLE_EASE = 8;
+function rNeedleTop(ms, v) {
+    let d = 0;
+    ms.forEach((m) => {
+        const z = reachOf(m) + RD.gap, deep = RD.td + RD.gap, a = Math.abs(v - m.s);
+        if (a >= z + NEEDLE_EASE) return;
+        const x = a <= z ? 1 : 1 - (a - z) / NEEDLE_EASE;
+        d = Math.max(d, deep * x * x * (3 - 2 * x));
+    });
+    return RD.rt + RD.gap + d;
+}
 function rNeedle(cv, s0, s1, max, c) {
-    const ms = rMarks(max), D1 = RP.rt + RP.ft;
-    let t = 0;
-    for (let v = s0; v <= s1 + 1e-6; v += 0.2) t = Math.max(t, rTabGap(ms, v));
-    const top = Math.min(D1 - 1, RD.rt + RD.gap + t);
-    rShape(cv, rSamples([], s0, s1), () => top, () => D1, c);
+    const ms = rMarks(max), D1 = RP.rt + RP.ft, ss = [];
+    for (let v = s0; v < s1; v += 0.2) ss.push(v);
+    ss.push(s1);
+    rShape(cv, ss, (v) => Math.min(D1 - 1, rNeedleTop(ms, v)), () => D1, c);
 }
 /**
  * The band from s0 to s1 (the revs), split at each mark; its top keeps the gap to the rail
