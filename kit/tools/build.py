@@ -317,6 +317,74 @@ def manifest_for(spec):
     return {'proxies': proxies, 'services': PLATFORM_SERVICES}
 
 
+# The interface catalog BMW's installer checks an app's SOME/IP manifest against (on iDrive 7). The Store builds our
+# apps on the head unit itself, where it is; elsewhere (a PC build) there is none and nothing is taken out.
+UNIT_CATALOG = os.environ.get('MGU_SOMEIP_CATALOG', '/etc/oap/someip/someip-interfaces.json')
+
+
+def fit_to_unit(manifest, spec, catalog=None):
+    """Takes out of manifest (in place) what this unit's interface catalog lacks, so BMW's installer accepts the app:
+    BMW's generator refuses the whole app for one field, method or broadcast its firmware's version of an interface
+    doesn't have (issue #145: "Requested field 'statusBattery2' not found in interface CDS"). Missing fields,
+    methods and broadcasts of any interface go; an interface the unit lacks altogether goes when app.json marks it
+    "_optional" (any other is left for the Store, which drops it, or the installer, which says so). An interface
+    left with nothing to use goes too. Returns {what is missing: what the app loses}, for kit/missing-interfaces.json;
+    {} without a catalog."""
+    path = catalog or UNIT_CATALOG
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding='utf-8') as f:
+            have = json.load(f).get('interfaces')
+    except (OSError, ValueError, AttributeError):
+        return {}
+    if not isinstance(have, dict) or not have:
+        return {}
+    signals = spec.get('signals', {})
+    reason = {i: f.get('_optional') for i, f in signals.items() if isinstance(f, dict) and f.get('_optional')}
+    proxies = manifest['proxies']
+    missing = {}
+
+    def names(x):
+        if isinstance(x, dict):
+            return set(x)
+        return {e.get('name') for e in (x or []) if isinstance(e, dict)}
+
+    for iface in list(signals):
+        entry = proxies.get(iface)
+        if entry is None:
+            continue
+        unit = have.get(iface)
+        if not isinstance(unit, dict):
+            if iface in reason:
+                del proxies[iface]
+                missing[iface] = reason[iface]
+            continue
+        if not isinstance(entry, dict):
+            continue
+        gone = []
+        for key, part in (('attributes', 'fields'), ('methods', 'methods'), ('broadcasts', 'events')):
+            asked = entry.get(key)
+            if not asked:
+                continue
+            known = names(unit.get(part))
+            lost = [n for n in asked if n not in known]
+            if not lost:
+                continue
+            gone += lost
+            if isinstance(asked, dict):
+                entry[key] = {n: v for n, v in asked.items() if n in known}
+            else:
+                entry[key] = [n for n in asked if n in known]
+            if not entry[key]:
+                del entry[key]
+        if gone:
+            missing[iface + ': ' + ', '.join(gone)] = reason.get(iface) or 'these signals'
+            if not any(entry.get(k) for k in ('attributes', 'methods', 'broadcasts')):
+                del proxies[iface]
+    return missing
+
+
 def make_icon(spec, out):
     src = os.path.join(APPS, spec['id'], 'icon.png')
     if os.path.exists(src):
@@ -418,6 +486,9 @@ def build(app_id, language='en', preview_only=False):
     os.makedirs(os.path.join(src, 'node_modules', 'oap-sdk'))
 
     manifest = manifest_for(json.loads(json.dumps(spec)))
+    missing = fit_to_unit(manifest, spec)
+    for what, loses in missing.items():
+        print('  this unit has no %s - built without it: %s' % (what, loses))
     xml, uidesc, strings, state_ids = build_ui(spec, language)
     unicode_resources(uidesc, strings, language)
     for lang, tbl in spec.get('strings', {}).items():
@@ -481,6 +552,9 @@ def build(app_id, language='en', preview_only=False):
             shutil.copytree(p, os.path.join(src, 'javascript', 'kit', f))
         else:
             shutil.copy(p, os.path.join(src, 'javascript', 'kit', f))
+    if missing:
+        # what fit_to_unit took out: the app logs it at each start (kit/runtime/mgu.js)
+        json.dump(missing, open(os.path.join(src, 'javascript', 'kit', 'missing-interfaces.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
     if app_id != 'redline':
         # Barlow is only the gear on Redline's HUD layouts: other apps don't carry its atlas
         for name in ('gear_barlow.json', 'OFL-Barlow.txt'):
