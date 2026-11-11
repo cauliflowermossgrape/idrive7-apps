@@ -324,22 +324,27 @@ UNIT_CATALOG = os.environ.get('MGU_SOMEIP_CATALOG', '/etc/oap/someip/someip-inte
 
 def fit_to_unit(manifest, spec, catalog=None):
     """Takes out of manifest (in place) what this unit's interface catalog lacks, so BMW's installer accepts the app:
-    BMW's generator refuses the whole app for one field, method or broadcast its firmware's version of an interface
-    doesn't have (issue #145: "Requested field 'statusBattery2' not found in interface CDS"). Missing fields,
-    methods and broadcasts of any interface go; an interface the unit lacks altogether goes when app.json marks it
-    "_optional" (any other is left for the Store, which drops it, or the installer, which says so). An interface
-    left with nothing to use goes too. Returns {what is missing: what the app loses}, for kit/missing-interfaces.json;
+    BMW's generator refuses the whole app for one field, method, broadcast or instance its firmware's version of an
+    interface doesn't have, or a field asked for with an access it lacks (issue #145: "Requested field
+    'statusBattery2' not found in interface CDS", "Requested read for statusBattery2 but no getter available").
+    Of any interface: missing fields, methods, broadcasts and instances go, and a field's r / s / w goes without
+    its getter / notifier / setter (the field with none left). An interface the unit lacks altogether goes when
+    app.json marks it "_optional" (any other is left for the Store, which drops it, or the installer, which says
+    so). An interface left with nothing to use, or with no instance, goes too. Returns {what is missing: what the app loses}, for kit/missing-interfaces.json;
     {} without a catalog."""
     path = catalog or UNIT_CATALOG
     if not os.path.isfile(path):
         return {}
     try:
         with open(path, encoding='utf-8') as f:
-            have = json.load(f).get('interfaces')
+            db = json.load(f)
+        have, instance_ids = db.get('interfaces'), db.get('instanceIDs')
     except (OSError, ValueError, AttributeError):
         return {}
     if not isinstance(have, dict) or not have:
         return {}
+    if not isinstance(instance_ids, dict):
+        instance_ids = None
     signals = spec.get('signals', {})
     reason = {i: f.get('_optional') for i, f in signals.items() if isinstance(f, dict) and f.get('_optional')}
     proxies = manifest['proxies']
@@ -363,6 +368,37 @@ def fit_to_unit(manifest, spec, catalog=None):
         if not isinstance(entry, dict):
             continue
         gone = []
+        # instances by name ('*' and the app's own '${userId}' are not looked up)
+        inst = entry.get('instances')
+        if instance_ids is not None and inst not in (None, '*'):
+            known_inst = instance_ids.get(iface)
+            asked = inst if isinstance(inst, list) else [inst]
+            lost = [n for n in asked if '${' not in str(n) and not (isinstance(known_inst, dict) and known_inst.get(str(n)))]
+            if lost:
+                gone += ['instance ' + str(n) for n in lost]
+                keep = [n for n in asked if n not in lost]
+                if not keep:
+                    del proxies[iface]
+                    missing[iface + ': ' + ', '.join(gone)] = reason.get(iface) or 'these signals'
+                    continue
+                entry['instances'] = keep if isinstance(inst, list) else keep[0]
+        # a field's access: r needs its getter, s its notifier, w its setter
+        attrs = entry.get('attributes')
+        if isinstance(attrs, dict):
+            fields = unit.get('fields') if isinstance(unit.get('fields'), dict) else {}
+            for n, mode in list(attrs.items()):
+                f = fields.get(n)
+                if not isinstance(f, dict) or not isinstance(mode, str):
+                    continue
+                left = ''.join(c for c in mode if {'r': 'getter', 's': 'notifier', 'w': 'setter'}.get(c, '') in f or c not in 'rsw')
+                if left != mode:
+                    gone.append('%s (%s)' % (n, ''.join(c for c in mode if c not in left)))
+                    if left:
+                        attrs[n] = left
+                    else:
+                        del attrs[n]
+            if not attrs:
+                del entry['attributes']
         for key, part in (('attributes', 'fields'), ('methods', 'methods'), ('broadcasts', 'events')):
             asked = entry.get(key)
             if not asked:

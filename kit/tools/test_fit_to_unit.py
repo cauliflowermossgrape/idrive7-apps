@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """build.py fit_to_unit: what a unit's interface catalog lacks is taken out of an app's SOME/IP manifest, so BMW's
-installer accepts the app (issue #145). A missing field, method or broadcast of any interface goes; a missing interface
-only when app.json marks it "_optional"; an interface left with nothing goes; the platform's own proxies stay; no
-catalog, nothing changes.
+installer accepts the app (issue #145). A missing field, method, broadcast or instance of any interface goes, and a
+field's r / s / w without its getter / notifier / setter; a missing interface only when app.json marks it "_optional";
+an interface left with nothing goes; the platform's own proxies stay; no catalog, nothing changes.
     python3 kit/tools/test_fit_to_unit.py
 """
 import json, os, sys, tempfile
@@ -22,7 +22,9 @@ def ok(cond, msg):
 
 
 spec = {'id': 't', 'signals': {
-    'de.bmw.infotainment.vehicle.CDS': {'statusEngineSpeed2': 'rs', 'statusBattery2': 'rs'},
+    'de.bmw.infotainment.vehicle.CDS': {'statusEngineSpeed2': 'rs', 'statusBattery2': 'rs', 'readOnly': 'rs', 'noRead': 'r', 'setIt': 'rw'},
+    'de.bmw.infotainment.vehicle.TPMS': {'_optional': 'tyres', '_instances': ['1', 'Gone'], 'pressure': 'rs'},
+    'de.bmw.infotainment.a4a.carplay.CarPlayManager': {'_optional': 'CarPlay guiding', '_instances': 'CarPlayManagerInst1', 'state': 'rs'},
     'de.bmw.infotainment.drivingexcitement.Efficiencytainment2': {'_optional': 'the power meter', 'displayPowerDrive2': 'rs'},
     'de.bmw.infotainment.navigation.guiding.GuidanceEventList': {'_optional': 'the phone\'s turns', '_instances': 'Main_Instance',
                                                                  '_methods': ['queryContent', 'gone'], '_broadcasts': ['changed']},
@@ -31,9 +33,16 @@ spec = {'id': 't', 'signals': {
 }}
 catalog = {'interfaces': {
     # fields as BMW's catalog has them (a map by name); methods and events too
-    'de.bmw.infotainment.vehicle.CDS': {'fields': {'statusEngineSpeed2': {}}, 'methods': {}, 'events': {}},
-    'de.bmw.infotainment.drivingexcitement.Efficiencytainment2': {'fields': {'other': {}}},
+    'de.bmw.infotainment.vehicle.CDS': {'fields': {'statusEngineSpeed2': {'getter': {}, 'notifier': {}}, 'readOnly': {'getter': {}},
+                                                   'noRead': {'notifier': {}}, 'setIt': {'getter': {}}}, 'methods': {}, 'events': {}},
+    'de.bmw.infotainment.drivingexcitement.Efficiencytainment2': {'fields': {'other': {'getter': {}}}},
     'de.bmw.infotainment.navigation.guiding.GuidanceEventList': {'fields': {}, 'methods': {'queryContent': {}}, 'events': {'changed': {}}},
+    'de.bmw.infotainment.vehicle.TPMS': {'fields': {'pressure': {'getter': {}, 'notifier': {}}}},
+    'de.bmw.infotainment.a4a.carplay.CarPlayManager': {'fields': {'state': {'getter': {}, 'notifier': {}}}},
+}, 'instanceIDs': {
+    'de.bmw.infotainment.vehicle.CDS': {'1': 1}, 'de.bmw.infotainment.drivingexcitement.Efficiencytainment2': {'1': 1},
+    'de.bmw.infotainment.navigation.guiding.GuidanceEventList': {'Main_Instance': 1}, 'de.bmw.infotainment.vehicle.TPMS': {'1': 1},
+    'de.bmw.infotainment.a4a.carplay.CarPlayManager': {'OtherInst': 1},
 }}
 
 with tempfile.TemporaryDirectory() as d:
@@ -44,8 +53,15 @@ with tempfile.TemporaryDirectory() as d:
     platform = json.dumps({k: m['proxies'][k] for k in build.PLATFORM_PROXIES})
     missing = build.fit_to_unit(m, spec, cat)
     p = m['proxies']
-    ok(p['de.bmw.infotainment.vehicle.CDS']['attributes'] == {'statusEngineSpeed2': 'rs'}, 'a missing field goes, the rest stay')
-    ok(missing.get('de.bmw.infotainment.vehicle.CDS: statusBattery2') == 'these signals', 'a required interface\'s missing field is said')
+    ok(p['de.bmw.infotainment.vehicle.CDS']['attributes'] == {'statusEngineSpeed2': 'rs', 'readOnly': 'r', 'setIt': 'r'},
+       'a missing field goes; s without a notifier, w without a setter go; a field with no access left goes; the rest stay')
+    cds = [k for k in missing if k.startswith('de.bmw.infotainment.vehicle.CDS')]
+    ok(len(cds) == 1 and all(x in cds[0] for x in ('statusBattery2', 'readOnly (s)', 'noRead (r)', 'setIt (w)')), 'what went is said: ' + str(cds))
+    ok(p['de.bmw.infotainment.vehicle.TPMS']['instances'] == ['1'] and any('instance Gone' in k for k in missing), 'a missing instance goes')
+    ok('de.bmw.infotainment.a4a.carplay.CarPlayManager' not in p and
+       missing.get('de.bmw.infotainment.a4a.carplay.CarPlayManager: instance CarPlayManagerInst1') == 'CarPlay guiding',
+       'an interface left with no instance goes')
+    ok(len(cds) == 1 and missing[cds[0]] == 'these signals', 'a required interface\'s losses are said as "these signals"')
     ok('de.bmw.infotainment.drivingexcitement.Efficiencytainment2' not in p and
        missing.get('de.bmw.infotainment.drivingexcitement.Efficiencytainment2: displayPowerDrive2') == 'the power meter',
        'an interface left with nothing goes, with what the app loses')
