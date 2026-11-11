@@ -68,26 +68,27 @@ const mostly = (cols, col) => cols.length > 0 && cols.filter((c) => isCol(c, col
     ok(same(layer(frame(st, [Object.assign({ wide: true }, BO), OIL]), l), layer(frame(st, [BO, OIL]), l)), st + ' ' + l + ': wide without a bar changes nothing');
 }));
 
-/* ---------- ramp: the meter under the band, the ramp's shape (2026-11-10 sketch) ---------- */
+/* ---------- ramp: the meter a strip under the band, the rail's shape (2026-11-10 sketch; 2.0.21 redraw) ---------- */
 {
     // the list draws as if the power item weren't there (it takes no place in it)
     {
         const a = layer(frame('ramp', [BO, pw(-20), OIL]), 'bg'), b = layer(frame('ramp', [BO, OIL]), 'bg');
         const d = diff(a, b, 0, 129);
-        ok(d.n > 0 && d.maxX <= 375, 'ramp bg: only the meter track differs (x ' + d.minX + '..' + d.maxX + ')');
-        // fg: the gear and the list move 4 px down with the meter, clear of it
-        const top = (cv, x0, x1) => { for (let y = 0; y < cv.h; y++) for (let x = x0; x < x1; x++) if (y > 58 - 10 && cv.d[(y * cv.w + x) * 4 + 3] > 128) return y; return -1; };
+        ok(d.n > 0 && d.maxX <= 380, 'ramp bg: only the meter track differs (x ' + d.minX + '..' + d.maxX + ')');
+        // fg: the gear and the list move 5 px down with the meter, clear of it
+        const top = (cv, x0, x1) => { for (let y = 0; y < cv.h; y++) for (let x = x0; x < x1; x++) if (y > 36 && cv.d[(y * cv.w + x) * 4 + 3] > 128) return y; return -1; };
         const fa = layer(frame('ramp', [BO, pw(0), OIL]), 'fg'), fb = layer(frame('ramp', [BO, OIL]), 'fg');
-        ok(top(fa, 284, 396) - top(fb, 284, 396) === 4 && top(fa, 196, 250) - top(fb, 196, 250) === 4, 'ramp fg: with the meter the list and the gear sit 4 px lower (' + top(fb, 284, 396) + ' -> ' + top(fa, 284, 396) + ')');
-        ok(top(fa, 196, 372) >= 59, 'ramp fg: a gap of 3 px or more under the meter (first row ' + top(fa, 196, 372) + ', meter ends at 56)');
+        ok(top(fa, 262, 396) - top(fb, 262, 396) === 5 && top(fa, 118, 134) - top(fb, 118, 134) === 5, 'ramp fg: with the meter the list and the gear sit 5 px lower (list ' + top(fb, 262, 396) + ' -> ' + top(fa, 262, 396) + ', gear ' + top(fb, 118, 134) + ' -> ' + top(fa, 118, 134) + ')');
+        ok(top(fa, 262, 372) >= 47, 'ramp fg: a gap under the meter (first row ' + top(fa, 262, 372) + ', meter ends at 43)');
     }
     const fill = (v) => diff(layer(frame('ramp', [BO, pw(v), OIL]), 'both'), layer(frame('ramp', [BO, pw(0), OIL]), 'both'), 0, 129);
     const rec = fill(-20), pwr = fill(40), full = fill(80), none = fill(0);
     ok(none.n === 0, 'ramp: 0 kW fills nothing');
-    ok(rec.n > 0 && rec.maxX <= 106 && rec.minX >= 60 && rec.cols.filter((c) => isCol(c, P.low)).length >= 20, 'ramp: -20 kW fills half way down the climb, green (x ' + rec.minX + '..' + rec.maxX + ')');
-    ok(pwr.n > 0 && pwr.minX >= 103 && pwr.maxX > 220 && pwr.maxX < 250 && mostly(pwr.cols, '#f4f1e6'), 'ramp: +40 kW fills half way along the flat (x ' + pwr.minX + '..' + pwr.maxX + ')');
-    ok(full.maxX >= 370 && mostly(full.cols, '#ffc21a'), 'ramp: +80 kW fills the flat to the end, yellow');
-    ok(fill(-100).minX >= 33 && fill(200).maxX <= 375, 'ramp: beyond lo / hi stays inside the track');
+    ok(rec.n > 0 && rec.maxX <= 116 && rec.minX >= 60 && rec.cols.filter((c) => isCol(c, P.low)).length >= 20, 'ramp: -20 kW fills half way down the climb, green (x ' + rec.minX + '..' + rec.maxX + ')');
+    ok(pwr.n > 0 && pwr.minX >= 90 && pwr.maxX > 220 && pwr.maxX < 250 && mostly(pwr.cols.filter((c) => c[3] > 200), '#f4f1e6'), 'ramp: +40 kW fills half way along the flat (x ' + pwr.minX + '..' + pwr.maxX + ')');
+    // (a 4 px strip: judged on its solid pixels, the edges are half blended)
+    ok(full.maxX >= 370 && mostly(full.cols.filter((c) => c[3] > 200), '#ffd84a'), 'ramp: +80 kW fills the flat to the end, yellow');
+    ok(fill(-100).minX >= 40 && fill(200).maxX <= 375, 'ramp: beyond lo / hi stays inside the track');
     ok(diff(layer(frame('ramp', [BO, pw(0), OIL]), 'bg'), layer(frame('ramp', [BO, OIL]), 'bg'), 0, 129).n > 0, 'ramp: the track and zero tick on the static layer');
 }
 

@@ -81,10 +81,16 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
   style* Race or one colour uses those instead) over a curved band with a white rim and a tick per
   1000 rpm, ending in a yellow then red zone; the gear big under it. Readouts: the first beside the
   gear, two more at the far right, a fourth high on the left.
-- **Ramp** (after the G80 / G82 M3 and M4): the band climbs from the bottom left, then runs flat
-  along the top in slanted fields, with a 0–8 scale under it. The fields fill warm white, turn
-  yellow as the shift nears and red at it; a red strip marks the redline. The gear sits over a line
-  with the first readout under it (where the car shows the speed) and the others listed on the right.
+- **Ramp** (after the G80 / G82 M3 and M4, redrawn in 2.0.21 from a video of the car's HUD): a thick
+  rail climbs from the 0 at the bottom left, bends round at the 2 and runs flat to the 8. A small
+  rounded tab hangs from it every 1000 rpm, with a V cut into the rail over the numbered ones (0, 2,
+  4, 6, 8) and each end an open cup. The revs hang under the rail as a warm white band up to a red
+  sliver, a hairline gap wrapping each tab and splitting the band under it; past the revs the gauge
+  is clear, only the rail. A thin red line inside the band marks the redline. Over the flat part 8
+  slanted shift lights (6 yellow, 1 red, then a wide red one) appear with the count-in, light left to
+  right and flash red at the shift. Squared digits for the scale, the gear and the first readout,
+  which sits under a line beneath the gear (where the car shows the speed); the others are listed on
+  the right.
 - **Dial** (after the E60 M5): a ¾ dial round the gear: yellow-green, then an orange advance
   warning field (the last 1000 rpm before the redline), then red. The gear and readouts are in the
   dial's orange; the first readout bottom right (where the car shows the speed).
@@ -98,8 +104,8 @@ Three layouts after BMW M's own head-up displays, in their colours (*Colours* do
 *Shift light style* (Settings) works on Arc, Ramp and Dial as on the other layouts: M is the cars' own colours,
 Race counts in green then red and flashes blue, one colour counts in white. With the HUD's *Shift
 lights* off they don't count in or flash for the shift (the limiter still flashes); GT3 and left to
-right make no difference here: Arc fills left to right like the F80, Ramp and Dial along their band.
-On Ramp and Dial the band is the shift lights too, so it stays with *Rev bar* off.
+right make no difference here: Arc and Ramp fill left to right like the cars, Dial along its band.
+On Dial the band is the shift lights too, so it stays with *Rev bar* off; on Ramp *Rev bar* off leaves the lights and the gear.
 
 On all three the shift grade takes the first readout's place; with *Burst* a ring grows from the gear
 (or the dial) and the lit band flashes the grade's colour. The whole band flashes red at the shift and
@@ -129,7 +135,7 @@ layer) was tried in 1.16 and left out, because of where the shader runs:
 So every layout is a picture. A GPU path would need shaders kept well inside what the cluster takes, made
 only while parked, and tested parked first.
 
-**Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc, Ramp and Dial, Ubuntu on the others),
+**Gear font** (*Gear font*): Auto (Barlow SemiBold on Arc and Dial, Redline's own squared digits on Ramp, Ubuntu on the others),
 Ubuntu or Barlow. Barlow (SIL Open Font License 1.1, `kit/runtime/fonts/OFL-Barlow.txt`) is the free
 font closest to the BMW Type digits these HUDs use; BMW's own font can't be shipped. A font that is
 missing falls back to Ubuntu.
@@ -254,7 +260,7 @@ below list them by what they do.
 | Setting | Values |
 |---|---|
 | Layout | Standard / Minimal / Split wings / 80s digital dash / VFD glow / Vector arcade / Arc / Ramp / Dial |
-| Gear font | Auto (Barlow on Arc, Ramp and Dial) / Ubuntu / Barlow |
+| Gear font | Auto (Barlow on Arc and Dial, squared on Ramp) / Ubuntu / Barlow |
 | Colours | Colour / Night amber / Ice white (not for VFD, Arc, Ramp or Dial, which have their own) |
 | Shift lights | GT3 (outside in, flash) / left to right / off |
 | Shift grade after each upshift | Burst / Simple / Off |
@@ -268,6 +274,7 @@ below list them by what they do.
 | Setting | Values |
 |---|---|
 | Gear | on / off |
+| Speed | off (default) / on: KM/H or MPH (Settings → Units → *Speed unit*) first in the readouts; on Ramp it sits under the gear like the G80's. Off by default as BMW's own HUD shows the speed |
 | RPM | on / off: a number in the readouts row; the 7-segment digits in the digital and VFD layouts |
 | RPM readout | Exact (to 10 rpm, default) / Steady (to 50 rpm) / Thousands (KRPM 4.5) |
 | Readouts refresh | 4 (default) / 10 / 20 a second. Faster sends more frames to the HUD while the numbers change (experimental) |
@@ -299,8 +306,8 @@ At most four readouts fit the row; past that the last one gives way.
 
 | Setting | Values |
 |---|---|
-| Size | 70–130 %, scaled about the top centre |
-| Position left / right, up / down | px (up as far as −120, so Minimal's lights can sit over BMW's own rev gauge); moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
+| Size | 40–130 %, scaled about the top centre |
+| Position left / right, up / down | px (left to −120, right to +280; up to −120, so Minimal's lights can sit over BMW's own rev gauge, down to +220, so a small tach fits the glass's bottom right corner); moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
 ### Directions (experimental)
@@ -392,10 +399,27 @@ glass's edge. Checked for every size and position the settings allow.
   BMW's direction card is hidden while Redline is on the HUD: [Directions](#directions-experimental).
 - When BMW shows a pop-up on the HUD (media, lists), cluster-render moves the tach aside. It
   comes back about 1.5 s after the pop-up goes. Redline pauses drawing in the meantime.
-- If the cluster restarts twice within 10 s of the HUD being mapped, cluster-render's mapping
-  guard turns the HUD off. The Learned page then says *HUD: off after display errors*. To turn
-  it back on, run this over SSH as root:
-  `/var/opt/cluster-render/current/cluster-render guard-reset`.
+- **The mapping guard (cluster-render's, not Redline's).**
+  - Each time the cluster's display service goes away within 10 s of the HUD being mapped is a strike.
+    That covers a cluster restart, and also, it seems, the cluster going off at switch-off. Two strikes turn the
+    HUD off for good.
+  - The Learned page then says *HUD: off after display errors*.
+  - To get the HUD back, update Cluster renderer to a newer version from the MGU Store (a new version
+    forgets the strikes; reinstalling the same one doesn't), or run this over SSH as root:
+    `/var/opt/cluster-render/current/cluster-render guard-reset`. A Redline update doesn't clear it.
+  - Since 2.0.22 Redline gives the guard nothing to strike at switch-off (issue #141):
+    - a driving mode the car stops sending as it switches off keeps the last one. Before, an unknown mode counted
+      as Sport, so in Comfort on *Don't show* the tach came back onto the HUD just as the cluster went off;
+    - no new HUD layer is made while the car is off (vehicle state 5 or lower) or its drive readiness is starting
+      (8) or ending (12). The Learned page says *HUD: waits for the car to be switched on*.
+  - Since 2.0.34 (the user's cluster-render log: both strikes 1.5-2 s after a mapping at switch-off, none at start-up):
+    - a tach already on the HUD is dropped when the car's drive readiness ends (12) or it is off (5 or lower), so
+      cluster-render has nothing to map again as the cluster goes;
+    - a vehicle state the car sends that Redline doesn't know (15, "no value", among them) holds back a new layer
+      too: the last known state may be stale. Each new state is logged once (`vehicle state: …`);
+    - when giving way to BMW's directions ends with nothing to show (the route over, as at switch-off), the tach
+      comes back after 8 s, so the car's state can say first that it's switching off. With a turn to show, at once.
+  - *Settings → Logs* shows the guard's strikes (below).
 
 ## Shift cue
 
@@ -540,11 +564,12 @@ Read from the car itself, the way eDrive reads them (never from another app's fi
 
 | Readout | Shows | From |
 |---|---|---|
+| KM/H / MPH | the car's speed in the app's *Speed unit* (setting *Speed*, off by default) | the car's signal `Vehicle2.statusCarSpeed2`, as the launch timer uses |
 | 12V CHARGE | 12 V battery charge, % (yellow under 60, red under 40) | the car's signal `CDS.statusBattery2` |
 | 12V | 12 V battery voltage, 0.1 V (yellow under 12.0, red under 11.5 or over 15.0) | UDS `F442` from the engine unit (`0x12`), else OBD `42`, a second engine unit, the gearbox unit (`0x18`) or the battery sensor (`402B`, `5853`): eDrive's list, the one that answers is kept |
 | HV CHARGE | hybrid battery charge, % | UDS `DDBC` from the battery unit (SME `0x07`), every 5 s |
 | HV KW | hybrid battery power, kW: + drives, − charging (regen) | pack voltage (`DDB4` / `DD68` / `DD66` / `DDEF`) × current (`DD69`) from the SME, twice a second |
-| POWER (meter) | the recovery / power meter, like BMW's hybrid power meter, drawn along each layout's own gauge (not in the readouts row): *Ramp* a second band under its scale (recovery down the climb, power along the flat, zero at the knee); *Arc* and *Dial* a ring inside / outside their band; *Standard* and *Vector* a strip of slanted segments under the rev bar; *80s digital* and *VFD* a row of bar-graph segments under the graph. Recovery green (blue on VFD) left of zero (to 40 kW), power right (to 80 kW, yellow near the end); no number (HV KW shows it). *Minimal* and *Split wings* have no readouts and no meter | the same as HV KW |
+| POWER (meter) | the recovery / power meter, like BMW's hybrid power meter, drawn along each layout's own gauge (not in the readouts row): *Ramp* a thin strip under its band (recovery down the climb, power along the flat, zero at the knee); *Arc* and *Dial* a ring inside / outside their band; *Standard* and *Vector* a strip of slanted segments under the rev bar; *80s digital* and *VFD* a row of bar-graph segments under the graph. Recovery green (blue on VFD) left of zero (to 40 kW), power right (to 80 kW, yellow near the end); no number (HV KW shows it). *Minimal* and *Split wings* have no readouts and no meter | the same as HV KW |
 | HV TEMP | hybrid battery temperature (blue under 5 °C, red over 45 °C) | `Efficiencytainment2.statusBatteryTemperature` |
 | HV VOLTS | pack voltage | `LSCDataSink.statusHighVoltageStorage` (or the SME's when it is read for power) |
 
@@ -653,6 +678,51 @@ each shift is not logged at all.
 
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.
+
+### Shift values for other apps (`/dev/shm/redline/shift.json`)
+
+While the car is live (never on the demo drive) Redline writes its shift values for other apps on the head unit,
+so they needn't copy its scoring (bimmer-lab's HUD Widgets reads them, [bimmer-lab/apps#4](https://github.com/bimmer-lab/apps/issues/4)):
+
+```json
+{ "v": 1, "t": 1793560000000, "redline": 6550, "shiftPoints": { "1": 6200, "2": 6250, "3": 6300 },
+  "gear": 2, "shiftNow": 6250, "cold": false, "leadMs": 240, "mode": "M",
+  "lastShift": { "at": 1793559998000, "from": 2, "to": 3, "rpm": 6280, "target": 6250, "verdict": "SPOT ON" } }
+```
+
+`t` is when it was written (ms); a reader treats it as stale after a few seconds (Redline isn't running).
+`shiftPoints` has gears 1-8 (learned, else the redline less *Shift point before redline*), `shiftNow` is the
+current gear's point (lowered while the oil is cold: `cold`), `leadMs` the reaction lead, `mode` the gearbox
+programme (D / S / M, or null). It is written about once a second and at each shift, to a temp file renamed over
+it, so it's never read half-written; the folder is 0755 and the file 0644, readable by every app's user
+(`shareshift.js`).
+
+### Logs on the screen (Settings → Logs)
+
+The last row of Settings, for when there's no SSH (a remote install). It shows the important lines, newest first:
+
+- **Redline**: `redline.log`'s warnings and errors, each start and switch-off, and the HUD's, driving mode's, car state's
+  and directions' lines.
+- **Directions**: `redline-nav.log`'s probe, the guide coming and going, the `dir:` lines and errors.
+- **Cluster renderer**: its own log (`/var/opt/cluster-render/log/cluster-render.log`): the mapping guard's strikes,
+  the display service (Dcsm2) coming and going, heartbeat errors and each start (*cluster-render started*). Not its
+  once-a-minute frame counts or each layer made: on a car those buried the strikes. If apps can't read the file, a
+  note says so.
+
+Long lines wrap (up to three lines), so the guard's line keeps how to clear it. The times are the head unit's,
+UTC on the cars seen so far (the count on the right then says *times UTC*). With no log, the note says which
+folder was looked in.
+
+On top: what the HUD is doing, and cluster-render's guard (`guard: hud …: 1 strike`, or `disabled, 2 strikes`).
+
+- **Touch:** pick a source, Refresh, Back to Settings; a finger scrolls the lines.
+- **Controller:** turning scrolls, pressing picks the next source, left goes back.
+
+Only the end of each file is read (96 KB, the older `.1` too when the newer one is shorter), when the view opens, a
+source is picked or Refresh is tapped. Nothing is written. Only where the kit draws Settings (the GPU renderer);
+the HMI's own settings screen has no such row.
+
+### Over SSH
 
 To see what was learned, run this from a computer on the car's hotspot:
 

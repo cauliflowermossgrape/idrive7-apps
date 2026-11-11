@@ -455,6 +455,8 @@ class Widget {
 }
 
 /* ---------------- generic settings screen ---------------- */
+// the app's own rows at the bottom of the settings where the kit draws them (ctx.settingsRow)
+const settingsRows = [];
 function wireSettings(ctx) {
     const { ui, settings } = ctx;
     // hidden settings (kept by the app itself, never on a screen) have no component to look up
@@ -490,7 +492,7 @@ function wireSettings(ctx) {
         ui.onClick('BTN_SETTINGS', () => {
             const d = ctx.display;
             if (d.sheet && d.sheet.settings) { d.closeSheet(); return null; }
-            const sh = listSheet(settings, null, { version: SPEC.version });
+            const sh = listSheet(settings, null, { version: SPEC.version, extra: () => settingsRows });
             sh.settings = true;
             sh.onClose = () => refresh();
             if (d.openSheet(sh)) return null;
@@ -582,6 +584,12 @@ async function runInner(impl) {
         onTab(fn) { display.onTab = fn; },
         /** onTap(fn): fn(x, y) for a tap on the page (app drawing px), where the kit runs the screen. */
         onTap(fn) { display.onTap = fn; },
+        /**
+         * settingsRow({ label, value, open }): a row of the app's own at the very bottom of Settings, where the kit
+         * draws them (the GPU renderer); value: text or () => text; open(): a sheet (sheet.js) shown in the settings'
+         * place, its Back ('close') back to them. The HMI's own settings screen has no such row.
+         */
+        settingsRow(row) { if (row && row.label) settingsRows.push(row); },
         /** Show a sheet (sheet.js) over the page; false where it can't be (software path, other renderers). */
         sheet(sh) { return display.openSheet(sh); },
         /** hideButton(id): leave bar button id out where the kit runs the screen (its job is on the page there). */

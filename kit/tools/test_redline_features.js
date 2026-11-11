@@ -29,6 +29,7 @@ const NOT_ON = {
     hudLabels: { layouts: ['minimal', 'wings'], why: 'no labels drawn' },
     hudBoost: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudBoostUnit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
+    hudShowSpeed: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowTorque: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowPower: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudShowG: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
@@ -54,7 +55,7 @@ const NOT_ON = {
     hudFuelUnit: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudTempsMode: { layouts: ['minimal', 'wings'], why: 'no readouts row' },
     hudChip: { layouts: ['minimal', 'wings'], why: 'no grade drawn' },
-    hudShowBar: { layouts: ['minimal', 'ramp', 'dial'], why: 'no bar (ramp, dial: the band is the shift lights too)' },
+    hudShowBar: { layouts: ['minimal', 'dial'], why: 'no bar (dial: the band is the shift lights too)' },
     hudPeak: { layouts: ['minimal'], why: 'no bar' },
 };
 
@@ -83,13 +84,13 @@ function picture(over, style, state) {
 }
 const shot = (over, style) => Buffer.concat(['count', 'shift', 'limiter', 'graded'].map((st) => picture(over, style, st)));
 // a readout setting is checked with only its readout on (the row holds four), temperatures always shown
-const NONE = { hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false, hudShowOutside: false,
+const NONE = { hudShowSpeed: false, hudShowRpm: false, hudBoost: false, hudShowOil: false, hudShowWater: false, hudShowGearbox: false, hudShowLimit: false, hudShowOutside: false,
     hudShowTorque: false, hudShowPower: false, hudShowG: false, hudShowKnock: false, hudTempsMode: 'always' };
 // the hybrid readouts are checked on a car that has shown a hybrid battery
 const HY = { hudHybridSeen: true };
 const ALONE = {
     hudShowRpm: { hudShowRpm: true }, hudRpmFormat: { hudShowRpm: true }, hudBoost: { hudBoost: true }, hudBoostUnit: { hudBoost: true }, hudLabels: { hudBoost: true },
-    hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
+    hudShowSpeed: {}, hudShowTorque: {}, hudShowPower: {}, hudShowG: {}, hudTorqueUnit: { hudShowTorque: true }, hudPowerUnit: { hudShowPower: true },
     hudShowOil: { hudShowOil: true }, hudShowWater: { hudShowWater: true }, hudShowGearbox: { hudShowGearbox: true }, hudTempUnit: { hudShowOil: true },
     hudShowOutside: {}, hudShowLimit: { hudShowLimit: true }, hudTempsMode: { hudShowOil: true, hudTempsMode: 'smart' }, hudShowKnock: {},
     hudShowTyres: {}, hudTyreUnit: { hudShowTyres: true },

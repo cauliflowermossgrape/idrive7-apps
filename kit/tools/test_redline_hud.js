@@ -62,10 +62,10 @@ LAYOUTS.forEach((style) => ['colour', 'amber', 'ice'].forEach((palette) => [true
         catch (e) { ok(false, style + '/' + palette + '/' + layer + ' threw: ' + e.message); }
     });
 })));
-// the Rev bar switch removes the bar (minimal has none to remove; on ramp and dial the band is the shift
-// lights too, so it stays while they are on)
+// the Rev bar switch removes the bar (minimal has none to remove; on dial the band is the shift lights too, so it
+// stays while they are on; ramp's lights are their own row since 2.0.21, so its gauge goes)
 // (pill: its panel is most of the picture, so only its ring goes: fewer lit pixels, the panel kept)
-LAYOUTS.filter((s) => ['minimal', 'ramp', 'dial'].indexOf(s) < 0).forEach((style) => {
+LAYOUTS.filter((s) => ['minimal', 'dial'].indexOf(s) < 0).forEach((style) => {
     const px = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return lit(cv); };
     if (style === 'pill') {
         const pic = (bar) => { const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(Object.assign({}, optsDefault, { style: style, bar: bar }), { readouts: [], chip: null }), 'both'); return cv; };
@@ -402,15 +402,70 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         ok(ls.bestOf(false) === null && new LaunchScore({ dataDir: dir, log: quiet }).bestOf(false) === null, 'launch: Reset forgets it');
         Date.now = realNow;
     }
-    // gear font: Auto is Barlow on the M layouts only; a missing atlas falls back to Ubuntu
-    ok(Hud.gearFontOf('auto', 'arc') === 'gear_barlow' && Hud.gearFontOf('auto', 'standard') === 'gear' && Hud.gearFontOf(undefined, 'dial') === 'gear_barlow', 'gear font: Auto');
+    // gear font: Auto is Barlow on Arc and Dial, the squared digits on Ramp (2.0.21); a missing atlas falls back to Ubuntu
+    ok(Hud.gearFontOf('auto', 'arc') === 'gear_barlow' && Hud.gearFontOf('auto', 'standard') === 'gear' && Hud.gearFontOf(undefined, 'dial') === 'gear_barlow' && Hud.gearFontOf('auto', 'ramp') === 'square', 'gear font: Auto');
     ok(Hud.gearFontOf('ubuntu', 'ramp') === 'gear' && Hud.gearFontOf('barlow', 'wings') === 'gear_barlow', 'gear font: chosen');
-    ok(Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })).gearFont === 'gear_barlow' && Hud.optsFrom(settingsOf({ hudStyle: 'bogus' })).style === 'standard', 'optsFrom: M styles kept, unknown ones standard');
+    ok(Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })).gearFont === 'square' && Hud.optsFrom(settingsOf({ hudStyle: 'arc' })).gearFont === 'gear_barlow' && Hud.optsFrom(settingsOf({ hudStyle: 'bogus' })).style === 'standard', 'optsFrom: M styles kept, unknown ones standard');
     ok(Draw.gearFont({ gearFont: 'gear_barlow' }) === 'gear_barlow' && Draw.gearFont({ gearFont: 'no_such_font' }) === 'gear' && Draw.gearFont({}) === 'gear', 'gear font falls back to Ubuntu');
+    // Ramp (2.0.21, after a video of the G80's HUD): 8 slanted bars over the flat part, hidden below the count-in,
+    // lit left to right (6 yellow, then red), all red at the shift
+    {
+        const ro = Hud.optsFrom(settingsOf({ hudStyle: 'ramp' }));
+        const bar = (rpm, shift, blink) => {
+            const cv = new Canvas(Draw.IW, Draw.IH);
+            Draw.drawLayer(cv, { d: { rpm: rpm, gear: 3, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: blink !== false,
+                cue: { from: 4800, at: 6400, shift: !!shift, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: ro }, 'fg');
+            // each bar's middle: x from 121 to 372, the last twice as wide; y 11
+            const unit = (372 - 121 - 10 - 7 * 3) / 9, out = [];
+            for (let i = 0, x = 121; i < 8; i++) { const w = i === 7 ? 2 * unit : unit; const px = Math.round(x + w / 2 + 5), o = (11 * cv.w + px) * 4;
+                out.push(cv.d[o + 3] < 128 ? '.' : cv.d[o] > 200 && cv.d[o + 1] < 120 ? 'R' : cv.d[o] > 200 && cv.d[o + 1] > 180 && cv.d[o + 2] < 140 ? 'Y' : '?'); x += w + 3; }
+            return out.join('');
+        };
+        ok(bar(3000) === '........', 'ramp: no bars below the count-in (' + bar(3000) + ')');
+        const steps = [4900, 5300, 5700, 6000, 6200, 6400].map((r) => bar(r));
+        ok(steps.every((b, i) => i === 0 || b.replace(/./g, '').length >= steps[i - 1].replace(/./g, '').length) && /^Y+.+$/.test(steps[0]),
+            'ramp: the bars count in left to right (' + steps.join(' ') + ')');
+        ok(bar(6400) === 'YYYYYYRR', 'ramp: 6 yellow then 2 red at the shift point (' + bar(6400) + ')');
+        ok(bar(6500, true, true) === 'RRRRRRRR' && bar(6500, true, false) === '........', 'ramp: all red at the shift, flashing (' + bar(6500, true, true) + ' / ' + bar(6500, true, false) + ')');
+        const noLights = Object.assign({}, ro, { lights: false }), cv = new Canvas(Draw.IW, Draw.IH);
+        Draw.drawLayer(cv, { d: { rpm: 6400, gear: 3, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: true, cue: { from: 4800, at: 6400, shift: false, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: noLights }, 'fg');
+        let any = 0; for (let y = 2; y < 20; y++) for (let x = 121; x < 372; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) any++;
+        ok(any === 0, 'ramp: HUD lights Off hides the bars');
+    }
+    // Ramp's needle (2.0.35): the band's curve at every rpm, always one piece and visible (2x, round each mark)
+    {
+        const ro = Object.assign({}, Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })), { lights: false });
+        const K = 2, W = Draw.IW * K, H = Draw.IH * K, bad = [];
+        const isRed = (d, i) => d[i + 3] > 200 && d[i] > 200 && d[i + 1] < 110 && d[i + 2] < 110;
+        for (let mark = 1000; mark <= 6000; mark += 1000) for (let rpm = mark - 120; rpm <= mark + 120; rpm += 8) {
+            const cv = new Canvas(W, H);
+            // (the redline at the scale's end: no red zone line in the live layer to count)
+            Draw.drawLayer(Draw.scaled(cv, K, 0, 0), { d: { rpm: rpm, gear: 3, stage: 'M' }, shift: 6400, redline: 8000, max: 8000, blink: true,
+                cue: { from: 9000, at: 9500, shift: false, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: ro }, 'fg');
+            const red = new Uint8Array(W * H); let first = -1, count = 0;
+            for (let i = 0; i < W * H; i++) if (isRed(cv.d, i * 4)) { red[i] = 1; count++; if (first < 0) first = i; }
+            if (!count) { bad.push(rpm + ' none'); continue; }
+            // pieces: 8-connected, a speck under 2 px (an anti-aliased corner pixel) not counted
+            const seen = new Uint8Array(W * H); let blobs = 0;
+            for (let i = 0; i < W * H; i++) if (red[i] && !seen[i]) {
+                const st = [i]; seen[i] = 1; let got = 0;
+                while (st.length) {
+                    const p = st.pop(), x = p % W, y = (p / W) | 0; got++;
+                    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy, k = ny * W + nx; if (nx >= 0 && nx < W && ny >= 0 && ny < H && red[k] && !seen[k]) { seen[k] = 1; st.push(k); } }
+                }
+                if (got >= 2) blobs++;
+            }
+            if (blobs !== 1) bad.push(rpm + (blobs ? ' ' + blobs + ' pieces' : ' none'));
+        }
+        ok(bad.length === 0, 'ramp: the needle is one visible piece either side of every mark (wrong at: ' + bad.slice(0, 8).join(', ') + ')');
+    }
     // placement and the windshield's window
     const at = (o) => Hud.placeOf(settingsOf(o));
     ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');
     ok(Hud.outsideGlass(at({ hudSize: 140 })).right === 75 && Hud.outsideGlass(at({ hudY: -60 })).top === 20, 'place: off the glass, per side');
+    // 2.0.27: smaller, further right and further down (a small tach in the glass's bottom right corner)
+    ok(JSON.stringify(at({ hudSize: 40, hudX: 280, hudY: 220 })) === JSON.stringify({ x: 600, y: 360, w: 160, h: 52 }) && at({ hudSize: 30, hudX: 400, hudY: 400 }).w === 160 && at({ hudSize: 30, hudX: 400, hudY: 400 }).x === 600,
+        'place: down to 40 %, right to +280, down to +220 (and no further)');
     // Minimal's dots can go up over BMW's own ramp (2026-11-10, an X3 M40i): Up reaches -120, and the empty top of its
     // picture isn't counted as off the glass
     ok(at({ hudY: -120 }).y === 20 && Hud.outsideGlass(at({ hudY: -60 }), 'minimal').top === 11 && Hud.outsideGlass(at({ hudY: -40 }), 'minimal').top === undefined, 'place: Minimal up to -120, only its empty top (above the D / S / M letter) not counted off the glass');

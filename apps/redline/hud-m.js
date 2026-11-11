@@ -7,8 +7,8 @@
  * and its burst, the peak, the downshift arrows and the limiter flash work as in the other layouts.
  * Draws on canvas.js Canvas (or hud-draw's scaled()); arc() angles are degrees clockwise from 12 o'clock.
  *   arc   after F80/F82 M3/M4 (2014-20): 8 curved lights (6 amber, 2 red) over a curved band, gear under it
- *   ramp  after G80/G82 M3/M4 (2021+): the band climbs from bottom left then runs flat; its fields turn
- *         yellow, then red, towards the shift; 0-8 scale; gear over a line, a readout under it
+ *   ramp  after G80/G82 M3/M4 (2021+): a thick rail climbs from bottom left then runs flat, the revs a band
+ *         under it; 8 slanted lights over the flat part (6 yellow, 2 red); squared digits; gear over a line
  *   dial  after E60 M5 (2005-10): a 3/4 dial round the gear, green / orange advance warning / red,
  *         a readout bottom right in the dial's orange-red
  */
@@ -232,125 +232,408 @@ function drawArc(cv, f, layer, h) {
 }
 
 /* ---------- ramp (G80) ---------- */
-// the band's lower edge: from bottom left up to the knee, then flat; rpm runs along it by length
-const RP = { x0: 34, y0: 74, kx: 104, ky: 30, x1: 372, t: 11, t0: 3, slant: 4 };
-const RC = { line: '#f4f1e6', fill: '#f4f1e6', yellow: '#ffc21a', red: '#ff2b1c', text: '#f4f1e6' };
-const rLen = (() => { const a = Math.hypot(RP.kx - RP.x0, RP.ky - RP.y0); return { a: a, all: a + (RP.x1 - RP.kx) }; })();
-function rAt(rpm, max) {
-    const s = clamp(rpm / max, 0, 1) * rLen.all;
-    if (s <= rLen.a) { const k = s / rLen.a; return [RP.x0 + (RP.kx - RP.x0) * k, RP.y0 + (RP.ky - RP.y0) * k]; }
-    return [RP.kx + (s - rLen.a), RP.ky];
+/*
+ * 2.0.21, redrawn from a video of the G80's own HUD. The gauge is one thick rail with no bottom edge: it climbs from
+ * the 0 at bottom left, bends round a wide knee at the 2 and runs flat to the end, a rounded tab hanging from it every
+ * 1,000 rpm (a V cut over the numbered ones, an open cup at each end: rRail). The rpm hangs under the rail as a cream
+ * band up to a red sliver, a hairline gap round each tab (rBand); past it only the rail shows. The red zone is a thin red line inside the band, after a dash and a dot. Over the flat part a row
+ * of 8 slanted bars counts in to the shift (6 yellow, 1 red, then a red one twice as wide) and flashes all red at it.
+ * Digits are squared (sqText, our own), the gear left of centre over a line, the first readout under it.
+ */
+// the rail's top edge: from (x0, y0) up to the knee (kx, ky), then flat to x1; rt the rail, ft the band under it,
+// kr the knee's radius
+// (the climb a little short of 2,000 rpm, so the 2 sits under the flat clear of it, as on the G80)
+// rt: where the band starts under the rail's top edge (the rail 2.4 px, then a 0.9 px gap, as on the glass)
+const RP = { x0: 38, y0: 72, kx: 90, ky: 22, x1: 372, rt: 4.4, ft: 9, kr: 44 };
+const RC = { line: '#f4f1e6', fill: '#f4f1e6', yellow: '#ffd84a', red: '#ff4636', text: '#f4f1e6' };
+// the lights over the flat part: 8 bars (the last twice as wide), leaning right by slant
+const RL = { x0: 121, x1: 372, y0: 3.5, y1: 18.5, gap: 3, slant: 10, n: 8 };
+/** The rail's path (points, their normals pointing under it, the length to each), worked out once. */
+const RPATH = (() => {
+    const P0 = [RP.x0, RP.y0], K = [RP.kx, RP.ky], E = [RP.x1, RP.ky];
+    const cl = Math.hypot(K[0] - P0[0], K[1] - P0[1]), u = [(K[0] - P0[0]) / cl, (K[1] - P0[1]) / cl];
+    const turn = Math.acos(u[0]), dk = RP.kr * Math.tan(turn / 2);
+    const T1 = [K[0] - u[0] * dk, K[1] - u[1] * dk], C = [K[0] + dk, K[1] + RP.kr];
+    const pts = [P0, T1];
+    const a0 = Math.atan2(T1[1] - C[1], T1[0] - C[0]), a1 = -Math.PI / 2, N = 16;
+    for (let i = 1; i <= N; i++) { const a = a0 + (a1 - a0) * i / N; pts.push([C[0] + RP.kr * Math.cos(a), C[1] + RP.kr * Math.sin(a)]); }
+    pts.push(E);
+    const len = [0];
+    for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    // a segment's normal (-ty, tx) points under the rail; a point's is the mean of its segments'
+    const segN = [];
+    for (let i = 1; i < pts.length; i++) { const l = len[i] - len[i - 1]; segN.push([-(pts[i][1] - pts[i - 1][1]) / l, (pts[i][0] - pts[i - 1][0]) / l]); }
+    const ptN = pts.map((p, i) => {
+        const a = segN[Math.max(0, i - 1)], b = segN[Math.min(segN.length - 1, i)], m = Math.hypot(a[0] + b[0], a[1] + b[1]) || 1;
+        return [(a[0] + b[0]) / m, (a[1] + b[1]) / m];
+    });
+    // knee: half way round the bend (the meter's zero)
+    return { pts: pts, len: len, segN: segN, ptN: ptN, all: len[len.length - 1], knee: (len[1] + len[N + 1]) / 2 };
+})();
+const rS = (rpm, max) => clamp(rpm / max, 0, 1) * RPATH.all;
+/** The point s px along the rail and the normal there: [x, y, nx, ny]. */
+function rAtS(s) {
+    const L = RPATH.len;
+    let i = 1;
+    while (i < L.length - 1 && L[i] < s) i++;
+    const a = RPATH.pts[i - 1], b = RPATH.pts[i], k = clamp((s - L[i - 1]) / ((L[i] - L[i - 1]) || 1), 0, 1), n = RPATH.segN[i - 1];
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, n[0], n[1]];
+}
+const off = (p, d) => [p[0] + p[2] * d, p[1] + p[3] * d];
+/** The strip between d0 and d1 px under the rail from s0 to s1 px along it, as quads (bent round the knee). */
+function rStrip(cv, s0, s1, d0, d1, c) {
+    if (s1 - s0 < 0.3) return;
+    const pts = [rAtS(s0)];
+    RPATH.len.forEach((l, i) => { if (l > s0 + 0.01 && l < s1 - 0.01) { const p = RPATH.pts[i], n = RPATH.ptN[i]; pts.push([p[0], p[1], n[0], n[1]]); } });
+    pts.push(rAtS(s1));
+    // (each quad reaches 0.4 px past an inner joint into the next: no hairline seams fanning round the knee)
+    const ext = (p, q, k) => { const dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * k, p[1] + dy / l * k, p[2], p[3]]; };
+    for (let i = 1; i < pts.length; i++) {
+        const a = i > 1 ? ext(pts[i - 1], pts[i], -0.4) : pts[i - 1], b = i < pts.length - 1 ? ext(pts[i], pts[i - 1], -0.4) : pts[i];
+        cv.quad([off(a, d0), off(b, d0), off(b, d1), off(a, d1)], c);
+    }
+}
+/** A short stroke across the band at s (from d0 to d1 px under the rail). */
+function rTick(cv, s, d0, d1, w, c) { const p = rAtS(s), a = off(p, d0), b = off(p, d1); cv.line(a[0], a[1], b[0], b[1], w, c); }
+/*
+ * The rail and band as on the G80's glass: a solid rail along the top; at every 1,000 rpm (and at each end) a small
+ * rounded tab hangs from it (straight sides, a round bottom, soft shoulders); under it a hairline gap, then the band
+ * (the revs). The gap runs round each tab and on down to the band's bottom as the split, so the dark line reads as a
+ * U with a stem under it. At the numbered marks (0, 2, 4, 6, 8) a small V is cut into the rail's top over the tab (the
+ * hollow); the 1,000s between have no V and a slightly narrower tab.
+ * RD: the rail's thickness; the tab's half-width (numbered, between), bottom corners' radius, depth under the rail and
+ * shoulder radius;
+ * the V's half-width and depth; the gap; the split's half-width.
+ */
+const RD = { rt: 3.4, uw: 2.7, uwOdd: 2.1, rb: 1.5, td: 4.8, rf: 0.3, vw: 1.5, vd: 3.0, endVw: 2.2, endVd: 5.0, endIn: 3.6, gap: 1.0, split: 0.55 };
+const RW = RD.uw + RD.rf;     // a numbered tab's half-width with its shoulders (the widest)
+/** The marks along the rail: { s (px), big (numbered: a V and the wider tab) }, one every 1,000 rpm and one at each end. */
+function rMarks(max) {
+    // (the ends' marks far enough in that the cup's outer arm keeps some weight)
+    const lab = max <= 9000 ? 2000 : 3000, m = [{ s: RD.endIn, big: true, end: true }];
+    for (let r = 1000; r < max; r += 1000) m.push({ s: rS(r, max), big: r % lab === 0 });
+    m.push({ s: RPATH.all - RD.endIn, big: true, end: true });
+    return m;
+}
+/** A mark's tab half-width (to its walls): the ends' reach flush to the rail's end, the numbered ones wider than the rest. */
+const uwOf = (m) => (m.end ? RD.endIn : m.big ? RD.uw : RD.uwOdd);
+const reachOf = (m) => uwOf(m) + RD.rf;
+/** How far mark m's tab reaches under the rail at t px from its middle: the round bottom, the straight sides, the shoulders. */
+function rTab(t, m) {
+    const a = Math.abs(t), uw = uwOf(m), w = uw + RD.rf;
+    if (a <= uw - RD.rb) return RD.td;
+    if (a <= uw) { const k = a - (uw - RD.rb); return RD.td - RD.rb + Math.sqrt(RD.rb * RD.rb - k * k); }
+    if (a < w) return RD.rf - Math.sqrt(Math.max(0, RD.rf * RD.rf - (w - a) * (w - a)));
+    return 0;
+}
+/** The V cut into the rail's top at t px from a numbered mark's middle (0 beyond it). */
+// (soft: a cosine dip; at the ends a deep cup cut down through the tab, so the line ends in an open V / U)
+const rVee = (t, m) => { const w = m.end ? RD.endVw : RD.vw, d = m.end ? RD.endVd : RD.vd; return Math.abs(t) < w ? d * (1 + Math.cos(Math.PI * t / w)) / 2 : 0; };
+/** The tabs grown by the gap: where the band's top must stay (px under the rail's bottom) at s. */
+function rTabGap(ms, s) {
+    let best = 0;
+    ms.forEach((m) => {
+        if (Math.abs(s - m.s) > reachOf(m) + RD.gap) return;
+        for (let k = -4; k <= 4; k++) { const du = RD.gap * k / 4; best = Math.max(best, rTab(s - m.s + du, m) + Math.sqrt(RD.gap * RD.gap - du * du) - RD.gap); }
+    });
+    return best;
+}
+/** The points s0..s1 along the rail to draw through: its bends, and every 0.2 px across a tab. */
+function rSamples(ms, s0, s1) {
+    const ss = [s0, s1];
+    RPATH.len.forEach((l) => { if (l > s0 && l < s1) ss.push(l); });
+    ms.forEach((m) => {
+        for (let v = Math.max(s0, m.s - reachOf(m) - RD.gap); v <= Math.min(s1, m.s + reachOf(m) + RD.gap); v += 0.2) ss.push(v);
+        const uw = uwOf(m);
+        [-uw - 0.02, -uw + 0.02, uw - 0.02, uw + 0.02].forEach((d) => { if (m.s + d > s0 && m.s + d < s1) ss.push(m.s + d); });
+    });
+    return ss.sort((p, q) => p - q).filter((v, i, a) => i === 0 || v - a[i - 1] > 0.05);
+}
+/** The point d px under the rail at s, with the path's own normal at its bends (a smooth offset round the knee). */
+function rPt(v, d) {
+    const i = RPATH.len.findIndex((l) => Math.abs(l - v) < 1e-6);
+    if (i < 0) return off(rAtS(v), d);
+    const p = RPATH.pts[i], n = RPATH.ptN[i];
+    return [p[0] + n[0] * d, p[1] + n[1] * d];
 }
 /**
- * The band's thickness at rpm: thin at the start (t0), widening up the climb to t at the knee, then the same along
- * the flat (2026-11-10: like a ramp that grows). Its slant grows with it, so the fields keep their angle.
+ * The shape between d0(s) and d1(s) for the samples ss, as ONE polygon (canvas fill): pieces drawn side by side
+ * left hairline seams, and where they met a gap, a faint line across it. Quads where a canvas has no fill.
  */
-function rT(rpm, max) {
-    const s = clamp(rpm / max, 0, 1) * rLen.all;
-    return s >= rLen.a ? RP.t : RP.t0 + (RP.t - RP.t0) * s / rLen.a;
+function rShape(cv, ss, d0, d1, c) {
+    // (rNPt: the normal turns smoothly round the knee, so the rail, tabs and band end step nowhere as it bends)
+    const top = ss.map((v) => rNPt(v, Math.min(d0(v), d1(v) - 0.05))), bot = ss.map((v) => rNPt(v, d1(v)));
+    if (cv.fill) { cv.fill(top.concat(bot.reverse()), c); return; }
+    for (let k = 1; k < ss.length; k++) cv.quad([top[k - 1], top[k], bot[ss.length - k - 1], bot[ss.length - k]], c);
 }
-/** The band between rpm a and b (gaps g px at each end), as quads split at the knee. */
-function rSeg(cv, a, b, max, c, g, outline) {
-    const kneeR = rLen.a / rLen.all * max, parts = a < kneeR && b > kneeR ? [[a, kneeR], [kneeR, b]] : [[a, b]];
-    parts.forEach((p, i) => {
-        const pa = rAt(p[0], max), pb = rAt(p[1], max);
-        const ga = i === 0 ? g : 0, gb = i === parts.length - 1 ? g : 0;
-        const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) || 1, ux = (pb[0] - pa[0]) / L, uy = (pb[1] - pa[1]) / L;
-        const A0 = [pa[0] + ux * ga, pa[1] + uy * ga], B0 = [pb[0] - ux * gb, pb[1] - uy * gb];
-        const ta = rT(p[0], max), tb = rT(p[1], max), sa = RP.slant * ta / RP.t, sb = RP.slant * tb / RP.t;
-        const q = [[A0[0] + sa, A0[1] - ta], [B0[0] + sb, B0[1] - tb], B0, A0];
-        if (outline) cv.polyline(q.concat([q[0]]), outline, c); else cv.quad(q, c);
-    });
+const veeAt = (ms) => { const big = ms.filter((m) => m.big); return (v) => big.reduce((a, m) => Math.max(a, rVee(v - m.s, m)), 0); };
+function rRail(cv, max, c) {
+    const ms = rMarks(max), vee = veeAt(ms);
+    // the rail with its tabs, one shape: its top cut into a V at the numbered marks (a cup at the ends), its bottom
+    // hanging into a tab at every mark
+    const tab = (v) => ms.reduce((a, m) => Math.max(a, rTab(v - m.s, m)), 0);
+    rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
 /*
- * The ramp's Recovery / Power meter (a readout with .bar, hud.js): not in the list but a thin second band under
- * the ramp's scale, the same shape and length (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter).
- * Zero at the knee; recovery fills down the climb towards 0, power along the flat towards the end (yellow from
- * 85 % of bar.hi). Track bg (no zero tick: the knee is the zero), fill fg.
+ * The needle from s0 to s1 (2.0.35): the band's own shape (one piece: not split at a mark's middle, see rNeedle), down
+ * to the band's bottom, its top the band's top (rTabGap: the tab grown by the gap, the same rounded corner, the same depth under the
+ * tab, full height right up to where the band's corner rounds off; no early dip). One guard so it never leaves a sliver:
+ * a morphological opening by a NEEDLE_OPEN px wide flat bar (or the piece's own width, if narrower) along the rail
+ * (erode, then dilate): a full-height part narrower than that, a hair beside a tab's wall, is trimmed down to the band's
+ * curve under it. The curve is fixed to the rail (a grid at whole multiples
+ * of NEEDLE_H), so as the revs move the needle slides along it and only its ends change. Its outline is offset along a
+ * normal that turns smoothly round the knee (rNPt), so it doesn't fold where the knee's polygon bends.
  */
-// t: the thickness, the climb (recovery) the same as the flat (power), clear of the scale's numbers and the gear;
-// start: where the climb begins, clear of the 0
-const RM = { dy: 25, t: 6, slant: 2, start: 0.14 };
-function rampMeter(cv, bar, P, layer) {
-    const along = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
-    const A0 = [RP.x0, RP.y0 + RM.dy], K = [RP.kx, RP.ky + RM.dy], B = [RP.x1, RP.ky + RM.dy], A = along(A0, K, RM.start);
-    const quad = (a, b, c, line, ta, tb) => {
-        ta = ta || RM.t; tb = tb || ta;
-        const q = [[a[0] + RM.slant * ta / RM.t, a[1] - ta], [b[0] + RM.slant * tb / RM.t, b[1] - tb], b, a];
-        if (line) cv.polyline(q.concat([q[0]]), line, c); else cv.quad(q, c);
+const NEEDLE_OPEN = 1, NEEDLE_STEPS = 8, NEEDLE_H = 0.05;
+// the knee's normals at its vertices: radial inside the arc, the climb's and the flat's at its two ends
+const RVN = RPATH.pts.map((p, i) => (i === 1 ? RPATH.segN[0] : i === RPATH.pts.length - 2 ? RPATH.segN[RPATH.segN.length - 1] : RPATH.ptN[i]));
+/** The point d px under the rail at s, its normal blended along each of the knee's segments (no seam at its bends). */
+function rNPt(s, d) {
+    const L = RPATH.len, last = L.length - 1;
+    let i = 1;
+    while (i < last && L[i] < s) i++;
+    const a = RPATH.pts[i - 1], b = RPATH.pts[i], k = clamp((s - L[i - 1]) / ((L[i] - L[i - 1]) || 1), 0, 1);
+    let n = RPATH.segN[i - 1];
+    if (i > 1 && i < last) { const p = RVN[i - 1], q = RVN[i], x = p[0] + (q[0] - p[0]) * k, y = p[1] + (q[1] - p[1]) * k, m = Math.hypot(x, y); n = [x / m, y / m]; }
+    return [a[0] + (b[0] - a[0]) * k + n[0] * d, a[1] + (b[1] - a[1]) * k + n[1] * d];
+}
+function rNeedle(cv, s0, s1, max, c) {
+    // one piece, over a mark's middle too: split there as the band is, the two halves (~0.6 px each) all but vanished
+    // at 1x as the revs crossed it. Clear of the end marks' tabs as the band is
+    const all = rMarks(max), pcs = [];
+    const a = Math.max(s0, all[0].s + reachOf(all[0]) + RD.gap), b = Math.min(s1, all[all.length - 1].s - reachOf(all[all.length - 1]) - RD.gap);
+    if (b - a > 0.01) pcs.push([a, b]);
+    // (the trim's width never more than the widest piece: with the split in the middle, two thin halves both stay)
+    const open = Math.min(NEEDLE_OPEN, pcs.reduce((w, p) => Math.max(w, p[1] - p[0]), 0));
+    pcs.forEach((p) => rNeedlePiece(cv, all, p[0], p[1], open, c));
+}
+function rNeedlePiece(cv, all, s0, s1, open, c) {
+    const ms = all.filter((m) => Math.abs(m.s - (s0 + s1) / 2) < reachOf(m) + RD.gap + 4);
+    const D1 = RP.rt + RP.ft, base = RD.rt + RD.gap, h = NEEDLE_H;
+    // the band's clearance at u (on the grid, linear between)
+    const i0 = Math.floor(s0 / h), n = Math.ceil(s1 / h) - i0 + 1, g = new Float64Array(n);
+    if (ms.length) for (let i = 0; i < n; i++) g[i] = rTabGap(ms, (i0 + i) * h);
+    const P = (u) => { const x = u / h - i0, i = clamp(Math.floor(x), 0, n - 2), k = x - i; return g[i] + (g[i + 1] - g[i]) * k; };
+    // the grid points strictly inside (a, b)
+    const inside = (a, b) => { const o = []; for (let i = Math.floor(a / h) + 1; i * h < b - 1e-9; i++) o.push(i * h); return o; };
+    if (s1 - s0 < open / NEEDLE_STEPS) return;
+    const ss = [s0].concat(inside(s0, s1), [s1]), d = ss.map(() => 0);
+    // the opening by a bar L wide: erode (the deepest top under the bar, wherever it sits inside the piece), then
+    // dilate (at each point the shallowest of the bars covering it). Averaged over NEEDLE_STEPS widths up to
+    // NEEDLE_OPEN, so a hair is trimmed in step with its width (a w px wide part keeps w / NEEDLE_OPEN of its extra
+    // height) rather than all at once: no jump as it narrows.
+    for (let st = 1; st <= NEEDLE_STEPS; st++) {
+        // (a bar wider than the piece fits nowhere: the opening leaves none of it, so a piece narrower than
+        // NEEDLE_OPEN, a hair beside a mark's split, is only w / NEEDLE_OPEN of its height and grows as it widens)
+        const L = open * st / NEEDLE_STEPS;
+        if (L > s1 - s0 + 1e-9) { ss.forEach((v, j) => { d[j] += (D1 - base) / NEEDLE_STEPS; }); continue; }
+        const bars = [s0].concat(inside(s0, s1 - L), [s1 - L]).map((a) => {
+            let e = Math.max(P(a), P(a + L));
+            inside(a, a + L).forEach((u) => { e = Math.max(e, P(u)); });
+            return [a, e];
+        });
+        ss.forEach((v, j) => {
+            let t = Infinity;
+            bars.forEach((b) => { if (b[0] <= v + 1e-9 && v <= b[0] + L + 1e-9) t = Math.min(t, b[1]); });
+            d[j] += (t === Infinity ? P(v) : t) / NEEDLE_STEPS;
+        });
+    }
+    const tp = ss.map((v, j) => rNPt(v, Math.min(D1, base + d[j]))), bt = ss.map((v) => rNPt(v, D1));
+    if (cv.fill) { cv.fill(tp.concat(bt.reverse()), c); return; }
+    for (let k = 1; k < ss.length; k++) cv.quad([tp[k - 1], tp[k], bt[ss.length - k - 1], bt[ss.length - k]], c);
+}
+/**
+ * The band from s0 to s1 (the revs), split at each mark; its top keeps the gap to the rail
+ * and round each tab, so nothing drawn with it touches the rail or a tab.
+ */
+function rBand(cv, s0, s1, max, c) {
+    const ms = rMarks(max), D1 = RP.rt + RP.ft, top = (v) => Math.min(D1, RD.rt + RD.gap + rTabGap(ms, v));
+    for (let i = 0; i < ms.length - 1; i++) {
+        // (the ends' tabs: the band starts and stops clear of them)
+        const a = Math.max(s0, i === 0 ? ms[0].s + reachOf(ms[0]) + RD.gap : ms[i].s + RD.split);
+        const b = Math.min(s1, i === ms.length - 2 ? ms[i + 1].s - reachOf(ms[i + 1]) - RD.gap : ms[i + 1].s - RD.split);
+        // (b is clear of the end cup's tab as it was of its old place)
+        if (b > a) rShape(cv, rSamples(ms, a, b), top, () => D1, c);
+    }
+}
+
+/*
+ * Squared digits (our own drawing, after the G80's look): 7-segment strokes joined at the corners, solid, plus
+ * N P R D M S. h tall, a width of 0.6 h, the stroke t. Returns false (drawing nothing) for a character it has no
+ * shape for.
+ */
+const SQ = { 0: 'abcdef', 2: 'abged', 3: 'abgcd', 4: 'g', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abfgcd', '-': 'g', S: 'afgcd', P: 'abfge', N: 'efbc', R: 'abfge', M: 'efabc', D: 'abcdef' };
+/** A character's width at h: wide (the G80's digits are about 1.2 times as wide as tall); a 1 and a dot narrow. */
+const sqAdv = (ch, h) => (ch === '.' ? sqT(h) : ch === '1' ? h * 0.55 : h * 1.15);
+const sqT = (h) => Math.max(1.9, h * 0.25);
+function sqGlyph(cv, ch, x, y, h, c) {
+    const w = sqAdv(ch, h), t = sqT(h), hh = h / 2;
+    if (ch === '1') { cv.fillRect(x + w - t, y, t, h, c); cv.fillRect(x + w * 0.15, y, w * 0.85, t, c); return true; }
+    const on = SQ[ch];
+    if (on === undefined) return false;
+    const R = {
+        a: [x, y, w, t], g: [x, y + hh - t / 2, w, t], d: [x, y + h - t, w, t],
+        f: [x, y, t, hh + t / 2], b: [x + w - t, y, t, hh + t / 2], e: [x, y + hh - t / 2, t, hh + t / 2], c: [x + w - t, y + hh - t / 2, t, hh + t / 2],
     };
+    // D: the right-hand corners cut, so it isn't a 0
+    if (ch === 'D') { R.a = [x, y, w - t, t]; R.d = [x, y + h - t, w - t, t]; R.b = [x + w - t, y + t, t, hh]; R.c = [x + w - t, y + hh - t / 2, t, hh - t / 2]; }
+    for (const k of on) { const r = R[k]; cv.fillRect(r[0], r[1], r[2], r[3], c); }
+    if (ch === 'D') {
+        cv.quad([[x + w - t, y], [x + w, y + t], [x + w - t, y + t]], c); cv.quad([[x + w - t, y + h - t], [x + w, y + h - t], [x + w - t, y + h]], c);
+    }
+    // N, R: a diagonal; M: a stem down the middle
+    const diag = (x0, y0, x1, y1) => cv.quad([[x0, y0], [x0 + t * 1.1, y0], [x1, y1], [x1 - t * 1.1, y1]], c);
+    if (ch === 'N') diag(x + t * 0.4, y, x + w - t * 0.4, y + h);
+    if (ch === 'R') diag(x + w * 0.35, y + hh, x + w + t * 0.45, y + h);
+    if (ch === 'M') cv.fillRect(x + w / 2 - t / 2, y, t, hh, c);
+    // 4: a slant from the right stem's top down to the bar's left end (the G80's closed 4)
+    if (ch === '4') {
+        const sx = x + w * 0.8 - t;     // the stem, with the bar running past it
+        cv.fillRect(sx, y, t, h, c);
+        cv.quad([[sx - t * 0.9, y], [sx + t * 0.6, y], [x + t * 1.6, y + hh - t / 2], [x, y + hh - t / 2]], c);
+    }
+    return true;
+}
+const SQ_GAP = 0.22;
+/** The width sqText takes for str at h. */
+const sqWidth = (str, h) => { str = String(str); let w = 0; for (const ch of str) w += sqAdv(ch, h); return str.length ? w + (str.length - 1) * h * SQ_GAP : 0; };
+/**
+ * str in squared digits, top at y, h tall, from x (align 'left' | 'center' | 'right'). Characters it has no shape
+ * for end it: the rest is drawn in the bold font (a unit such as °).
+ */
+function sqText(cv, str, x, y, h, c, align) {
+    str = String(str);
+    let n = 0;
+    while (n < str.length && (str[n] === '.' || str[n] === '1' || SQ[str[n]] !== undefined)) n++;
+    const head = str.slice(0, n), tail = str.slice(n).trim();
+    const tailW = tail && cv.textWidth ? cv.textWidth(tail, h * 0.6, { font: 'bold' }) + 2 : 0;
+    const wAll = sqWidth(head, h) + tailW;
+    let px = align === 'center' ? x - wAll / 2 : align === 'right' ? x - wAll : x;
+    for (const ch of head) {
+        if (ch === '.') cv.fillRect(px, y + h - sqT(h), sqT(h), sqT(h), c); else sqGlyph(cv, ch, px, y, h, c);
+        px += sqAdv(ch, h) + h * SQ_GAP;
+    }
+    if (tail) cv.text(tail, px - h * SQ_GAP + 2, y + h * 0.6, h * 0.6, c, { font: 'bold' });
+}
+
+/*
+ * The ramp's Recovery / Power meter (a readout with .bar, hud.js): not in the list but a thin strip under the band,
+ * the rail's shape (2026-11-10, a 330e owner's sketch: like BMW's hybrid power meter). Zero at the knee; recovery
+ * fills down the climb towards 0, power along the flat towards the end (yellow from 85 % of bar.hi). Track bg, fill fg.
+ */
+// 3 px, a 3 px gap under the band (closer it read as a second rev band)
+const RM = { d0: RP.rt + RP.ft + 3, d1: RP.rt + RP.ft + 6, start: 0.14 };
+function rampMeter(cv, bar, P, layer, max) {
+    const zero = RPATH.knee, s0 = zero * RM.start, end = RPATH.all;
     if (layer !== 'fg') {
-        quad(A, K, withAlpha(RC.line, 0.6), 1.1); quad(K, B, withAlpha(RC.line, 0.6), 1.1);
-        // no zero tick: the knee itself shows where recovery ends and power starts (a tick there met the scale's 2)
+        rStrip(cv, s0, end, RM.d0, RM.d1, withAlpha(RC.line, 0.25));
+        // the zero: a short mark across the strip at the knee
+        rTick(cv, zero, RM.d0 - 1.5, RM.d1 + 1.5, 1.6, RC.line);
     }
     if (layer === 'bg' || !isNum(bar.v)) return;
     const lo = isNum(bar.lo) && bar.lo < 0 ? bar.lo : -1, hi = isNum(bar.hi) && bar.hi > 0 ? bar.hi : 1;
-    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) quad(along(K, A, k), K, P.low); }
-    else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) quad(K, along(K, B, k), bar.v >= 0.85 * hi ? RC.yellow : RC.fill); }
+    if (bar.v < 0) { const k = clamp(bar.v / lo, 0, 1); if (k > 0.01) rStrip(cv, zero - (zero - s0) * k, zero, RM.d0, RM.d1, P.low); }
+    else if (bar.v > 0) { const k = clamp(bar.v / hi, 0, 1); if (k > 0.01) rStrip(cv, zero, zero + (end - zero) * k, RM.d0, RM.d1, bar.v >= 0.85 * hi ? RC.yellow : RC.fill); }
 }
+/** The 8 bars' corners (bottom left first); the last twice as wide. */
+const rBars = (() => {
+    const unit = (RL.x1 - RL.x0 - RL.slant - (RL.n - 1) * RL.gap) / (RL.n + 1), out = [];
+    let x = RL.x0;
+    for (let i = 0; i < RL.n; i++) {
+        const w = i === RL.n - 1 ? 2 * unit : unit;
+        out.push([[x, RL.y1], [x + w, RL.y1], [x + w + RL.slant, RL.y0], [x + RL.slant, RL.y0]]);
+        x += w + RL.gap;
+    }
+    return out;
+})();
 function drawRamp(cv, f, layer, h) {
     const o = f.opts, d = f.d, cue = f.cue, BG = layer !== 'fg', fg = layer !== 'bg', max = f.max;
-    const step = 500, fl = flashOn(o, cue), flashCol = flashColour(o, cue, h, RC.red);
-    // what colour the field from r..r+step is when lit
-    const fieldCol = (r) => {
-        const m = r + step / 2;
-        if (!o.lights || m < cue.from) return RC.fill;
-        if (!ownColours(o)) return m >= cue.at ? RC.red : RC.yellow;
-        // Race / one colour: the count-in as the app's lights, the last field the flash's colour
-        return m >= cue.at ? flashColour(o, { limiter: false }, h, RC.red) : h.lightCol(o.lightStyle, h.P, clamp((m - cue.from) / (cue.at - cue.from), 0, 1));
-    };
-    if (o.bar !== false || o.lights) {
+    const fl = flashOn(o, cue), flashCol = flashColour(o, cue, h, RC.red);
+    const meter = (f.readouts || []).filter((it) => it.bar)[0];
+    // with the meter under the band, the scale and everything under it 5 px lower
+    const dn = meter ? 5 : 0, sq = o.gearFont === 'square';
+    const D0 = RP.rt, D1 = RP.rt + RP.ft;
+    // the gauge: Rev bar off leaves the lights and the gear (the lights are their own row since 2.0.21)
+    if (o.bar !== false) {
         if (BG) {
-            for (let r = 0; r < max; r += step) {
-                if (o.dim) rSeg(cv, r, Math.min(max, r + step), max, withAlpha(RC.line, 0.12), 1.2);
-                rSeg(cv, r, Math.min(max, r + step), max, withAlpha(RC.line, 0.75), 1.2, 1.3);
-            }
-            // red zone: a strip over the band from the redline
-            const a = rAt(f.redline, max), b = rAt(max, max);
-            cv.fillRect(a[0] + RP.slant, a[1] - RP.t - 4, b[0] - a[0], 2.5, RC.red);
-            // ticks and the scale under the band
+            // the rail with its tabs, V's and end cups; under it nothing until the revs reach it (clear, as on the G80)
+            rRail(cv, max, RC.line);
+            // the scale under the band; the 0 under the climb's start
             const lab = max <= 9000 ? 2000 : 3000;
-            for (let r = 0; r <= max; r += 1000) {
-                const p = rAt(r, max), big = r % lab === 0;
-                cv.line(p[0], p[1] + 1, p[0], p[1] + (big ? 5 : 3), 1.4, RC.line);
-                if (big) cv.text(String(r / 1000), p[0], p[1] + 17, 12, RC.text, { align: 'center', font: 'bold' });
+            for (let r = 0; r <= max; r += lab) {
+                const p = rAtS(rS(r, max)), x = r === 0 ? p[0] : p[0], y = r === 0 ? p[1] + 8 + dn : RP.ky + D1 + 4 + dn;
+                sqText(cv, String(r / 1000), x, y, 10, RC.text, 'center');
             }
         }
         if (fg && isNum(d.rpm) && d.rpm > 50) {
-            const top = Math.min(d.rpm, max);
-            // burst: the lit fields pop in the grade's colour for 300 ms
-            const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null;
-            for (let r = 0; r < top; r += step) {
-                const c = fl ? (f.blink ? flashCol : null) : pop || fieldCol(r);
-                if (c) rSeg(cv, r, Math.min(top, r + step), max, c, 1.2);
+            // the rpm: the band under the rail, split at the notches, a red sliver at its end
+            const top = Math.min(d.rpm, max), st = rS(top, max);
+            const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null, c = pop || RC.fill;
+            // the needle: a red bar the band's own height, a dark hair's gap after the band's end (as on the G80)
+            const NW = 2.4, NG = 1.0;
+            rBand(cv, 0, st - NW - NG, max, c);
+            if (st > NW) rNeedle(cv, st - NW, st, max, RC.red);
+        }
+        if (fg) {
+            // the red zone: a yellow dash and dot (the warning), then a thin red line from the redline on into the 8's cup.
+            // Drawn only ahead of the needle (the live layer: what the revs have passed is the band's, and nothing peeks
+            // through the gap between band and needle), and clear of each tab as the band is, so it reads as running under
+            // the marks
+            const zs = rS(f.redline, max), zm = D0 + 2, from = isNum(d.rpm) && d.rpm > 50 ? rS(Math.min(d.rpm, max), max) + 0.8 : -Infinity;
+            // (the 8's end cup: the line runs right up to its wall, touching it, never over the white)
+            const tabs = rMarks(max);
+            const seg = (a, b, col) => {
+                let v = Math.max(a, from);
+                const zOf = (m) => (m.end ? uwOf(m) : reachOf(m) + RD.gap);
+                tabs.filter((m) => m.s + zOf(m) > v && m.s - zOf(m) < b).forEach((m) => {
+                    const z = zOf(m);
+                    if (m.s - z > v) rStrip(cv, v, m.s - z, zm - 0.8, zm + 0.8, col);
+                    v = Math.max(v, m.s + z);
+                });
+                if (b > v) rStrip(cv, v, b, zm - 0.8, zm + 0.8, col);
+            };
+            if (zs < RPATH.all - 6) {
+                seg(zs + 3, RPATH.all, RC.red);
+                seg(zs - 12, zs - 6, RC.yellow);
+                seg(zs - 3.5, zs - 1.5, RC.yellow);
             }
         }
-        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) {
-            const pk = Math.min(f.peak, max), p = rAt(pk, max), t = rT(pk, max);
-            cv.line(p[0], p[1], p[0] + RP.slant * t / RP.t, p[1] - t, 2.2, '#ffffff');
-        }
+        if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) rTick(cv, rS(Math.min(f.peak, max), max), D0, D1, 2.2, '#ffffff');
     }
-    // the power meter under the ramp (not in the list)
-    const meter = (f.readouts || []).filter((it) => it.bar)[0];
-    if (meter) rampMeter(cv, meter.bar, h.P, layer);
+    // the shift lights: hidden until the count-in, then lit left to right; unlit ones as outlines (Unlit: Dim)
+    if (fg && ((o.lights && isNum(d.rpm) && (d.rpm >= cue.from || cue.shift)) || cue.limiter)) {
+        const k = isNum(d.rpm) ? clamp((d.rpm - cue.from) / Math.max(1, cue.at - cue.from), 0, 1) : 0;
+        const lit = fl ? (f.blink ? RL.n : 0) : Math.max(1, Math.ceil(k * RL.n));
+        rBars.forEach((q, i) => {
+            const red = i >= RL.n - 2;
+            if (i < lit) {
+                const c = fl ? flashCol : !ownColours(o) ? (red ? RC.red : RC.yellow) : h.lightCol(o.lightStyle, h.P, i / (RL.n - 1));
+                cv.quad(q, c);
+            } else if (o.dim) cv.polyline(q.concat([q[0]]), 1, red ? withAlpha(RC.red, 0.6) : withAlpha(RC.line, 0.5));
+        });
+    }
+    if (meter) rampMeter(cv, meter.bar, h.P, layer, max);
     if (!fg) return;
-    const gx = 222, items = (f.readouts || []).filter((it) => !it.bar);
-    // with the meter under the band, everything below it 4 px lower (and the list's rows 1 px closer) so the gear,
-    // its mode letter and the list's first row keep a gap to it
-    const dn = meter ? 4 : 0, pitch = meter ? 25 : 26;
-    if (f.chip) ring(cv, gx, 74 + dn, 22, 58, f.chip, h.P);
+    const gx = 113, gy = 54 + dn, items = (f.readouts || []).filter((it) => !it.bar);
+    if (f.chip) ring(cv, gx, gy + 16, 20, 50, f.chip, h.P);
     // readouts 2-4: a list on the right, label left and value right
-    [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 284, 66 + dn + k * pitch, items[i], h.P, o, RC.text, 'row', 112); });
-    if (o.gear) cv.text(h.gearText(d), gx, 90 + dn, 44, cue.limiter && f.blink ? RC.red : RC.text, { align: 'center', font: h.gearFont(o) });
-    if (f.mode && o.gear) cv.text(f.mode, gx + 22, 66 + dn, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
-    cv.fillRect(gx - 30, 96 + dn, 60, 1.6, RC.text);
-    h.drawDown(cv, gx - 50, 62 + dn, f.down || 0, 1, h.P.arrow);
-    if (f.chip) grade(cv, gx, 124 + Math.min(dn, 3), f.chip, h.P, 22);
+    [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 262, 68 + dn + k * 21, items[i], h.P, o, RC.text, 'row', 132); });
+    const gearC = cue.limiter && f.blink ? RC.red : RC.text;
+    if (o.gear) {
+        if (sq) sqText(cv, h.gearText(d), gx, gy, 27, gearC, 'center');
+        else cv.text(h.gearText(d), gx, gy + 32, 42, gearC, { align: 'center', font: h.gearFont(o) });
+    }
+    if (f.mode && o.gear) cv.text(f.mode, gx + 22, gy + 11, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
+    cv.fillRect(gx - 50, gy + 32, 84, 1.6, RC.text);
+    h.drawDown(cv, gx + 58, gy + 6, f.down || 0, 1, h.P.arrow);
+    if (f.chip) grade(cv, gx, gy + 62, f.chip, h.P, 22);
     else {
         const it = items[0];
         if (it) {
-            cv.text(it.value, gx, 124 + Math.min(dn, 3), 24, toneCol(it, h.P, RC.text), { align: 'center', font: o.valFont || 'bold' });
-            fitLabel(cv, it.label.toLowerCase(), gx + 32, 102 + dn, labelOf(o, RC.text).s, RC.text, 284 - gx - 36, { spacing: 0 });
+            const vc = toneCol(it, h.P, RC.text);
+            if (sq) sqText(cv, it.value, gx - 8, gy + 38, 19, vc, 'center');
+            else cv.text(it.value, gx - 8, gy + 62, 22, vc, { align: 'center', font: o.valFont || 'bold' });
+            fitLabel(cv, it.label.toLowerCase(), gx + 37, gy + 36, labelOf(o, RC.text).s, RC.text, 262 - gx - 40, { spacing: 0 });
         }
     }
 }

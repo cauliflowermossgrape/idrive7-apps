@@ -34,8 +34,8 @@ const log = { info() {}, warn() {}, error() {} };
     // (In Comfort / Eco Pro: Same as Sport, the OG default; this fork's own is Don't show, checked in test_redline_hud.js)
     const v = Object.assign({}, def, { hud: 'on', hudStyle: 'arc', hudRenderer: 'gpu', hudFps: 30, hudComfortMode: 'same' }), fns = [];
     const settings = { get: (k) => v[k], set: (k, x) => { v[k] = x; fns.forEach((f) => f(k, x)); }, onChange: (f) => fns.push(f) };
-    let rpm = 3000, drive = 'sport', speed = 80;
-    const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: speed, oil: 95, coolant: 92 }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
+    let rpm = 3000, drive = 'sport', speed = 80, cond, known;
+    const src = { data: () => ({ rpm: rpm, gear: 3, stage: 'D', speed: speed, oil: 95, coolant: 92, condition: cond, conditionKnown: known }), shiftPoint: () => ({ rpm: 6200, cold: false }), redline: () => 6550,
         maxRpm: () => 8000, driveMode: () => drive,
         // a stand-in knock reader: started / stopped by the HUD, its last event's time set by the test
         knock: { on: false, at: 0, start() { this.on = true; }, stop() { this.on = false; }, value() { return { retard: null, at: this.at }; } },
@@ -47,7 +47,7 @@ const log = { info() {}, warn() {}, error() {} };
         // a stand-in launch score: a run that finished `at`
         launch: (now, mph) => (launchRun && now - launchRun.at < 3000 ? Object.assign({ label: mph ? '0-60' : '0-100' }, launchRun) : null) };
     let launchRun = null;
-    const h = Hud.start({ settings: settings, log: log, dataDir: TMP }, src);
+    const h = Hud.start({ settings: settings, log: log, dataDir: TMP, backWaitMs: 600 }, src);
     await sleep(250);
 
     // every layout: one image layer, no shader
@@ -78,6 +78,42 @@ const log = { info() {}, warn() {}, error() {} };
     // hidden, the car isn't read, but the one look for a hybrid battery may still run (a PHEV's Hybrid mode counts as
     // Comfort): the electrical reader asked for nothing else (2026-11-10 review)
     ok(!src.knock.on && src.electrical.on && JSON.stringify(src.electrical.want) === '{}', "Comfort, Don't show: no reads, the electrical reader only for its hybrid look (" + JSON.stringify(src.electrical.want) + ')');
+    // switching off in Comfort on Don't show (issue #141): an unknown mode (null, shown as Sport) while the car's state
+    // is ending (12) or off (5) makes no new layer, so cluster-render never maps the HUD as the cluster goes off
+    cond = 12; drive = null; await sleep(200);
+    ok(cr.of('image').length === 0 && /switched on/.test(h.status()), 'switching off, the mode unknown: no new layer (' + h.status() + ')');
+    cond = 5; await sleep(150);
+    ok(cr.of('image').length === 0, 'switched off: still no layer');
+    cond = 8; drive = 'sport'; await sleep(150);
+    ok(cr.of('image').length === 0, 'drive readiness starting: no layer yet');
+    cond = 10; await sleep(200);
+    ok(cr.of('image').length === 1, 'drive-ready in Sport: the layer');
+    cond = 12; await sleep(150);
+    ok(cr.of('image').length === 0 && /switched on/.test(h.status()), 'switching off with the tach shown: the layer dropped (' + h.status() + ')');
+    cond = 10; await sleep(200);
+    ok(cr.of('image').length === 1, 'drive-ready again: the layer back');
+    // a state the car sends that isn't known ("no value" 15): the last known one may be stale, no new layer;
+    // a layer already up stays (a car that sent it while driving keeps its HUD)
+    known = false; await sleep(150);
+    ok(cr.of('image').length === 1, 'an unknown state with the tach shown: it stays');
+    Hud.setComfortMode(settings, 'hide'); drive = 'comfort'; await sleep(150);
+    drive = 'sport'; await sleep(200);
+    ok(cr.of('image').length === 0, 'an unknown state: no new layer for Sport');
+    known = undefined; await sleep(200);
+    ok(cr.of('image').length === 1, 'the state known again: the layer');
+    // the directions giving way ends (a route ending, as at switch-off): the tach back only after a wait
+    let gw = true;
+    src.nav.view = function () { return { show: null, giveWay: gw }; };
+    await sleep(150);
+    ok(cr.of('image').length === 0, 'giving way to BMW\'s directions: no layer');
+    gw = false; await sleep(300);
+    ok(cr.of('image').length === 0, 'give-way just over: the tach not back yet');
+    gw = true; await sleep(100); cond = 12; gw = false; await sleep(200);
+    ok(cr.of('image').length === 0, 'give-way over as the car switches off: still no layer');
+    cond = 10; await sleep(800);
+    ok(cr.of('image').length === 1, 'give-way over while driving: the tach back after the wait');
+    src.nav.view = function () { return { show: this.m, giveWay: false }; };
+    cond = undefined;
     drive = 'sport'; Hud.setComfortMode(settings, 'same'); await sleep(250);
     ok(cr.of('image').length === 1, 'back in Sport: shown again');
     // Comfort's own size and place: the tach moves there when the mode is Comfort, back when it's Sport

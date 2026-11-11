@@ -2219,3 +2219,8 @@ no answer from the body module	바디 모듈 응답 없음
 # Engine Config 0.9.2: xDrive, NRC 33 suggests diagnostic mode (xdrive.js)
 refused (security access) · try diagnostic mode: press Start 3 times without the brake, then again	보안 접근 거부 · 진단 모드를 시도하세요: 브레이크를 밟지 않고 시동 버튼을 3번 누른 뒤 다시 시도
 security access · try diagnostic mode (Start 3 times, no brake); else this VIP needs an unlock	보안 접근 · 진단 모드를 시도하세요 (브레이크 없이 시동 버튼 3번); 안 되면 이 VIP는 잠금 해제가 필요합니다
+Logs	로그
+Directions	길 안내
+Cluster renderer	클러스터 렌더러
+Refresh	새로 고침
+What Redline and the HUD did lately	레드라인과 HUD의 최근 기록

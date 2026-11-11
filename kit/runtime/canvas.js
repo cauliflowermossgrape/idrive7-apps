@@ -400,6 +400,41 @@ class Canvas {
     triangle(pts, c) { return this.convex(pts, c); }
 
     /**
+     * Any simple polygon (concave too), filled in one pass, anti-aliased: 4 sub-rows a pixel, each span's ends covered
+     * by their exact share of a pixel. One shape where pieces drawn side by side would leave hairline seams between
+     * them. pts = [[x,y],...] (even-odd).
+     */
+    fill(pts, c) {
+        const n = pts ? pts.length : 0;
+        if (n < 3) return this;
+        c = rgba(c);
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        pts.forEach((p) => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+        const X0 = Math.max(0, Math.floor(x0)), X1 = Math.min(this.w, Math.ceil(x1)), Y0 = Math.max(0, Math.floor(y0)), Y1 = Math.min(this.h, Math.ceil(y1));
+        if (X1 <= X0 || Y1 <= Y0) return this;
+        const S = 4, acc = new Float32Array(X1 - X0), xs = [];
+        const span = (l, r) => {
+            l = Math.max(l, X0); r = Math.min(r, X1);
+            for (let px = Math.floor(l); px < r; px++) acc[px - X0] += Math.min(r, px + 1) - Math.max(l, px);
+        };
+        for (let py = Y0; py < Y1; py++) {
+            acc.fill(0);
+            for (let k = 0; k < S; k++) {
+                const sy = py + (k + 0.5) / S;
+                xs.length = 0;
+                for (let i = 0; i < n; i++) {
+                    const a = pts[i], b = pts[(i + 1) % n];
+                    if ((a[1] <= sy) !== (b[1] <= sy)) xs.push(a[0] + (sy - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+                }
+                xs.sort((p, q) => p - q);
+                for (let j = 0; j + 1 < xs.length; j += 2) span(xs[j], xs[j + 1]);
+            }
+            for (let px = X0; px < X1; px++) { const cov = acc[px - X0] / S; if (cov > 0.002) this._blend(px, py, c, Math.min(1, cov)); }
+        }
+        return this;
+    }
+
+    /**
      * A thick path with round joins and ends, anti-aliased once over the whole path: where its pieces overlap (at a
      * bend) the edge isn't blended twice, so a bend has no bump. pts = [[x,y],...]
      */
@@ -577,6 +612,7 @@ class ScaledCanvas {
     convex(pts, c) { this.canvas.convex(this._pts(pts), c); return this; }
     quad(pts, c) { return this.convex(pts, c); }
     triangle(pts, c) { return this.convex(pts, c); }
+    fill(pts, c) { this.canvas.fill(this._pts(pts), c); return this; }
     polyline(pts, width, c) { this.canvas.polyline(this._pts(pts), width * this.k, c); return this; }
     stroke(pts, width, c) { this.canvas.stroke(this._pts(pts), width * this.k, c); return this; }
     fillUnder(pts, baseY, c) { this.canvas.fillUnder(this._pts(pts), baseY * this.k, c); return this; }
