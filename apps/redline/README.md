@@ -396,10 +396,21 @@ glass's edge. Checked for every size and position the settings allow.
   BMW's direction card is hidden while Redline is on the HUD: [Directions](#directions-experimental).
 - When BMW shows a pop-up on the HUD (media, lists), cluster-render moves the tach aside. It
   comes back about 1.5 s after the pop-up goes. Redline pauses drawing in the meantime.
-- If the cluster restarts twice within 10 s of the HUD being mapped, cluster-render's mapping
-  guard turns the HUD off. The Learned page then says *HUD: off after display errors*. To turn
-  it back on, run this over SSH as root:
-  `/var/opt/cluster-render/current/cluster-render guard-reset`.
+- **The mapping guard (cluster-render's, not Redline's).**
+  - Each time the cluster's display service goes away within 10 s of the HUD being mapped is a strike.
+    That covers a cluster restart, and also, it seems, the cluster going off at switch-off. Two strikes turn the
+    HUD off for good.
+  - The Learned page then says *HUD: off after display errors*.
+  - To get the HUD back, update Cluster renderer to a newer version from the MGU Store (a new version
+    forgets the strikes; reinstalling the same one doesn't), or run this over SSH as root:
+    `/var/opt/cluster-render/current/cluster-render guard-reset`. A Redline update doesn't clear it.
+  - Since 2.0.22 Redline gives the guard nothing to strike at switch-off (issue #141):
+    - a driving mode the car stops sending as it switches off keeps the last one. Before, an unknown mode counted
+      as Sport, so in Comfort on *Don't show* the tach came back onto the HUD just as the cluster went off;
+    - no new HUD layer is made while the car is off (vehicle state 5 or lower) or its drive readiness is starting
+      (8) or ending (12). A tach already on the HUD stays. The Learned page says *HUD: waits for the car to be
+      switched on*.
+  - *Settings → Logs* shows the guard's strikes (below).
 
 ## Shift cue
 
@@ -657,6 +668,26 @@ each shift is not logged at all.
 
 Learned files are written to a temp file and renamed, so a power cut can't corrupt them. On
 load they are range-checked; a bad file is ignored and relearned.
+
+### Logs on the screen (Settings → Logs)
+
+The last row of Settings, for when there's no SSH (a remote install). It shows the important lines, newest first:
+
+- **Redline**: `redline.log`'s warnings and errors, each start, and the HUD's, driving mode's and directions' lines.
+- **Directions**: `redline-nav.log`'s probe, the guide coming and going, the `dir:` lines and errors.
+- **Cluster renderer**: its own log (`/var/opt/cluster-render/log/cluster-render.log`): the mapping guard's strikes
+  and the display service coming and going. Not checked on a car: if apps can't read that file, a note says so.
+
+On top: what the HUD is doing, and cluster-render's guard (`guard: hud …: 1 strike`, or `disabled, 2 strikes`).
+
+- **Touch:** pick a source, Refresh, Back to Settings; a finger scrolls the lines.
+- **Controller:** turning scrolls, pressing picks the next source, left goes back.
+
+Only the end of each file is read (96 KB, the older `.1` too when the newer one is shorter), when the view opens, a
+source is picked or Refresh is tapped. Nothing is written. Only where the kit draws Settings (the GPU renderer);
+the HMI's own settings screen has no such row.
+
+### Over SSH
 
 To see what was learned, run this from a computer on the car's hotspot:
 

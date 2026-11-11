@@ -68,6 +68,7 @@ jobs:
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
       - run: node kit/tools/test_redline_navlog.js
+      - run: node kit/tools/test_redline_logview.js
       - run: node kit/tools/test_redline_nav.js
       - run: node kit/tools/test_redline_hud_nav.js
       - run: node kit/tools/test_redline_features.js
@@ -106,6 +107,7 @@ jobs:
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
       - run: node kit/tools/test_redline_navlog.js
+      - run: node kit/tools/test_redline_logview.js
       - run: node kit/tools/test_redline_nav.js
       - run: node kit/tools/test_redline_hud_nav.js
       - run: node kit/tools/test_redline_features.js

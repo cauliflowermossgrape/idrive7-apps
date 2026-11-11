@@ -64,6 +64,8 @@ const HudTyres = require('./hud-tyres');
 const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
+const LogView = require('./logview');
+const Sheet = require('./kit/sheet');
 
 const W = 1600, H = 520;
 // rev bar (G20 style): left to right, slanted segments; top edge shifted right by 'slant'
@@ -145,9 +147,11 @@ mgu.run({
             },
             // the driving mode (Sport / Comfort / Eco Pro), for "In Comfort / Eco Pro" on the HUD
             statusFESVehicleDynamicSwitchHMI: (v) => {
-                const raw = v && v.actualValueModeDrivingExperience;
-                driveMode.v = Hud.driveModeOf(raw);
-                if (driveMode.seen.indexOf(String(raw)) < 0 && driveMode.seen.length < 16) { driveMode.seen.push(String(raw)); log.info('driving mode: ' + JSON.stringify(raw) + ' -> ' + driveMode.v); }
+                const raw = v && v.actualValueModeDrivingExperience, m = Hud.driveModeOf(raw);
+                // a value that isn't a mode (as the car switches off) keeps the last one: read as Sport, it put the
+                // tach back on the HUD in Comfort just as the cluster went off (issue #141)
+                if (m) driveMode.v = m;
+                if (driveMode.seen.indexOf(String(raw)) < 0 && driveMode.seen.length < 16) { driveMode.seen.push(String(raw)); log.info('driving mode: ' + JSON.stringify(raw) + ' -> ' + (m || 'not a mode, ' + (driveMode.v || 'none') + ' kept')); }
             },
             statusSwitchDriveDynamicSport2: (v) => {
                 const raw = v && v.displayBoostPressure;
@@ -692,7 +696,7 @@ mgu.run({
                 cv.target(tx - 16, 362, w + 32, 40, () => { studio.panel = pn[0]; return render(); }, 'studio_tab_' + pn[0]);
                 tx += w + 48;
             });
-            const nOn = [o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.fuel, o.oil, o.coolant, o.gearbox, o.outside, o.tyres,
+            const nOn = [o.speed, o.rpm && o.style !== 'digital' && o.style !== 'vfd', o.boost, o.torque, o.power, o.g, o.knock, o.fuel, o.oil, o.coolant, o.gearbox, o.outside, o.tyres,
                 o.soc12, o.volt12, o.hvSoc, o.hvPower, o.hvBar, o.hvTemp, o.hvVolt].filter(Boolean).length;
             // the power bar takes no place in the row on the layouts that draw it along their gauge (2026-11-10 review)
             const over = studio.panel === 'readouts' && nOn - (o.hvBar && Hud.METER_STYLES.indexOf(o.style) >= 0 ? 1 : 0) > Hud.MAX_READOUTS;
@@ -741,7 +745,8 @@ mgu.run({
             } else if (studio.panel === 'readouts') {
                 // the numbers under the bar, in this order; up to four show
                 readoutsPick(cv, t);
-                switches(cv, t, R1, 'ENGINE', [
+                const engEnd = switches(cv, t, R1, 'ENGINE', [
+                    ['Speed', o.speed, () => P.set('hudShowSpeed', !o.speed)],
                     ['RPM', o.rpm, () => P.set('hudShowRpm', !o.rpm)],
                     ['Boost', o.boost, () => P.set('hudBoost', !o.boost)],
                     ['Torque', o.torque, () => P.set('hudShowTorque', !o.torque)],
@@ -750,6 +755,14 @@ mgu.run({
                     ['Knock', o.knock, () => P.set('hudShowKnock', !o.knock)],
                     ['Fuel', o.fuel, () => P.set('hudShowFuel', !o.fuel)],
                 ].concat(tyres.seen() ? [['Tyres', o.tyres, () => P.set('hudShowTyres', !o.tyres)]] : []));
+                // the speed's unit beside it: the app's own Speed unit (Settings > Units, the launch timer's too), so it is
+                // set on settings, not on the setup being edited; dimmed while the speed is off
+                let ux = engEnd + 12;
+                [['kmh', 'km/h'], ['mph', 'mph']].forEach((op) => {
+                    const w = G.button(cv, t, ux, R1, 0, 40, op[1], () => { settings.set('speedUnit', op[0]); return render(); },
+                        { key: 'studio_speedUnit_' + op[0], primary: (settings.get('speedUnit') || 'kmh') === op[0], busy: !o.speed });
+                    ux += (w || 90) + 8;
+                });
                 switches(cv, t, R2, 'TEMPS', [
                     ['Oil', o.oil, () => P.set('hudShowOil', !o.oil)],
                     ['Water', o.coolant, () => P.set('hudShowWater', !o.coolant)],
@@ -844,6 +857,7 @@ mgu.run({
                 cv.target(x, y, w, h, () => { c[2](); return render(); }, 'studio_sw_' + y + '_' + i);
                 x += w + 12;
             });
+            return x;
         }
         /** Buttons that step a number setting through its "steps" (−1 / +1), with the value between. */
         function stepButtons(cv, t, x, y, key, buttons, fmt) {
@@ -923,6 +937,91 @@ mgu.run({
             const notes = [resetArmed() ? 'Press Reset learned again to forget it all' : '', hs, learning() ? '' : 'Learning off: values kept'].filter(Boolean);
             if (notes.length) cv.text(notes.join('   ·   '), 836, Math.min(506, y + 40), 16, notes.some((n) => /off|not|again/i.test(n)) ? t.warn : t.dim, { font: 'bold' });
         }
+
+        /* ---------- Logs (Settings, its last row): the important lines of Redline's logs and cluster-render's ----------
+         * For a user with no SSH (issue #141: a remote install, the HUD off after display errors). Read only when the
+         * sheet opens, a source is picked or Refresh is tapped, never per frame (logview.js). The HUD's line and
+         * cluster-render's mapping guard on top. Touch: the sources, Refresh, Back, a finger scrolls the lines. The
+         * controller: turning scrolls, pressing picks the next source. */
+        const LOG_SOURCES = [['redline', 'Redline'], ['nav', 'Directions'], ['cluster', 'Cluster renderer']];
+        const LOG_PITCH = 28;
+        const logs = { src: 'redline', res: null, t: 0, top: 0, px: 0, per: 12, fits: new Map() };
+        function loadLogs() {
+            logs.res = LogView.load(logs.src, ctx.dataDir); logs.t = Date.now(); logs.top = 0; logs.px = 0; logs.fits.clear();
+            if (hud) hud.askStatus();
+        }
+        /** s cut with ... to w px (kept per line: the sheet is drawn 30 times a second). */
+        function fitText(r, s, size, w, opts) {
+            const k = size + '|' + w + '|' + s;
+            if (logs.fits.has(k)) return logs.fits.get(k);
+            let out = s;
+            if (r.textWidth(s, size, opts) > w) {
+                let lo = 0, hi = s.length;
+                while (lo < hi) { const m = (lo + hi + 1) >> 1; if (r.textWidth(s.slice(0, m) + '...', size, opts) <= w) lo = m; else hi = m - 1; }
+                out = s.slice(0, lo) + '...';
+            }
+            if (logs.fits.size > 400) logs.fits.clear();
+            logs.fits.set(k, out);
+            return out;
+        }
+        const logsMax = () => Math.max(0, logs.res.rows.length - logs.per);
+        function logsSheet() {
+            loadLogs();
+            return {
+                title: 'Logs',
+                draw(r, t) {
+                    r.clear(t.bg);
+                    const T = Sheet.TOP, targets = [], bold = { font: 'bold' };
+                    // the sources, top left
+                    let x = 44;
+                    LOG_SOURCES.forEach((op) => {
+                        const w = Math.max(150, r.textWidth(op[1], 24, bold) + 60);
+                        Sheet.pill(r, t, x, T + 8, w, 46, op[1], op[0] === logs.src);
+                        targets.push({ x: x, y: T + 2, w: w, h: 58, act: () => { if (logs.src !== op[0]) { logs.src = op[0]; loadLogs(); } return null; } });
+                        x += w + 14;
+                    });
+                    // Back (to the settings), Refresh before it
+                    const bw = 150, bx = 1600 - 40 - bw, rw = 170, rx = bx - 16 - rw;
+                    Sheet.pill(r, t, rx, T + 8, rw, 46, 'Refresh', false);
+                    targets.push({ x: rx, y: T + 2, w: rw, h: 58, act: () => { loadLogs(); return null; } });
+                    Sheet.pill(r, t, bx, T + 8, bw, 46, 'Back', false);
+                    targets.push({ x: bx - 10, y: T + 2, w: bw + 20, h: 58, act: () => 'close' });
+                    // the HUD now, and cluster-render's mapping guard (its strikes against the HUD) once it has answered
+                    const st = hud ? hud.crStatus() : null, guard = st ? LogView.guardLines(st.text) : [];
+                    const hs = (hud ? hud.status() : '') || 'HUD: off in the settings';
+                    const head = [hs].concat(guard.length ? guard : st ? ['guard: no strikes'] : []).join('   ·   ');
+                    const warn = /off after|disabled|strike/.test(head) && !/no strikes/.test(head);
+                    const rows = logs.res.rows;
+                    const count = rows.length ? (logs.top + 1) + '-' + Math.min(rows.length, logs.top + logs.per) + ' of ' + rows.length + ', newest first' : '';
+                    const cw = count ? r.textWidth(count, 18, {}) + 24 : 0;
+                    r.text(fitText(r, head, 20, 1512 - cw, bold), 44, T + 98, 20, warn ? t.warn : t.text, bold);
+                    if (count) r.text(count, 1556, T + 98, 18, t.dim, { align: 'right' });
+                    r.fillRect(44, T + 114, 1512, 1, withAlpha(t.tick || '#ffffff', 0.5));
+                    const y0 = T + 146, bottom = G.BOTTOM + (r.extra || 0) - 10;
+                    logs.per = Math.max(4, Math.floor((bottom - y0) / LOG_PITCH) + 1);
+                    logs.top = Math.min(logs.top, logsMax());
+                    if (!rows.length) { r.text(logs.res.note || 'Nothing to show', 44, y0, 20, t.dim); return targets; }
+                    rows.slice(logs.top, logs.top + logs.per).forEach((row, i) => {
+                        // the mapping guard's lines read as warnings whatever their level
+                        const y = y0 + i * LOG_PITCH, lv = row.level, bad = /ERROR|FATAL/.test(lv), wn = /WARN/.test(lv) || /guard|strike/i.test(row.msg);
+                        const start = /^starting /.test(row.msg);
+                        r.text(LogView.stamp(row.at), 44, y, 17, t.dim, { font: 'num' });
+                        if (lv && lv !== 'INFO') r.text(lv.replace('SDK_', ''), 196, y, 16, bad ? t.crit : wn ? t.warn : t.dim, bold);
+                        r.text(fitText(r, row.msg, 19, 1556 - 270, {}), 270, y, 19, bad ? t.crit : wn ? t.warn : start ? t.accent : t.text, start ? bold : {});
+                    });
+                    return targets;
+                },
+                // the controller: turning scrolls the lines, pressing picks the next source, left goes back
+                move(d) { logs.top = Math.max(0, Math.min(logsMax(), logs.top + d * 3)); logs.px = logs.top * LOG_PITCH; },
+                press() { const i = LOG_SOURCES.findIndex((op) => op[0] === logs.src); logs.src = LOG_SOURCES[(i + 1) % LOG_SOURCES.length][0]; loadLogs(); return null; },
+                back() { return 'close'; },
+                top() { return logs.top === 0; },
+                // a finger: px down the list
+                scroll(dy) { logs.px = Math.max(0, Math.min(logsMax() * LOG_PITCH, logs.px + dy)); logs.top = Math.round(logs.px / LOG_PITCH); },
+                release() {},
+            };
+        }
+        if (ctx.settingsRow) ctx.settingsRow({ label: 'Logs', value: 'What Redline and the HUD did lately', open: logsSheet });
 
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t, d) {

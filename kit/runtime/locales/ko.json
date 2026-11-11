@@ -1987,5 +1987,10 @@
   "Tyre widget: each tyre's target": "타이어 위젯: 바퀴별 목표값",
   "Tyre widget: tyre temperatures": "타이어 위젯: 타이어 온도",
   "This car sends tyre pressures (found by the app)": "타이어 공기압 신호 있음 (앱이 감지)",
-  "Temperatures shown": "표시할 온도"
+  "Temperatures shown": "표시할 온도",
+  "Logs": "로그",
+  "Directions": "길 안내",
+  "Cluster renderer": "클러스터 렌더러",
+  "Refresh": "새로 고침",
+  "What Redline and the HUD did lately": "레드라인과 HUD의 최근 기록"
 }

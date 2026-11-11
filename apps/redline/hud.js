@@ -237,7 +237,7 @@ const STYLES = ['standard', 'minimal', 'wings', 'digital', 'vfd', 'vector', 'arc
  * centre screen uses those too).
  */
 const PROFILE_KEYS = ['hudStyle', 'hudPalette', 'hudGearFont', 'hudLabels', 'hudRpmFormat', 'hudUnlit', 'hudLightStyle',
-    'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
+    'hudShowBar', 'hudShowGear', 'hudShowMode', 'hudShowSpeed', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock',
     'hudShowOil', 'hudShowWater', 'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudTempsMode',
     'hudShowTyres', 'hudShowFuel', 'hudShowBattSoc', 'hudShowBattVolt', 'hudShowHvSoc', 'hudShowHvPower', 'hudShowHvBar', 'hudShowHvTemp', 'hudShowHvVolt',
     'hudChip', 'hudKnockWarn', 'hudLaunch', 'hudPeak', 'hudShake',
@@ -316,7 +316,7 @@ function migrateProfiles(settings) {
     if (v.hudComfort === 'hide') { settings.set('hudComfortMode', 'hide'); did = 'hide'; }
     else if (v.hudComfort === 'lights') {
         const st = profileSnapshot(settings);
-        ['hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock', 'hudShowOil', 'hudShowWater',
+        ['hudShowSpeed', 'hudShowRpm', 'hudBoost', 'hudShowTorque', 'hudShowPower', 'hudShowG', 'hudShowKnock', 'hudShowOil', 'hudShowWater',
             'hudShowGearbox', 'hudShowOutside', 'hudShowLimit', 'hudPeak', 'hudShake', 'hudLaunch'].forEach((k) => { st[k] = false; });
         st.hudChip = 'off';
         settings.set('hudComfortSetup', st);
@@ -347,6 +347,8 @@ function optsFrom(settings, drive) {
         oil: on('hudShowOil'), coolant: on('hudShowWater'), gearbox: on('hudShowGearbox'),
         // the extra readouts are off unless switched on
         torque: settings.get('hudShowTorque') === true, power: settings.get('hudShowPower') === true,
+        // the speed: off by default (BMW's own HUD shows it); first in the list, so on Ramp it sits under the gear like the G80's
+        speed: settings.get('hudShowSpeed') === true,
         // throttle: off until the accelerator pedal's scaling is checked on a car (readoutsFor keeps it)
         throttle: false, g: settings.get('hudShowG') === true,
         outside: settings.get('hudShowOutside') === true,
@@ -454,6 +456,7 @@ const roundTo = (v, step) => Math.round(v / step) * step;
 function readoutsFor(d, gb, boost, sp, o, x) {
     const items = [];
     x = x || {};
+    if (o.speed && isNum(x.kmh)) items.push({ label: o.mph ? 'MPH' : 'KM/H', value: String(Math.round(Math.max(0, x.kmh) * (o.mph ? 0.621371 : 1))), tone: 'text' });
     // the rpm as a number (the 7-segment layouts have their own digits): to 10, to 50, or in
     // thousands with one decimal (4.5), which reads at a glance like the tach's own numbers
     if (o.rpm && o.style !== 'digital' && o.style !== 'vfd' && isNum(d.rpm)) items.push(rpmItem(d.rpm, o.rpmFormat));
@@ -556,6 +559,8 @@ function demoAt(tMs) {
     const pull = r.down || t >= 8.6 ? 0 : t >= 7.6 ? 0.3 : 1;
     r.pedal = pull * 100; r.torque = pull ? 180 + 220 * clamp(r.boost / 1.3, 0, 1) : 0;
     r.gLong = r.down ? -0.85 : pull * 0.45; r.gLat = 0.1; r.outside = 14;
+    // the speed from the gear and revs (km/h per 1000 rpm, an 8-speed's 2nd to 4th)
+    r.kmh = r.rpm / 1000 * ({ 2: 13.6, 3: 20.6, 4: 27 }[r.gear] || 20);
     // tyres for the previews: front right of target, rear left a little under, rear right well under
     r.tyres = { p: { FL: 2.4, FR: 2.4, RL: 2.5, RR: 2.1 }, tgt: { FL: 2.5, FR: 2.5, RL: 2.7, RR: 2.7 }, t: { FL: 59, FR: 61, RL: 69, RR: 70 } };
     return r;
@@ -687,6 +692,8 @@ function start(ctx, src) {
     } catch (e) { /* none yet */ }
     let cur = null, prev = null, first = true, lastErr = 0;
     let hiddenLogged = false;     // the HUD is hidden by the driving mode (logged once each way)
+    let offLogged = false;        // no new layer while the car is off or switching on / off (logged once each time)
+    let crStatus = null;          // cluster-render's last status reply { t, text } (the Logs page asks for it)
 
     const safe = (name, fn) => function () {
         try { return fn.apply(null, arguments); } catch (e) {
@@ -775,6 +782,8 @@ function start(ctx, src) {
             target = { state: state, holder: holder, disabled: disabled };
             if (s !== lastTarget) { lastTarget = s; log.info('hud: target ' + s); }
         }));
+        // its status reply (the Logs page): the mapping guard's lines among it
+        cr.on('status', safe('status', (text) => { crStatus = { t: Date.now(), text: String(text || '') }; }));
         cr.on('layer', safe('layer', (ref, state, reason) => {
             if (ref === layer) log.info('hud: layer ' + state + (reason ? ' (' + reason + ')' : ''));
             else if (navLayer && ref === navLayer) {
@@ -991,6 +1000,16 @@ function start(ctx, src) {
      * unavailable or disabled by the guard. Drawn in every other state: cluster-render only asks
      * for the target once the layer has content, so idle / acquiring must draw.
      */
+    /**
+     * No new HUD layer while the car is off (vehicle state 5 or lower), its drive readiness is starting (8) or
+     * ending (12); a car that doesn't send its state (or not yet) isn't held back. cluster-render's mapping
+     * guard counts the cluster's display going away within 10 s of the HUD being mapped as a strike, and two turn
+     * the HUD off for good. At switch-off Redline used to map it just then (issue #141). A layer already there stays.
+     */
+    function holdOff() {
+        const c = src.data ? src.data().condition : undefined;
+        return isNum(c) && (c <= 5 || c === 8 || c === 12);
+    }
     const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
     const tick = safe('tick', () => {
         // cluster-render not up (lost, or not yet back): nothing is drawn, so nothing is read from the car either
@@ -1018,7 +1037,15 @@ function start(ctx, src) {
                 if (!hiddenLogged && !nv.giveWay) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }
-            if (!layer) { makeLayer(); if (!layer) return; }
+            if (!layer) {
+                if (holdOff()) {
+                    stopReads(true);
+                    if (!offLogged) { offLogged = true; log.info('hud: no new layer while the car is off or switching on / off (state ' + (src.data ? src.data().condition : '?') + ')'); }
+                    return;
+                }
+                offLogged = false;
+                makeLayer(); if (!layer) return;
+            }
             claim.hold(true);
             if (hiddenLogged) { hiddenLogged = false; log.info('hud: back on'); }
         }
@@ -1103,7 +1130,8 @@ function start(ctx, src) {
         if (shown === 'tach') { if (layer) { cr.set(layer, r); placedKey = rectKey(r); } if (navLayer) cr.set(navLayer, navPlaceOf(placeView())); return; }
         dropLayer();
         // hidden by the driving mode: no layer yet, the timer makes it when the mode allows
-        const hidden = calm(Date.now() < demoUntil) === 'hide';
+        // (or the car off or switching on / off: the timer makes it once that's over, holdOff)
+        const hidden = calm(Date.now() < demoUntil) === 'hide' || holdOff();
         if (!hidden) { makeLayer(); if (!layer) return; }
         claim.hold(!hidden);
         shown = 'tach';
@@ -1193,6 +1221,7 @@ function start(ctx, src) {
         if (target && target.disabled) return 'HUD: off after display errors';
         if (m === 'test') return 'HUD: test pattern';
         if (shown === 'tach' && !layer && navGiving) return 'HUD: giving way to BMW\'s directions';
+        if (shown === 'tach' && !layer && holdOff()) return 'HUD: waits for the car to be switched on';
         if (shown === 'tach' && !layer) return 'HUD: hidden in Comfort / Eco Pro';
         const st = target ? target.state : '';
         if (st === 'shown') return 'HUD: on';
@@ -1219,7 +1248,11 @@ function start(ctx, src) {
     return { stop: disconnect, status: status, upshift: upshift, lead: leadMs, learned: learned, resetLead: resetLead, frame: frameData,
         play: play, stopPlay: stopPlay, playing: () => Date.now() < demoUntil, corner: () => corner,
         /** Directions on the glass in the last tick or so (the nav log writes only then): drawn each tick while shown. */
-        directionsShown: () => corner === 'nav' && monoMs() - navShownAt < 2000 };
+        directionsShown: () => corner === 'nav' && monoMs() - navShownAt < 2000,
+        /** Ask cluster-render for its status (the reply lands in crStatus); false when it isn't connected. */
+        askStatus: () => { if (!cr || !cr.ready) return false; try { cr.status(); return true; } catch (e) { return false; } },
+        /** cluster-render's last status reply { t, text }, or null. */
+        crStatus: () => crStatus };
 }
 
 // writeAtomic: kept here too (it moved to files.js in 2.0) for code that calls Hud.writeAtomic
