@@ -79,6 +79,7 @@ jobs:
       - run: node kit/tools/test_redline_hud_cache.js
       - run: node kit/tools/test_ambient_config.js
       - run: node kit/tools/test_ambient_rgb.js
+      - run: node kit/tools/test_ambient_others.js
       - run: node kit/tools/test_xdrive_live.js
       - run: node kit/tools/test_zh.js
       # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
