@@ -439,7 +439,8 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         const isRed = (d, i) => d[i + 3] > 200 && d[i] > 200 && d[i + 1] < 110 && d[i + 2] < 110;
         for (let mark = 1000; mark <= 6000; mark += 1000) for (let rpm = mark - 120; rpm <= mark + 120; rpm += 8) {
             const cv = new Canvas(W, H);
-            Draw.drawLayer(Draw.scaled(cv, K, 0, 0), { d: { rpm: rpm, gear: 3, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: true,
+            // (the redline at the scale's end: no red zone line in the live layer to count)
+            Draw.drawLayer(Draw.scaled(cv, K, 0, 0), { d: { rpm: rpm, gear: 3, stage: 'M' }, shift: 6400, redline: 8000, max: 8000, blink: true,
                 cue: { from: 9000, at: 9500, shift: false, limiter: false }, down: 0, peak: 0, chip: null, readouts: [], mode: null, opts: ro }, 'fg');
             const red = new Uint8Array(W * H); let first = -1, count = 0;
             for (let i = 0; i < W * H; i++) if (isRed(cv.d, i * 4)) { red[i] = 1; count++; if (first < 0) first = i; }

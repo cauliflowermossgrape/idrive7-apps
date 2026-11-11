@@ -556,14 +556,6 @@ function drawRamp(cv, f, layer, h) {
     // the gauge: Rev bar off leaves the lights and the gear (the lights are their own row since 2.0.21)
     if (o.bar !== false) {
         if (BG) {
-            // the red zone first, so the rail's tabs lie over it: a yellow dash and dot (the warning), then a thin red line from the redline
-            // on under the marks into the 8's cup
-            const zs = rS(f.redline, max), zm = D0 + 2;
-            if (zs < RPATH.all - 6) {
-                rStrip(cv, zs + 3, RPATH.all - RD.endIn - RD.endVw - 0.3, zm - 0.8, zm + 0.8, RC.red);
-                rStrip(cv, zs - 12, zs - 6, zm - 0.8, zm + 0.8, RC.yellow);
-                rStrip(cv, zs - 3.5, zs - 1.5, zm - 0.8, zm + 0.8, RC.yellow);
-            }
             // the rail with its tabs, V's and end cups; under it nothing until the revs reach it (clear, as on the G80)
             rRail(cv, max, RC.line);
             // the scale under the band; the 0 under the climb's start
@@ -581,6 +573,28 @@ function drawRamp(cv, f, layer, h) {
             const NW = 2.4, NG = 1.0;
             rBand(cv, 0, st - NW - NG, max, c);
             if (st > NW) rNeedle(cv, st - NW, st, max, RC.red);
+        }
+        if (fg) {
+            // the red zone: a yellow dash and dot (the warning), then a thin red line from the redline on into the 8's cup.
+            // Drawn only ahead of the needle (the live layer: what the revs have passed is the band's, and nothing peeks
+            // through the gap between band and needle), and clear of each tab as the band is, so it reads as running under
+            // the marks
+            const zs = rS(f.redline, max), zm = D0 + 2, from = isNum(d.rpm) && d.rpm > 50 ? rS(Math.min(d.rpm, max), max) + 0.8 : -Infinity;
+            const tabs = rMarks(max).filter((m) => !m.end);
+            const seg = (a, b, col) => {
+                let v = Math.max(a, from);
+                tabs.filter((m) => m.s + reachOf(m) + RD.gap > v && m.s - reachOf(m) - RD.gap < b).forEach((m) => {
+                    const z = reachOf(m) + RD.gap;
+                    if (m.s - z > v) rStrip(cv, v, m.s - z, zm - 0.8, zm + 0.8, col);
+                    v = Math.max(v, m.s + z);
+                });
+                if (b > v) rStrip(cv, v, b, zm - 0.8, zm + 0.8, col);
+            };
+            if (zs < RPATH.all - 6) {
+                seg(zs + 3, RPATH.all - RD.endIn - RD.endVw - 0.3, RC.red);
+                seg(zs - 12, zs - 6, RC.yellow);
+                seg(zs - 3.5, zs - 1.5, RC.yellow);
+            }
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) rTick(cv, rS(Math.min(f.peak, max), max), D0, D1, 2.2, '#ffffff');
     }
