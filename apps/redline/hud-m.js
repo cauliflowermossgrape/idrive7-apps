@@ -361,7 +361,8 @@ function rPt(v, d) {
  * left hairline seams, and where they met a gap, a faint line across it. Quads where a canvas has no fill.
  */
 function rShape(cv, ss, d0, d1, c) {
-    const top = ss.map((v) => rPt(v, Math.min(d0(v), d1(v) - 0.05))), bot = ss.map((v) => rPt(v, d1(v)));
+    // (rNPt: the normal turns smoothly round the knee, so the rail, tabs and band end step nowhere as it bends)
+    const top = ss.map((v) => rNPt(v, Math.min(d0(v), d1(v) - 0.05))), bot = ss.map((v) => rNPt(v, d1(v)));
     if (cv.fill) { cv.fill(top.concat(bot.reverse()), c); return; }
     for (let k = 1; k < ss.length; k++) cv.quad([top[k - 1], top[k], bot[ss.length - k - 1], bot[ss.length - k]], c);
 }
@@ -373,30 +374,73 @@ function rRail(cv, max, c) {
     const tab = (v) => ms.reduce((a, m) => Math.max(a, rTab(v - m.s, m)), 0);
     rShape(cv, rSamples(ms, 0, RPATH.all), vee, (v) => RD.rt + tab(v), c);
 }
-/**
- * The needle from s0 to s1: one bar down to the band's bottom whose top follows a smooth curve round each tab: full
- * depth (the tab's and the gap's) within the band's own clearance of it, easing back up over NEEDLE_EASE px either side
- * (smoothstep, gentle: across its 2.4 px the top never drops much, so no thin spike). Always at or below the band's
- * top, so it never touches the rail or a tab; and with no vertical step in
- * it, no hair-thin sliver is left at full height beside a tab (that read as the needle in two pieces). As the revs
- * move it glides under a tab: shorter, then taller again, never moved.
+/*
+ * The needle from s0 to s1 (2.0.35): the band's own shape (one piece: not split at a mark's middle, see rNeedle), down
+ * to the band's bottom, its top the band's top (rTabGap: the tab grown by the gap, the same rounded corner, the same depth under the
+ * tab, full height right up to where the band's corner rounds off; no early dip). One guard so it never leaves a sliver:
+ * a morphological opening by a NEEDLE_OPEN px wide flat bar (or the piece's own width, if narrower) along the rail
+ * (erode, then dilate): a full-height part narrower than that, a hair beside a tab's wall, is trimmed down to the band's
+ * curve under it. The curve is fixed to the rail (a grid at whole multiples
+ * of NEEDLE_H), so as the revs move the needle slides along it and only its ends change. Its outline is offset along a
+ * normal that turns smoothly round the knee (rNPt), so it doesn't fold where the knee's polygon bends.
  */
-const NEEDLE_EASE = 8;
-function rNeedleTop(ms, v) {
-    let d = 0;
-    ms.forEach((m) => {
-        const z = reachOf(m) + RD.gap, deep = RD.td + RD.gap, a = Math.abs(v - m.s);
-        if (a >= z + NEEDLE_EASE) return;
-        const x = a <= z ? 1 : 1 - (a - z) / NEEDLE_EASE;
-        d = Math.max(d, deep * x * x * (3 - 2 * x));
-    });
-    return RD.rt + RD.gap + d;
+const NEEDLE_OPEN = 1, NEEDLE_STEPS = 8, NEEDLE_H = 0.05;
+// the knee's normals at its vertices: radial inside the arc, the climb's and the flat's at its two ends
+const RVN = RPATH.pts.map((p, i) => (i === 1 ? RPATH.segN[0] : i === RPATH.pts.length - 2 ? RPATH.segN[RPATH.segN.length - 1] : RPATH.ptN[i]));
+/** The point d px under the rail at s, its normal blended along each of the knee's segments (no seam at its bends). */
+function rNPt(s, d) {
+    const L = RPATH.len, last = L.length - 1;
+    let i = 1;
+    while (i < last && L[i] < s) i++;
+    const a = RPATH.pts[i - 1], b = RPATH.pts[i], k = clamp((s - L[i - 1]) / ((L[i] - L[i - 1]) || 1), 0, 1);
+    let n = RPATH.segN[i - 1];
+    if (i > 1 && i < last) { const p = RVN[i - 1], q = RVN[i], x = p[0] + (q[0] - p[0]) * k, y = p[1] + (q[1] - p[1]) * k, m = Math.hypot(x, y); n = [x / m, y / m]; }
+    return [a[0] + (b[0] - a[0]) * k + n[0] * d, a[1] + (b[1] - a[1]) * k + n[1] * d];
 }
 function rNeedle(cv, s0, s1, max, c) {
-    const ms = rMarks(max), D1 = RP.rt + RP.ft, ss = [];
-    for (let v = s0; v < s1; v += 0.2) ss.push(v);
-    ss.push(s1);
-    rShape(cv, ss, (v) => Math.min(D1 - 1, rNeedleTop(ms, v)), () => D1, c);
+    // one piece, over a mark's middle too: split there as the band is, the two halves (~0.6 px each) all but vanished
+    // at 1x as the revs crossed it. Clear of the end marks' tabs as the band is
+    const all = rMarks(max), pcs = [];
+    const a = Math.max(s0, all[0].s + reachOf(all[0]) + RD.gap), b = Math.min(s1, all[all.length - 1].s - reachOf(all[all.length - 1]) - RD.gap);
+    if (b - a > 0.01) pcs.push([a, b]);
+    // (the trim's width never more than the widest piece: with the split in the middle, two thin halves both stay)
+    const open = Math.min(NEEDLE_OPEN, pcs.reduce((w, p) => Math.max(w, p[1] - p[0]), 0));
+    pcs.forEach((p) => rNeedlePiece(cv, all, p[0], p[1], open, c));
+}
+function rNeedlePiece(cv, all, s0, s1, open, c) {
+    const ms = all.filter((m) => Math.abs(m.s - (s0 + s1) / 2) < reachOf(m) + RD.gap + 4);
+    const D1 = RP.rt + RP.ft, base = RD.rt + RD.gap, h = NEEDLE_H;
+    // the band's clearance at u (on the grid, linear between)
+    const i0 = Math.floor(s0 / h), n = Math.ceil(s1 / h) - i0 + 1, g = new Float64Array(n);
+    if (ms.length) for (let i = 0; i < n; i++) g[i] = rTabGap(ms, (i0 + i) * h);
+    const P = (u) => { const x = u / h - i0, i = clamp(Math.floor(x), 0, n - 2), k = x - i; return g[i] + (g[i + 1] - g[i]) * k; };
+    // the grid points strictly inside (a, b)
+    const inside = (a, b) => { const o = []; for (let i = Math.floor(a / h) + 1; i * h < b - 1e-9; i++) o.push(i * h); return o; };
+    if (s1 - s0 < open / NEEDLE_STEPS) return;
+    const ss = [s0].concat(inside(s0, s1), [s1]), d = ss.map(() => 0);
+    // the opening by a bar L wide: erode (the deepest top under the bar, wherever it sits inside the piece), then
+    // dilate (at each point the shallowest of the bars covering it). Averaged over NEEDLE_STEPS widths up to
+    // NEEDLE_OPEN, so a hair is trimmed in step with its width (a w px wide part keeps w / NEEDLE_OPEN of its extra
+    // height) rather than all at once: no jump as it narrows.
+    for (let st = 1; st <= NEEDLE_STEPS; st++) {
+        // (a bar wider than the piece fits nowhere: the opening leaves none of it, so a piece narrower than
+        // NEEDLE_OPEN, a hair beside a mark's split, is only w / NEEDLE_OPEN of its height and grows as it widens)
+        const L = open * st / NEEDLE_STEPS;
+        if (L > s1 - s0 + 1e-9) { ss.forEach((v, j) => { d[j] += (D1 - base) / NEEDLE_STEPS; }); continue; }
+        const bars = [s0].concat(inside(s0, s1 - L), [s1 - L]).map((a) => {
+            let e = Math.max(P(a), P(a + L));
+            inside(a, a + L).forEach((u) => { e = Math.max(e, P(u)); });
+            return [a, e];
+        });
+        ss.forEach((v, j) => {
+            let t = Infinity;
+            bars.forEach((b) => { if (b[0] <= v + 1e-9 && v <= b[0] + L + 1e-9) t = Math.min(t, b[1]); });
+            d[j] += (t === Infinity ? P(v) : t) / NEEDLE_STEPS;
+        });
+    }
+    const tp = ss.map((v, j) => rNPt(v, Math.min(D1, base + d[j]))), bt = ss.map((v) => rNPt(v, D1));
+    if (cv.fill) { cv.fill(tp.concat(bt.reverse()), c); return; }
+    for (let k = 1; k < ss.length; k++) cv.quad([tp[k - 1], tp[k], bt[ss.length - k - 1], bt[ss.length - k]], c);
 }
 /**
  * The band from s0 to s1 (the revs), split at each mark; its top keeps the gap to the rail

@@ -432,7 +432,7 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         let any = 0; for (let y = 2; y < 20; y++) for (let x = 121; x < 372; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) any++;
         ok(any === 0, 'ramp: HUD lights Off hides the bars');
     }
-    // Ramp's needle (2.0.33): one bar at every rpm, its top easing under a tab, never in pieces (2x, around each mark)
+    // Ramp's needle (2.0.35): the band's curve at every rpm, always one piece and visible (2x, round each mark)
     {
         const ro = Object.assign({}, Hud.optsFrom(settingsOf({ hudStyle: 'ramp' })), { lights: false });
         const K = 2, W = Draw.IW * K, H = Draw.IH * K, bad = [];
@@ -454,9 +454,9 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
                 }
                 if (got >= 2) blobs++;
             }
-            if (blobs !== 1) bad.push(String(rpm));
+            if (blobs !== 1) bad.push(rpm + (blobs ? ' ' + blobs + ' pieces' : ' none'));
         }
-        ok(bad.length === 0, 'ramp: the needle is one bar either side of every mark (in pieces at: ' + bad.slice(0, 8).join(', ') + ')');
+        ok(bad.length === 0, 'ramp: the needle is one visible piece either side of every mark (wrong at: ' + bad.slice(0, 8).join(', ') + ')');
     }
     // placement and the windshield's window
     const at = (o) => Hud.placeOf(settingsOf(o));
