@@ -436,6 +436,9 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
     const at = (o) => Hud.placeOf(settingsOf(o));
     ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');
     ok(Hud.outsideGlass(at({ hudSize: 140 })).right === 75 && Hud.outsideGlass(at({ hudY: -60 })).top === 20, 'place: off the glass, per side');
+    // 2.0.27: smaller, further right and further down (a small tach in the glass's bottom right corner)
+    ok(JSON.stringify(at({ hudSize: 40, hudX: 280, hudY: 220 })) === JSON.stringify({ x: 600, y: 360, w: 160, h: 52 }) && at({ hudSize: 30, hudX: 400, hudY: 400 }).w === 160 && at({ hudSize: 30, hudX: 400, hudY: 400 }).x === 600,
+        'place: down to 40 %, right to +280, down to +220 (and no further)');
     // Minimal's dots can go up over BMW's own ramp (2026-11-10, an X3 M40i): Up reaches -120, and the empty top of its
     // picture isn't counted as off the glass
     ok(at({ hudY: -120 }).y === 20 && Hud.outsideGlass(at({ hudY: -60 }), 'minimal').top === 11 && Hud.outsideGlass(at({ hudY: -40 }), 'minimal').top === undefined, 'place: Minimal up to -120, only its empty top (above the D / S / M letter) not counted off the glass');

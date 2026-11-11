@@ -274,7 +274,7 @@ below list them by what they do.
 | Setting | Values |
 |---|---|
 | Gear | on / off |
-| Speed | off (default) / on: KM/H or MPH (the app's *Speed unit*, also on HUD looks → Readouts) first in the readouts; on Ramp it sits under the gear like the G80's. Off by default as BMW's own HUD shows the speed |
+| Speed | off (default) / on: KM/H or MPH (Settings → Units → *Speed unit*) first in the readouts; on Ramp it sits under the gear like the G80's. Off by default as BMW's own HUD shows the speed |
 | RPM | on / off: a number in the readouts row; the 7-segment digits in the digital and VFD layouts |
 | RPM readout | Exact (to 10 rpm, default) / Steady (to 50 rpm) / Thousands (KRPM 4.5) |
 | Readouts refresh | 4 (default) / 10 / 20 a second. Faster sends more frames to the HUD while the numbers change (experimental) |
@@ -306,8 +306,8 @@ At most four readouts fit the row; past that the last one gives way.
 
 | Setting | Values |
 |---|---|
-| Size | 70–130 %, scaled about the top centre |
-| Position left / right, up / down | px (up as far as −120, so Minimal's lights can sit over BMW's own rev gauge); moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
+| Size | 40–130 %, scaled about the top centre |
+| Position left / right, up / down | px (left to −120, right to +280; up to −120, so Minimal's lights can sit over BMW's own rev gauge, down to +220, so a small tach fits the glass's bottom right corner); moves the layer only. HUD looks → Place warns when the tach reaches outside the part of the glass you see (as measured on one car by [bimmer-lab](https://github.com/bimmer-lab/apps), `shared/visible.js`, MIT) |
 | Frame rate | 10 / 20 / 30 fps (20); see [Performance](#performance) |
 
 ### Directions (experimental)

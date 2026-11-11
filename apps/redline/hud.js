@@ -155,9 +155,10 @@ function reactionMs(flash, rpm) {
 
 /** Where the tach image shows in the HUD's scene (800x480), from the size and position settings. */
 function placeOf(settings) {
-    const k = clamp(numOf(settings, 'hudSize', 100), 50, 140) / 100, w = Math.round(IW * k), h = Math.round(IH * k);
-    const x = BASE_X + Math.round((IW - w) / 2) + clamp(numOf(settings, 'hudX', 0), -120, 120);
-    const y = BASE_Y + clamp(numOf(settings, 'hudY', 0), -120, 120);
+    // (smaller, further right and further down since 2.0.27: a small tach in the glass's bottom right corner)
+    const k = clamp(numOf(settings, 'hudSize', 100), 40, 140) / 100, w = Math.round(IW * k), h = Math.round(IH * k);
+    const x = BASE_X + Math.round((IW - w) / 2) + clamp(numOf(settings, 'hudX', 0), -120, 280);
+    const y = BASE_Y + clamp(numOf(settings, 'hudY', 0), -120, 220);
     return { x: clamp(x, 0, SCENE_W - w), y: clamp(y, 0, SCENE_H - h), w: w, h: h };
 }
 

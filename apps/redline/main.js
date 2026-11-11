@@ -745,7 +745,7 @@ mgu.run({
             } else if (studio.panel === 'readouts') {
                 // the numbers under the bar, in this order; up to four show
                 readoutsPick(cv, t);
-                const engEnd = switches(cv, t, R1, 'ENGINE', [
+                switches(cv, t, R1, 'ENGINE', [
                     ['Speed', o.speed, () => P.set('hudShowSpeed', !o.speed)],
                     ['RPM', o.rpm, () => P.set('hudShowRpm', !o.rpm)],
                     ['Boost', o.boost, () => P.set('hudBoost', !o.boost)],
@@ -755,14 +755,6 @@ mgu.run({
                     ['Knock', o.knock, () => P.set('hudShowKnock', !o.knock)],
                     ['Fuel', o.fuel, () => P.set('hudShowFuel', !o.fuel)],
                 ].concat(tyres.seen() ? [['Tyres', o.tyres, () => P.set('hudShowTyres', !o.tyres)]] : []));
-                // the speed's unit beside it: the app's own Speed unit (Settings > Units, the launch timer's too), so it is
-                // set on settings, not on the setup being edited; dimmed while the speed is off
-                let ux = engEnd + 12;
-                [['kmh', 'km/h'], ['mph', 'mph']].forEach((op) => {
-                    const w = G.button(cv, t, ux, R1, 0, 40, op[1], () => { settings.set('speedUnit', op[0]); return render(); },
-                        { key: 'studio_speedUnit_' + op[0], primary: (settings.get('speedUnit') || 'kmh') === op[0], busy: !o.speed });
-                    ux += (w || 90) + 8;
-                });
                 switches(cv, t, R2, 'TEMPS', [
                     ['Oil', o.oil, () => P.set('hudShowOil', !o.oil)],
                     ['Water', o.coolant, () => P.set('hudShowWater', !o.coolant)],
