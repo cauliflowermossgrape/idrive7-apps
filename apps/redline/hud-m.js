@@ -505,8 +505,10 @@ function drawRamp(cv, f, layer, h) {
             // the rpm: the band under the rail, split at the notches, a red sliver at its end
             const top = Math.min(d.rpm, max), st = rS(top, max);
             const pop = burstOn(f.chip, 300) ? chipCol(f.chip, h.P) : null, c = pop || RC.fill;
-            rBand(cv, st, max, c);
-            if (st > 3) rStrip(cv, st - 3, st, D0, D1 + 3, RC.red);
+            // the needle: a red bar the band's own height, a dark hair's gap after the band's end (as on the G80)
+            const NW = 2.4, NG = 1.0;
+            rBand(cv, st - NW - NG, max, c);
+            if (st > NW) rStrip(cv, st - NW, st, D0, D1, RC.red);
         }
         if (fg && isNum(f.peak) && f.peak > 0 && !(isNum(d.rpm) && d.rpm >= f.peak - 50)) rTick(cv, rS(Math.min(f.peak, max), max), D0, D1, 2.2, '#ffffff');
     }
