@@ -958,7 +958,7 @@ mgu.run({
          * cluster-render's mapping guard on top. Touch: the sources, Refresh, Back, a finger scrolls the lines. The
          * controller: turning scrolls, pressing picks the next source. */
         const LOG_SOURCES = [['redline', 'Redline'], ['nav', 'Directions'], ['cluster', 'Cluster renderer']];
-        const LOG_PITCH = 28;
+        const LOG_PITCH = 28, LOG_LINE = 24, LOG_LINES = 3;
         const logs = { src: 'redline', res: null, t: 0, top: 0, px: 0, per: 12, fits: new Map() };
         function loadLogs() {
             logs.res = LogView.load(logs.src, ctx.dataDir); logs.t = Date.now(); logs.top = 0; logs.px = 0; logs.fits.clear();
@@ -978,7 +978,28 @@ mgu.run({
             logs.fits.set(k, out);
             return out;
         }
-        const logsMax = () => Math.max(0, logs.res.rows.length - logs.per);
+        // (rows wrap, so the last one may be scrolled up to near the top)
+        const logsMax = () => Math.max(0, logs.res.rows.length - 3);
+        /** s wrapped at spaces to lines of w px, at most LOG_LINES (the last cut with ...); kept per text like fitText. */
+        function wrapText(r, s, size, w) {
+            const k = 'w|' + size + '|' + w + '|' + s;
+            if (logs.fits.has(k)) return logs.fits.get(k);
+            const out = [];
+            let rest = s;
+            while (rest && out.length < LOG_LINES) {
+                if (out.length === LOG_LINES - 1 || r.textWidth(rest, size, {}) <= w) { out.push(fitText(r, rest, size, w, {})); break; }
+                // the most that fits, back to the last space (a word longer than the line is cut where it must)
+                let lo = 1, hi = rest.length;
+                while (lo < hi) { const m = (lo + hi + 1) >> 1; if (r.textWidth(rest.slice(0, m), size, {}) <= w) lo = m; else hi = m - 1; }
+                const sp = rest.lastIndexOf(' ', lo);
+                const cut = sp > lo * 0.5 ? sp : lo;
+                out.push(rest.slice(0, cut));
+                rest = rest.slice(cut).replace(/^ +/, '');
+            }
+            if (logs.fits.size > 400) logs.fits.clear();
+            logs.fits.set(k, out);
+            return out;
+        }
         function logsSheet() {
             loadLogs();
             return {
@@ -1006,22 +1027,32 @@ mgu.run({
                     const head = [hs].concat(guard.length ? guard : st ? ['guard: no strikes'] : []).join('   ·   ');
                     const warn = /off after|disabled|strike/.test(head) && !/no strikes/.test(head);
                     const rows = logs.res.rows;
-                    const count = rows.length ? (logs.top + 1) + '-' + Math.min(rows.length, logs.top + logs.per) + ' of ' + rows.length + ', newest first' : '';
+                    const y0 = T + 146, bottom = G.BOTTOM + (r.extra || 0) - 10;
+                    logs.top = Math.min(logs.top, logsMax());
+                    // the rows that fit from the top one down, each wrapped to at most LOG_LINES lines (the guard's
+                    // line ends with how to clear it: never cut to one line)
+                    const lay = [];
+                    for (let i = logs.top, y = y0; i < rows.length && y <= bottom; i++) {
+                        const lines = wrapText(r, rows[i].msg, 19, 1556 - 270);
+                        lay.push({ row: rows[i], y: y, lines: lines });
+                        y += LOG_PITCH + (lines.length - 1) * LOG_LINE;
+                    }
+                    logs.per = Math.max(1, lay.length);
+                    // (the times as the head unit keeps them: UTC on the cars seen so far, said so)
+                    const count = rows.length ? (logs.top + 1) + '-' + (logs.top + lay.length) + ' of ' + rows.length + ', newest first' + (LogView.isUtc() ? ', times UTC' : '') : '';
                     const cw = count ? r.textWidth(count, 18, {}) + 24 : 0;
                     r.text(fitText(r, head, 20, 1512 - cw, bold), 44, T + 98, 20, warn ? t.warn : t.text, bold);
                     if (count) r.text(count, 1556, T + 98, 18, t.dim, { align: 'right' });
                     r.fillRect(44, T + 114, 1512, 1, withAlpha(t.tick || '#ffffff', 0.5));
-                    const y0 = T + 146, bottom = G.BOTTOM + (r.extra || 0) - 10;
-                    logs.per = Math.max(4, Math.floor((bottom - y0) / LOG_PITCH) + 1);
-                    logs.top = Math.min(logs.top, logsMax());
-                    if (!rows.length) { r.text(logs.res.note || 'Nothing to show', 44, y0, 20, t.dim); return targets; }
-                    rows.slice(logs.top, logs.top + logs.per).forEach((row, i) => {
-                        // the mapping guard's lines read as warnings whatever their level
-                        const y = y0 + i * LOG_PITCH, lv = row.level, bad = /ERROR|FATAL/.test(lv), wn = /WARN/.test(lv) || /guard|strike/i.test(row.msg);
-                        const start = /^starting /.test(row.msg);
-                        r.text(LogView.stamp(row.at), 44, y, 17, t.dim, { font: 'num' });
+                    if (!rows.length) { r.text(logs.res.note || 'Nothing to show', 44, y0, 22, t.text); return targets; }
+                    lay.forEach((it) => {
+                        // the mapping guard's lines, and the cluster's display going away, read as warnings whatever their level
+                        const row = it.row, y = it.y, lv = row.level, bad = /ERROR|FATAL/.test(lv);
+                        const wn = /WARN/.test(lv) || /guard|strike|Dcsm2 not available|heartbeat/i.test(row.msg);
+                        const start = /^starting |^cluster-render started/.test(row.msg);
+                        r.text(LogView.stamp(row.at), 44, y, 18, t.dim, { font: 'num' });
                         if (lv && lv !== 'INFO') r.text(lv.replace('SDK_', ''), 196, y, 16, bad ? t.crit : wn ? t.warn : t.dim, bold);
-                        r.text(fitText(r, row.msg, 19, 1556 - 270, {}), 270, y, 19, bad ? t.crit : wn ? t.warn : start ? t.accent : t.text, start ? bold : {});
+                        it.lines.forEach((ln, k) => r.text(ln, 270, y + k * LOG_LINE, 19, bad ? t.crit : wn ? t.warn : start ? t.accent : t.text, start ? bold : {}));
                     });
                     return targets;
                 },

@@ -64,11 +64,13 @@ function parse(line) {
 const bad = (r) => /WARN|ERROR|FATAL/.test(r.level);
 /** Which lines are worth showing, per source. */
 const IMPORTANT = {
-    redline: (r) => bad(r) || /^(starting |exit code|uncaught|hud: |driving mode: |nav: |first frame)/.test(r.msg) || /guard/i.test(r.msg),
+    redline: (r) => bad(r) || /^(starting |exit code|uncaught|shutdown|hud: |driving mode: |vehicle state: |nav: |first frame)/.test(r.msg) || /guard/i.test(r.msg),
     // (dir: what the directions show, a line per turn; giving way to BMW's card; the event list failing)
     nav: (r) => bad(r) || /^nav: (probe started|\w+ (available|not available|error)|error|tap error|no signals|dir: )/.test(r.msg) ||
         /guidanceState|guidingProvider|give way|giving way/i.test(r.msg),
-    cluster: (r) => bad(r) || /guard|Dcsm2|\bhud\b|starting|stopping/i.test(r.msg),
+    // (its guard, the cluster's display (Dcsm2) and heartbeats, and each start; not its once-a-minute frame counts
+    // or each layer made, which buried the strikes on a car: issue #141's photos)
+    cluster: (r) => bad(r) || /^guard:|^dcsm:|heartbeat|Starting Ramses Client Application/.test(r.msg),
 };
 
 /** The files of a source (dataDir: Redline's data folder). */
@@ -85,16 +87,25 @@ function load(src, dataDir, opts) {
     try {
         // stat, not existsSync: a folder apps may not enter reads as missing there, and here says so
         if (!fs.statSync(file).isFile()) return { rows: [], note: 'Could not read ' + path.basename(file) + ': not a file' };
-        const rows = linesOf(file, o.bytes || TAIL_BYTES).map(parse).filter(keep);
+        const rows = linesOf(file, o.bytes || TAIL_BYTES).map(parse).filter(keep).map(tidy);
         return { rows: rows.slice(-MAX_ROWS).reverse(), note: rows.length ? '' : 'Nothing important in the last ' + Math.round((o.bytes || TAIL_BYTES) / 1024) + ' KB' };
     } catch (e) {
         const code = e && e.code;
-        if (code === 'ENOENT' || code === 'ENOTDIR') return { rows: [], note: src === 'cluster' ? 'No cluster-render log here (not installed, or an older Cluster renderer)' : 'No log yet' };
+        // (the folder said: a Redline that can't write its own log shows where it looked)
+        if (code === 'ENOENT' || code === 'ENOTDIR') return { rows: [], note: src === 'cluster' ? 'No cluster-render log here (not installed, or an older Cluster renderer)' : 'No log yet in ' + path.dirname(file) };
         return { rows: [], note: code === 'EACCES' || code === 'EPERM' ? 'Apps may not read ' + file : 'Could not read ' + path.basename(file) + ': ' + (code || e) };
     }
 }
 
-/** "11-11 03:02:41" in the head unit's time zone ('' without a time). */
+/** A row as shown: cluster-render's start line (the renderer library's own, long) as "cluster-render started". */
+function tidy(r) {
+    return /Starting Ramses Client Application/.test(r.msg) ? { at: r.at, level: r.level, msg: 'cluster-render started' } : r;
+}
+
+/** Whether the head unit keeps its time in UTC (the cars seen so far: the stamps then aren't the car's clock). */
+function isUtc() { return new Date().getTimezoneOffset() === 0; }
+
+/** "11-11 03:02:41" in the head unit's time zone, UTC on the cars seen so far ('' without a time). */
 function stamp(at) {
     if (!isFinite(at)) return '';
     const d = new Date(at), p = (n) => (n < 10 ? '0' : '') + n;
@@ -106,4 +117,4 @@ function guardLines(text) {
     return String(text || '').split('\n').map((l) => l.trim()).filter((l) => /^guard:/.test(l));
 }
 
-module.exports = { load, parse, tail, linesOf, stamp, guardLines, IMPORTANT, CR_LOG, TAIL_BYTES, MAX_ROWS };
+module.exports = { load, parse, tail, linesOf, stamp, isUtc, guardLines, IMPORTANT, CR_LOG, TAIL_BYTES, MAX_ROWS };

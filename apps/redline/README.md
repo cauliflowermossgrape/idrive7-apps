@@ -411,8 +411,14 @@ glass's edge. Checked for every size and position the settings allow.
     - a driving mode the car stops sending as it switches off keeps the last one. Before, an unknown mode counted
       as Sport, so in Comfort on *Don't show* the tach came back onto the HUD just as the cluster went off;
     - no new HUD layer is made while the car is off (vehicle state 5 or lower) or its drive readiness is starting
-      (8) or ending (12). A tach already on the HUD stays. The Learned page says *HUD: waits for the car to be
-      switched on*.
+      (8) or ending (12). The Learned page says *HUD: waits for the car to be switched on*.
+  - Since 2.0.34 (the user's cluster-render log: both strikes 1.5-2 s after a mapping at switch-off, none at start-up):
+    - a tach already on the HUD is dropped when the car's drive readiness ends (12) or it is off (5 or lower), so
+      cluster-render has nothing to map again as the cluster goes;
+    - a vehicle state the car sends that Redline doesn't know (15, "no value", among them) holds back a new layer
+      too: the last known state may be stale. Each new state is logged once (`vehicle state: …`);
+    - when giving way to BMW's directions ends with nothing to show (the route over, as at switch-off), the tach
+      comes back after 8 s, so the car's state can say first that it's switching off. With a turn to show, at once.
   - *Settings → Logs* shows the guard's strikes (below).
 
 ## Shift cue
@@ -695,10 +701,17 @@ it, so it's never read half-written; the folder is 0755 and the file 0644, reada
 
 The last row of Settings, for when there's no SSH (a remote install). It shows the important lines, newest first:
 
-- **Redline**: `redline.log`'s warnings and errors, each start, and the HUD's, driving mode's and directions' lines.
+- **Redline**: `redline.log`'s warnings and errors, each start and switch-off, and the HUD's, driving mode's, car state's
+  and directions' lines.
 - **Directions**: `redline-nav.log`'s probe, the guide coming and going, the `dir:` lines and errors.
-- **Cluster renderer**: its own log (`/var/opt/cluster-render/log/cluster-render.log`): the mapping guard's strikes
-  and the display service coming and going. Not checked on a car: if apps can't read that file, a note says so.
+- **Cluster renderer**: its own log (`/var/opt/cluster-render/log/cluster-render.log`): the mapping guard's strikes,
+  the display service (Dcsm2) coming and going, heartbeat errors and each start (*cluster-render started*). Not its
+  once-a-minute frame counts or each layer made: on a car those buried the strikes. If apps can't read the file, a
+  note says so.
+
+Long lines wrap (up to three lines), so the guard's line keeps how to clear it. The times are the head unit's,
+UTC on the cars seen so far (the count on the right then says *times UTC*). With no log, the note says which
+folder was looked in.
 
 On top: what the HUD is doing, and cluster-render's guard (`guard: hud …: 1 strike`, or `disabled, 2 strikes`).
 

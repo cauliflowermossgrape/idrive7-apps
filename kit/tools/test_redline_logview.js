@@ -84,6 +84,36 @@ fs.writeFileSync(path.join(empty, 'cr.log'), [
 res = LogView.load('cluster', empty, { file: path.join(empty, 'cr.log') });
 ok(res.rows.length === 2 && /strike 1/.test(res.rows[0].msg), 'cluster: the strike and Dcsm2 going away (' + res.rows.map((x) => x.msg).join(' | ') + ')');
 
+// cluster-render on a car (issue #141's photos): the strike, Dcsm2 and the heartbeat kept, the start shortened;
+// the once-a-minute frame counts and each layer made left out (they buried the strikes)
+fs.writeFileSync(path.join(empty, 'cr2.log'), [
+    '2026-11-10T22:28:24.000Z ERROR dcsm: the KOMBI refused a heartbeat request: type 0x81, return code 0x43 (4894 sent, 4894 replies)',
+    '2026-11-10T22:28:54.000Z INFO target hud: in the last 60 s its layers wrote 710 frames (0 ms from offer to flush on average), 3653 KB, 0 failed',
+    '2026-11-10T22:46:39.000Z INFO client 2 (redline): image layer 19 on hud (overlay, z 0)',
+    '2026-11-10T22:46:39.000Z INFO target hud: asking for scene 0x1000400 58756 ms after its release, which the display confirmed',
+    '2026-11-10T22:46:40.000Z INFO dcsm: Dcsm2 not available',
+    '2026-11-10T22:46:40.000Z WARN guard: hud 0x323 0x1000400 0: strike 1 of 2: 1460 ms after mapping it (target acquiring)',
+    '2026-11-10T22:58:50.000Z INFO target hud: slot 0x323 class 0 scene 0x1000400 800x480, linger 3000 ms',
+    '2026-11-10T22:58:50.000Z INFO ramses: 1794351530.212 [ Info ] ramses.Framework | Starting Ramses Client Application: cluster-render_ERamsesCommunicationUserInternal',
+    '2026-11-10T22:58:56.000Z INFO dcsm: Dcsm2 available',
+].join('\n') + '\n');
+res = LogView.load('cluster', empty, { file: path.join(empty, 'cr2.log') });
+ok(JSON.stringify(res.rows.map((x) => x.msg.slice(0, 22))) === JSON.stringify(['dcsm: Dcsm2 available', 'cluster-render started', 'guard: hud 0x323 0x100', 'dcsm: Dcsm2 not availab', 'dcsm: the KOMBI refused'].map((x) => x.slice(0, 22))),
+    'cluster: the strike, Dcsm2, the heartbeat and the start; no frame counts or layers (' + res.rows.map((x) => x.msg).join(' | ') + ')');
+
+// Redline's switch-off and the car's states kept
+fs.writeFileSync(path.join(empty, 'sw.log'), [
+    '2026-11-11T02:10:01.000Z INFO vehicle state: 15 (not known)',
+    '2026-11-11T02:10:02.000Z INFO hud: dropped, the car is switching off (state 12)',
+    '2026-11-11T02:10:03.000Z INFO shutdown requested by MainApp',
+].join('\n') + '\n');
+res = LogView.load('redline', empty, { file: path.join(empty, 'sw.log') });
+ok(res.rows.length === 3, 'redline: the switch-off, the drop and the car\'s state (' + res.rows.map((x) => x.msg).join(' | ') + ')');
+// no log: the note says where it looked
+res = LogView.load('redline', path.join(empty, 'nowhere'));
+ok(res.note.indexOf(path.join(empty, 'nowhere')) >= 0, 'redline: no log, the folder in the note (' + res.note + ')');
+ok(typeof LogView.isUtc() === 'boolean', 'isUtc');
+
 // errors: never a throw, and the note says which
 // a CRLF file: no carriage return on the screen
 fs.writeFileSync(path.join(empty, 'crlf.log'), '2026-11-11T02:10:05.000Z WARN crlf line\r\n');

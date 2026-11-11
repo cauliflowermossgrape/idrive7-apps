@@ -13,7 +13,8 @@
  * list the interfaces (see SIGNALS below for the exact entries).
  * Demo: setting "demo" = auto (until the car answers) / on / off.
  * data().stage = the selector position 'P' / 'R' / 'N' / 'D' (gearbox signal), else undefined.
- * data().condition = BMW's vehicle state number ('condition' group; 10 = drive-ready), else undefined.
+ * data().condition = BMW's vehicle state number ('condition' group; 10 = drive-ready), else undefined;
+ * data().conditionKnown = false while the last state sent isn't one of those (e.g. 15, no value).
  */
 const Sim = require('./sim');
 
@@ -133,7 +134,16 @@ class Car {
                 put('gear', sel.gear);
             });
         }
-        if (groups.includes('condition')) add('de.bmw.infrastructure.VehicleCondition', 'VehicleCondition', (v) => put('condition', conditionOf(v && v.statusConditionVehicle)));
+        // (conditionKnown: false while the car's last state was one this table doesn't know, "no value" 15 among them;
+        // condition then keeps the last known one. Each new raw state logged once, so a log shows what a car sends.)
+        const condSeen = [];
+        if (groups.includes('condition')) add('de.bmw.infrastructure.VehicleCondition', 'VehicleCondition', (v) => {
+            const raw = v && v.statusConditionVehicle, n = conditionOf(raw);
+            if (raw === undefined || raw === null) return;
+            if (condSeen.length < 16 && condSeen.indexOf(String(raw)) < 0) { condSeen.push(String(raw)); this.log.info('vehicle state: ' + JSON.stringify(raw) + (n === undefined ? ' (not known)' : '')); }
+            this.live.conditionKnown = n !== undefined;
+            put('condition', n);
+        });
         // negative torque (engine braking while the rpm falls) counts as 0
         if (groups.includes('torque')) add('de.bmw.infotainment.drivingexcitement.FES', 'statusActualValueTorque2', (v) => { const tq = sc('torque', v.actualValueTorqueCrankshaft); put('torque', tq === null ? null : Math.max(0, tq)); });
         Object.keys(extra || {}).forEach((iface) => Object.keys(extra[iface]).forEach((f) => add(iface, f, extra[iface][f])));

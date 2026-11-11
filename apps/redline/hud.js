@@ -1005,12 +1005,26 @@ function start(ctx, src) {
      * No new HUD layer while the car is off (vehicle state 5 or lower), its drive readiness is starting (8) or
      * ending (12); a car that doesn't send its state (or not yet) isn't held back. cluster-render's mapping
      * guard counts the cluster's display going away within 10 s of the HUD being mapped as a strike, and two turn
-     * the HUD off for good. At switch-off Redline used to map it just then (issue #141). A layer already there stays.
+     * the HUD off for good. At switch-off Redline used to map it just then (issue #141). A layer already there stays
+     * at 8; at 12 or 5 and lower it is dropped (switchingOff).
      */
     function holdOff() {
-        const c = src.data ? src.data().condition : undefined;
-        return isNum(c) && (c <= 5 || c === 8 || c === 12);
+        const d = src.data ? src.data() : {}, c = d.condition;
+        // (a state the car sent that isn't known, "no value" among them: held too, the last known one may be stale)
+        return d.conditionKnown === false || (isNum(c) && (c <= 5 || c === 8 || c === 12));
     }
+    /**
+     * The car switching off (12) or off (5 or lower): a tach already up is dropped too, so cluster-render has nothing
+     * to map on the HUD as the cluster goes (it maps again by itself when BMW's content or a pop-up lets go).
+     */
+    function switchingOff() {
+        const c = src.data ? src.data().condition : undefined;
+        return isNum(c) && (c <= 5 || c === 12);
+    }
+    // the directions giving way ended with nothing to show (a route ending, as at switch-off): the tach back only after BACK_WAIT_MS,
+    // so the car's state can say first that it's switching off
+    const BACK_WAIT_MS = isNum(ctx.backWaitMs) ? ctx.backWaitMs : 8000;
+    let backAt = 0;
     const paused = () => !!target && (target.disabled || target.state === 'parked' || target.state === 'waiting' || target.state === 'unavailable');
     const tick = safe('tick', () => {
         // cluster-render not up (lost, or not yet back): nothing is drawn, so nothing is read from the car either
@@ -1022,8 +1036,11 @@ function start(ctx, src) {
             const playing = Date.now() < demoUntil;
             nv = navNow(playing);
             // a route without a turn Redline can read: out of the way, so BMW's own card shows (nav.js logs it)
+            // (over with a turn to show: back at once, it's the route going on)
+            if (navGiving && !nv.giveWay && !nv.show) backAt = Date.now() + BACK_WAIT_MS;
             navGiving = nv.giveWay;
-            if (calm(playing) === 'hide' || nv.giveWay) {
+            const off = switchingOff();
+            if (calm(playing) === 'hide' || nv.giveWay || off) {
                 dropNav();
                 if (layer) {
                     cr.drop(layer); layer = 0;
@@ -1035,10 +1052,12 @@ function start(ctx, src) {
                 // nothing of Redline's on the HUD. Comfort's hide: the standing app (Cluster functions) may show. Giving
                 // way: keep the claim, so it's BMW's card that shows, not Cluster functions' map over it (2026-11-09 review)
                 claim.hold(!!nv.giveWay);
-                if (!hiddenLogged && !nv.giveWay) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
+                if (off) { if (!offLogged) { offLogged = true; log.info('hud: dropped, the car is switching off (state ' + src.data().condition + ')'); } }
+                else if (!hiddenLogged && !nv.giveWay) { hiddenLogged = true; log.info('hud: hidden in ' + (src.driveMode ? src.driveMode() : '?') + ' mode'); }
                 return;
             }
             if (!layer) {
+                if (Date.now() < backAt) { stopReads(true); return; }
                 if (holdOff()) {
                     stopReads(true);
                     if (!offLogged) { offLogged = true; log.info('hud: no new layer while the car is off or switching on / off (state ' + (src.data ? src.data().condition : '?') + ')'); }
