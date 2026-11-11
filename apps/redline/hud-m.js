@@ -580,7 +580,8 @@ function drawRamp(cv, f, layer, h) {
             // through the gap between band and needle), and clear of each tab as the band is, so it reads as running under
             // the marks
             const zs = rS(f.redline, max), zm = D0 + 2, from = isNum(d.rpm) && d.rpm > 50 ? rS(Math.min(d.rpm, max), max) + 0.8 : -Infinity;
-            const tabs = rMarks(max).filter((m) => !m.end);
+            // (the 8's end cup too: the line stops its gap short of it, as of every tab, so it never lies over the white)
+            const tabs = rMarks(max);
             const seg = (a, b, col) => {
                 let v = Math.max(a, from);
                 tabs.filter((m) => m.s + reachOf(m) + RD.gap > v && m.s - reachOf(m) - RD.gap < b).forEach((m) => {
@@ -591,7 +592,7 @@ function drawRamp(cv, f, layer, h) {
                 if (b > v) rStrip(cv, v, b, zm - 0.8, zm + 0.8, col);
             };
             if (zs < RPATH.all - 6) {
-                seg(zs + 3, RPATH.all - RD.endIn - RD.endVw - 0.3, RC.red);
+                seg(zs + 3, RPATH.all, RC.red);
                 seg(zs - 12, zs - 6, RC.yellow);
                 seg(zs - 3.5, zs - 1.5, RC.yellow);
             }
