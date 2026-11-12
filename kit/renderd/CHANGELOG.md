@@ -1,5 +1,9 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.12
+
+- Layers: an app's layer goes on the centre screen through a connection made for it and closed again (as mgu-render's `src/relist.c`), not through the renderer's own. Winston applies a screen's `add_layer` to the layer list as the calling connection last saw it, so through the long-open connection every layer another program had put on the screen since the renderer started was taken off whenever an app was shown again. Seen on a car: a movie player's own layer flashed off on each BACK of its app (59 times in 34 BACKs; 0 in 8 with this change).
+
 ## idrive7-apps mgu-renderd 2.1.11
 
 - Foreground gate: a uuid that an earlier install's left-behind folder still claims goes to the install the app manager has registered (its registry, `oap_12201/data/apps`). Such an app drew in the HMI's own picture on every open, whichever the Renderer setting.
