@@ -60,10 +60,10 @@ const F = { high: 0x05, indL: 0x06, indR: 0x07, fog: 0x08, cornL: 0x09, cornR: 0
     reverse: 0x0F, parkL: 0x10, parkR: 0x11 };
 // a flash's length (10 ms) and the least time from one flash to the next, by rate; never more than 150 ms lit, so
 // nothing stays on if the app goes
-const FLASH = { fast: { on: 4, gap: 0 }, normal: { on: 7, gap: 120 }, slow: { on: 12, gap: 350 } };
-// the patterns, one function a request
+const FLASH = { fast: { on: 5, gap: 0 }, normal: { on: 8, gap: 120 }, slow: { on: 12, gap: 350 } };
+// the patterns, one function a request; police and in turn only ever one side at a time (the high beam is both)
 const FN_PATTERNS = {
-    police: { all: ['cornL', 'cornL', 'high', 'cornR', 'cornR', 'high'], high: ['cornL', 'cornL', 'cornR', 'cornR'] },
+    police: { all: ['cornL', 'cornL', 'cornR', 'cornR'], high: ['cornL', 'cornL', 'cornR', 'cornR'] },
     both: { all: ['high', 'fog'], high: ['high'] },
     alternate: { all: ['cornL', 'cornR'], high: ['cornL', 'cornR'] },
 };
