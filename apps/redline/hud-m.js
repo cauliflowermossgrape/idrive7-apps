@@ -238,7 +238,8 @@ function drawArc(cv, f, layer, h) {
  * 1,000 rpm (a V cut over the numbered ones, an open cup at each end: rRail). The rpm hangs under the rail as a cream
  * band up to a red sliver, a hairline gap round each tab (rBand); past it only the rail shows. The red zone is a thin red line inside the band, after a dash and a dot. Over the flat part a row
  * of 8 slanted bars counts in to the shift (6 yellow, 1 red, then a red one twice as wide) and flashes all red at it.
- * Digits are squared (sqText, our own), the gear left of centre over a line, the first readout under it.
+ * Digits are squared (sqText, our own), the gear left of centre over a line (its foot level with the 0's, in any gear
+ * font), the first readout under it.
  */
 // the rail's top edge: from (x0, y0) up to the knee (kx, ky), then flat to x1; rt the rail, ft the band under it,
 // kr the knee's radius
@@ -363,7 +364,7 @@ function rPt(v, d) {
 function rShape(cv, ss, d0, d1, c) {
     // (rNPt: the normal turns smoothly round the knee, so the rail, tabs and band end step nowhere as it bends)
     const top = ss.map((v) => rNPt(v, Math.min(d0(v), d1(v) - 0.05))), bot = ss.map((v) => rNPt(v, d1(v)));
-    if (cv.fill) { cv.fill(top.concat(bot.reverse()), c); return; }
+    if (cv.fill) { cv.fill(top.concat(bot.reverse()), c, true); return; }
     for (let k = 1; k < ss.length; k++) cv.quad([top[k - 1], top[k], bot[ss.length - k - 1], bot[ss.length - k]], c);
 }
 const veeAt = (ms) => { const big = ms.filter((m) => m.big); return (v) => big.reduce((a, m) => Math.max(a, rVee(v - m.s, m)), 0); };
@@ -439,7 +440,7 @@ function rNeedlePiece(cv, all, s0, s1, open, c) {
         });
     }
     const tp = ss.map((v, j) => rNPt(v, Math.min(D1, base + d[j]))), bt = ss.map((v) => rNPt(v, D1));
-    if (cv.fill) { cv.fill(tp.concat(bt.reverse()), c); return; }
+    if (cv.fill) { cv.fill(tp.concat(bt.reverse()), c, true); return; }
     for (let k = 1; k < ss.length; k++) cv.quad([tp[k - 1], tp[k], bt[ss.length - k - 1], bt[ss.length - k]], c);
 }
 /**
@@ -614,26 +615,29 @@ function drawRamp(cv, f, layer, h) {
     }
     if (meter) rampMeter(cv, meter.bar, h.P, layer, max);
     if (!fg) return;
-    const gx = 113, gy = 54 + dn, items = (f.readouts || []).filter((it) => !it.bar);
+    // the gear's foot level with the 0's (the 0 is 8 px under the climb's start, 10 tall), the line under it, then the
+    // first readout under the line. Any gear font sits on that foot (a text font on its baseline), so none touches the line
+    const gx = 113, foot = RP.y0 + 18 + dn, gy = foot - 27, ln = foot + 5, items = (f.readouts || []).filter((it) => !it.bar);
     if (f.chip) ring(cv, gx, gy + 16, 20, 50, f.chip, h.P);
     // readouts 2-4: a list on the right, label left and value right
     [1, 2, 3].forEach((i, k) => { if (items[i]) small(cv, 262, 68 + dn + k * 21, items[i], h.P, o, RC.text, 'row', 132); });
     const gearC = cue.limiter && f.blink ? RC.red : RC.text;
     if (o.gear) {
         if (sq) sqText(cv, h.gearText(d), gx, gy, 27, gearC, 'center');
-        else cv.text(h.gearText(d), gx, gy + 32, 42, gearC, { align: 'center', font: h.gearFont(o) });
+        else cv.text(h.gearText(d), gx, foot, 42, gearC, { align: 'center', font: h.gearFont(o) });
     }
     if (f.mode && o.gear) cv.text(f.mode, gx + 22, gy + 11, 14, withAlpha(RC.text, 0.85), { font: 'bold' });
-    cv.fillRect(gx - 50, gy + 32, 84, 1.6, RC.text);
+    // the line parts the gear from what's under it: only with both (Gear off, or nothing under it: no line)
+    if (o.gear && (f.chip || items[0])) cv.fillRect(gx - 50, ln, 84, 1.6, RC.text);
     h.drawDown(cv, gx + 58, gy + 6, f.down || 0, 1, h.P.arrow);
-    if (f.chip) grade(cv, gx, gy + 62, f.chip, h.P, 22);
+    if (f.chip) grade(cv, gx, ln + 25, f.chip, h.P, 22);
     else {
         const it = items[0];
         if (it) {
             const vc = toneCol(it, h.P, RC.text);
-            if (sq) sqText(cv, it.value, gx - 8, gy + 38, 19, vc, 'center');
-            else cv.text(it.value, gx - 8, gy + 62, 22, vc, { align: 'center', font: o.valFont || 'bold' });
-            fitLabel(cv, it.label.toLowerCase(), gx + 37, gy + 36, labelOf(o, RC.text).s, RC.text, 262 - gx - 40, { spacing: 0 });
+            if (sq) sqText(cv, it.value, gx - 8, ln + 6, 19, vc, 'center');
+            else cv.text(it.value, gx - 8, ln + 25, 22, vc, { align: 'center', font: o.valFont || 'bold' });
+            fitLabel(cv, it.label.toLowerCase(), gx + 37, ln + 4, labelOf(o, RC.text).s, RC.text, 262 - gx - 40, { spacing: 0 });
         }
     }
 }

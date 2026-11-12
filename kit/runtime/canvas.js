@@ -404,12 +404,17 @@ class Canvas {
      * by their exact share of a pixel. One shape where pieces drawn side by side would leave hairline seams between
      * them. pts = [[x,y],...] (even-odd).
      */
-    fill(pts, c) {
-        const n = pts ? pts.length : 0;
-        if (n < 3) return this;
+    fill(pts, c) { return this.fillPolys([pts], c); }
+    /**
+     * Several polygons as one shape, even-odd over all their edges: polygons side by side (a shape cut into triangles)
+     * fill with no seam where they meet. polys = [[[x,y],...],...]
+     */
+    fillPolys(polys, c) {
+        polys = (polys || []).filter((q) => q && q.length >= 3);
+        if (!polys.length) return this;
         c = rgba(c);
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        pts.forEach((p) => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+        polys.forEach((q) => q.forEach((p) => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }));
         const X0 = Math.max(0, Math.floor(x0)), X1 = Math.min(this.w, Math.ceil(x1)), Y0 = Math.max(0, Math.floor(y0)), Y1 = Math.min(this.h, Math.ceil(y1));
         if (X1 <= X0 || Y1 <= Y0) return this;
         const S = 4, acc = new Float32Array(X1 - X0), xs = [];
@@ -422,9 +427,12 @@ class Canvas {
             for (let k = 0; k < S; k++) {
                 const sy = py + (k + 0.5) / S;
                 xs.length = 0;
-                for (let i = 0; i < n; i++) {
-                    const a = pts[i], b = pts[(i + 1) % n];
-                    if ((a[1] <= sy) !== (b[1] <= sy)) xs.push(a[0] + (sy - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+                for (const pts of polys) {
+                    const n = pts.length;
+                    for (let i = 0; i < n; i++) {
+                        const a = pts[i], b = pts[(i + 1) % n];
+                        if ((a[1] <= sy) !== (b[1] <= sy)) xs.push(a[0] + (sy - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+                    }
                 }
                 xs.sort((p, q) => p - q);
                 for (let j = 0; j + 1 < xs.length; j += 2) span(xs[j], xs[j + 1]);
@@ -613,6 +621,7 @@ class ScaledCanvas {
     quad(pts, c) { return this.convex(pts, c); }
     triangle(pts, c) { return this.convex(pts, c); }
     fill(pts, c) { this.canvas.fill(this._pts(pts), c); return this; }
+    fillPolys(polys, c) { this.canvas.fillPolys(polys.map((q) => this._pts(q)), c); return this; }
     polyline(pts, width, c) { this.canvas.polyline(this._pts(pts), width * this.k, c); return this; }
     stroke(pts, width, c) { this.canvas.stroke(this._pts(pts), width * this.k, c); return this; }
     fillUnder(pts, baseY, c) { this.canvas.fillUnder(this._pts(pts), baseY * this.k, c); return this; }
