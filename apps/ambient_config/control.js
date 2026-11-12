@@ -11,6 +11,12 @@
  * Settings: follow (looks by driving mode), welcome (a sweep at each start), sportPulse (red for 1.5 s when
  * Sport is picked), nightDim (half the brightness at night), keep (the look back at each start), flashAlerts
  * (Redline's shift flash and other apps', from the file FLASH_FILE: { rgb, ms } written whole).
+ * The car locked and left (parked or standby, nobody in it: away(true)): every light back to the car's own and nothing
+ * renewed; someone back in (living, ignition, driving): the look again, with the welcome sweep when it is on.
+ * Over the look (or the car's own colour), with their settings on: turn(side) - while a turn signal is on, that side's
+ * lights blink green, fully on and off, as fast as the lights take it (setting turnGlow; hazards: both sides; not with
+ * the car locked and left); doors(open) - an open door's lights blink red until it closes (setting doorRed). Left is
+ * the driver's side on a left-hand drive car.
  */
 const fs = require('fs');
 
@@ -18,6 +24,18 @@ const FLASH_FILE = process.env.MGU_AMBIENT_FLASH || '/dev/shm/mgu-ambient-flash.
 const FAVS = 6;
 const DEFAULT_LOOK = { kind: 'solid', upper: { rgb: [120, 60, 255], bright: 80 }, lower: { rgb: [120, 60, 255], bright: 80 }, speed: 2 };
 const NIGHT = 0.5;
+const GLOW = [0, 230, 60], RED = [255, 0, 0];
+/* On one frame, dark the next (the light on at no brightness: black, not the car's own colour). */
+const blink = (rgb) => (t, on) => (on ? { rgb, bright: 100 } : { rgb: [0, 0, 0], bright: 0 });
+const DOORS = ['driver front', 'driver rear', 'passenger front', 'passenger rear'];
+/* The lights by a side of the car (x across the cabin picture: the driver's side 0) and by a door. */
+const sideOf = (l) => (l.x <= 0.15 ? 'driver' : l.x >= 0.85 ? 'passenger' : null);
+const doorOf = (l) => {
+    const n = String(l.name || '').toLowerCase(), side = /^driver/.test(n) ? 'driver' : /^passenger/.test(n) ? 'passenger' : null;
+    if (!side || n.indexOf('door') < 0) return null;
+    if (/ front door/.test(n) || / rear door/.test(n)) return side + (/ front door/.test(n) ? ' front' : ' rear');
+    return side + (l.y < 0.5 ? ' front' : ' rear');        // the door's backlit decor: by where it sits
+};
 
 const copy = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 const valid = (l) => !!l && typeof l === 'object' && !!l.upper && Array.isArray(l.upper.rgb) && !!l.lower && Array.isArray(l.lower.rgb);
@@ -25,7 +43,8 @@ const valid = (l) => !!l && typeof l === 'object' && !!l.upper && Array.isArray(
 class Control {
     constructor(o) {
         this.settings = o.settings; this.lights = o.lights; this.ambient = o.ambient; this.log = o.log;
-        this._mode = null; this._night = false; this._shown = null; this._flashAt = 0; this._poll = null;
+        this._mode = null; this._night = false; this._away = false; this._shown = null; this._flashAt = 0; this._poll = null;
+        this._turn = null; this._doors = [];
     }
 
     look() { const l = this.settings.get('look'); return valid(l) ? copy(l) : copy(DEFAULT_LOOK); }
@@ -36,6 +55,7 @@ class Control {
 
     /** The look on now (null: the car's colour), and why: 'mode' or 'own'. */
     target() {
+        if (this._away) return { look: null, why: 'away' };
         const follow = this.settings.get('follow') !== false && this._mode;
         if (follow && this.modeOriginal(this._mode)) return { look: null, why: 'mode' };
         const m = follow ? this.modeLook(this._mode) : null;
@@ -66,6 +86,39 @@ class Control {
             return;
         }
         this.apply();
+    }
+
+    /** The car locked and left (true), or someone back in (false). */
+    away(on) {
+        on = !!on;
+        if (on === this._away) return;
+        this._away = on;
+        this.log.info('ambient: ' + (on ? 'the car is parked: the car\'s own light' : 'someone is in the car: our colour again'));
+        this.signals();
+        const t = this.target();
+        if (!on && this.settings.get('welcome') && t.look) this._show(Object.assign(copy(t.look), { kind: 'welcome', then: t.look }));
+        else this.apply();
+    }
+
+    /** The turn signals: 'left', 'right', 'both' (hazards) or null. */
+    turn(side) { this._turn = side || null; this.signals(); }
+    /** The doors open: some of DOORS. */
+    doors(open) { this._doors = (open || []).filter((d) => DOORS.indexOf(d) >= 0); this.signals(); }
+    /** The turn signal's glow and the open doors' red, as the settings and the car say now. */
+    signals() {
+        const rhd = this.settings.get('drive') === 'rhd', side = (s) => (s === 'left') !== rhd ? 'driver' : 'passenger';
+        const turn = this.settings.get('turnGlow') !== false && !this._away ? this._turn : null;
+        const sides = turn === 'both' ? ['driver', 'passenger'] : turn ? [side(turn)] : [];
+        const key = sides.join();
+        if (key !== this._glow) {
+            this._glow = key;
+            this.lights.overlay('turn', sides.length ? (l) => sides.indexOf(sideOf(l)) >= 0 : null, blink(GLOW));
+        }
+        const doors = this.settings.get('doorRed') !== false ? this._doors : [];
+        if (doors.join() !== this._red) {
+            this._red = doors.join();
+            this.lights.overlay('doors', doors.length ? (l) => doors.indexOf(doorOf(l)) >= 0 : null, blink(RED));
+        }
     }
 
     night(on) { this._night = !!on; this.lights.dim(on && this.settings.get('nightDim') !== false ? NIGHT : 1); }
@@ -122,4 +175,4 @@ class Control {
     }
 }
 
-module.exports = { Control, DEFAULT_LOOK, FLASH_FILE, FAVS, NIGHT };
+module.exports = { Control, DEFAULT_LOOK, FLASH_FILE, FAVS, NIGHT, DOORS, GLOW, RED, sideOf, doorOf };

@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.0.5",
+  "version": "2.1.4",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -28,6 +28,22 @@
     "de.bmw.infotainment.vehicle.Vehicle": {
       "_optional": "day or night: dimmer at night",
       "statusDayNightChangeOver": "rs"
+    },
+    "de.bmw.infrastructure.VehicleCondition": {
+      "_optional": "the car locked and left: the car's own light",
+      "VehicleCondition": "s"
+    },
+    "de.bmw.body.Light": {
+      "_optional": "the turn signals: that side's lights breathe green",
+      "StatusFunctionsIndicators": "s"
+    },
+    "de.bmw.body.DoorsWindowsRoofMirrors": {
+      "_optional": "an open door: its lights red",
+      "CentralLockingSystemAndPanelStatus": "s"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "_optional": "the car's speed: driven (for a car that does not say it is locked and left)",
+      "statusCarSpeed2": "s"
     }
   },
   "screens": [
@@ -97,6 +113,20 @@
     {
       "key": "flashAlerts",
       "label": "Redline shift flash",
+      "type": "bool",
+      "default": true,
+      "hidden": true
+    },
+    {
+      "key": "turnGlow",
+      "label": "Turn signal glow",
+      "type": "bool",
+      "default": true,
+      "hidden": true
+    },
+    {
+      "key": "doorRed",
+      "label": "Open door red",
       "type": "bool",
       "default": true,
       "hidden": true

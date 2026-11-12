@@ -5,7 +5,8 @@
  * Tabs:
  *   Colour         the colour ring (and white) for the whole car, the upper lights or the lower ones, the
  *                  brightness, and the car from above lit as the car is; Original colour gives the light back
- *   Animations     Solid, Breathing, Rainbow, Smooth fade, Colour wave, how fast, shown moving on the car picture
+ *   Animations     Solid, Breathing, Rainbow, Smooth fade, Colour wave, how fast, shown moving on the car picture;
+ *                  Turn signal glow (that side's lights blink green with it) and Open door red (blinking), each on or off
  *   Driving modes  for each driving mode the car has: Choose colour (the Colour and Animations tabs change that mode's
  *                  look until Done), the animation button stepping through them, or Original colour (BMW's); with
  *                  nothing chosen, the Colour tab's colour; welcome sweep, Sport pulse, Redline's shift flash
@@ -20,6 +21,7 @@ const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
 const { withAlpha } = require('./kit/canvas');
 const { Diag } = require('./kit/diag');
+const Car = require('./kit/car');
 const { Ambient, SLOTS } = require('./ambient');
 const { Lights } = require('./lights');
 const { Control } = require('./control');
@@ -36,7 +38,22 @@ const QUICK = [['Red', [255, 0, 0]], ['Orange', [255, 100, 0]], ['Amber', [255, 
     ['Cyan', [0, 230, 255]], ['Blue', [0, 70, 255]], ['Violet', [120, 60, 255]], ['Pink', [255, 40, 170]], ['White', [255, 255, 255]]];
 const RING = { cx: 290, cy: 288, R: 186, r: 136 }, DIAL = { cx: 655, cy: 400, R: 54, r: 43 };
 
-const ON_BY_DEFAULT = ['follow', 'flashAlerts'];
+const ON_BY_DEFAULT = ['follow', 'flashAlerts', 'turnGlow', 'doorRed'];
+const IDLE_MS = 15 * 60000;          // without the car's own state: not driven nor the app used this long = parked and left
+/* The car's turn signals (Light.StatusFunctionsIndicators activeFunctionIndicateDirection, by name or number): the
+ * driver's (held or tapped), the driving assistant's, and the hazards; the lock and alarm flashes are none. */
+const TURN = { DAUERBLINKEN_LINKS: 'left', TIPPBLINKEN_LINKS: 'left', DAUERBLINKEN_RECHTS: 'right', TIPPBLINKEN_RECHTS: 'right',
+    WARNBLINKEN_MANUELL: 'both', CRASH_BLINKEN: 'both', AUFFAHRWARNBLINKEN: 'both', WARNBLINKEN_NACH_GEFAHRENBREMSUNG: 'both',
+    FAS_WARNBLINKEN_AUSPRAEGUNG_1: 'both', FAS_WARNBLINKEN_AUSPRAEGUNG_2: 'both', FAS_WARNBLINKEN_AUSPRAEGUNG_3: 'both',
+    FAS_RICHTUNGSBLINKEN_LOWPRIO_LINKS: 'left', FAS_RICHTUNGSBLINKEN_MIDPRIO_LINKS: 'left', FAS_RICHTUNGSBLINKEN_HIGHPRIO_LINKS: 'left',
+    FAS_RICHTUNGSBLINKEN_LOWPRIO_RECHTS: 'right', FAS_RICHTUNGSBLINKEN_MIDPRIO_RECHTS: 'right', FAS_RICHTUNGSBLINKEN_HIGHPRIO_RECHTS: 'right' };
+const TURN_NO = { 1: 'both', 6: 'both', 7: 'left', 8: 'right', 9: 'left', 10: 'right', 12: 'both', 13: 'both', 16: 'both', 18: 'left', 19: 'right',
+    20: 'left', 21: 'right', 22: 'left', 23: 'right', 24: 'both', 25: 'both' };
+const turnOf = (v) => { const x = v && typeof v === 'object' ? v.activeFunctionIndicateDirection : v; return (typeof x === 'number' ? TURN_NO[x] : TURN[x]) || null; };
+/* The doors (DoorsWindowsRoofMirrors.CentralLockingSystemAndPanelStatus): each door's switch, open = 1 or ..._OFFEN. */
+const DOOR_FIELDS = { statusDoorSwitchDRD: 'driver front', statusDoorSwitchPSD: 'passenger front', statusDoorSwitchDRDR: 'driver rear',
+    statusDoorSwitchPSDR: 'passenger rear' };
+const doorsOf = (v) => Object.keys(DOOR_FIELDS).filter((k) => v && (v[k] === 1 || /_OFFEN$/.test(String(v[k])))).map((k) => DOOR_FIELDS[k]);
 const DAY_NIGHT = { KEINE_AENDERUNG: 0, TAG: 1, NACHT: 2, SIGNAL_UNGUELTIG: 3 };
 
 async function background(bg) {
@@ -50,7 +67,9 @@ async function background(bg) {
     control.start();
     // with the lights answering, the driving modes' looks replace BMW's colours by mode (ambient.js)
     lights.on('change', () => { ambient.slotsOff = lights.lights.length > 0; });
-    const find = () => lights.find().then((l) => { if (!l.length) setTimeout(find, 120000); }, (e) => { log.warn('lights: ' + e); setTimeout(find, 120000); });
+    // lights that did not answer: asked again every 2 min while the car is in use (parked and left: the car sleeps)
+    const again = () => setTimeout(() => { if (control._away) again(); else find(); }, 120000);
+    const find = () => lights.find().then((l) => { if (!l.length) again(); }, (e) => { log.warn('lights: ' + e); again(); });
     find();
     signals.watch('de.bmw.infotainment.vehicle.Vehicle', '1', {
         statusDayNightChangeOver: (v) => {
@@ -58,9 +77,35 @@ async function background(bg) {
             if (c === 1 || c === 2) control.night(c === 2);
         },
     }, log).catch((e) => log.warn('day / night: ' + (e && e.message || e)));
-    settings.onChange((key) => { if (key === 'nightDim') control.night(control._night); if (key === 'follow') control.apply(); });
+    // the car locked and left (parked, standby: nobody in it) gives the lights back and nothing is written, so the car
+    // can sleep; living, ignition, driving: ours again. A car that has not said its state: not driven and the app not
+    // used for IDLE_MS counts as left
+    let stateSeen = false, activeT = Date.now();
+    const active = () => { activeT = Date.now(); if (!stateSeen && control._away) control.away(false); };
+    signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
+        VehicleCondition: (v) => {
+            const n = Car.conditionOf(v && v.statusConditionVehicle);
+            if (n === undefined) return;
+            stateSeen = true;
+            control.away(n <= 3);
+        },
+    }, log).catch((e) => log.warn('vehicle state: ' + (e && e.message || e)));
+    signals.watch('de.bmw.infotainment.vehicle.Vehicle2', '1', {
+        statusCarSpeed2: (v) => { const k = v && v.speedVehicleCentreOfGravity; if (typeof k === 'number' && k !== 65535 && k * 0.015625 > 1) active(); },
+    }, log).catch((e) => log.warn('speed: ' + (e && e.message || e)));
+    setInterval(() => { if (!stateSeen && !control._away && Date.now() - activeT > IDLE_MS) control.away(true); }, 30000);
+    // the turn signals: that side's lights breathe green; an open door: its lights red (settings turnGlow, doorRed)
+    signals.watch('de.bmw.body.Light', '1', { StatusFunctionsIndicators: (v) => control.turn(turnOf(v)) }, log)
+        .catch((e) => log.warn('turn signals: ' + (e && e.message || e)));
+    signals.watch('de.bmw.body.DoorsWindowsRoofMirrors', '1', { CentralLockingSystemAndPanelStatus: (v) => control.doors(doorsOf(v)) }, log)
+        .catch((e) => log.warn('doors: ' + (e && e.message || e)));
+    settings.onChange((key) => {
+        if (key === 'nightDim') control.night(control._night);
+        if (key === 'follow') control.apply();
+        if (key === 'turnGlow' || key === 'doorRed' || key === 'drive') control.signals();
+    });
     const others = new Others({ log }).start();
-    return { ambient, lights, control, others };
+    return { ambient, lights, control, active, others };
 }
 
 const nearest = (rgb) => {
@@ -77,7 +122,7 @@ mgu.run({
     background,
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const { ambient, lights, control, others } = ctx.background || await background(ctx);
+        const { ambient, lights, control, active, others } = ctx.background || await background(ctx);
         // editing: null (the driver's own look) or a driving mode whose look the Colour and Animations tabs change
         let page = 0, part = 'all', dirty = true, editing = null;
         const T0 = Date.now();
@@ -91,7 +136,8 @@ mgu.run({
         const partColour = (l) => (part === 'lower' ? l.lower : l.upper);
         const shown = () => (lights.lights.length ? lights.lights : sample());
         const rhd = () => settings.get('drive') === 'rhd';
-        const redraw = () => { dirty = true; return render(); };
+        // (a tap: the app in use - the car is not left, also for a car that does not say so)
+        const redraw = () => { dirty = true; if (active) active(); return render(); };
 
         const setRgb = (rgb) => {
             const l = look(), b = partColour(l).bright;
@@ -225,6 +271,10 @@ mgu.run({
             if (editing) return editBar(cv, t, x);
             G.button(cv, t, x, 240, 0, 48, 'Original colour', () => { control.carColour(); return redraw(); }, { primary: !control.on(), key: 'car2' });
             status(cv, t, x, 330);
+            // over every look: the turn signal's green glow, an open door's red
+            [['turnGlow', 'Turn signal glow', 400], ['doorRed', 'Open door red', 456]].forEach(([k, n, y]) => {
+                G.button(cv, t, x, y, 400, 48, n, () => { settings.set(k, settings.get(k) === false); return redraw(); }, { primary: settings.get(k) !== false, key: 'tog-' + k });
+            });
             if (!others.comfort && lights.state === 'ours' && S.moves(lights.scene)) cv.text(lights.rate.toFixed(0) + ' writes a second, ' + lights.fps.toFixed(1) + ' frames a second', x, 390, 18, t.dim);
         }
 
