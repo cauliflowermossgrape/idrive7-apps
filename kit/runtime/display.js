@@ -490,14 +490,17 @@ class Display {
         const logical = (q) => (r ? q : { i: q.i, x: (q.x - pl.ox) / pl.scale, y: (q.y - pl.oy) / pl.scale, w: q.w / pl.scale, h: q.h / pl.scale });
         this.tabs = (rects || []).map(logical);
         const W = pl.w, hx = HMI.left - pl.x, by = pl.h - this.barH();
+        // the header as far as the HMI's status corner shows through it (iDrive 7); iDrive 8 has none in the
+        // app's area: the whole row is the app's, as a tap there must not count as the HMI's (mgu-render closes)
+        const he = HMI.status.h ? this.headEnd : W;
         if (this.own()) {
             // header (tabs), page and the slim bar: the back column and the status corner stay the HMI's
-            this.gpu.claim([{ x: hx, y: 0, w: this.headEnd - hx, h: this.headH() }, { x: hx, y: this.headH(), w: W - hx, h: pl.h - this.headH() }].map(logical));
+            this.gpu.claim([{ x: hx, y: 0, w: he - hx, h: this.headH() }, { x: hx, y: this.headH(), w: W - hx, h: pl.h - this.headH() }].map(logical));
             return;
         }
         if (!this.onTab || this.tabs.length < 2) { this.gpu.claim([]); return; }
         this.gpu.claim(r ? [{ x: 0, y: 0, w: r.w, h: r.h }]
-            : [{ x: hx, y: 0, w: this.headEnd - hx, h: this.headH() }, { x: hx, y: this.headH(), w: W - hx, h: by - this.headH() }].map(logical));
+            : [{ x: hx, y: 0, w: he - hx, h: this.headH() }, { x: hx, y: this.headH(), w: W - hx, h: by - this.headH() }].map(logical));
     }
 
     /** GPU path gone (or off): the HMI's own image shows again - push a frame now. */

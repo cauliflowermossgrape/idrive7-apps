@@ -48,9 +48,8 @@ const { drawHud, drawDown, gearText } = Draw;
 let ClusterRender = null;
 try { ClusterRender = require('./cluster_render_client').ClusterRender; } catch (e) { /* logged at start */ }
 
-const SCENE_W = 800, SCENE_H = 480;
-// the tach image and where it sits at 100 %: centred in the visible area, clear of BMW's speed
-const IW = 400, IH = 130, BASE_X = (SCENE_W - IW) / 2, BASE_Y = 140;
+// the tach image (400x130); where it sits at 100 % is the scene's (SCENE below)
+const IW = 400, IH = 130;
 // frames a second: setting "hudFps" (10 / 20 / 30); the layer is made for the most, the timer paces it
 const FPS_MAX = 30, FPS_DEFAULT = 20;
 const READOUT_MS = 250;          // the readouts row is refreshed at most this often
@@ -153,13 +152,15 @@ function reactionMs(flash, rpm) {
     return clamp(effLead + (rpm - flash.target) / flash.rate * 1000, 0, 600);
 }
 
-/** Where the tach image shows in the HUD's scene (800x480), from the size and position settings. */
+/** Where the tach image shows in the HUD's scene (SCENE), from the size and position settings. */
 function placeOf(settings) {
     // (smaller, further right and further down since 2.0.27: a small tach in the glass's bottom right corner)
-    const k = clamp(numOf(settings, 'hudSize', 100), 40, 140) / 100, w = Math.round(IW * k), h = Math.round(IH * k);
-    const x = BASE_X + Math.round((IW - w) / 2) + clamp(numOf(settings, 'hudX', 0), -120, 280);
-    const y = BASE_Y + clamp(numOf(settings, 'hudY', 0), -120, 220);
-    return { x: clamp(x, 0, SCENE_W - w), y: clamp(y, 0, SCENE_H - h), w: w, h: h };
+    // 100 % is the scene's own size for the tach (iDrive 8's small HUD: as wide as it), never more than all of it
+    const k = Math.min(clamp(numOf(settings, 'hudSize', 100), 40, 140) / 100 * SCENE.fit, SCENE.w / IW, SCENE.h / IH);
+    const w = Math.round(IW * k), h = Math.round(IH * k);
+    const x = Math.round((SCENE.w - IW) / 2) + Math.round((IW - w) / 2) + clamp(numOf(settings, 'hudX', 0), -120, 280);
+    const y = SCENE.baseY + clamp(numOf(settings, 'hudY', 0), -120, 220);
+    return { x: clamp(x, 0, SCENE.w - w), y: clamp(y, 0, SCENE.h - h), w: w, h: h };
 }
 
 /*
@@ -173,6 +174,30 @@ const NAV_RIGHT = 672, NAV_BOTTOM = 356, NAV_GAP = 4;
 const BMW_SPEED = { x: 116, y: 320, w: 236, h: 48 };
 // the glass the driver sees whole (the test pattern's 120 px frame on the G21)
 const GLASS = { x: 120, y: 120, w: 560, h: 240 };
+/** The part of the HUD's 800x480 scene seen through the windshield, measured from car photos by bimmer-lab
+ * (github.com/bimmer-lab/apps shared/visible.js, MIT, 2026-11-05; it moves with the driver's eye height). */
+const HUD_WINDOW = { x: 120, y: 100, w: 485, h: 278 };
+/*
+ * The HUD's scene: iDrive 7's 800x480, of which only part is seen (above), or the size cluster-render names
+ * in its hello (iDrive 8: "hud:353x203", all of it shown, above the HUD's own speed bar: no BMW speed in it).
+ * baseY: the tach's top at 100 % and Position 0; fit: its size at 100 %.
+ */
+const ID7_SCENE = { w: 800, h: 480, fit: 1, baseY: 140, window: HUD_WINDOW, glass: GLASS, speed: BMW_SPEED, navRight: NAV_RIGHT, navBottom: NAV_BOTTOM };
+let SCENE = ID7_SCENE;
+function sceneOf(targets) {
+    const m = /(?:^|,)\s*hud:(\d+)x(\d+)/.exec(String(targets || ''));
+    const w = m ? Number(m[1]) : 800, h = m ? Number(m[2]) : 480;
+    if (w === 800 && h === 480 || w < 40 || h < 20) return ID7_SCENE;
+    const fit = Math.min(1, w / IW, h / IH), all = { x: 0, y: 0, w: w, h: h };
+    return { w: w, h: h, fit: fit, baseY: Math.round((h - Math.round(IH * fit)) / 2), window: all, glass: all,
+        speed: { x: 0, y: 0, w: 0, h: 0 }, navRight: w - NAV_GAP, navBottom: h - NAV_GAP };
+}
+/** Use the scene cluster-render's hello names (its targets string); true when it changed. */
+function useScene(targets) {
+    const next = sceneOf(targets), changed = next.w !== SCENE.w || next.h !== SCENE.h;
+    SCENE = next;
+    return changed;
+}
 const overlapOf = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 /**
  * Where the directions go: the glass's bottom right corner ("hudNavX" / "hudNavY" move it), but never over or
@@ -183,16 +208,17 @@ const overlapOf = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.ma
 function navPlaceOf(settings) {
     const w = HudNav.NW, h = HudNav.NH, t = placeOf(settings);
     const dx = clamp(Number(settings.get('hudNavX')) || 0, -400, 100), dy = clamp(Number(settings.get('hudNavY')) || 0, -200, 100);
-    const at = (x, y) => ({ x: clamp(Math.round(x), 0, SCENE_W - w), y: clamp(Math.round(y), 0, SCENE_H - h), w: w, h: h });
-    const corner = at(NAV_RIGHT - w + dx, NAV_BOTTOM - h + dy);
+    const at = (x, y) => ({ x: clamp(Math.round(x), 0, SCENE.w - w), y: clamp(Math.round(y), 0, SCENE.h - h), w: w, h: h });
+    const corner = at(SCENE.navRight - w + dx, SCENE.navBottom - h + dy);
     const tries = [corner,
         at(corner.x, t.y + t.h + NAV_GAP),                  // under the tach
         at(t.x + t.w + NAV_GAP, corner.y),                  // right of it
         at(t.x - w - NAV_GAP, corner.y),                    // left of it
         at(corner.x, t.y - h - NAV_GAP)];                   // above it
     // covering anything weighs far more than reaching past the glass's edge (px outside it, summed per side)
-    const outside = (r) => Math.max(GLASS.x - r.x, 0) + Math.max(r.x + r.w - GLASS.x - GLASS.w, 0) + Math.max(GLASS.y - r.y, 0) + Math.max(r.y + r.h - GLASS.y - GLASS.h, 0);
-    const cost = (r) => (overlapOf(r, t) + overlapOf(r, BMW_SPEED)) * 1000 + outside(r);
+    const G = SCENE.glass;
+    const outside = (r) => Math.max(G.x - r.x, 0) + Math.max(r.x + r.w - G.x - G.w, 0) + Math.max(G.y - r.y, 0) + Math.max(r.y + r.h - G.y - G.h, 0);
+    const cost = (r) => (overlapOf(r, t) + overlapOf(r, SCENE.speed)) * 1000 + outside(r);
     let best = tries[0];
     tries.forEach((r) => { if (cost(r) < cost(best)) best = r; });
     return best;
@@ -201,19 +227,14 @@ function navPlaceOf(settings) {
 function navModeOf(settings) { const m = settings.get('hudNav'); return m === 'off' || m === 'near' ? m : 'route'; }
 
 /**
- * The part of the HUD's 800x480 scene seen through the windshield, measured from car photos by bimmer-lab
- * (github.com/bimmer-lab/apps shared/visible.js, MIT, 2026-11-05; it moves with the driver's eye height).
- */
-const HUD_WINDOW = { x: 120, y: 100, w: 485, h: 278 };
-/**
- * How far a place (placeOf) reaches outside HUD_WINDOW, in px per side ({} when it is all visible). style: Minimal
+ * How far a place (placeOf) reaches outside the part of the scene seen (SCENE.window), in px per side ({} when it is all visible). style: Minimal
  * draws nothing in the picture's top MINIMAL_TOP px (its lights from 26, the D / S / M letter by the gear from
  * about 10), so only what's under them counts at the top.
  */
 const MINIMAL_TOP = 9;
 function outsideGlass(r, style) {
     if (style === 'minimal') { const d = Math.round(MINIMAL_TOP * r.h / IH); r = { x: r.x, y: r.y + d, w: r.w, h: r.h - d }; }
-    const W = HUD_WINDOW, o = {};
+    const W = SCENE.window, o = {};
     if (r.x < W.x) o.left = W.x - r.x;
     if (r.x + r.w > W.x + W.w) o.right = r.x + r.w - (W.x + W.w);
     if (r.y < W.y) o.top = W.y - r.y;
@@ -590,16 +611,17 @@ function demoFrame(tMs, o, cueState, lead, now) {
     };
 }
 
-/** 800x480 test pattern: border, rulers every 40 px with labels, inset frames at 40/80/120, the tach at its place. */
+/** The scene's test pattern: border, rulers every 40 px with labels, inset frames at 40/80/120 (those that fit), the tach at its place. */
 function drawTestPattern(cv) {
     cv.clear();
+    const SCENE_W = SCENE.w, SCENE_H = SCENE.h;
     const frame = (i, c) => {
         const w = SCENE_W - 2 * i, h = SCENE_H - 2 * i;
         cv.fillRect(i, i, w, 2, c); cv.fillRect(i, i + h - 2, w, 2, c);
         cv.fillRect(i, i, 2, h, c); cv.fillRect(i + w - 2, i, 2, h, c);
     };
     frame(0, WHITE);
-    [[40, CYAN], [80, MAGENTA], [120, YELLOW]].forEach((f) => {
+    [[40, CYAN], [80, MAGENTA], [120, YELLOW]].filter((f) => 2 * f[0] + 40 <= Math.min(SCENE_W, SCENE_H)).forEach((f) => {
         frame(f[0], f[1]);
         cv.text(String(f[0]), f[0] + 6, f[0] + 22, 18, f[1], { font: 'bold' });
     });
@@ -774,7 +796,15 @@ function start(ctx, src) {
         if (cr) return;
         if (!ClusterRender) { log.warn('hud: cluster_render_client.js is missing from the app'); return; }
         cr = new ClusterRender('redline');
-        cr.on('ready', safe('ready', () => { first = true; log.info('hud: connected to cluster-render (' + cr.backend + ', targets ' + cr.targets + ')'); }));
+        cr.on('ready', safe('ready', () => {
+            first = true;
+            log.info('hud: connected to cluster-render (' + cr.backend + ', targets ' + cr.targets + ')');
+            // the HUD's size (iDrive 8's is 353x203): the tach moves there with the next frame, the test pattern is drawn again
+            if (useScene(cr.targets)) {
+                log.info('hud: scene ' + SCENE.w + 'x' + SCENE.h);
+                if (shown === 'test') { shown = ''; showTestPattern(); }
+            }
+        }));
         cr.on('disconnected', safe('disconnected', () => log.warn('hud: cluster-render went away, reconnecting')));
         cr.on('target', safe('target', (name, state, holder, reason, guideDisabled, disabled) => {
             if (name !== 'hud') return;
@@ -821,9 +851,9 @@ function start(ctx, src) {
     const showTestPattern = safe('test', () => {
         if (shown === 'test') return;
         dropLayer();
-        layer = cr.image({ target: 'hud', klass: 'overlay', x: 0, y: 0, w: SCENE_W, h: SCENE_H, fps: 1 });
+        layer = cr.image({ target: 'hud', klass: 'overlay', x: 0, y: 0, w: SCENE.w, h: SCENE.h, fps: 1 });
         if (!layer) { log.warn('hud: test layer refused by the client'); return; }
-        const cv = new Canvas(SCENE_W, SCENE_H);
+        const cv = new Canvas(SCENE.w, SCENE.h);
         drawTestPattern(cv);
         const r = rect();
         // where the size and position settings put the tach: drawn there at that size, blended over the pattern
@@ -1276,4 +1306,4 @@ function start(ctx, src) {
 }
 
 // writeAtomic: kept here too (it moved to files.js in 2.0) for code that calls Hud.writeAtomic
-module.exports = { start, revOf, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };
+module.exports = { start, revOf, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, sceneOf, useScene, scene: () => SCENE, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };

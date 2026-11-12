@@ -295,6 +295,27 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
 }
 
 // ---- the layer in hud.js -------------------------------------------------------------------------------------------
+// ---- iDrive 8's HUD (cluster-render's hello: hud:353x203, all of it shown): the tach and directions inside it ----
+{
+    const st = (v) => ({ get: (k) => v[k] });
+    const id7 = Hud.placeOf(st({}));
+    ok(!Hud.useScene('map:1088x480,panel:1920x720,hud:800x480') && Hud.scene().w === 800, 'iDrive 7\'s hello keeps the 800x480 scene');
+    ok(Hud.useScene('map:874x749,hud:353x203,guide:702x213,widget:2240x896,popup:2240x896'), 'iDrive 8\'s hello changes the scene');
+    const S = Hud.scene(), inS = (r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= S.w && r.y + r.h <= S.h;
+    ok(S.w === 353 && S.h === 203, 'iDrive 8 scene 353x203 (' + S.w + 'x' + S.h + ')');
+    const d = Hud.placeOf(st({}));
+    ok(d.w === 353 && Math.abs(d.y + d.h / 2 - S.h / 2) <= 1, 'at 100 %: the tach as wide as the HUD, centred (' + JSON.stringify(d) + ')');
+    ok(!Object.keys(Hud.outsideGlass(d)).length, 'at 100 %: all of it seen');
+    let out = 0, n = 0;
+    [40, 70, 100, 140].forEach((sz) => [-120, 0, 280].forEach((x) => [-120, 0, 220].forEach((y) => {
+        const v = st({ hudSize: sz, hudX: x, hudY: y, hudNav: 'route' }), r = Hud.placeOf(v), nv = Hud.navPlaceOf(v);
+        n++; if (!inS(r) || !inS(nv)) { out++; console.log('  out of the HUD at ' + sz + '% ' + x + ',' + y + ': ' + JSON.stringify([r, nv])); }
+    })));
+    ok(!out, 'every Size / Position: the tach and directions inside the HUD (' + n + ' tried)');
+    ok(Hud.useScene('') && Hud.scene().w === 800, 'no targets in the hello: back to iDrive 7\'s scene');
+    ok(JSON.stringify(Hud.placeOf(st({}))) === JSON.stringify(id7), 'iDrive 7\'s place unchanged after');
+}
+
 (async () => {
     fs.mkdirSync(SHM);
     fs.writeFileSync(path.join(SHM, 'redline'), JSON.stringify({ held: false, at: Date.now() }) + '\n');
@@ -403,6 +424,19 @@ ok(lit(draw(C.SAMPLES.left, 'amber'), 0, N.NW).white === 0 && lit(draw(C.SAMPLES
     const without = whiteIn(cr.frames[cr.frames.length - 1].px);
     ok(withNav - without > 300, 'test pattern: a sample turn where the directions go (' + withNav + ' white px, ' + without + ' with Directions off)');
     settings.set('hudNav', 'route');
+
+    // iDrive 8's hello while the test pattern shows: drawn again, at the HUD's own 353x203, with the tach inside it
+    settings.set('hud', 'test'); await sleep(120);
+    cr.targets = 'map:874x749,hud:353x203,guide:702x213'; cr.h.ready(); await sleep(120);
+    const L8 = cr.layers[Math.max.apply(null, cr.images())], F8 = cr.frames[cr.frames.length - 1];
+    ok(L8 && L8.w === 353 && L8.h === 203 && F8.px.length === 353 * 203 * 4, 'iDrive 8: the test pattern at 353x203 (' + (L8 && L8.w + 'x' + L8.h) + ', ' + F8.px.length + ' bytes)');
+    const edge = (x, y) => { const i = (y * 353 + x) * 4; return F8.px[i] > 200 && F8.px[i + 1] > 200 && F8.px[i + 2] > 200; };
+    ok(edge(352, 100) && edge(100, 202) && edge(0, 100) && edge(100, 0), 'iDrive 8: the pattern\'s white border on all four sides');
+    ok(lines.some((l) => /hud: scene 353x203/.test(l)), 'iDrive 8: the scene logged');
+    cr.targets = 'hud'; cr.h.ready(); await sleep(120);
+    const L7 = cr.layers[Math.max.apply(null, cr.images())];
+    ok(L7 && L7.w === 800 && L7.h === 480, 'back on iDrive 7\'s hello: the test pattern at 800x480 again');
+    settings.set('hud', 'on'); await sleep(120);
 
     ok(!lines.some((l) => /^hud \w+: /.test(l) && /Error/.test(l)), 'no errors in the HUD\'s log (' + lines.filter((l) => /Error/.test(l)).join(' / ').slice(0, 300) + ')');
     h.stop();
