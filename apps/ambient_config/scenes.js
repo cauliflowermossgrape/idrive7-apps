@@ -7,7 +7,7 @@
  *   breathing  the colour slowly brighter and dimmer
  *   rainbow    the whole cabin through every colour
  *   fade       slowly from the upper colour to the lower one and back
- *   wave       a band of colour moving from the dash to the rear
+ *   wave       a band of colour rolling from one side of the cabin to the other (bus by bus)
  *   welcome    a sweep of the colour from the dash to the rear, once (then solid)
  *   pulse      red for 1.5 s, then the colour (Sport)
  * speed: 1 slow, 2 normal, 3 fast.
@@ -59,8 +59,11 @@ function lightAt(scene, light, t) {
         return { rgb: mix(scene.upper.rgb, scene.lower.rgb, f), bright: Math.round(scene.upper.bright + (scene.lower.bright - scene.upper.bright) * f) };
     }
     case 'wave': {
-        // the base colour's hue, a band 120 degrees wide travelling to the rear
-        const h = hueOf(base.rgb) + 60 * Math.sin(2 * Math.PI * (t / (5000 * k) - light.y));
+        // the base colour's hue, a band 120 degrees wide rolling from one LIN bus to the other (on a G20 the passenger's
+        // doors, then the dash and the driver's doors): every light of a bus one colour, so a frame is one write a bus
+        // (NAD 0) and the wave stays smooth; a light without a bus (the picture's) by where it sits, front to rear
+        const at = typeof light.bus === 'number' ? light.bus * 0.25 : light.y;
+        const h = hueOf(base.rgb) + 60 * Math.sin(2 * Math.PI * (t / (5000 * k) - at));
         return { rgb: hsv((h + 360) % 360, 1, 1), bright: base.bright };
     }
     case 'welcome': {

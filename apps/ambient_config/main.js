@@ -6,7 +6,7 @@
  *   Colour         the colour ring (and white) for the whole car, the upper lights or the lower ones, the
  *                  brightness, and the car from above lit as the car is; Original colour gives the light back
  *   Animations     Solid, Breathing, Rainbow, Smooth fade, Colour wave, how fast, shown moving on the car picture;
- *                  Turn signal glow (that side's lights blink green with it) and Open door red (blinking), each off until
+ *                  Turn signal glow (that side's door lines blink green with it) and Open door red (its line blinking), each off until
  *                  switched on
  *   Driving modes  for each driving mode the car has: Choose colour (the Colour and Animations tabs change that mode's
  *                  look until Done), the animation button stepping through them, or Original colour (BMW's); with
@@ -100,7 +100,7 @@ async function background(bg) {
         },
     }, log).catch((e) => log.warn('speed: ' + (e && e.message || e)));
     setInterval(() => { if (!stateSeen && !control._away && Date.now() - activeT > IDLE_MS) control.away(true); }, 30000);
-    // the turn signals: that side's lights blink green; an open door: its lights red (settings turnGlow, doorRed, both off
+    // the turn signals: that side's door lines blink green; an open door: its line red (settings turnGlow, doorRed, both off
     // until switched on)
     signals.watch('de.bmw.body.Light', '1', { StatusFunctionsIndicators: (v) => control.turn(turnOf(v)) }, log)
         .catch((e) => log.warn('turn signals: ' + (e && e.message || e)));
@@ -276,7 +276,7 @@ mgu.run({
             const l = look();
             G.panel(cv, t, 24, 44, 640, 468, editing ? 'Animation for ' + MODE_NAMES[editing] : 'Animation');
             const kinds = [['solid', 'No animation, a steady colour'], ['breathing', 'Slowly brighter and dimmer'], ['rainbow', 'Every colour in turn'],
-                ['fade', 'Upper colour to lower colour and back'], ['wave', 'Colour moving from the dash to the rear']];
+                ['fade', 'Upper colour to lower colour and back'], ['wave', 'Colour rolling from side to side']];
             kinds.forEach(([k, d], i) => {
                 const y = 92 + i * 66, on = isOn() && l.kind === k;
                 G.button(cv, t, 44, y, 220, 50, S.NAMES[k], () => { setLook({ kind: k }); return redraw(); }, { primary: on, key: 'k-' + k });

@@ -54,6 +54,9 @@ ok(S.lightAt(look('fade'), up, 0).rgb.join() === '255,0,0' && S.lightAt(look('fa
 ok(S.lightAt(look('wave'), { part: 'upper', y: 0 }, 0).rgb.join() !== S.lightAt(look('wave'), { part: 'upper', y: 0.25 }, 0).rgb.join(), 'wave: front and rear differ');
 ok(S.lightAt(look('welcome'), { part: 'upper', y: 0.9 }, 100).bright === 0 && S.lightAt(look('welcome'), { part: 'upper', y: 0.9 }, 2600).bright === 80, 'welcome: the rear comes on last');
 ok(S.lightAt(look('pulse'), low, 1000).rgb.join() === '255,0,0' && S.lightAt(look('pulse'), low, 1600).rgb.join() === '0,0,255', 'pulse: red for 1.5 s, then the colour');
+ok(S.lightAt(look('wave'), { part: 'upper', y: 0, bus: 0 }, 300).rgb.join() === S.lightAt(look('wave'), { part: 'lower', y: 0.8, bus: 0 }, 300).rgb.join()
+    && S.lightAt(look('wave'), { part: 'upper', y: 0, bus: 0 }, 300).rgb.join() !== S.lightAt(look('wave'), { part: 'upper', y: 0, bus: 1 }, 300).rgb.join(),
+    'wave on the car: one colour a bus, the buses apart');
 ok(S.moves(look('wave')) && !S.moves(look('solid')) && S.lasts(look('welcome')) > 0 && S.lasts(look('wave')) === 0, 'moving and once-only scenes');
 ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,255,0', 'hue');
 
@@ -121,7 +124,8 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     writes.length = 0;
     lights.show(look('wave'));
     await sleep(100);
-    ok(writes.some((w) => w[2] !== 0), 'a colour wave (the lights their own colours): a write a light');
+    ok(writes.length >= 2 && writes.every((w) => w[2] === 0) && writes[0].slice(5, 8).join() !== writes[1].slice(5, 8).join(),
+        'a colour wave: a colour a bus, one write each (NAD 0), the two buses apart');
 
     writes.length = 0;
     lights.carColour();
@@ -264,6 +268,18 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     ok(!fake.overs.doors, 'closed: red off');
     settings.set('doorRed', false); c.doors(['driver front']);
     ok(!fake.overs.doors, 'Open door red off: none');
+    // a car with door lines (G20): only those blink, one write each a frame; a door without its own line: all its lights
+    fake.lights = [0x05, 0x07, 0x08, 0x09, 0x0b, 0x21, 0x13, 0x01, 0x0c, 0x0e, 0x0f, 0x10, 0x12, 0x22, 0x04].map(pl);
+    settings.set('turnGlow', true); settings.set('doorRed', true); c.turn('left');
+    ok(fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x09)) && !fake.overs.turn.test(pl(0x07)) && !fake.overs.turn.test(pl(0x0b))
+        && !fake.overs.turn.test(pl(0x0c)), 'door lines on the car: the turn glow blinks the driver\'s front and rear door lines only');
+    c.doors(['passenger rear']);
+    ok(fake.overs.doors.test(pl(0x10)) && !fake.overs.doors.test(pl(0x12)) && !fake.overs.doors.test(pl(0x22)) && !fake.overs.doors.test(pl(0x0c)),
+        'door lines on the car: an open door blinks its own line only');
+    c.doors([]); c.doors(['driver front']);
+    fake.lights = fake.lights.filter((l) => l.loc !== 0x05);
+    ok(fake.overs.doors.test(pl(0x07)) && fake.overs.doors.test(pl(0x08)), 'a door without its line: its other lights blink');
+    delete fake.lights;
     values.turnGlow = undefined; values.doorRed = undefined; c.doors([]); c.turn(null);
     // a restart with Welcome on: the sweep, then the look
     values.welcome = true; shows.length = 0;
