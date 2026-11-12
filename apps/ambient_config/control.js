@@ -14,8 +14,8 @@
  * The car locked and left (parked or standby, nobody in it: away(true)): every light back to the car's own and nothing
  * renewed; someone back in (living, ignition, driving): the look again, with the welcome sweep when it is on.
  * Over the look (or the car's own colour), with their settings switched on (both off by default): turn(side) - while a turn signal is on, that side's
- * lights blink green, fully on and off, as fast as the lights take it (setting turnGlow; hazards: both sides; not with
- * the car locked and left); doors(open) - an open door's lights blink red until it closes (setting doorRed; not with
+ * door lines blink green, fully on and off, as fast as the lights take it (setting turnGlow; hazards: both sides; not with
+ * the car locked and left); doors(open) - an open door's line blinks red until it closes (setting doorRed; not with
  * the car locked and left, so a door left open does not keep the body module awake). Left is
  * the driver's side on a left-hand drive car.
  */
@@ -37,6 +37,10 @@ const doorOf = (l) => {
     if (/ front door/.test(n) || / rear door/.test(n)) return side + (/ front door/.test(n) ? ' front' : ' rear');
     return side + (l.y < 0.5 ? ' front' : ' rear');        // the door's backlit decor: by where it sits
 };
+/* A door's line light. The turn glow and an open door's red blink only these (one write each a frame, ~2.4 blinks a
+ * second on the car against ~0.8 with every light of a side); a car whose side or door has none blinks all of them. */
+const isLine = (l) => / door line$/i.test(String(l.name || ''));
+const linesOf = (all, pick) => (l) => pick(l) && (isLine(l) || !all().some((x) => pick(x) && isLine(x)));
 
 const copy = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 const valid = (l) => !!l && typeof l === 'object' && !!l.upper && Array.isArray(l.upper.rgb) && !!l.lower && Array.isArray(l.lower.rgb);
@@ -110,15 +114,16 @@ class Control {
         const rhd = this.settings.get('drive') === 'rhd', side = (s) => (s === 'left') !== rhd ? 'driver' : 'passenger';
         const turn = this.settings.get('turnGlow') === true && !this._away ? this._turn : null;
         const sides = turn === 'both' ? ['driver', 'passenger'] : turn ? [side(turn)] : [];
+        const all = () => this.lights.lights || [];
         const key = sides.join();
         if (key !== this._glow) {
             this._glow = key;
-            this.lights.overlay('turn', sides.length ? (l) => sides.indexOf(sideOf(l)) >= 0 : null, blink(GLOW));
+            this.lights.overlay('turn', sides.length ? linesOf(all, (l) => sides.indexOf(sideOf(l)) >= 0) : null, blink(GLOW));
         }
         const doors = this.settings.get('doorRed') === true && !this._away ? this._doors : [];
         if (doors.join() !== this._red) {
             this._red = doors.join();
-            this.lights.overlay('doors', doors.length ? (l) => doors.indexOf(doorOf(l)) >= 0 : null, blink(RED));
+            this.lights.overlay('doors', doors.length ? linesOf(all, (l) => doors.indexOf(doorOf(l)) >= 0) : null, blink(RED));
         }
     }
 

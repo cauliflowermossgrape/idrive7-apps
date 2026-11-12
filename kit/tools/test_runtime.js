@@ -283,6 +283,23 @@ test('a new scale keeps the uploads (the renderer keeps them), a new size sends 
     } finally { t.end(); }
 });
 
+test('in front without the controller (another renderer held it at connect): connected again, the controller then', async () => {
+    const t = await setup();
+    try {
+        // the renderer offering no controller on this connection, as when the Store's renderer held it
+        let conns = 0, now = null;
+        onConn = (c) => { conns++; now = c; c.send(X_READY, u32(1, 1, 7)); c.send(READY, u32(4, 1920, 720, 1)); };
+        t.d.gpu.info.controller = false; t.d.ctlTryT = 0;
+        t.c.send(X_STATE, u32(1, 0, 1));
+        assert(await waitFor(() => conns === 1 && t.d.gpu.ready && t.d.gpu.info && t.d.gpu.info.controller, 3000), 'connected again at once, the controller offered');
+        assert(await waitFor(() => t.d.gpu.grabbing, 1000), 'and taken');
+        // not again within 30 s, nor with the controller there
+        now.send(X_STATE, u32(1, 0, 1)); await sleep(200);
+        assert.strictEqual(conns, 1, 'once');
+        assert.strictEqual(t.d.ctlTries, 1, 'one try counted');
+    } finally { t.end(); }
+});
+
 (async () => {
     await new Promise((r) => server.listen(process.env.MGU_RENDERD_SOCKET, r));
     let failed = 0;

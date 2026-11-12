@@ -88,6 +88,7 @@ const FULL = {
     src: { x: 12, y: 38, w: 1576, h: 482 },
 };
 const LAYOUTS = ['full', 'standard'];
+const CTL_RETRIES = 3, CTL_RETRY_MS = 30000;   // connecting again for the controller (_ctlRetry)
 
 // the HMI's page animation when a screen opens (the picture shows after it)
 const SHOW_DELAY_MS = 350;
@@ -187,6 +188,7 @@ class Display {
             if (this.gpu !== gpu) return;
             clearTimeout(this.frontTimer);
             if (st.front) {
+                this._ctlRetry(gpu);
                 if (this.blocked) { this.blocked = false; this.log.info('display: renderer has the app in front again'); this.lastWords = null; this._syncVisible(); this._grab(); this._hmiBar(); }
                 return;
             }
@@ -206,6 +208,19 @@ class Display {
         G.onLayerDrop((id) => { if (this.gpu) this.gpu.dropLayer(id); });
         gpu.connect();
         if (this.grabbing) gpu.grab(true);
+    }
+
+    /**
+     * In front without the controller: the renderer offers it only if no other renderer held it when this app
+     * connected (the Store's open while this app restarts after its update: seen on the car, the controller then
+     * never reached the app). Connected again, at most CTL_RETRIES times, CTL_RETRY_MS apart, so it asks again;
+     * a head unit whose HMI has no controller gate stays without after those.
+     */
+    _ctlRetry(gpu) {
+        const now = Date.now();
+        if (!gpu.native || !gpu.info || gpu.info.controller || !this.ownable() || (this.ctlTries || 0) >= CTL_RETRIES || now - (this.ctlTryT || 0) < CTL_RETRY_MS) return;
+        this.ctlTries = (this.ctlTries || 0) + 1; this.ctlTryT = now;
+        if (gpu.reconnect()) this.log.info('display: in front without the controller, connecting to the renderer again (' + this.ctlTries + '/' + CTL_RETRIES + ')');
     }
 
     /** the iDrive controller to this app alone while on (GPU renderer + mgu-inputgate.so needed) */

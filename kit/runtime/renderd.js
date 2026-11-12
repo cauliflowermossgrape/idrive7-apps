@@ -117,9 +117,18 @@ class RenderClient extends EventEmitter {
             const was = this.ready;
             this.connected = this.ready = this.native = false; this.sock = null; this.waiting = false; this.onScreen = null;
             if (was) { this.log.warn('renderd: connection closed'); this.emit('close'); }
-            if (!this.closed) this.retry = setTimeout(() => { this.retry = null; this.connect(); }, 3000);
+            if (!this.closed) this.retry = setTimeout(() => { this.retry = null; this.connect(); }, this.soon ? 0 : 3000);
+            this.soon = false;
         });
         return this;
+    }
+    /** A fresh connection at once: the renderer's READY again, with what it offers now (its capabilities are
+     * those of the moment it answered HELLO). */
+    reconnect() {
+        if (this.closed || !this.sock || !this.ready) return false;
+        this.soon = true;
+        this.sock.destroy();
+        return true;
     }
     /**
      * Have the iDrive controller to ourselves (the HMI ignores the knob, press and tilt while it
