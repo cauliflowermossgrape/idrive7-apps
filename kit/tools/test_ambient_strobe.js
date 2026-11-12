@@ -435,6 +435,25 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(/refused \(NRC 31\)/.test(s.note) && diag.sent[diag.sent.length - 1] === '40 10 01', 'BDC without the light show: refused, the session dropped');
     }
 
+    // the app's other writes to the body controller (the ambient lights) held before the first request, let go after the last
+    {
+        const clock = { t: 0 }, diag = fakeCar('fn', {}, clock), ev = [];
+        const physical = diag.physical;
+        diag.physical = (...a) => { ev.push('req'); return physical.apply(diag, a); };
+        const s = new Strobe({ diag, log, allowed: () => null, now: () => clock.t, hold: async (on) => { ev.push(on ? 'hold' : 'go'); await new Promise((r) => setImmediate(r)); },
+            sleep: (ms) => new Promise((r) => { clock.t += Math.max(ms, 1); setImmediate(r); }) });
+        await s.find(); ev.length = 0;
+        const run = s.start({ pattern: 'both' });
+        const second = s.start({ pattern: 'both' });
+        stopAfter(s, diag, diag.sent.length + 6);
+        await Promise.all([run, second]);
+        ok(ev[0] === 'hold' && ev[ev.length - 1] === 'go' && ev.filter((e) => e === 'hold').length === 1 && ev.filter((e) => e === 'go').length === 1 && ev.indexOf('req') > 0,
+            'strobe: the ambient lights held once, before its first request, and let go after its last (' + ev.filter((e) => e !== 'req').join() + ', ' + ev.filter((e) => e === 'req').length + ' requests)');
+        ev.length = 0;
+        await s.show({ ms: 600 });
+        ok(ev[0] === 'hold' && ev[ev.length - 1] === 'go', 'light show: held and let go the same way');
+    }
+
     console.log('ambient strobe: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

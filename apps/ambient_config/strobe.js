@@ -37,7 +37,10 @@
  * session is kept with 3E 00 (with its reply: 3E 80 holds the transport for seconds waiting for one), and the units
  * drop it by themselves a few seconds after the last request, so an app that dies mid-flash leaves the lamps to the car.
  *
- *   const s = new Strobe({ diag, log, allowed, channels });  await s.find();   s.kind -> 'flm' | 'fle' | 'bdc' | 'g05' | null
+ * Nothing else of the app talks to the body controller meanwhile: hold(true) (the ambient lights' writes, Lights.hold)
+ * before a strobe, light show or learn starts, hold(false) once it has ended.
+ *
+ *   const s = new Strobe({ diag, log, allowed, channels, hold });  await s.find();   s.kind -> 'flm' | 'fle' | 'bdc' | 'g05' | null
  *   s.start({ lights: 'all' | 'high', pattern: 'both' | 'alternate', rate: 'fast' | 'normal' | 'slow' })   s.show()   s.learn()   s.stop()
  *   s.running -> 'strobe' | 'show' | 'learn' | null       s.note       s.on('change', fn)   s.on('learned', fn(channels))
  */
@@ -114,6 +117,20 @@ class Strobe extends EventEmitter {
         this.learned = Array.isArray(o.channels) && o.channels.length ? o.channels : null;   // [{ ch, cur, pwm }]
         this.kind = null; this.sides = [];
         this.running = null; this.note = null; this.noteType = 'dim'; this._stop = false;
+        this.hold = o.hold || null;              // hold(on) -> Promise: the app's other writes to the body controller
+        this._starting = false;
+    }
+
+    /** fn() run with the app's other writes to the body controller held (hold), let go when it has ended. */
+    async _held(fn) {
+        if (this.running || this._starting) return null;
+        if (!this.hold) return fn();
+        this._starting = true;
+        try { await this.hold(true); } catch (e) { this.log.warn('strobe: hold: ' + (e && e.message || e)); }
+        this._starting = false;
+        try { return await fn(); } finally {
+            try { await this.hold(false); } catch (e) { this.log.warn('strobe: hold: ' + (e && e.message || e)); }
+        }
     }
 
     _say(note, type) { this.note = note; this.noteType = type || 'dim'; this.emit('change'); }
@@ -451,7 +468,8 @@ class Strobe extends EventEmitter {
     }
 
     /** The high beams flashing until stop(), MAX_MS, a refusal or allowed() saying no. */
-    async start(o) {
+    start(o) { return this._held(() => this._start(o)); }
+    async _start(o) {
         if (this.running) return;
         const why = this._why();
         if (why) { this._say('Strobe not started: ' + why, 'warn'); return; }
@@ -569,7 +587,8 @@ class Strobe extends EventEmitter {
     }
 
     /** The light show for SHOW_MS: the body controller's own (BDC_G11, BDC_G05), or the headlights in turn. */
-    async show(o) {
+    show(o) { return this._held(() => this._show(o)); }
+    async _show(o) {
         if (this.running) return;
         const why = !this.kind ? 'no headlight or lamp output control found' : this._resting() || this.allowed();
         if (why) { this._say('Light show not started: ' + why, 'warn'); return; }
@@ -643,7 +662,8 @@ class Strobe extends EventEmitter {
     }
 
     /** The high beam's channels: what lights up on the first headlight while the high beam is switched on (reads only). */
-    async learn() {
+    learn() { return this.head ? this._held(() => this._learn()) : Promise.resolve(null); }
+    async _learn() {
         if (this.running || !this.head) return null;
         this.running = 'learn'; this._stop = false;
         this._say('Learning: switch the high beam on with the stalk now (' + LEARN_MS / 1000 + ' s)', 'warn');

@@ -13,7 +13,9 @@
  * flash(rgb, ms) lays a colour over everything for a moment; overlay(key, test, at) lays one over the lights test(light)
  * picks until overlay(key, null) - at(ms, on) with on flipping each frame, so a blink is as fast as the writes go (the turn signal's glow, an open door; the rest keep the scene, or the car's own
  * colour); dim(f) scales the brightness (night). Writes that fail
- * in a row (the car switched off, the BDC asleep) pause the writing for 10 s.
+ * in a row (the car switched off, the BDC asleep) pause the writing for 10 s. hold(key, true) stops the writing while
+ * something else talks to the body controller (the strobe: the gateway takes one request at a time, and ours in
+ * between got its requests refused); it resolves once no write of ours is under way. hold(key, false) goes on.
  *
  *   const l = new Lights({ diag, log }); await l.find();
  *   l.lights -> [{ bus, nad, name, part, x, y, ... }]   l.state -> 'finding' | 'none' | 'car' | 'ours'
@@ -27,6 +29,7 @@ const HOLD_S = 60, RENEW_MS = 40000, MOVE_HOLD_S = 5, MOVE_RENEW_MS = 3000;
 const PAUSE_MS = 10000, FAILS = 4, RELEASE_TRIES = 3;
 const ALL = 0;                 // NAD 0: every light of the bus
 const CHECK_MS = 1500;         // a still colour's read-back, this long after its last write
+const HOLD_WAIT_MS = 3000;     // hold(): the longest it waits for a write (or read-back) of ours under way
 
 const echo = (sid, did) => (u) => (u[0] === sid + 0x40 && u[1] === did[0] && u[2] === did[1]) || (u[0] === 0x7f && u[1] === sid);
 const same = (a, b) => !!a && !!b && Math.abs(a.bright - b.bright) < 2 && a.rgb.every((x, i) => Math.abs(x - b.rgb[i]) < 3);
@@ -48,6 +51,7 @@ class Lights extends EventEmitter {
         this._running = false; this._timer = null; this._stopped = false;
         this._fails = 0; this._pauseTill = 0; this._frame = null; this._frames = [];
         this.writes = 0; this._times = [];
+        this._holds = new Set(); this._idle = [];
     }
 
     get rate() { const t = this.now(); this._times = this._times.filter((x) => t - x < 3000); return this._times.length / 3; }
@@ -234,8 +238,30 @@ class Lights extends EventEmitter {
         this._frame = null;
     }
 
+    /**
+     * hold(key, true): no more writes or read-backs until every key has let go; resolves once the one under way (if
+     * any) is done, or after HOLD_WAIT_MS. hold(key, false): the writing goes on (a moving scene's colours are
+     * renewed, as their hold ran out meanwhile).
+     */
+    hold(key, on) {
+        if (!on) {
+            if (this._holds.delete(key) && !this._holds.size) { this.log.info('lights: writing again (' + key + ' done)'); this._kick(); }
+            return Promise.resolve();
+        }
+        if (!this._holds.size) this.log.info('lights: holding the writes (' + key + ')');
+        this._holds.add(key);
+        clearTimeout(this._timer); this._timer = null;
+        if (!this._running) return Promise.resolve();
+        return new Promise((res) => {
+            const t = setTimeout(res, HOLD_WAIT_MS);
+            this._idle.push(() => { clearTimeout(t); res(); });
+        });
+    }
+
+    get held() { return this._holds.size > 0; }
+
     _kick() {
-        if (this._running || this._stopped || !this.lights.length) return;
+        if (this._running || this._stopped || this._holds.size || !this.lights.length) return;
         clearTimeout(this._timer); this._timer = null;
         this._run().catch((e) => this.log.warn('lights: ' + e));
     }
@@ -244,7 +270,7 @@ class Lights extends EventEmitter {
         this._running = true;
         try {
             for (;;) {
-                if (this._stopped) return;
+                if (this._stopped || this._holds.size) return;
                 const wait = this._pauseTill - this.now();
                 if (wait > 0) { this._timer = setTimeout(() => this._kick(), wait); return; }
                 if (this._checkAt && this.now() >= this._checkAt && !this._release.length) { this._checkAt = 0; await this._check(); continue; }
@@ -282,7 +308,11 @@ class Lights extends EventEmitter {
                     }
                 }
             }
-        } finally { this._running = false; }
+        } finally {
+            this._running = false;
+            const idle = this._idle; this._idle = [];
+            idle.forEach((f) => f());
+        }
     }
 }
 

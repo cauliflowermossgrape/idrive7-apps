@@ -273,6 +273,29 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     ok(shows[0].kind === 'welcome' && shows[0].then.kind === 'solid', 'welcome sweep at start, then the look');
     c2.stop();
 
+    // hold (the strobe talks to the body controller): no write while held, the one under way finished first, then on again
+    {
+        refuse = false; asleep = false; drop = null;
+        const lh = new Lights({ diag, log, checkMs: 40 });
+        await lh.find();
+        lh.show(look('wave'));
+        for (let i = 0; i < 500 && !lh._running; i++) await new Promise((r) => setImmediate(r));   // a write under way
+        const busy = lh._running;
+        await lh.hold('strobe', true);
+        ok(busy && !lh._running && lh.held, 'hold: resolves once the write under way is done');
+        writes.length = 0;
+        await sleep(200);
+        ok(writes.length === 0, 'held: a moving scene writes nothing (' + writes.length + ' writes)');
+        lh.hold('other', true); lh.hold('strobe', false);
+        await sleep(100);
+        ok(writes.length === 0, 'still held by another key: nothing written');
+        lh.hold('other', false);
+        await sleep(100);
+        ok(writes.length > 0 && !lh.held, 'let go: the scene is written again (' + writes.length + ' writes)');
+        lh.stop && lh.stop();
+        await sleep(50);
+    }
+
     fs.unlinkSync(process.env.MGU_AMBIENT_FLASH); fs.rmdirSync(TMP);
     console.log('ambient rgb: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);

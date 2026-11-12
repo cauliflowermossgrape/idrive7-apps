@@ -124,7 +124,9 @@ async function background(bg) {
     const chFile = bg.dataDir ? path.join(bg.dataDir, 'strobe_channels.json') : null;
     let channels = null;
     try { channels = chFile ? JSON.parse(fs.readFileSync(chFile, 'utf8')) : null; } catch (e) { channels = null; }
-    const strobe = new Strobe({ diag, log, allowed: gate, channels });
+    // while the strobe runs, the ambient lights stop writing (the gateway takes one request at a time: theirs in
+    // between got the strobe's refused)
+    const strobe = new Strobe({ diag, log, allowed: gate, channels, hold: (on) => lights.hold('strobe', on) });
     strobe.on('learned', (c) => { try { if (chFile) fs.writeFileSync(chFile, JSON.stringify(c)); } catch (e) { log.warn('strobe: ' + e); } });
     const findStrobe = () => { if (settings.get('strobe') === true && !strobe.kind) strobe.find().catch((e) => log.warn('strobe: ' + e)); };
     findStrobe();
