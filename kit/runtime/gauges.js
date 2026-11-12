@@ -296,7 +296,8 @@ function rampSlab(cv, x0, x1, y, h, sl, stops, spanX, spanW) {
  * on it; below it in g.negColor. g.head: false leaves out the label / value row (the bar at y).
  * g.track: the empty track's colour. g.ticks: the values marked on the scale line; g.labels:
  * [{ value, text, color, align }] in place of its numbers. g.text / g.valueColor: the value row's text and colour
- * in place of the formatted value.
+ * in place of the formatted value. g.peakText: the peak as a number too ("PEAK 312"), small, after the label
+ * (left out where the label and the value leave no room for it).
  */
 function bar(cv, t, x, y, w, h, g) {
     const min = g.min || 0, v = g.value;
@@ -305,10 +306,16 @@ function bar(cv, t, x, y, w, h, g) {
     if (g.niceMax) max = min + Math.ceil((max - min) / step - 1e-9) * step;
     const sv = sm(g, 'bar|' + x + '|' + y, v), head = g.head !== false;
     if (head) {
-        cv.text(upperText(g.label || ''), x, y + 26, 22, t.dim, { font: 'bold', spacing: 2 });
-        const uw = g.unit ? cv.textWidth(' ' + g.unit, 26) : 0;
-        cv.text(g.text != null ? g.text : fmt(v, g.decimals), x + w - uw, y + 30, 44, g.valueColor ? t[g.valueColor] || g.valueColor : isNum(v) ? t.text : t.dim, { align: 'right', font: 'num' });
+        const label = upperText(g.label || '');
+        cv.text(label, x, y + 26, 22, t.dim, { font: 'bold', spacing: 2 });
+        const uw = g.unit ? cv.textWidth(' ' + g.unit, 26) : 0, vs = g.text != null ? g.text : fmt(v, g.decimals);
+        cv.text(vs, x + w - uw, y + 30, 44, g.valueColor ? t[g.valueColor] || g.valueColor : isNum(v) ? t.text : t.dim, { align: 'right', font: 'num' });
         if (g.unit) cv.text(' ' + g.unit, x + w, y + 30, 26, t.dim, { align: 'right' });
+        if (g.peakText && isNum(g.peak)) {
+            const ps = 'PEAK ' + fmt(g.peak, g.decimals), po = { font: 'label', spacing: 1, literal: true };
+            const px = x + cv.textWidth(label, 22, { font: 'bold', spacing: 2 }) + 22;
+            if (px + cv.textWidth(ps, 20, po) <= x + w - uw - cv.textWidth(vs, 44, { font: 'num' }) - 18) cv.text(ps, px, y + 26, 20, t.hang || t.accent2 || t.dim, po);
+        }
     }
     const bh = 22, by = y + (head ? 44 : 0), SL = 18, bw = w - SL;
     const X = (val) => x + clamp((val - min) / (max - min), 0, 1) * bw;

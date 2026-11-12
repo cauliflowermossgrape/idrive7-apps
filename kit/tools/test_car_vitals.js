@@ -118,6 +118,20 @@ async function boot(dir, over) {
         assert(shown.kpa.engine.includes('250') && shown.kpa.engine.includes('200'), 'the kPa boost scale ends at 250: ' + shown.kpa.engine.join(' | '));
         assert(shown.bar.engine.includes('2.5'), 'the bar boost scale ends at 2.5: ' + shown.bar.engine.join(' | '));
         console.log('M Vitals pressure unit checks passed (bar, psi, kPa on the Engine, Fuel & ignition and Chassis pages).');
+
+        // issue #154: the power and torque bars show the peak as a number too, beside the marker, only where it fits
+        {
+            const G = require(path.join(KIT, 'gauges')), th = themes.theme('m_tricolour');
+            const drawn = (w, g) => { const cv = new Canvas(1920, 720), out = [], text = cv.text.bind(cv); cv.text = (str, ...r) => { out.push(String(str)); return text(str, ...r); }; G.bar(cv, th, 0, 0, w, 92, g); return out; };
+            assert(drawn(466, { label: 'Power', value: 120, unit: 'kW', max: 300, peak: 312.4, peakText: true }).includes('PEAK 312'), 'the peak as a number');
+            assert(!drawn(466, { label: 'Power (torque x rpm)', value: 120, unit: 'kW', max: 300, peak: 312, peakText: true }).some((x) => /PEAK/.test(x)), 'left out where the label leaves no room');
+            assert(!drawn(1014, { label: 'Power', value: 120, unit: 'kW', max: 300, peak: 312 }).some((x) => /PEAK/.test(x)), 'not without peakText (other apps\' bars as before)');
+            assert(!drawn(1014, { label: 'Power', value: 120, unit: 'kW', max: 300, peak: null, peakText: true }).some((x) => /PEAK/.test(x)), 'no peak (markers off): no number');
+            await b.page(0);
+            const eng = await b.draw();
+            assert(eng.some((x) => /^PEAK \d/.test(x)), 'the Engine page shows the power / torque peaks as numbers: ' + eng.filter((x) => /PEAK/.test(x)).join(' | '));
+            console.log('M Vitals peak numbers checked (issue #154).');
+        }
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }

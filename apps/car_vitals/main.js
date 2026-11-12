@@ -685,9 +685,9 @@ mgu.run({
             const bars = (x, y, w, gap) => {
                 G.bar(cv, t, x, y, w, 92, {
                     label: pw.calc ? 'Power (torque x rpm)' : 'Power', value: PW(pw.kw), unit: pwU(), max: powMax, niceMax: true, ramp: 'hot',
-                    peak: showPk && G.isNum(pk.power) ? PW(pk.power) : null,
+                    peak: showPk && G.isNum(pk.power) ? PW(pk.power) : null, peakText: true,
                 });
-                G.bar(cv, t, x, y + gap, w, 92, Object.assign({ label: 'Torque', value: TQ(d.torque), unit: tqU(), decimals: settings.get('torqueUnit') === 'kgm' ? 1 : 0, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null }, tqScale()));
+                G.bar(cv, t, x, y + gap, w, 92, Object.assign({ label: 'Torque', value: TQ(d.torque), unit: tqU(), decimals: settings.get('torqueUnit') === 'kgm' ? 1 : 0, ramp: 'hot', peak: showPk ? TQ(pk.torque) : null, peakText: true }, tqScale()));
             };
             if (shown('boost')) {
                 const pu = settings.get('pressUnit'), psi = pu === 'psi', kpa = pu === 'kpa';
