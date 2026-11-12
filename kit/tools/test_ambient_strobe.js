@@ -13,6 +13,9 @@ const hex = (b) => b.map((x) => (x < 16 ? '0' : '') + x.toString(16).toUpperCase
 
 // the low beam as the car's FLM01 showed it: channels 2-4 1000 mA 88 %, 5 30 %, 10 35 %, 12 200 mA 100 %
 const LOW = [0, 0, 0x64, 0x58, 0x64, 0x58, 0x64, 0x58, 0x64, 0x1E, 0, 0, 0, 0, 0, 0, 0, 0, 0x64, 0x23, 0, 0, 0x14, 0x64];
+// BMW's lamp test for all LEDs (31 01 A543 FF) on that car: channels 1-5, 7, 9, 10 at 1000 mA, 12 at 200 mA (6, 8, 11 not fitted)
+const ALL = [0x64, 0x0D, 0x64, 0x0D, 0x64, 0x0D, 0x64, 0x0D, 0x64, 0x0E, 0, 0, 0x64, 0x0D, 0, 0, 0x64, 0x0E, 0x64, 0x0E, 0, 0, 0x14, 0x0E];
+const FULL = ALL.map((x, i) => (i % 2 && ALL[i - 1] ? 100 : x));
 
 /** car: 'flm' | 'fle' | 'bdc' | 'g05' | 'none'; o: deaf (lamps do not follow), noSession, refuseAfter, highOn (stalk) */
 function fakeCar(car, o, clock) {
@@ -40,7 +43,13 @@ function fakeCar(car, o, clock) {
             if (sid === 0x3E) return data[0] === 0x80 ? null : [0x7E, 0x00];
             if (isHead) {
                 const did = car === 'flm' ? [0xD6, 0x67] : [0xD6, 0x31];
+                if (sid === 0x22 && data[0] === 0xD6 && data[1] === 0x30) return car === 'flm' ? [0x62, 0xD6, 0x30].concat(new Array(8).fill(60), new Array(12).fill((opt.hotC || 50) + 40)) : [0x7F, 0x22, 0x31];
                 if (sid === 0x22) return data[0] === did[0] && data[1] === did[1] ? [0x62].concat(did, opt.deaf ? LOW.slice(0, 2 * n) : head[target]) : [0x7F, 0x22, 0x31];
+                if (sid === 0x31 && data[0] === 0x01 && data[1] === 0xA5 && data[2] === 0x43) {
+                    if (session[target] !== 0x03) return [0x7F, 0x31, 0x31];
+                    head[target] = ALL.slice(0, 2 * n);
+                    return [0x71, 0x01, 0xA5, 0x43];
+                }
                 if (sid === 0x31 && data[0] === 0x01 && data[1] === 0x30 && data[2] === 0x00) {
                     if (session[target] !== 0x03) return [0x7F, 0x31, 0x31];
                     if (opt.refuseAfter != null && sent.filter((x) => / 31 01 30 00/.test(x)).length > opt.refuseAfter) return [0x7F, 0x31, 0x22];
@@ -74,6 +83,7 @@ function make(car, o) {
     const diag = fakeCar(car, o, clock);
     const s = new Strobe({ diag, log, channels: o && o.channels, allowed: (o && o.allowed) || (() => null), now: () => clock.t,
         sleep: (ms) => new Promise((r) => { clock.t += Math.max(ms, 1); setImmediate(r); }) });
+    s._clock = clock;
     return { s, diag };
 }
 const backOf = (did) => ['40 2F ' + did + ' 03 07 00', '40 2F ' + did + ' 00 07 00', '40 2F ' + did + ' 03 08 00', '40 2F ' + did + ' 00 08 00', '40 10 01'];
@@ -90,17 +100,68 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(await s.find() === want && diag.sent.every((x) => / 22 /.test(x)), car + ': found as ' + want + ' with reads only');
     }
 
-    // FLM01: both together, the low beam kept, channels 1 and 9 added
+    // FLM01, all lights: the lamp test read once for the fitted channels, then every one at full against dark
     {
         const { s, diag } = make('flm');
         await s.find(); diag.sent.length = 0;
         const run = s.start({ pattern: 'both', rate: 'fast' });
-        stopAfter(s, diag, 12);
+        stopAfter(s, diag, 20);
+        await run;
+        ok(diag.sent.slice(0, 4).join() === '43 10 03,44 10 03,43 22 D6 67,44 22 D6 67', 'all lights: session, the channels as they are');
+        ok(diag.sent.indexOf('43 31 01 A5 43 FF') > 0 && diag.sent.indexOf('44 31 01 A5 43 FF') > 0, 'all lights: the lamp test for all LEDs on both sides');
+        const w = writes(diag, 0x43);
+        ok(JSON.stringify(w[0]) === JSON.stringify(FULL), 'all lights on: every fitted channel at its own current, 100 % (' + hex(w[0] || []) + ')');
+        ok(w[1] && w[1].every((x) => x === 0), 'all lights off: all dark');
+        ok(JSON.stringify(w[w.length - 1]) === JSON.stringify(LOW) && headBack(diag), 'all lights stopped: the channels as they were, the default session');
+        const n = diag.sent.length;
+        await s.start({ rate: 'fast' });
+        ok(diag.sent.length === n && /rest/.test(s.note), 'right after a run: the LEDs rest first (' + s.note + ')');
+        s._clock.t += 60000;
+        const run2 = s.start({ rate: 'fast' });
+        stopAfter(s, diag, n + 14);
+        await run2;
+        ok(diag.sent.slice(n).every((x) => x.indexOf('A5 43') < 0), 'the lamp test only once');
+    }
+
+    // FLM01, police: one side's flash at a time, one write each, from dark
+    {
+        const { s, diag } = make('flm');
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({ pattern: 'police', rate: 'fast' });
+        stopAfter(s, diag, 26);
+        await run;
+        const seq = diag.sent.filter((x) => / 31 01 30 00/.test(x)).map((x) => x.slice(0, 2) + (/ 31 01 30 00 64/.test(x) ? '+' : '-'));
+        ok(seq.slice(0, 7).join() === '43-,44-,43+,43-,44+,44-,43+', 'police: both dark, then left on, left off, right on, right off (' + seq.join() + ')');
+    }
+    // the car's own current is the most: a learned value above it is cut down; a channel not fitted is never driven
+    {
+        const { s, diag } = make('flm', { channels: [{ ch: 1, cur: 0x96, pwm: 0x64 }, { ch: 6, cur: 0x64, pwm: 0x64 }] });
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({ lights: 'high', rate: 'fast' });
+        stopAfter(s, diag, 20);
+        await run;
+        const w = writes(diag, 0x43)[0] || [];
+        ok(w[0] === 0x64 && w[10] === 0 && w[11] === 0, 'high beam: channel 1 cut to the car\'s 1000 mA, channel 6 (not fitted) dark (' + hex(w) + ')');
+    }
+    // hot headlights: not started
+    {
+        const { s, diag } = make('flm', { hotC: 95 });
+        await s.find(); diag.sent.length = 0;
+        await s.start({});
+        ok(/hot \(95 °C\)/.test(s.note) && !diag.sent.some((x) => / 31 01 30 00 64/.test(x)) && headBack(diag), 'hot headlights: no flash (' + s.note + ')');
+    }
+
+    // FLM01, high beam: the low beam kept, channels 1 and 9 added at full
+    {
+        const { s, diag } = make('flm');
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({ lights: 'high', pattern: 'both', rate: 'fast' });
+        stopAfter(s, diag, 20);
         await run;
         ok(diag.sent[0] === '43 10 03' && diag.sent[1] === '44 10 03', 'FLM: the extended session on both sides first');
         const w = writes(diag, 0x43);
-        const on = LOW.slice(); on[0] = 0x64; on[1] = 0x4B; on[16] = 0x64; on[17] = 0x29;
-        ok(JSON.stringify(w[0]) === JSON.stringify(on), 'FLM on: the low beam as it was, channel 1 1000 mA 75 %, channel 9 41 % (' + hex(w[0] || []) + ')');
+        const on = LOW.slice(); on[0] = 0x64; on[1] = 100; on[16] = 0x64; on[17] = 100;
+        ok(JSON.stringify(w[0]) === JSON.stringify(on), 'FLM high beam on: the low beam as it was, channels 1 and 9 1000 mA 100 % (' + hex(w[0] || []) + ')');
         ok(w.length >= 2 && JSON.stringify(w[1]) === JSON.stringify(LOW), 'FLM off: the low beam alone');
         ok(diag.sent.indexOf('43 22 D6 67', 2) > 0, 'FLM: the first flash read back');
         ok(headBack(diag) && /stopped/.test(s.note), 'FLM stopped: high beam off, the default session on both sides');
@@ -109,8 +170,8 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
     {
         const { s, diag } = make('flm');
         await s.find(); diag.sent.length = 0;
-        const run = s.start({ pattern: 'alternate', rate: 'fast' });
-        stopAfter(s, diag, 12);
+        const run = s.start({ lights: 'high', pattern: 'alternate', rate: 'fast' });
+        stopAfter(s, diag, 20);
         await run;
         const l = writes(diag, 0x43)[0], r = writes(diag, 0x44)[0];
         ok(l && r && l[0] === 0x64 && r[0] === 0, 'FLM in turn: left on, right off');
@@ -119,8 +180,8 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
     {
         const { s, diag } = make('flm');
         await s.find(); diag.stalk(true); diag.sent.length = 0;
-        const run = s.start({});
-        stopAfter(s, diag, 12);
+        const run = s.start({ lights: 'high' });
+        stopAfter(s, diag, 20);
         await run;
         ok(JSON.stringify(writes(diag, 0x43)[1]) === JSON.stringify(LOW), 'FLM with the stalk on: off is the low beam alone');
     }
@@ -128,8 +189,8 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
     {
         const { s, diag } = make('flm', { deaf: true });
         await s.find(); diag.sent.length = 0;
-        await s.start({});
-        ok(/did not follow/.test(s.note) && headBack(diag), 'FLM deaf: one flash, then handed back (' + s.note + ')');
+        await s.start({ lights: 'high' });
+        ok(/did not follow|does not light/.test(s.note) && headBack(diag), 'FLM deaf: one flash, then handed back (' + s.note + ')');
     }
     // FLM01: refusals, no session, moving, the time limit and the keep-alive
     {
@@ -165,10 +226,10 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         const { s, diag } = make('flm');
         await s.find(); diag.sent.length = 0;
         const run = s.show({ rate: 'fast' });
-        stopAfter(s, diag, 12);
+        stopAfter(s, diag, 20);
         await run;
         const l = writes(diag, 0x43), r = writes(diag, 0x44);
-        ok(l[0] && l[0][3] === 100 && l[0][1] === 100 && r[0] && r[0].every((x) => x === 0), 'FLM show: left lit at full (high beam too), right dark');
+        ok(JSON.stringify(l[0]) === JSON.stringify(FULL) && r[0] && r[0].every((x) => x === 0), 'FLM show: left every fitted channel at full, right dark');
         ok(JSON.stringify(l[l.length - 1]) === JSON.stringify(LOW) && headBack(diag), 'FLM show stopped: the channels as they were, the default session');
     }
 
@@ -187,7 +248,7 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(diag.sent.every((x) => / 22 D6 31/.test(x)), 'learning reads only');
         diag.stalk(false); diag.sent.length = 0;
         const run2 = s.start({});
-        stopAfter(s, diag, 12);
+        stopAfter(s, diag, 20);
         await run2;
         ok(writes(diag, 0x43)[0] && writes(diag, 0x43)[0].length === 14 && writes(diag, 0x43)[0][0] === 0x64, 'FLE: then it flashes, 7 channels');
     }
@@ -215,7 +276,7 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         const { s, diag } = make('bdc');
         await s.find(); diag.sent.length = 0;
         const run = s.start({ pattern: 'both', rate: 'normal' });
-        stopAfter(s, diag, 12);
+        stopAfter(s, diag, 20);
         await run;
         ok(diag.sent[0] === '40 10 03' && diag.sent[1] === '40 2F 45 01 03 07 01' && diag.sent[2] === '40 2F 45 01 03 08 01' && diag.sent[3] === '40 22 45 00',
             'BDC: session, both on, the status (' + diag.sent.slice(0, 4).join(', ') + ')');
@@ -225,7 +286,7 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         const { s, diag } = make('g05');
         await s.find(); diag.sent.length = 0;
         const run = s.start({ pattern: 'alternate', rate: 'fast' });
-        stopAfter(s, diag, 12);
+        stopAfter(s, diag, 20);
         await run;
         ok(diag.sent[1] === '40 2F E3 B5 03 07 01' && diag.sent[2] === '40 2F E3 B5 03 08 00' && endsWithBack(diag.sent, 'E3 B5'), 'BDC_G05 in turn, handed back');
     }

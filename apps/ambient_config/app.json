@@ -138,12 +138,20 @@
       "default": false
     },
     {
+      "key": "strobeLights",
+      "label": "Strobe lights",
+      "type": "choice",
+      "default": "all",
+      "hidden": true,
+      "options": [["all", "All lights"], ["high", "High beam"]]
+    },
+    {
       "key": "strobePattern",
       "label": "Strobe pattern",
       "type": "choice",
-      "default": "both",
+      "default": "police",
       "hidden": true,
-      "options": [["both", "Both together"], ["alternate", "Left and right"]]
+      "options": [["police", "Police"], ["both", "Together"], ["alternate", "In turn"]]
     },
     {
       "key": "strobeRate",
