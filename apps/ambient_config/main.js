@@ -27,6 +27,7 @@ const { Ambient, SLOTS } = require('./ambient');
 const { Lights } = require('./lights');
 const { Control } = require('./control');
 const { Others } = require('./others');
+const { Strobe } = require('./strobe');
 const { t: translate } = require('./kit/i18n');
 const { drawCabin } = require('./cabin');
 const { sample } = require('./lin');
@@ -91,8 +92,12 @@ async function background(bg) {
             control.away(n <= 3);
         },
     }, log).catch((e) => log.warn('vehicle state: ' + (e && e.message || e)));
+    // the speed
     signals.watch('de.bmw.infotainment.vehicle.Vehicle2', '1', {
-        statusCarSpeed2: (v) => { const k = v && v.speedVehicleCentreOfGravity; if (typeof k === 'number' && k !== 65535 && k * 0.015625 > 1) active(); },
+        statusCarSpeed2: (v) => {
+            const k = v && v.speedVehicleCentreOfGravity;
+            if (typeof k === 'number' && k !== 65535 && k * 0.015625 > 1 && k * 0.015625 < 400) active();
+        },
     }, log).catch((e) => log.warn('speed: ' + (e && e.message || e)));
     setInterval(() => { if (!stateSeen && !control._away && Date.now() - activeT > IDLE_MS) control.away(true); }, 30000);
     // the turn signals: that side's lights blink green; an open door: its lights red (settings turnGlow, doorRed, both off
@@ -107,7 +112,19 @@ async function background(bg) {
         if (key === 'turnGlow' || key === 'doorRed' || key === 'drive') control.signals();
     });
     const others = new Others({ log }).start();
-    return { ambient, lights, control, active, others };
+    // the high beam strobe and the light show (strobe.js): private ground only, behind the experimental setting,
+    // with someone in the car; why not, or null
+    const checks = () => [
+        ['Switched on in the settings', settings.get('strobe') === true],
+        ['Someone in the car', !control._away],
+    ];
+    const gate = () => { const c = checks().find((x) => !x[1]); return c ? (c[2] || c[0].toLowerCase() + ': no') : null; };
+    const strobe = new Strobe({ diag, log, allowed: gate });
+    const findStrobe = () => { if (settings.get('strobe') === true && !strobe.kind) strobe.find().catch((e) => log.warn('strobe: ' + e)); };
+    findStrobe();
+    settings.onChange((key) => { if (key === 'strobe') { if (settings.get('strobe') === true) findStrobe(); else strobe.stop(); } });
+    // (the car locked and left mid-flash: the gate says no at the next step and the strobe stops)
+    return { ambient, lights, control, active, others, strobe, checks };
 }
 
 const nearest = (rgb) => {
@@ -124,7 +141,9 @@ mgu.run({
     background,
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const { ambient, lights, control, active, others } = ctx.background || await background(ctx);
+        const { ambient, lights, control, active, others, strobe, checks } = ctx.background || await background(ctx);
+        // the Strobe tab only with its experimental setting on
+        const tabs = () => TABS.concat(settings.get('strobe') === true ? ['Strobe'] : []);
         // editing: null (the driver's own look) or a driving mode whose look the Colour and Animations tabs change
         let page = 0, part = 'all', dirty = true, editing = null;
         const T0 = Date.now();
@@ -335,17 +354,68 @@ mgu.run({
             }
         }
 
+        /*
+         * Strobe (experimental, private ground only): the high beams flashed by the body controller (strobe.js), both
+         * together or left and right in turn, fast / normal / slow, at most 30 s a press; and the light show, every lamp
+         * output flashing for 15 s, run by the body controller itself. Only with the setting on and someone in the car;
+         * a press arms, a second starts; Stop, the setting off or the car locked and left stops it and gives the lamps back.
+         */
+        function drawStrobe(cv, t) {
+            G.panel(cv, t, 24, 44, 736, 468, 'High beam strobe');
+            const kindText = !strobe ? 'Not available' : strobe.kind ? 'Body controller: ' + (strobe.kind === 'g05' ? 'BDC_G05' : 'BDC / BDC_G11')
+                : 'Looking for the body controller\'s lamp control...';
+            cv.text(kindText, 44, 112, 18, t.dim);
+            checks().forEach(([label, ok, why], i) => {
+                const y = 148 + i * 32;
+                cv.arc(52, y - 6, 0, 7, 0, 360, ok ? '#2fd27a' : t.crit);
+                cv.text(label + (!ok && why ? ' · ' + why : ''), 70, y, 20, ok ? t.text : t.dim);
+            });
+            cv.text('Only for use on private property.', 44, 250, 20, t.warn, { font: 'bold' });
+            if (strobe && strobe.note) cv.text(strobe.note, 44, 290, 18, strobe.noteType === 'warn' ? t.warn : t.dim);
+            const pat = settings.get('strobePattern') === 'alternate' ? 'alternate' : 'both', rate = settings.get('strobeRate') || 'normal';
+            cv.text('Pattern', 44, 326, 18, t.dim);
+            [['both', 'Both together'], ['alternate', 'Left and right']].forEach(([k, n], i) => {
+                G.button(cv, t, 44 + i * 236, 338, 224, 48, n, () => { settings.set('strobePattern', k); return redraw(); }, { primary: pat === k, key: 'pat-' + k });
+            });
+            cv.text('Speed', 44, 414, 18, t.dim);
+            [['fast', 'Fast'], ['normal', 'Normal'], ['slow', 'Slow']].forEach(([k, n], i) => {
+                G.button(cv, t, 44 + i * 150, 426, 140, 48, n, () => { settings.set('strobeRate', k); return redraw(); }, { primary: rate === k, key: 'rate-' + k });
+            });
+            const on = strobe && strobe.running === 'strobe';
+            G.button(cv, t, 520, 426, 220, 48, on ? 'Stop' : 'Start strobe', () => {
+                if (on) strobe.stop(); else strobe.start({ pattern: pat, rate }).catch((e) => log.warn('strobe: ' + e));
+                return redraw();
+            }, { primary: on, key: 'strobe-go', confirm: !on, busy: !strobe || !strobe.kind || strobe.running === 'show' });
+
+            G.panel(cv, t, 776, 44, 800, 468, 'Light show');
+            ['Every lamp output flashes for 15 s, run by the body controller', 'itself (BDC_G11 and BDC_G05).'].forEach((l, i) => cv.text(l, 796, 112 + i * 26, 18, t.dim));
+            cv.text('Only for use on private property.', 796, 190, 20, t.warn, { font: 'bold' });
+            ['Flashing headlights on public roads is illegal and dangerous', 'to other drivers.'].forEach((l, i) => cv.text(l, 796, 220 + i * 26, 18, t.text));
+            const srate = settings.get('showRate') === 'fast' ? 'fast' : 'normal';
+            cv.text('Speed', 796, 414, 18, t.dim);
+            [['fast', 'Fast'], ['normal', 'Normal']].forEach(([k, n], i) => {
+                G.button(cv, t, 796 + i * 150, 426, 140, 48, n, () => { settings.set('showRate', k); return redraw(); }, { primary: srate === k, key: 'srate-' + k });
+            });
+            const showing = strobe && strobe.running === 'show';
+            G.button(cv, t, 1336, 426, 220, 48, showing ? 'Stop' : 'Start show', () => {
+                if (showing) strobe.stop(); else strobe.show({ rate: srate }).catch((e) => log.warn('light show: ' + e));
+                return redraw();
+            }, { primary: showing, key: 'show-go', confirm: !showing, busy: !strobe || !strobe.kind || strobe.running === 'strobe' });
+        }
+
         async function render() {
             const t = ctx.theme(), cv = ctx.canvas(W, H).clear(t.bg);
-            [drawColour, drawAnimations, drawModes, drawFavs][page](cv, t);
-            G.frame(cv, t, TABS, page, []);
+            if (page >= tabs().length) page = 0;
+            [drawColour, drawAnimations, drawModes, drawFavs, drawStrobe][page](cv, t);
+            G.frame(cv, t, tabs(), page, []);
             dirty = false;
             await ui.image('MAIN_GFX', cv);
         }
         // moving lights redraw a few times a second, the rest when something changes
         const tick = () => {
             const moving = (lights.scene && S.moves(lights.scene)) || (page === 1 && control.on() && S.moves(look()));
-            return dirty || (moving && page <= 1) ? render() : null;
+            // (the Strobe tab: its checks follow the car, so it draws on each tick)
+            return dirty || (moving && page <= 1) || page === 4 ? render() : null;
         };
 
         if (ctx.onTap) {
@@ -365,6 +435,7 @@ mgu.run({
         lights.on('change', () => { dirty = true; });
         ambient.on('change', () => { dirty = true; });
         others.on('change', () => { dirty = true; });
+        if (strobe) strobe.on('change', () => { dirty = true; });
         settings.onChange(() => { dirty = true; });
         ctx.loop('MAIN', 8, tick);
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));

@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.1.5",
+  "version": "2.2.0",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -130,6 +130,36 @@
       "type": "bool",
       "default": false,
       "hidden": true
+    },
+    {
+      "key": "strobe",
+      "label": "High beam strobe and light show (only for use on private property)",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "strobePattern",
+      "label": "Strobe pattern",
+      "type": "choice",
+      "default": "both",
+      "hidden": true,
+      "options": [["both", "Both together"], ["alternate", "Left and right"]]
+    },
+    {
+      "key": "strobeRate",
+      "label": "Strobe speed",
+      "type": "choice",
+      "default": "normal",
+      "hidden": true,
+      "options": [["fast", "Fast"], ["normal", "Normal"], ["slow", "Slow"]]
+    },
+    {
+      "key": "showRate",
+      "label": "Light show speed",
+      "type": "choice",
+      "default": "normal",
+      "hidden": true,
+      "options": [["fast", "Fast"], ["normal", "Normal"]]
     },
     {
       "key": "drive",
