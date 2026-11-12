@@ -60,7 +60,9 @@ const F = { high: 0x05, indL: 0x06, indR: 0x07, fog: 0x08, cornL: 0x09, cornR: 0
     reverse: 0x0F, parkL: 0x10, parkR: 0x11 };
 // a flash's length (10 ms) and the least time from one flash to the next, by rate; never more than 150 ms lit, so
 // nothing stays on if the app goes
-const FLASH = { fast: { on: 5, gap: 0 }, normal: { on: 8, gap: 120 }, slow: { on: 12, gap: 350 } };
+const FLASH = { fast: { on: 10, gap: 0 }, normal: { on: 12, gap: 120 }, slow: { on: 15, gap: 350 } };
+// police: this many high beam flashes on one side, then on the other (the other headlight held at its own lights)
+const POLICE_BURST = 3;
 // the patterns, one function a request; police and in turn only ever one side at a time (the high beam is both)
 const FN_PATTERNS = {
     police: { all: ['cornL', 'cornL', 'cornR', 'cornR'], high: ['cornL', 'cornL', 'cornR', 'cornR'] },
@@ -145,7 +147,18 @@ class Strobe extends EventEmitter {
             const r = await this._probe(BDC, 0x22, FN, 4000);
             if (r && r[0] === 0x62) {
                 this.kind = 'fn'; this.sides = [BDC];
-                this.log.info('strobe: body controller light functions (22 D542 ' + hex(r.slice(3, 9)) + ')');
+                // the headlight units, to hold one side while the other flashes (police); reads only
+                this.mask = null;
+                for (const k of ['flm', 'fle']) {
+                    const sides = [];
+                    for (const a of SIDES) {
+                        const h = await this._probe(a, 0x22, HEAD[k].read, 3000);
+                        if (h && h[0] === 0x62 && h.length >= 3 + 2 * HEAD[k].n) sides.push(a);
+                    }
+                    if (sides.length === 2) { this.mask = { head: HEAD[k], sides }; break; }
+                }
+                this.log.info('strobe: body controller light functions (22 D542 ' + hex(r.slice(3, 9)) + ')'
+                    + (this.mask ? ', police with the ' + this.mask.head.name : ''));
                 this.emit('change');
                 return 'fn';
             }
@@ -320,6 +333,62 @@ class Strobe extends EventEmitter {
         }
     }
 
+    /**
+     * Police on the high beam: one headlight held at its own lights (31 01 3000 with the channels as read: nothing
+     * brighter than the car's own) while the body controller's timed high beam flashes show on the other side only,
+     * POLICE_BURST flashes, then the other way round; a held side is let go with 31 02 3000.
+     */
+    async _runPolice(flash, ms) {
+        const t0 = this.now(), m = this.mask, H = m.head;
+        const base = {};
+        let step = 0, end = null, held = null;
+        try {
+            for (const a of [BDC].concat(m.sides)) {
+                const r = await this._ask(a, 0x10, [0x03]);
+                if (!r || r[0] !== 0x50) { end = ['Strobe: ' + hex([a]) + ' refused the diagnostic session', 'warn']; return; }
+            }
+            for (const a of m.sides) {
+                const r = await this._ask(a, 0x22, H.read, 1500);
+                if (!r || r[0] !== 0x62 || r.length < 3 + 2 * H.n) { end = ['Strobe: no channel reading from the headlight ' + hex([a]), 'warn']; return; }
+                base[a] = [];
+                for (let i = 0; i < H.n; i++) base[a].push({ cur: r[3 + 2 * i], pwm: r[4 + 2 * i] });
+            }
+            for (let k = 0; !end && !this._stop; k++) {
+                const hold = m.sides[(k + 1) % 2];
+                if (held !== hold) {
+                    if (held !== null) await this._ask(held, 0x31, [0x02, 0x30, 0x00]);
+                    held = null;
+                    const r = await this._setChannels(hold, base[hold]);
+                    if (r !== true) { end = ['Strobe stopped: refused (' + r + ')', 'warn']; break; }
+                    held = hold;
+                }
+                for (let i = 0; i < POLICE_BURST; i++) {
+                    if (this._stop) break;
+                    const stopWhy = this.allowed();
+                    if (stopWhy) { end = ['Strobe stopped: ' + stopWhy, 'warn']; break; }
+                    if (this.now() - t0 > ms) { end = ['Strobe done (' + Math.round(ms / 1000) + ' s)', 'dim']; break; }
+                    const at = this.now();
+                    const r = await this._fn('high', flash.on);
+                    if (r !== true) { end = ['Strobe stopped: refused (' + r + ')', 'warn']; break; }
+                    if (step === 0) this._say('Strobe on · police');
+                    step++;
+                    const left = flash.gap - (this.now() - at);
+                    if (left > 0) await this.sleep(left);
+                }
+            }
+            if (!end) end = ['Strobe stopped', 'dim'];
+        } finally {
+            if (held !== null) await this._ask(held, 0x31, [0x02, 0x30, 0x00]);
+            await this._fn('high', 0);
+            for (const a of m.sides) await this._ask(a, 0x10, [0x01]);
+            await this._ask(BDC, 0x10, [0x01]);
+            this.running = null;
+            if (step > 0) this._rest(t0);
+            this.log.info('strobe: ' + (end ? end[0] : 'ended') + ' after ' + step + ' flashes (police)');
+            this._say(end ? end[0] : 'Strobe stopped', end ? end[1] : 'dim');
+        }
+    }
+
     _why() {
         if (!this.kind) return 'no headlight or lamp output control found';
         if (this.head && !this.high) return 'the high beam\'s channels are not known yet (Learn)';
@@ -337,6 +406,7 @@ class Strobe extends EventEmitter {
         if (this.kind === 'fn') {
             const pat = FN_PATTERNS[o && o.pattern] || FN_PATTERNS.police;
             this.running = 'strobe'; this._stop = false; this._say('Strobe starting...');
+            if ((!o || !o.pattern || o.pattern === 'police') && this.mask) return this._runPolice(FLASH[o && o.rate] || FLASH.fast, MAX_MS);
             return this._runFn(pat[o && o.lights === 'high' ? 'high' : 'all'], FLASH[o && o.rate] || FLASH.fast, MAX_MS, 'Strobe');
         }
         const head = !!this.head;

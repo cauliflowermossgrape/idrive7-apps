@@ -32,7 +32,7 @@ function fakeCar(car, o, clock) {
         async physical(target, sid, data) {
             sent.push(hex([target, sid].concat(data)));
             clock.t += 200; await new Promise((r) => setImmediate(r));       // a request takes ~200 ms on the car
-            const isHead = (car === 'flm' || car === 'fle') && (target === 0x43 || target === 0x44);
+            const isHead = (car === 'flm' || car === 'fle' || car === 'fnflm') && (target === 0x43 || target === 0x44);
             if (target !== 0x40 && !isHead) return null;
             if (sid === 0x10) {
                 if (opt.noSession) return [0x7F, 0x10, 0x22];
@@ -42,9 +42,10 @@ function fakeCar(car, o, clock) {
             }
             if (sid === 0x3E) return data[0] === 0x80 ? null : [0x7E, 0x00];
             if (isHead) {
-                const did = car === 'flm' ? [0xD6, 0x67] : [0xD6, 0x31];
+                const did = car === 'fle' ? [0xD6, 0x31] : [0xD6, 0x67];
                 if (sid === 0x22 && data[0] === 0xD6 && data[1] === 0x30) return car === 'flm' ? [0x62, 0xD6, 0x30].concat(new Array(8).fill(60), new Array(12).fill((opt.hotC || 50) + 40)) : [0x7F, 0x22, 0x31];
                 if (sid === 0x22) return data[0] === did[0] && data[1] === did[1] ? [0x62].concat(did, opt.deaf ? LOW.slice(0, 2 * n) : head[target]) : [0x7F, 0x22, 0x31];
+                if (sid === 0x31 && data[0] === 0x02 && data[1] === 0x30 && data[2] === 0x00) return session[target] === 0x03 ? [0x71, 0x02, 0x30, 0x00] : [0x7F, 0x31, 0x7F];
                 if (sid === 0x31 && data[0] === 0x01 && data[1] === 0xA5 && data[2] === 0x43) {
                     if (session[target] !== 0x03) return [0x7F, 0x31, 0x31];
                     head[target] = ALL.slice(0, 2 * n);
@@ -59,8 +60,8 @@ function fakeCar(car, o, clock) {
                 }
                 return [0x7F, sid, 0x31];
             }
-            if (car === 'fn' && sid === 0x22) return data[0] === 0xD5 && data[1] === 0x42 ? [0x62, 0xD5, 0x42].concat(new Array(20).fill(0)) : [0x7F, 0x22, 0x31];
-            if (car === 'fn' && sid === 0x2E) {
+            if ((car === 'fn' || car === 'fnflm') && sid === 0x22) return data[0] === 0xD5 && data[1] === 0x42 ? [0x62, 0xD5, 0x42].concat(new Array(20).fill(0)) : [0x7F, 0x22, 0x31];
+            if ((car === 'fn' || car === 'fnflm') && sid === 0x2E) {
                 if (data[0] !== 0xD5 || data[1] !== 0x42 || data.length !== 6) return [0x7F, 0x2E, 0x13];
                 if (session[0x40] !== 0x03) return [0x7F, 0x2E, 0x7F];
                 if (opt.refuseAfter != null && sent.filter((x) => / 2E D5 42/.test(x)).length > opt.refuseAfter) return [0x7F, 0x2E, 0x22];
@@ -117,8 +118,8 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         await run;
         const f = fns(diag);
         ok(diag.sent[0] === '40 10 03', 'light functions: the extended session first');
-        ok(f.slice(0, 8).map((x) => x[1]).join() === '9,9,10,10,9,9,10,10' && f.slice(0, 8).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 5),
-            'police: cornering left, left, right, right, one side at a time, 50 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
+        ok(f.slice(0, 8).map((x) => x[1]).join() === '9,9,10,10,9,9,10,10' && f.slice(0, 8).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 10),
+            'police without headlight units: cornering left, left, right, right, 100 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
         const offs = f.filter((x) => x[3] === 0).map((x) => x[1]).sort((a, b) => a - b).join();
         ok(offs === '9,10' && diag.sent[diag.sent.length - 1] === '40 10 01', 'stopped: each used light switched off (time 0), the default session');
         ok(f.every((x) => x[2] * 256 + x[3] <= 15), 'never more than 150 ms lit a request');
@@ -130,7 +131,7 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         stopAfter(s, diag, 6);
         await run;
         const f = fns(diag).filter((x) => x[3]);
-        ok(f.length && f.every((x) => x[1] === 5 && x[3] === 12), 'strobe, high beam, slow: the high beam 120 ms a flash');
+        ok(f.length && f.every((x) => x[1] === 5 && x[3] === 15), 'strobe, high beam, slow: the high beam 150 ms a flash');
     }
     {
         const { s, diag } = make('fn', { refuseAfter: 3 });
@@ -152,6 +153,20 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         await run;
         const f = fns({ sent: diag.sent.slice(n) }).slice(0, 12).map((x) => x[1]);
         ok(f.join() === '5,9,10,8,6,7,16,17,12,15,14,13', 'light show: every outside light in turn (' + f.join() + ')');
+    }
+
+    // police with the headlight units: one side held at its own lights, the high beam bursts show on the other
+    {
+        const { s, diag } = make('fnflm');
+        ok(await s.find() === 'fn' && s.mask && s.mask.sides.join() === '67,68' && diag.sent.every((x) => / 22 /.test(x)), 'light functions and FLM01 headlights found, reads only');
+        diag.sent.length = 0;
+        const run = s.start({ pattern: 'police', rate: 'fast' });
+        stopAfter(s, diag, 22);
+        await run;
+        const seq = diag.sent.filter((x) => / 31 0[12] 30 00|2E D5 42/.test(x)).map((x) => /2E D5 42 00 05 00 0A/.test(x) ? 'H' : /2E D5 42/.test(x) ? 'h0' : x.slice(0, 2) + (/ 31 01/.test(x) ? 'hold' : 'free'));
+        ok(seq.slice(0, 10).join() === '44hold,H,H,H,44free,43hold,H,H,H,43free', 'police: right held, 3 high beam flashes (left), then left held, 3 (right) (' + seq.join() + ')');
+        ok(JSON.stringify(writes(diag, 0x44)[0]) === JSON.stringify(LOW), 'the held side: exactly its own lights as read, nothing brighter');
+        ok(/ 31 02 30 00,40 2E D5 42 00 05 00 00,43 10 01,44 10 01,40 10 01$/.test(diag.sent.join()), 'stopped: let go, high beam off, every session back to default (' + diag.sent.slice(-5).join(', ') + ')');
     }
 
     // FLM01, all lights: the lamp test read once for the fitted channels, then every one at full against dark
