@@ -170,6 +170,29 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(/ 31 02 30 00,40 2E D5 42 00 05 00 00,43 10 01,44 10 01,40 10 01$/.test(diag.sent.join()), 'stopped: let go, high beam off, every session back to default (' + diag.sent.slice(-5).join(', ') + ')');
     }
 
+    // police tuned: 2 flashes a burst, 50 ms, left / right only, 2 flashes a second
+    {
+        const { s, diag } = make('fnflm');
+        await s.find(); diag.sent.length = 0;
+        const at = [];
+        const orig = diag.physical;
+        diag.physical = async (t, sid, data) => { if (sid === 0x2E && data[3] === 0x05 && data[5]) at.push(s._clock.t); return orig(t, sid, data); };
+        const run = s.start({ pattern: 'police', burst: 2, flashMs: 50, order: 'lr', every: 500 });
+        stopAfter(s, diag, 24);
+        await run;
+        const seq = diag.sent.filter((x) => / 31 0[12] 30 00|2E D5 42 00 05 00 05/.test(x)).map((x) => /2E D5 42 00 05 00 05/.test(x) ? 'H' : /2E D5 42/.test(x) ? '?' : x.slice(0, 2) + (/ 31 01/.test(x) ? 'hold' : 'free'));
+        ok(seq.slice(0, 10).join() === '44hold,H,H,44free,43hold,H,H,43free,44hold,H', 'tuned police: 2 flashes of 50 ms a side, left and right only (' + seq.join() + ')');
+        ok(at.length >= 2 && at[1] - at[0] >= 500, 'tuned police: 2 flashes a second (' + (at[1] - at[0]) + ' ms apart)');
+    }
+    {
+        const { s, diag } = make('fn');
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({ pattern: 'both', lights: 'high', flashMs: 999, every: 0 });
+        stopAfter(s, diag, 6);
+        await run;
+        ok(fns(diag).filter((x) => x[3]).every((x) => x[3] === 15), 'a flash never longer than 150 ms, whatever is asked');
+    }
+
     // FLM01, all lights: the lamp test read once for the fitted channels, then every one at full against dark
     {
         const { s, diag } = make('flm');

@@ -63,8 +63,14 @@ const F = { high: 0x05, indL: 0x06, indR: 0x07, fog: 0x08, cornL: 0x09, cornR: 0
 const FLASH = { fast: { on: 10, gap: 0 }, normal: { on: 12, gap: 120 }, slow: { on: 15, gap: 350 } };
 // police: this many high beam flashes on one side, then on the other (the other headlight held at its own lights)
 const POLICE_BURST = 3;
-// the order of the bursts: left, right, both at once, right, left, both at once, and round again
-const POLICE_PHASES = ['left', 'right', 'both', 'right', 'left', 'both'];
+// the order of the bursts, round and round
+const POLICE_ORDERS = {
+    lrb: ['left', 'right', 'both', 'right', 'left', 'both'],
+    lr: ['left', 'right'],
+    lbr: ['left', 'both', 'right', 'both'],
+};
+/** A flash of ms milliseconds in the body controller's 10 ms steps: 30 to 150 ms. */
+const flashTicks = (ms) => Math.max(3, Math.min(15, Math.round((+ms || 100) / 10)));
 // the patterns, one function a request; police and in turn only ever one side at a time (the high beam is both)
 const FN_PATTERNS = {
     police: { all: ['cornL', 'cornL', 'cornR', 'cornR'], high: ['cornL', 'cornL', 'cornR', 'cornR'] },
@@ -340,8 +346,10 @@ class Strobe extends EventEmitter {
      * brighter than the car's own) while the body controller's timed high beam flashes show on the other side only,
      * POLICE_BURST flashes, then the other way round; a held side is let go with 31 02 3000.
      */
-    async _runPolice(flash, ms) {
+    async _runPolice(flash, ms, o) {
         const t0 = this.now(), m = this.mask, H = m.head;
+        const phases = POLICE_ORDERS[o && o.order] || POLICE_ORDERS.lrb;
+        const burst = Math.max(1, Math.min(4, +(o && o.burst) || POLICE_BURST));
         const base = {};
         let step = 0, end = null, held = null;
         try {
@@ -357,7 +365,7 @@ class Strobe extends EventEmitter {
             }
             for (let k = 0; !end && !this._stop; k++) {
                 // flashing the left side holds the right one, and the other way round; both: none held
-                const phase = POLICE_PHASES[k % POLICE_PHASES.length];
+                const phase = phases[k % phases.length];
                 const hold = phase === 'left' ? m.sides[1] : phase === 'right' ? m.sides[0] : null;
                 if (held !== hold) {
                     if (held !== null) await this._ask(held, 0x31, [0x02, 0x30, 0x00]);
@@ -368,7 +376,7 @@ class Strobe extends EventEmitter {
                         held = hold;
                     }
                 }
-                for (let i = 0; i < POLICE_BURST; i++) {
+                for (let i = 0; i < burst; i++) {
                     if (this._stop) break;
                     const stopWhy = this.allowed();
                     if (stopWhy) { end = ['Strobe stopped: ' + stopWhy, 'warn']; break; }
@@ -412,8 +420,11 @@ class Strobe extends EventEmitter {
         if (this.kind === 'fn') {
             const pat = FN_PATTERNS[o && o.pattern] || FN_PATTERNS.police;
             this.running = 'strobe'; this._stop = false; this._say('Strobe starting...');
-            if ((!o || !o.pattern || o.pattern === 'police') && this.mask) return this._runPolice(FLASH[o && o.rate] || FLASH.fast, MAX_MS);
-            return this._runFn(pat[o && o.lights === 'high' ? 'high' : 'all'], FLASH[o && o.rate] || FLASH.fast, MAX_MS, 'Strobe');
+            const base = FLASH[o && o.rate] || FLASH.fast;
+            // every: the time from one flash to the next (ms; 0 or less than a request takes: as fast as it goes)
+            const flash = { on: o && o.flashMs ? flashTicks(o.flashMs) : base.on, gap: o && o.every != null ? Math.max(0, Math.min(2000, +o.every || 0)) : base.gap };
+            if ((!o || !o.pattern || o.pattern === 'police') && this.mask) return this._runPolice(flash, MAX_MS, o);
+            return this._runFn(pat[o && o.lights === 'high' ? 'high' : 'all'], flash, MAX_MS, 'Strobe');
         }
         const head = !!this.head;
         // police: one headlight flashes, then the other, one write each (the fastest there is: ~200 ms a write)
@@ -634,4 +645,4 @@ class Strobe extends EventEmitter {
     stop() { this._stop = true; }
 }
 
-module.exports = { Strobe, KINDS, HEAD, F, FN_PATTERNS, FLASH, SIDES, FL_L, FL_R, HALF_MS, MAX_MS, SHOW_MS, statusIndex };
+module.exports = { Strobe, KINDS, HEAD, F, FN_PATTERNS, FLASH, POLICE_ORDERS, flashTicks, SIDES, FL_L, FL_R, HALF_MS, MAX_MS, SHOW_MS, statusIndex };

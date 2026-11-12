@@ -146,6 +146,38 @@
       "options": [["all", "All lights"], ["high", "High beam"]]
     },
     {
+      "key": "strobeEvery",
+      "label": "Strobe flashes a second",
+      "type": "choice",
+      "default": "0",
+      "hidden": true,
+      "options": [["0", "Max"], ["250", "4"], ["333", "3"], ["500", "2"], ["1000", "1"]]
+    },
+    {
+      "key": "policeBurst",
+      "label": "Police flashes a burst",
+      "type": "choice",
+      "default": "3",
+      "hidden": true,
+      "options": [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]
+    },
+    {
+      "key": "strobeFlashMs",
+      "label": "Strobe flash length",
+      "type": "choice",
+      "default": "100",
+      "hidden": true,
+      "options": [["50", "50 ms"], ["80", "80 ms"], ["100", "100 ms"], ["150", "150 ms"]]
+    },
+    {
+      "key": "policeOrder",
+      "label": "Police order",
+      "type": "choice",
+      "default": "lrb",
+      "hidden": true,
+      "options": [["lrb", "Left, right, both"], ["lr", "Left, right"], ["lbr", "Left, both, right"]]
+    },
+    {
       "key": "strobePattern",
       "label": "Strobe pattern",
       "type": "choice",

@@ -383,7 +383,21 @@ mgu.run({
             const rate = settings.get('strobeRate') || 'normal';
             // the headlight units can flash every front light; the body controller only the high beams
             const lights = strobe && strobe.patterns && settings.get('strobeLights') === 'high' ? 'high' : 'all';
-            if (strobe && strobe.patterns) {
+            // police on the high beam (light functions with the headlight units): its tuning in place of Lights
+            const policeTune = strobe && strobe.kind === 'fn' && strobe.mask && pat === 'police';
+            const cyc = (key, vals, def) => { const v = String(settings.get(key) || def); return vals.indexOf(v) >= 0 ? v : def; };
+            const burst = cyc('policeBurst', ['1', '2', '3', '4'], '3'), flashMs = cyc('strobeFlashMs', ['50', '80', '100', '150'], '100');
+            const order = cyc('policeOrder', ['lrb', 'lr', 'lbr'], 'lrb');
+            const next = (vals, v) => vals[(vals.indexOf(v) + 1) % vals.length];
+            if (policeTune) {
+                cv.text('Police: flashes a burst · flash · order (tap to change)', 44, 274, 18, t.dim);
+                const ORDER_NAMES = { lrb: 'L R Both', lr: 'L R', lbr: 'L Both R' };
+                [['policeBurst', burst + (burst === '1' ? ' flash' : ' flashes'), ['1', '2', '3', '4'], burst],
+                    ['strobeFlashMs', flashMs + ' ms', ['50', '80', '100', '150'], flashMs],
+                    ['policeOrder', ORDER_NAMES[order], ['lrb', 'lr', 'lbr'], order]].forEach(([key, label, vals, v], i) => {
+                    G.button(cv, t, 44 + i * 150, 284, 140, 42, label, () => { settings.set(key, next(vals, v)); return redraw(); }, { key: 'tune-' + key });
+                });
+            } else if (strobe && strobe.patterns) {
                 cv.text('Lights', 44, 274, 18, t.dim);
                 [['all', 'All lights'], ['high', 'High beam']].forEach(([k, n], i) => {
                     G.button(cv, t, 44 + i * 236, 284, 224, 42, n, () => { settings.set('strobeLights', k); return redraw(); }, { primary: lights === k, key: 'lights-' + k });
@@ -403,13 +417,23 @@ mgu.run({
             pats.forEach(([k, n], i) => {
                 G.button(cv, t, 44 + i * 150, 356, 140, 42, n, () => { settings.set('strobePattern', k); return redraw(); }, { primary: pat === k, key: 'pat-' + k });
             });
-            cv.text('Speed', 44, 418, 18, t.dim);
-            [['fast', 'Fast'], ['normal', 'Normal'], ['slow', 'Slow']].forEach(([k, n], i) => {
-                G.button(cv, t, 44 + i * 150, 428, 140, 48, n, () => { settings.set('strobeRate', k); return redraw(); }, { primary: rate === k, key: 'rate-' + k });
-            });
+            // the body controller's timed flashes: how often, as flashes a second (Max: as fast as the head unit passes them)
+            const timed = strobe && strobe.kind === 'fn';
+            const every = cyc('strobeEvery', ['0', '250', '333', '500', '1000'], '0');
+            if (timed) {
+                cv.text('Flashes a second', 44, 418, 18, t.dim);
+                [['0', 'Max'], ['250', '4'], ['333', '3'], ['500', '2'], ['1000', '1']].forEach(([k, n], i) => {
+                    G.button(cv, t, 44 + i * 94, 428, 86, 48, n, () => { settings.set('strobeEvery', k); return redraw(); }, { primary: every === k, key: 'every-' + k });
+                });
+            } else {
+                cv.text('Speed', 44, 418, 18, t.dim);
+                [['fast', 'Fast'], ['normal', 'Normal'], ['slow', 'Slow']].forEach(([k, n], i) => {
+                    G.button(cv, t, 44 + i * 150, 428, 140, 48, n, () => { settings.set('strobeRate', k); return redraw(); }, { primary: rate === k, key: 'rate-' + k });
+                });
+            }
             const on = strobe && strobe.running === 'strobe';
             G.button(cv, t, 520, 428, 220, 48, on ? 'Stop' : 'Start strobe', () => {
-                if (on) strobe.stop(); else strobe.start({ lights, pattern: pat, rate }).catch((e) => log.warn('strobe: ' + e));
+                if (on) strobe.stop(); else strobe.start(Object.assign({ lights, pattern: pat, rate, burst, flashMs, order }, timed ? { every: +every } : {})).catch((e) => log.warn('strobe: ' + e));
                 return redraw();
             }, { primary: on, key: 'strobe-go', confirm: !on, busy: !strobe || !strobe.kind || strobe.running === 'show' || strobe.running === 'learn' });
 
