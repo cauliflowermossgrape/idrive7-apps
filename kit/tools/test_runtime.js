@@ -300,6 +300,19 @@ test('in front without the controller (another renderer held it at connect): con
     } finally { t.end(); }
 });
 
+test('iDrive 8 (the Store\'s renderer offers no controller there): never connected again for it', async () => {
+    const t = await setup();
+    try {
+        let conns = 0;
+        onConn = () => { conns++; };
+        t.d.gpu.screen = { w: 2880, h: 960 }; t.d.gpu.info.controller = false; t.d.ctlTryT = 0; t.d.ctlTries = 0;
+        t.d._ctlRetry(t.d.gpu);
+        await sleep(300);
+        assert.strictEqual(conns, 0, 'no new connection');
+        assert.strictEqual(t.d.ctlTries, 0, 'no try counted');
+    } finally { t.end(); }
+});
+
 (async () => {
     await new Promise((r) => server.listen(process.env.MGU_RENDERD_SOCKET, r));
     let failed = 0;

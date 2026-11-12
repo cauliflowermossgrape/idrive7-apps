@@ -214,10 +214,13 @@ class Display {
      * In front without the controller: the renderer offers it only if no other renderer held it when this app
      * connected (the Store's open while this app restarts after its update: seen on the car, the controller then
      * never reached the app). Connected again, at most CTL_RETRIES times, CTL_RETRY_MS apart, so it asks again;
-     * a head unit whose HMI has no controller gate stays without after those.
+     * a head unit whose HMI has no controller gate stays without after those. Never on iDrive 8: the Store's
+     * renderer there has no controller to offer (the gate is iDrive 7's HMI only), so every connection would go
+     * again, the picture gone for a moment and every resource uploaded again each time.
      */
     _ctlRetry(gpu) {
         const now = Date.now();
+        if (geometryFor(gpu.screen) !== HMI7) return;
         if (!gpu.native || !gpu.info || gpu.info.controller || !this.ownable() || (this.ctlTries || 0) >= CTL_RETRIES || now - (this.ctlTryT || 0) < CTL_RETRY_MS) return;
         this.ctlTries = (this.ctlTries || 0) + 1; this.ctlTryT = now;
         if (gpu.reconnect()) this.log.info('display: in front without the controller, connecting to the renderer again (' + this.ctlTries + '/' + CTL_RETRIES + ')');
