@@ -13,9 +13,10 @@
  * (Redline's shift flash and other apps', from the file FLASH_FILE: { rgb, ms } written whole).
  * The car locked and left (parked or standby, nobody in it: away(true)): every light back to the car's own and nothing
  * renewed; someone back in (living, ignition, driving): the look again, with the welcome sweep when it is on.
- * Over the look (or the car's own colour), with their settings on: turn(side) - while a turn signal is on, that side's
+ * Over the look (or the car's own colour), with their settings switched on (both off by default): turn(side) - while a turn signal is on, that side's
  * lights blink green, fully on and off, as fast as the lights take it (setting turnGlow; hazards: both sides; not with
- * the car locked and left); doors(open) - an open door's lights blink red until it closes (setting doorRed). Left is
+ * the car locked and left); doors(open) - an open door's lights blink red until it closes (setting doorRed; not with
+ * the car locked and left, so a door left open does not keep the body module awake). Left is
  * the driver's side on a left-hand drive car.
  */
 const fs = require('fs');
@@ -107,14 +108,14 @@ class Control {
     /** The turn signal's glow and the open doors' red, as the settings and the car say now. */
     signals() {
         const rhd = this.settings.get('drive') === 'rhd', side = (s) => (s === 'left') !== rhd ? 'driver' : 'passenger';
-        const turn = this.settings.get('turnGlow') !== false && !this._away ? this._turn : null;
+        const turn = this.settings.get('turnGlow') === true && !this._away ? this._turn : null;
         const sides = turn === 'both' ? ['driver', 'passenger'] : turn ? [side(turn)] : [];
         const key = sides.join();
         if (key !== this._glow) {
             this._glow = key;
             this.lights.overlay('turn', sides.length ? (l) => sides.indexOf(sideOf(l)) >= 0 : null, blink(GLOW));
         }
-        const doors = this.settings.get('doorRed') !== false ? this._doors : [];
+        const doors = this.settings.get('doorRed') === true && !this._away ? this._doors : [];
         if (doors.join() !== this._red) {
             this._red = doors.join();
             this.lights.overlay('doors', doors.length ? (l) => doors.indexOf(doorOf(l)) >= 0 : null, blink(RED));

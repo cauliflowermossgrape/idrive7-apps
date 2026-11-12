@@ -6,7 +6,8 @@
  *   Colour         the colour ring (and white) for the whole car, the upper lights or the lower ones, the
  *                  brightness, and the car from above lit as the car is; Original colour gives the light back
  *   Animations     Solid, Breathing, Rainbow, Smooth fade, Colour wave, how fast, shown moving on the car picture;
- *                  Turn signal glow (that side's lights blink green with it) and Open door red (blinking), each on or off
+ *                  Turn signal glow (that side's lights blink green with it) and Open door red (blinking), each off until
+ *                  switched on
  *   Driving modes  for each driving mode the car has: Choose colour (the Colour and Animations tabs change that mode's
  *                  look until Done), the animation button stepping through them, or Original colour (BMW's); with
  *                  nothing chosen, the Colour tab's colour; welcome sweep, Sport pulse, Redline's shift flash
@@ -38,7 +39,7 @@ const QUICK = [['Red', [255, 0, 0]], ['Orange', [255, 100, 0]], ['Amber', [255, 
     ['Cyan', [0, 230, 255]], ['Blue', [0, 70, 255]], ['Violet', [120, 60, 255]], ['Pink', [255, 40, 170]], ['White', [255, 255, 255]]];
 const RING = { cx: 290, cy: 288, R: 186, r: 136 }, DIAL = { cx: 655, cy: 400, R: 54, r: 43 };
 
-const ON_BY_DEFAULT = ['follow', 'flashAlerts', 'turnGlow', 'doorRed'];
+const ON_BY_DEFAULT = ['follow', 'flashAlerts'];
 const IDLE_MS = 15 * 60000;          // without the car's own state: not driven nor the app used this long = parked and left
 /* The car's turn signals (Light.StatusFunctionsIndicators activeFunctionIndicateDirection, by name or number): the
  * driver's (held or tapped), the driving assistant's, and the hazards; the lock and alarm flashes are none. */
@@ -94,7 +95,8 @@ async function background(bg) {
         statusCarSpeed2: (v) => { const k = v && v.speedVehicleCentreOfGravity; if (typeof k === 'number' && k !== 65535 && k * 0.015625 > 1) active(); },
     }, log).catch((e) => log.warn('speed: ' + (e && e.message || e)));
     setInterval(() => { if (!stateSeen && !control._away && Date.now() - activeT > IDLE_MS) control.away(true); }, 30000);
-    // the turn signals: that side's lights breathe green; an open door: its lights red (settings turnGlow, doorRed)
+    // the turn signals: that side's lights blink green; an open door: its lights red (settings turnGlow, doorRed, both off
+    // until switched on)
     signals.watch('de.bmw.body.Light', '1', { StatusFunctionsIndicators: (v) => control.turn(turnOf(v)) }, log)
         .catch((e) => log.warn('turn signals: ' + (e && e.message || e)));
     signals.watch('de.bmw.body.DoorsWindowsRoofMirrors', '1', { CentralLockingSystemAndPanelStatus: (v) => control.doors(doorsOf(v)) }, log)
@@ -271,9 +273,12 @@ mgu.run({
             if (editing) return editBar(cv, t, x);
             G.button(cv, t, x, 240, 0, 48, 'Original colour', () => { control.carColour(); return redraw(); }, { primary: !control.on(), key: 'car2' });
             status(cv, t, x, 330);
-            // over every look: the turn signal's green glow, an open door's red
-            [['turnGlow', 'Turn signal glow', 400], ['doorRed', 'Open door red', 456]].forEach(([k, n, y]) => {
-                G.button(cv, t, x, y, 400, 48, n, () => { settings.set(k, settings.get(k) === false); return redraw(); }, { primary: settings.get(k) !== false, key: 'tog-' + k });
+            // over every look, off until switched on: the turn signal's green glow, an open door's red. Under the other
+            // ambient app's warning (4 lines, to y 440) they go side by side, a little lower
+            const togs = others.comfort ? [[x, 460, 200, 40], [x + 212, 460, 190, 40]] : [[x, 400, 400, 48], [x, 456, 400, 48]];
+            [['turnGlow', 'Turn signal glow'], ['doorRed', 'Open door red']].forEach(([k, n], i) => {
+                const [bx, by, bw, bh] = togs[i];
+                G.button(cv, t, bx, by, bw, bh, n, () => { settings.set(k, settings.get(k) !== true); return redraw(); }, { primary: settings.get(k) === true, key: 'tog-' + k });
             });
             if (!others.comfort && lights.state === 'ours' && S.moves(lights.scene)) cv.text(lights.rate.toFixed(0) + ' writes a second, ' + lights.fps.toFixed(1) + ' frames a second', x, 390, 18, t.dim);
         }

@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -121,14 +121,14 @@
       "key": "turnGlow",
       "label": "Turn signal glow",
       "type": "bool",
-      "default": true,
+      "default": false,
       "hidden": true
     },
     {
       "key": "doorRed",
       "label": "Open door red",
       "type": "bool",
-      "default": true,
+      "default": false,
       "hidden": true
     },
     {

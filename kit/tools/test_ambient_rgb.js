@@ -233,6 +233,11 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     ok(fake.scene && fake.scene.upper.rgb.join() === '0,0,255', 'someone back in: the look again');
     // the turn signals and the doors over the look, each with its setting
     const pl = (code) => L.place(code);
+    // both off until switched on (a car on Original colour gets no writes from a turn signal or a door)
+    c.turn('left'); c.doors(['driver front']);
+    ok(!fake.overs.turn && !fake.overs.doors, 'Turn signal glow and Open door red: off by default');
+    c.turn(null); c.doors([]);
+    values.turnGlow = true; values.doorRed = true;
     c.turn('left');
     ok(fake.overs.turn && fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x19)) && !fake.overs.turn.test(pl(0x0c)) && !fake.overs.turn.test(pl(0x01)),
         'left turn signal: the driver\'s side lights (left-hand drive), not the footwells nor the other side');
@@ -251,6 +256,10 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     c.doors(['passenger rear']);
     ok(fake.overs.doors && fake.overs.doors.test(pl(0x10)) && fake.overs.doors.test(pl(0x22)) && fake.overs.doors.test(pl(0x45)) && !fake.overs.doors.test(pl(0x0c))
         && fake.overs.doors.at(0, true).rgb.join() === '255,0,0' && fake.overs.doors.at(0, false).bright === 0, 'the passenger rear door open: its lights blink red, the front door\'s not');
+    c.away(true);
+    ok(!fake.overs.doors, 'the car locked and left with a door open: no red, so the body module can sleep');
+    c.away(false);
+    ok(fake.overs.doors && fake.overs.doors.test(pl(0x10)), 'someone back in, the door still open: red again');
     c.doors([]);
     ok(!fake.overs.doors, 'closed: red off');
     settings.set('doorRed', false); c.doors(['driver front']);
