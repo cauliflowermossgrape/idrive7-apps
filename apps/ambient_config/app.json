@@ -151,7 +151,7 @@
       "type": "choice",
       "default": "police",
       "hidden": true,
-      "options": [["police", "Police"], ["both", "Together"], ["alternate", "In turn"]]
+      "options": [["police", "Police"], ["both", "Strobe"], ["alternate", "In turn"]]
     },
     {
       "key": "strobeRate",

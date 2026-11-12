@@ -382,12 +382,14 @@ mgu.run({
             const pat = ['both', 'alternate', 'police'].indexOf(settings.get('strobePattern')) >= 0 ? settings.get('strobePattern') : 'police';
             const rate = settings.get('strobeRate') || 'normal';
             // the headlight units can flash every front light; the body controller only the high beams
-            const lights = strobe && strobe.head && settings.get('strobeLights') === 'high' ? 'high' : 'all';
-            if (strobe && strobe.head) {
+            const lights = strobe && strobe.patterns && settings.get('strobeLights') === 'high' ? 'high' : 'all';
+            if (strobe && strobe.patterns) {
                 cv.text('Lights', 44, 274, 18, t.dim);
                 [['all', 'All lights'], ['high', 'High beam']].forEach(([k, n], i) => {
                     G.button(cv, t, 44 + i * 236, 284, 224, 42, n, () => { settings.set('strobeLights', k); return redraw(); }, { primary: lights === k, key: 'lights-' + k });
                 });
+            }
+            if (strobe && strobe.head) {
                 // which channels are the high beam, seen while it is switched on with the stalk
                 const learning = strobe.running === 'learn';
                 G.button(cv, t, 520, 284, 220, 42, learning ? 'Stop' : 'Learn high beam', () => {
@@ -397,7 +399,7 @@ mgu.run({
             }
             cv.text('Pattern', 44, 346, 18, t.dim);
             // police: one headlight, then the other, the fastest there is (headlight units only)
-            const pats = [['police', 'Police'], ['both', 'Together'], ['alternate', 'In turn']].filter(([k]) => k !== 'police' || (strobe && strobe.head));
+            const pats = [['police', 'Police'], ['both', 'Strobe'], ['alternate', 'In turn']].filter(([k]) => k !== 'police' || (strobe && strobe.patterns));
             pats.forEach(([k, n], i) => {
                 G.button(cv, t, 44 + i * 150, 356, 140, 42, n, () => { settings.set('strobePattern', k); return redraw(); }, { primary: pat === k, key: 'pat-' + k });
             });
@@ -412,7 +414,8 @@ mgu.run({
             }, { primary: on, key: 'strobe-go', confirm: !on, busy: !strobe || !strobe.kind || strobe.running === 'show' || strobe.running === 'learn' });
 
             G.panel(cv, t, 776, 44, 800, 468, 'Light show');
-            (strobe && strobe.head ? ['The headlights flash fully on and dark, left and right in', 'turn, for 15 s.']
+            (strobe && strobe.kind === 'fn' ? ['Every outside light flashes in turn for 15 s: high beam,', 'cornering, fog, indicators, brake, reverse and more.']
+                : strobe && strobe.head ? ['The headlights flash fully on and dark, left and right in', 'turn, for 15 s.']
                 : ['Every lamp output flashes for 15 s, run by the body controller', 'itself (BDC_G11 and BDC_G05).']).forEach((l, i) => cv.text(l, 796, 112 + i * 26, 18, t.dim));
             cv.text('Only for use on private property.', 796, 190, 20, t.warn, { font: 'bold' });
             ['Flashing headlights on public roads is illegal and dangerous', 'to other drivers.'].forEach((l, i) => cv.text(l, 796, 220 + i * 26, 18, t.text));

@@ -59,6 +59,13 @@ function fakeCar(car, o, clock) {
                 }
                 return [0x7F, sid, 0x31];
             }
+            if (car === 'fn' && sid === 0x22) return data[0] === 0xD5 && data[1] === 0x42 ? [0x62, 0xD5, 0x42].concat(new Array(20).fill(0)) : [0x7F, 0x22, 0x31];
+            if (car === 'fn' && sid === 0x2E) {
+                if (data[0] !== 0xD5 || data[1] !== 0x42 || data.length !== 6) return [0x7F, 0x2E, 0x13];
+                if (session[0x40] !== 0x03) return [0x7F, 0x2E, 0x7F];
+                if (opt.refuseAfter != null && sent.filter((x) => / 2E D5 42/.test(x)).length > opt.refuseAfter) return [0x7F, 0x2E, 0x22];
+                return [0x6E, 0xD5, 0x42];
+            }
             if (sid === 0x22) {
                 if (car === 'bdc' && data[0] === 0x45 && data[1] === 0x00) return [0x62, 0x45, 0x00].concat(status());
                 if (car === 'g05' && data[0] === 0xE3 && data[1] === 0xB9) return [0x62, 0xE3, 0xB9].concat(status());
@@ -95,9 +102,56 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
 
 (async () => {
     // which way to the lamps (reads only)
-    for (const [car, want] of [['flm', 'flm'], ['fle', 'fle'], ['bdc', 'bdc'], ['g05', 'g05'], ['none', null]]) {
+    for (const [car, want] of [['fn', 'fn'], ['flm', 'flm'], ['fle', 'fle'], ['bdc', 'bdc'], ['g05', 'g05'], ['none', null]]) {
         const { s, diag } = make(car);
         ok(await s.find() === want && diag.sent.every((x) => / 22 /.test(x)), car + ': found as ' + want + ' with reads only');
+    }
+
+    // the body controller's light functions: one request one flash, timed by the car
+    const fns = (diag) => diag.sent.filter((x) => /^40 2E D5 42/.test(x)).map((x) => x.split(' ').slice(4).map((b) => parseInt(b, 16)));
+    {
+        const { s, diag } = make('fn');
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({ pattern: 'police', lights: 'all', rate: 'fast' });
+        stopAfter(s, diag, 14);
+        await run;
+        const f = fns(diag);
+        ok(diag.sent[0] === '40 10 03', 'light functions: the extended session first');
+        ok(f.slice(0, 6).map((x) => x[1]).join() === '9,9,5,10,10,5' && f.slice(0, 6).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 4),
+            'police, all lights: cornering left, left, high beam, right, right, high beam, 40 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
+        const offs = f.filter((x) => x[3] === 0).map((x) => x[1]).sort((a, b) => a - b).join();
+        ok(offs === '5,9,10' && diag.sent[diag.sent.length - 1] === '40 10 01', 'stopped: each used light switched off (time 0), the default session');
+        ok(f.every((x) => x[2] * 256 + x[3] <= 15), 'never more than 150 ms lit a request');
+    }
+    {
+        const { s, diag } = make('fn');
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({ pattern: 'both', lights: 'high', rate: 'slow' });
+        stopAfter(s, diag, 6);
+        await run;
+        const f = fns(diag).filter((x) => x[3]);
+        ok(f.length && f.every((x) => x[1] === 5 && x[3] === 12), 'strobe, high beam, slow: the high beam 120 ms a flash');
+    }
+    {
+        const { s, diag } = make('fn', { refuseAfter: 3 });
+        await s.find(); diag.sent.length = 0;
+        await s.start({});
+        ok(/refused \(NRC 22\)/.test(s.note) && diag.sent[diag.sent.length - 1] === '40 10 01', 'light functions refused: stopped, the session dropped');
+    }
+    {
+        const { s, diag } = make('fn');
+        await s.find(); diag.sent.length = 0;
+        await s.start({ rate: 'fast' });
+        ok(/done \(30 s\)/.test(s.note), 'light functions: 30 s a press at most (' + s.note + ')');
+        const n = diag.sent.length;
+        await s.start({});
+        ok(diag.sent.length === n && /rest/.test(s.note), 'then the lights rest');
+        s._clock.t += 60000;
+        const run = s.show({ rate: 'fast' });
+        stopAfter(s, diag, n + 14);
+        await run;
+        const f = fns({ sent: diag.sent.slice(n) }).slice(0, 12).map((x) => x[1]);
+        ok(f.join() === '5,9,10,8,6,7,16,17,12,15,14,13', 'light show: every outside light in turn (' + f.join() + ')');
     }
 
     // FLM01, all lights: the lamp test read once for the fitted channels, then every one at full against dark
