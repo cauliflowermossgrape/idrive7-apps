@@ -153,7 +153,6 @@ typedef struct client {
     /* watchdog: an app on screen that stops talking (hung) is hidden until it talks again */
     uint64_t last_msg; int stale;
     int layer_on;                /* the layer was last made visible, on top of the screen (apply_visibility) */
-    uint64_t place_retry;        /* putting the layer on the screen failed: try again from then (0: not waiting) */
     /* touch claims, logical px (CLAIM) */
     int nclaim; float claim[16][4];
     /* frame cap (MI_FPS): at least min_us between two frames drawn; 0 = none */
@@ -431,34 +430,24 @@ static void origin(const client *c, float *x, float *y) {
     else { *x = (float)c->x; *y = (float)c->y; }
 }
 
+static struct ivi_controller_screen *centre_screen(void);
 static int layer_onto_screen(uint32_t layer_id, int w, int h);
-static void apply_visibility(client *c);
-/* layers whose putting on the screen failed, tried again when their time comes (from the main loop) */
-static void retry_placing(void) {
-    uint64_t t = 0;
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        client *c = clients[i];
-        if (!c || !c->cl || c->layer_on || !c->place_retry) continue;
-        if (!t) t = now_us();
-        if (t >= c->place_retry) apply_visibility(c);
-    }
-}
 static void apply_visibility(client *c) {
     if (!c->cl) return;
     int on = shown(c);                                     /* never show an empty or dead surface */
     /* shown again: the layer back on the centre screen, on top, before it is made visible (so it never shows
      * under another program's layer), through a fresh connection (layer_onto_screen). Another renderer (the MGU
      * Store's beside idrive7-apps') or the HMI may have set the screen's layers without it meanwhile: it was then
-     * visible but not on any screen, and the app showed a black page. Should that fail, it is tried again once a
-     * second while the app is shown (retry_placing). */
-    int placed = c->layer_on;
-    if (on && !placed && (!c->place_retry || now_us() >= c->place_retry)) {
-        placed = !layer_onto_screen(LAYER_BASE + c->slot, out_w > 0 ? out_w : screen_w, out_h > 0 ? out_h : screen_h);
-        if (!placed && !c->place_retry) log_warn("%s: its layer could not be put on the screen; trying again every second", c->app);
-        c->place_retry = placed ? 0 : now_us() + 1000000;   /* the main loop tries again (retry_placing) */
+     * visible but not on any screen, and the app showed a black page. Should that fail, through our own connection
+     * as before 2.1.12, in the same commit as its visibility: the app shows, at the old cost of other programs'
+     * layers taken off the screen. */
+    if (on && !c->layer_on &&
+        layer_onto_screen(LAYER_BASE + c->slot, out_w > 0 ? out_w : screen_w, out_h > 0 ? out_h : screen_h)) {
+        struct ivi_controller_screen *scr = centre_screen();
+        if (scr) ivi_controller_screen_add_layer(scr, c->cl);
+        log_warn("%s: its layer %s", c->app, scr ? "went on the screen through the renderer's own connection" : "could not be put on any screen");
     }
-    if (!on) c->place_retry = 0;                           /* hidden: nothing to retry; tried at once when shown */
-    c->layer_on = on && placed;
+    c->layer_on = on;
     ivi_controller_layer_set_visibility(c->cl, on);
     ivi_controller_surface_set_visibility(c->cs, on);
     ivi_controller_commit_changes(ictl);
@@ -546,7 +535,6 @@ static void surface_destroy(client *c) {
     if (c->cl) { ivi_controller_layer_destroy(c->cl, 1); c->cl = NULL; }
     if (c->cs) { ivi_controller_surface_destroy(c->cs, 1); c->cs = NULL; }
     c->layer_on = 0;                                       /* a new layer goes on the screen at its first show */
-    c->place_retry = 0;
     if (c->es != EGL_NO_SURFACE) { eglMakeCurrent(edpy, init_es, init_es, ectx); eglDestroySurface(edpy, c->es); c->es = EGL_NO_SURFACE; }
     if (c->win) { wl_egl_window_destroy(c->win); c->win = NULL; }
     if (c->is) { ivi_surface_destroy(c->is); c->is = NULL; }
@@ -554,6 +542,13 @@ static void surface_destroy(client *c) {
     if (ictl) ivi_controller_commit_changes(ictl);
 }
 
+static struct ivi_controller_screen *centre_screen(void) {
+    for (int i = 0; i < nscreens; i++) if (cfg.screen_id && screens[i].id == cfg.screen_id) return screens[i].s;
+    /* winston reports the screens newest first; the centre display is the oldest (lowest id) */
+    struct ivi_controller_screen *best = NULL; uint32_t bid = 0xffffffffu;
+    for (int i = 0; i < nscreens; i++) if (screens[i].id < bid) { bid = screens[i].id; best = screens[i].s; }
+    return best;
+}
 
 /* A layer onto the centre screen, on top, through a connection made for it and closed again.
  *
@@ -1814,7 +1809,6 @@ int main(int argc, char **argv) {
         if (pf[3].revents & (POLLIN | POLLHUP)) { if (gate_read() != 0) update_all(); }
         if (pf[4].revents & POLLIN) ccu_read();
         embed_dispatch(&pf[5]);
-        retry_placing();
         for (int k = 6; k < np; k++) {
             client *c = clients[map[k]];
             if (!c) continue;
