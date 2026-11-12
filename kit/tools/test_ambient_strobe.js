@@ -161,10 +161,11 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(await s.find() === 'fn' && s.mask && s.mask.sides.join() === '67,68' && diag.sent.every((x) => / 22 /.test(x)), 'light functions and FLM01 headlights found, reads only');
         diag.sent.length = 0;
         const run = s.start({ pattern: 'police', rate: 'fast' });
-        stopAfter(s, diag, 22);
+        stopAfter(s, diag, 40);
         await run;
         const seq = diag.sent.filter((x) => / 31 0[12] 30 00|2E D5 42/.test(x)).map((x) => /2E D5 42 00 05 00 0A/.test(x) ? 'H' : /2E D5 42/.test(x) ? 'h0' : x.slice(0, 2) + (/ 31 01/.test(x) ? 'hold' : 'free'));
-        ok(seq.slice(0, 10).join() === '44hold,H,H,H,44free,43hold,H,H,H,43free', 'police: right held, 3 high beam flashes (left), then left held, 3 (right) (' + seq.join() + ')');
+        ok(seq.slice(0, 23).join() === '44hold,H,H,H,44free,43hold,H,H,H,43free,H,H,H,43hold,H,H,H,43free,44hold,H,H,H,44free',
+            'police: left (right held), right (left held), both, right, left, then both (' + seq.join() + ')');
         ok(JSON.stringify(writes(diag, 0x44)[0]) === JSON.stringify(LOW), 'the held side: exactly its own lights as read, nothing brighter');
         ok(/ 31 02 30 00,40 2E D5 42 00 05 00 00,43 10 01,44 10 01,40 10 01$/.test(diag.sent.join()), 'stopped: let go, high beam off, every session back to default (' + diag.sent.slice(-5).join(', ') + ')');
     }

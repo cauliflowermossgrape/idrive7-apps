@@ -63,6 +63,8 @@ const F = { high: 0x05, indL: 0x06, indR: 0x07, fog: 0x08, cornL: 0x09, cornR: 0
 const FLASH = { fast: { on: 10, gap: 0 }, normal: { on: 12, gap: 120 }, slow: { on: 15, gap: 350 } };
 // police: this many high beam flashes on one side, then on the other (the other headlight held at its own lights)
 const POLICE_BURST = 3;
+// the order of the bursts: left, right, both at once, right, left, both at once, and round again
+const POLICE_PHASES = ['left', 'right', 'both', 'right', 'left', 'both'];
 // the patterns, one function a request; police and in turn only ever one side at a time (the high beam is both)
 const FN_PATTERNS = {
     police: { all: ['cornL', 'cornL', 'cornR', 'cornR'], high: ['cornL', 'cornL', 'cornR', 'cornR'] },
@@ -354,13 +356,17 @@ class Strobe extends EventEmitter {
                 for (let i = 0; i < H.n; i++) base[a].push({ cur: r[3 + 2 * i], pwm: r[4 + 2 * i] });
             }
             for (let k = 0; !end && !this._stop; k++) {
-                const hold = m.sides[(k + 1) % 2];
+                // flashing the left side holds the right one, and the other way round; both: none held
+                const phase = POLICE_PHASES[k % POLICE_PHASES.length];
+                const hold = phase === 'left' ? m.sides[1] : phase === 'right' ? m.sides[0] : null;
                 if (held !== hold) {
                     if (held !== null) await this._ask(held, 0x31, [0x02, 0x30, 0x00]);
                     held = null;
-                    const r = await this._setChannels(hold, base[hold]);
-                    if (r !== true) { end = ['Strobe stopped: refused (' + r + ')', 'warn']; break; }
-                    held = hold;
+                    if (hold !== null) {
+                        const r = await this._setChannels(hold, base[hold]);
+                        if (r !== true) { end = ['Strobe stopped: refused (' + r + ')', 'warn']; break; }
+                        held = hold;
+                    }
                 }
                 for (let i = 0; i < POLICE_BURST; i++) {
                     if (this._stop) break;
