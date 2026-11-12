@@ -254,24 +254,72 @@ gen() {
     return 1
 }
 
-# optional_missing <unpacked dir>: app.json signals marked "_optional" (meta.json "optional")
-# that this unit's catalog does not have are taken out of the app's manifest, so BMW's generator
-# accepts it; the app then runs without them. Says what is missing and leaves
-# source/javascript/kit/missing-interfaces.json, which the app logs when it starts.
+# optional_missing <unpacked dir>: what this unit's catalog lacks is taken out of the app's manifest, so BMW's
+# generator accepts it (it refuses the whole app for one missing field, issue #145); the app then runs without it.
+# Fields, methods, broadcasts and instances of any interface the catalog lacks go, and a field's r / s / w without
+# its getter / notifier / setter; a whole interface only when app.json marks it "_optional" (meta.json
+# "optional"); an interface left with nothing to use, or with no instance, goes too. Says what is missing and
+# leaves source/javascript/kit/missing-interfaces.json, which the app logs when it starts.
 # Any other missing interface still makes the generator refuse the app.
 optional_missing() {
     "$NODE" -e '
         const fs = require("fs"), [dir, catalog] = process.argv.slice(1);
         const meta = JSON.parse(fs.readFileSync(dir + "/meta.json", "utf8"));
         const opt = meta.optional || {};
-        if (!Object.keys(opt).length) process.exit(0);
-        const have = JSON.parse(fs.readFileSync(catalog, "utf8")).interfaces || {};
+        const db = JSON.parse(fs.readFileSync(catalog, "utf8")), have = db.interfaces || {}, instIds = db.instanceIDs;
         const mf = dir + "/source/manifest.json", m = JSON.parse(fs.readFileSync(mf, "utf8"));
-        const missing = {};
-        for (const i of Object.keys(opt)) if (!have[i]) { missing[i] = opt[i]; delete m.proxies[i]; }
-        if (!Object.keys(missing).length) process.exit(0);
+        const kitDir = dir + "/source/javascript/kit", lf = kitDir + "/missing-interfaces.json";
+        let missing = {};
+        try { missing = JSON.parse(fs.readFileSync(lf, "utf8")); } catch (e) { /* none yet (a build on the unit writes it) */ }
+        const names = (x) => new Set(Array.isArray(x) ? x.map((e) => e && e.name) : Object.keys(x || {}));
+        let changed = false;
+        for (const i of Object.keys(m.proxies || {})) {
+            const e = m.proxies[i], unit = have[i];
+            if (!unit) { if (opt[i]) { missing[i] = opt[i]; delete m.proxies[i]; changed = true; } continue; }
+            if (!e || typeof e !== "object") continue;
+            const gone = [];
+            // instances by name ("*" and "${userId}", the app itself, are not looked up)
+            if (instIds && e.instances !== undefined && e.instances !== "*") {
+                const known = instIds[i] || {}, asked = Array.isArray(e.instances) ? e.instances : [e.instances];
+                const lost = asked.filter((n) => String(n).indexOf("${") < 0 && !known[n]);
+                if (lost.length) {
+                    gone.push(...lost.map((n) => "instance " + n));
+                    const keep = asked.filter((n) => lost.indexOf(n) < 0);
+                    if (!keep.length) { missing[i + ": " + gone.join(", ")] = opt[i] || "these signals"; delete m.proxies[i]; changed = true; continue; }
+                    e.instances = Array.isArray(e.instances) ? keep : keep[0];
+                }
+            }
+            // a field asked for with an access it lacks: r needs its getter, s its notifier, w its setter
+            if (e.attributes && !Array.isArray(e.attributes)) {
+                const fields = unit.fields && !Array.isArray(unit.fields) ? unit.fields : {}, need = { r: "getter", s: "notifier", w: "setter" };
+                for (const n of Object.keys(e.attributes)) {
+                    const f = fields[n], mode = e.attributes[n];
+                    if (!f || typeof mode !== "string") continue;
+                    const left = mode.split("").filter((c) => !need[c] || f[need[c]]).join("");
+                    if (left === mode) continue;
+                    gone.push(n + " (" + mode.split("").filter((c) => left.indexOf(c) < 0).join("") + ")");
+                    if (left) e.attributes[n] = left; else delete e.attributes[n];
+                }
+                if (!Object.keys(e.attributes).length) delete e.attributes;
+            }
+            for (const [key, part] of [["attributes", "fields"], ["methods", "methods"], ["broadcasts", "events"]]) {
+                if (!e[key]) continue;
+                const known = names(unit[part]), asked = Array.isArray(e[key]) ? e[key] : Object.keys(e[key]);
+                const lost = asked.filter((n) => !known.has(n));
+                if (!lost.length) continue;
+                gone.push(...lost);
+                if (Array.isArray(e[key])) e[key] = e[key].filter((n) => known.has(n));
+                else lost.forEach((n) => delete e[key][n]);
+                if (!(Array.isArray(e[key]) ? e[key].length : Object.keys(e[key]).length)) delete e[key];
+            }
+            if (!gone.length) continue;
+            missing[i + ": " + gone.join(", ")] = opt[i] || "these signals";
+            if (!["attributes", "methods", "broadcasts"].some((k) => e[k])) delete m.proxies[i];
+            changed = true;
+        }
+        if (!changed) process.exit(0);
         fs.writeFileSync(mf, JSON.stringify(m, null, 1));
-        fs.writeFileSync(dir + "/source/javascript/kit/missing-interfaces.json", JSON.stringify(missing, null, 1));
+        fs.writeFileSync(lf, JSON.stringify(missing, null, 1));
         for (const i of Object.keys(missing))
             console.error("[mgu-app] WARNING: " + meta.id + ": this unit has no " + i + " - installed without it: " + missing[i]);
     ' "$1" "$CATALOG"
