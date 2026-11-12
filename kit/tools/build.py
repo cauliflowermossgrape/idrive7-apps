@@ -94,6 +94,35 @@ WIDGETS = {
     'laptimer':  ('label', 'LT_Label_Laptimer', {3: 0}),
 }
 
+# iDrive 8 (Hmi8): only the widgets the MGU Store's own app runs with there - LT_State_Wide_List states,
+# LT_Button_MediaEntry_1Row buttons (cells PrimaryText / FrequencyText ...), LT_ScrollLabel labels and a
+# label without a widget for a picture. Every button is a list row: a state has no button bar.
+STATE8 = 'LT_State_Wide_List'
+BUTTON8 = ('button', 'LT_Button_MediaEntry_1Row', {2: 1, 3: 3})
+LABEL8 = ('label', 'LT_ScrollLabel', {2: 1, 3: 0})
+WIDGETS8 = dict({k: LABEL8 for k in ('header', 'text', 'text3', 'scroll', 'laptimer')},
+                **{k: BUTTON8 for k in ('barbutton', 'button', 'iconbutton', 'twocol', 'tworow', 'checkbox')},
+                graphic=('label', None, {2: 1, 3: 0}))
+# a hidden label in the first state of the iDrive 8 description: the app knows by it which cells to write
+HMI8_MARK = 'KIT_HMI_ID8'
+HMI8_MARK_ID = 990      # outside the ids build_ui counts up (one space for states, groups and components)
+# iDrive 7 cells -> iDrive 8's (kit/runtime/mgu.js maps the app's writes the same way)
+CELLS8 = {'Text': 'PrimaryText', 'Text1stRow': 'PrimaryText', 'Text1stCol': 'PrimaryText',
+          'Text2ndRow': 'FrequencyText', 'Text2ndCol': 'FrequencyText'}
+
+
+def row8(row, button):
+    """An iDrive 7 row's cells as iDrive 8's: a button's as LT_Button_MediaEntry_1Row's, a label keeps Text."""
+    if not button:
+        return {k: v for k, v in row.items() if k != 'Graphic'}
+    out = {CELLS8.get(k, k): v for k, v in row.items()}
+    out.setdefault('PrimaryText', {'value': '', 'type': 'Text'})
+    second = 'FrequencyText' in out
+    out.setdefault('FrequencyText', {'value': '', 'type': 'Text'})
+    out.update({'FrequencyVisible': {'value': second, 'type': 'Bool'}, 'IconVisible': {'value': False, 'type': 'Bool'},
+                'ProgressVisible': {'value': False, 'type': 'Bool'}, 'IsPlaying': {'value': False, 'type': 'Bool'}})
+    return out
+
 
 def u(app, what):
     return str(uuid.uuid5(NS, app + ':' + what))
@@ -153,8 +182,10 @@ def fetch_assets(adir, assets):
         open(dst, 'wb').write(data)
 
 
-def build_ui(spec, language='en'):
-    """screens/settings -> (application.xml, uiDescription.json, strings, screen meta)"""
+def build_ui(spec, language='en', hmi='ID7'):
+    """screens/settings -> (application.xml, uiDescription.json, strings, screen meta) for hmi 'ID7' or 'ID8'
+    (the same ids and names on both)"""
+    id8 = hmi == 'ID8'
     app = spec['id']
     nid = Ids()
     strings = {sid(app, 'TITLE'): spec['title']}
@@ -170,11 +201,13 @@ def build_ui(spec, language='en'):
     main_id = None
 
     def comp(kind, name, rows=None, extra_props=None, cells=None):
-        ctype, widget, props = WIDGETS[kind]
+        ctype, widget, props = (WIDGETS8 if id8 else WIDGETS)[kind]
         cid = nid()
         p = dict(props)
         p.update(extra_props or {})
-        x = [f'            <component id="{cid}" type="{ctype}" widget="{widget}">']
+        if id8 and rows is not None:
+            rows = [row8(r, ctype == 'button') for r in rows]
+        x = [f'            <component id="{cid}" type="{ctype}"' + (f' widget="{widget}">' if widget else '>')]
         x += [f'                <property id="{k}" value="{v}"/>' for k, v in p.items()]
         x.append('            </component>')
         c = {'type': ctype, 'name': name}
@@ -197,11 +230,18 @@ def build_ui(spec, language='en'):
                 continue
             name = 'SET_' + s['key'].upper()
             if s['type'] == 'bool':
-                items.append(comp('checkbox', name, rows=[text_row('SET_' + s['key'], s['label'])]))
+                row = text_row('SET_' + s['key'], s['label'])
+                if id8:     # a row with the label and On / Off (the app writes it)
+                    row = {'Text1stRow': row['Text'], 'Text2ndRow': {'value': '', 'type': 'Text'}}
+                items.append(comp('checkbox', name, rows=[row]))
             elif s['type'] in ('choice', 'number'):
                 # a drop-down with every value, as BMW's parking app settings: rows = options
                 # (ItemText), HeaderText = the setting, SelectedItem = the chosen row (mgu.js sets it)
                 values, labels = setting_options(s)
+                if id8:
+                    items.append(comp('tworow', name, rows=[{'Text1stRow': {'value': hmi_text(s['label']), 'type': 'Text'},
+                                                            'Text2ndRow': {'value': '', 'type': 'Text'}}]))
+                    continue
                 did = nid()
                 items.append((did, [f'            <component id="{did}" type="dropDownMenu"/>'], {
                     'type': 'dropDownMenu', 'name': name,
@@ -240,9 +280,13 @@ def build_ui(spec, language='en'):
         # settings: the wide state (full screen width), as BMW's own settings lists
         # menu: an app's own main menu (buttons, then its settings), in the same wide state
         widget = 'LT_State_Laptimer' if kind == 'canvas' else 'LT_State_Wide' if kind in ('settings', 'menu') else 'LT_State_Regular_ContentHidden'
+        if id8:
+            widget = STATE8
         cont = {'type': 'state', 'name': scr['name'], 'components': {}}
         x = [f'    <container id="{cid}" type="state" widget="{widget}">']
-        if main_id is not None and scr.get('parent', True):
+        # iDrive 8: no state has a parent (Hmi8 refuses a description with a parent that has one of its own,
+        # and its BACK closes a parent with the state)
+        if main_id is not None and scr.get('parent', True) and not id8:
             x.append(f'        <property id="9" value="{main_id}"/>')
             cont['properties'] = {'ParentState': {'value': main_id, 'type': 'UInt'}}
         groups = []
@@ -255,7 +299,10 @@ def build_ui(spec, language='en'):
             for b in scr.get('buttons', []):
                 bid, bx, bc = comp('barbutton', b[0], rows=[text_row(b[0], b[1])])
                 bar.append((bid, bx, bc))
-            if bar:
+            if bar and id8:
+                items += bar
+                nid()           # the Bar group's id on iDrive 7: every later id the same on both
+            elif bar:
                 groups.append(('Bar', bar))
         elif kind == 'settings':
             items = []
@@ -278,6 +325,13 @@ def build_ui(spec, language='en'):
             if kind == 'menu' and scr.get('settings'):
                 settings_items(items)
             groups.append(('List', items))
+        if id8 and main_id is None:
+            mid = HMI8_MARK_ID
+            groups[0][1].append((mid, [f'            <component id="{mid}" type="label" widget="LT_ScrollLabel">',
+                                       '                <property id="2" value="0"/>', '                <property id="3" value="0"/>',
+                                       '            </component>'],
+                                 {'type': 'label', 'name': HMI8_MARK, 'properties': {'Visible': {'value': 0, 'type': 'UInt'},
+                                  'Focusable': {'value': 0, 'type': 'UInt'}}, 'rows': [{'Text': {'value': '', 'type': 'Text'}}]}))
         tid = nid()
         groups.append(('Titlebar', [(tid, [f'            <component id="{tid}" type="title"/>'],
                                      {'type': 'title', 'name': scr['name'] + '_TITLE', 'rows': [text_row(scr['name'] + '_TITLE', scr.get('title', spec['title']))]})]))
@@ -527,6 +581,13 @@ def build(app_id, language='en', preview_only=False):
         print('  this unit has no %s - built without it: %s' % (what, loses))
     xml, uidesc, strings, state_ids = build_ui(spec, language)
     unicode_resources(uidesc, strings, language)
+    xml8, uidesc8, strings8, state_ids8 = build_ui(spec, language, 'ID8')
+    # its own slot names: the iDrive 7 description numbers more cells (the drop-downs' rows)
+    unicode_resources(uidesc8, strings8, language, 'SID_CN_STATIC8_')
+    assert state_ids8 == state_ids, 'iDrive 8 description must keep the iDrive 7 state ids'
+    strings.update(strings8)
+    if len(strings) > 1024:
+        raise ValueError('HMI string bundle exceeds the verified 1024-resource budget (iDrive 7 + 8)')
     for lang, tbl in spec.get('strings', {}).items():
         strings.update(tbl)
 
@@ -655,17 +716,20 @@ def build(app_id, language='en', preview_only=False):
         },
     }
     pr = os.path.join(src, 'rhmiData')
-    os.makedirs(os.path.join(pr, 'uiDescriptions', 'ID7'))
     os.makedirs(os.path.join(pr, 'variantGroups', 'Common', 'texts'))
     os.makedirs(os.path.join(pr, 'variantGroups', 'Common', 'images'))
     pj = json.loads(json.dumps(app_json))
-    pj['application']['uiDescriptions'] = [{'applicationFilePath': './uiDescriptions/ID7/application.xml',
-                                            'uiDescriptionFilePath': './uiDescriptions/ID7/uiDescription.json', 'hmi': ['ID7']}]
+    # MainApp installs the uiDescription and variantGroups for the HMI the car reports (ID7 / ID8)
+    pj['application']['uiDescriptions'] = [{'applicationFilePath': './uiDescriptions/%s/application.xml' % h,
+                                            'uiDescriptionFilePath': './uiDescriptions/%s/uiDescription.json' % h, 'hmi': [h]}
+                                           for h in ('ID7', 'ID8')]
     pj['application']['variantGroups'] = [{'stringsPath': './variantGroups/Common/texts',
-                                           'resourcesPath': './variantGroups/Common/images', 'hmi': ['ID7'], 'brands': ['BMW']}]
+                                           'resourcesPath': './variantGroups/Common/images', 'hmi': ['ID7', 'ID8'], 'brands': ['BMW']}]
     json.dump(pj, open(os.path.join(pr, 'application.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
-    open(os.path.join(pr, 'uiDescriptions', 'ID7', 'application.xml'), 'w', encoding='utf-8', newline='\n').write(xml)
-    json.dump(uidesc, open(os.path.join(pr, 'uiDescriptions', 'ID7', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
+    for h, x, d in (('ID7', xml, uidesc), ('ID8', xml8, uidesc8)):
+        os.makedirs(os.path.join(pr, 'uiDescriptions', h))
+        open(os.path.join(pr, 'uiDescriptions', h, 'application.xml'), 'w', encoding='utf-8', newline='\n').write(x)
+        json.dump(d, open(os.path.join(pr, 'uiDescriptions', h, 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
     for lang in LANGS:
         json.dump(strings, open(os.path.join(pr, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     make_icon(spec, os.path.join(pr, 'variantGroups', 'Common', 'images', icon))

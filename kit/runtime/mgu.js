@@ -160,6 +160,9 @@ class Settings {
     }
 }
 
+/* iDrive 7 cells -> iDrive 8's on a button (LT_Button_MediaEntry_1Row; kit/tools/build.py CELLS8) */
+const CELLS8 = { Text: 'PrimaryText', Text1stRow: 'PrimaryText', Text1stCol: 'PrimaryText', Text2ndRow: 'FrequencyText', Text2ndCol: 'FrequencyText' };
+
 /* ---------------- UI wrapper ---------------- */
 class Ui {
     constructor(app) {
@@ -172,6 +175,17 @@ class Ui {
         this._focusHandlers = [];
         this.timing = { png: 0, push: 0 };    // ms spent encoding / handing images to the HMI
         this._cnText = new HmiText();
+        // iDrive 8: the HMI installed the app's iDrive 8 description (kit/tools/build.py), known by its hidden
+        // label. Its buttons are list rows with other cells (PrimaryText, FrequencyText), it has no drop-downs.
+        this.id8 = !!(this.rhmi && this.rhmi.getByName && this.rhmi.getByName('KIT_HMI_ID8'));
+        if (this.id8) log.info('ui: iDrive 8 screens');
+    }
+    /** The cell of a write on this HMI: on iDrive 8 an iDrive 7 cell name the component's row does not have as
+     *  iDrive 8's (a button's Text is its PrimaryText; a label keeps Text). */
+    _cell(c, cell) {
+        if (!this.id8 || !CELLS8[cell]) return cell;
+        const d = c && c._uiDescription, r = d && d.rows && d.rows[0];
+        return r && Object.prototype.hasOwnProperty.call(r, cell) ? cell : CELLS8[cell];
     }
     comp(name) {
         const c = this.rhmi && this.rhmi.getByName(name);
@@ -187,13 +201,13 @@ class Ui {
     text(name, text, row, cell) {
         const c = this.comp(name);
         if (c && !row && (!cell || cell === 'Text') && this.display) this.display.label(name, text);   // slim bar mirrors it
-        return c ? this._try('text ' + name, this._cnText.set(c, name, row || 0, cell || 'Text', text)) : Promise.resolve();
+        return c ? this._try('text ' + name, this._cnText.set(c, name, row || 0, this._cell(c, cell || 'Text'), text)) : Promise.resolve();
     }
     /** Set several cells of one row: ui.cells('LIST', 3, { Text1stCol: 'a', Text2ndCol: 'b' }) */
     cells(name, row, obj) {
         const c = this.comp(name);
         if (!c) return Promise.resolve();
-        return Promise.all(Object.keys(obj).map((k) => this._try('cell ' + name + '.' + k, this._cnText.set(c, name, row, k, obj[k]))));
+        return Promise.all(Object.keys(obj).map((k) => this._try('cell ' + name + '.' + k, this._cnText.set(c, name, row, this._cell(c, k), obj[k]))));
     }
     /** Selected row of a drop-down menu. */
     selected(name, row) {
@@ -206,6 +220,7 @@ class Ui {
     checked(name, on, row) {
         const c = this.comp(name);
         if (!c) return Promise.resolve();
+        if (this.id8) return this._try('checked ' + name, this._cnText.set(c, name, row || 0, 'FrequencyText', on ? 'On' : 'Off'));
         // setValue creates the row if needed (setRowSelected only checks and fails)
         const p = c.setValue(row || 0, 'eParam_RowSelected', !!on, 'Bool');
         return this._try('checked ' + name, p);
@@ -464,13 +479,14 @@ function wireSettings(ctx) {
     // the settings screen, or an app's own menu screen that shows them ("settings": true)
     if (!schema.length || !schema.some((s) => ui.comp('SET_' + s.key.toUpperCase()))) return;
     // choice / number settings are drop-downs (kit/tools/build.py): their rows are the values in this order
-    const values = (s) => (s.type === 'choice' ? (s.options || []).map((o) => o[0]) : s.type === 'number' ? s.steps || [] : null);
+    // (iDrive 8 has no drop-downs: there every setting is a row, label | value, a press steps to the next value)
+    const values = (s) => (ui.id8 ? null : s.type === 'choice' ? (s.options || []).map((o) => o[0]) : s.type === 'number' ? s.steps || [] : null);
     const refresh = () => Promise.all(schema.map((s) => {
         const comp = 'SET_' + s.key.toUpperCase();
         if (!ui.comp(comp)) return null;
         // one another setting offers it ("when"): shown or not as that one is
         if (s.when) ui.visible(comp, settings.shown(s));
-        if (s.type === 'bool') return Promise.all([ui.text(comp, s.label), ui.checked(comp, !!settings.get(s.key))]);
+        if (s.type === 'bool' && !ui.id8) return Promise.all([ui.text(comp, s.label), ui.checked(comp, !!settings.get(s.key))]);
         if (values(s)) return ui.selected(comp, Math.max(0, values(s).indexOf(settings.get(s.key))));
         // other types: two-row buttons in the wide settings state, label above, value below
         return ui.cells(comp, 0, { Text1stRow: s.label, Text2ndRow: settings.display(s.key) });
