@@ -24,6 +24,7 @@ const { Ambient, SLOTS } = require('./ambient');
 const { Lights } = require('./lights');
 const { Control } = require('./control');
 const { Others } = require('./others');
+const { t: translate } = require('./kit/i18n');
 const { drawCabin } = require('./cabin');
 const { sample } = require('./lin');
 const S = require('./scenes');
@@ -115,11 +116,12 @@ mgu.run({
         function warnOthers(cv, t, x, y, w) {
             cv.text('Another ambient app', x, y, 22, t.warn, { font: 'bold' });
             const lines = [];
-            COMFORT_WARNING.split(' ').forEach((word) => {
+            // translated whole before wrapping, so a localized build wraps its own sentence
+            translate(COMFORT_WARNING).split(' ').forEach((word) => {
                 const last = lines.length - 1, joined = last >= 0 ? lines[last] + ' ' + word : word;
-                if (last >= 0 && cv.textWidth(joined, 18) <= w) lines[last] = joined; else lines.push(word);
+                if (last >= 0 && cv.textWidth(joined, 18, { literal: true }) <= w) lines[last] = joined; else lines.push(word);
             });
-            lines.forEach((line, i) => cv.text(line, x, y + 30 + i * 24, 18, t.text));
+            lines.forEach((line, i) => cv.text(line, x, y + 30 + i * 24, 18, t.text, { literal: true }));
         }
         function status(cv, t, x, y) {
             if (others.comfort) return warnOthers(cv, t, x, y, 1560 - x);
