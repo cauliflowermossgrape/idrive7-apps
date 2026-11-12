@@ -27,7 +27,8 @@ Real electric range, battery health and a charge log for plug-in hybrids, and li
 power, cell temperatures and climate power use. A sport cluster with
 boost, fuel pressures, ignition timing, misfires and tyre data. Shift lights and a full-screen
 tach, also on the windscreen head-up display, a virtual dyno, brake and drag timers, a G-meter, an oil warm-up guide, a fault-code
-scanner / cleaner, the car's service items, and Doom for when you're parked. They run on the car's own app platform, use the HMI's real buttons and
+scanner / cleaner, the car's service items, live data and a trip computer, ambient light colours by driving mode, exhaust
+flap control, a ZF 8HP gearbox monitor, and Doom for when you're parked. They run on the car's own app platform, use the HMI's real buttons and
 settings menus, read live vehicle data and survive reboots. Everything can be removed again
 with one command.
 
@@ -64,7 +65,7 @@ needles and bars that glide instead of jump.
 | **Who draws** | JavaScript on the CPU, pixel by pixel | the Intel HD Graphics 505 GPU |
 | **Frame rate** | a few fps (PNG encode alone: ~60 ms) | **60 fps**, paced by the display |
 | **Motion** | values jump from frame to frame | spring-smoothed gauges, every frame |
-| **Screen space** | the HMI's image box, its title bar and 120 px button bar | full screen: header in the HMI's title strip, slim 48 px bar |
+| **Screen space** | the HMI's image box, its title bar and 120 px button bar | full screen: tabs in the HMI's title strip, no button bar |
 
 **Measured on a real car** (head unit app logs, 10-second averages):
 
@@ -96,8 +97,12 @@ More in [How apps draw](#44-how-apps-draw-remote-hmi-rhmi) and [`kit/renderd`](k
 <td width="50%"><img src="docs/media/redline_hud.gif" alt="Redline on the windscreen HUD: Standard, Arc, Ramp and Dial layouts on the demo drive"><br><b>Redline</b> on the windscreen HUD (cluster-render): shift lights early by your reaction time, gear, grades and readouts; Standard and the M-style Arc, Ramp and Dial</td>
 </tr>
 <tr>
-<td><img src="docs/screens/redline_hud.png" alt="Redline's nine HUD layouts"><br><b>Redline</b> HUD: nine layouts, picked and edited by picture on the app's HUD looks page</td>
+<td><img src="docs/screens/redline_hud.png" alt="Redline's HUD looks page"><br><b>Redline</b> HUD: nine layouts, picked and edited by picture on the app's HUD looks page</td>
 <td><img src="docs/media/m_vitals.gif" alt="M Vitals engine page"><br><b>M Vitals</b>: rpm, boost, speed + gear, power, torque</td>
+</tr>
+<tr>
+<td><img src="docs/media/m_vitals_chassis.gif" alt="M Vitals chassis page"><br><b>M Vitals</b>: g-force, tyre pressures + temperatures, xDrive split</td>
+<td><img src="docs/screens/m_vitals_fuel.png" alt="M Vitals fuel and ignition page"><br><b>M Vitals</b>: intake air, HPFP / LPFP fuel pressure, ignition timing, boost and air charge targets, misfires per cylinder</td>
 </tr>
 <tr>
 <td><img src="docs/media/gforce.gif" alt="G-Force"><br><b>G-Force</b>: friction circle with trail, grip envelope, peaks, records</td>
@@ -105,60 +110,58 @@ More in [How apps draw](#44-how-apps-draw-remote-hmi-rhmi) and [`kit/renderd`](k
 </tr>
 <tr>
 <td><img src="docs/media/brake_test.gif" alt="Brake Test"><br><b>Brake Test</b>: 100-0 distance, deceleration trace, fade</td>
-<td><img src="docs/media/m_vitals_chassis.gif" alt="M Vitals chassis page"><br><b>M Vitals</b>: g-force, tyre pressures + temperatures, xDrive split</td>
-</tr>
-<tr>
 <td><img src="docs/media/warmup.gif" alt="Warm-Up"><br><b>Warm-Up</b>: time to working temperature, safe rev limit</td>
-<td><img src="docs/screens/m_vitals_fuel.png" alt="M Vitals fuel and ignition page"><br><b>M Vitals</b>: intake air, HPFP / LPFP fuel pressure, ignition timing, misfires per cylinder</td>
 </tr>
 <tr>
-<td><img src="docs/screens/edrive.png" alt="eDrive"><br><b>eDrive</b>: real electric range, battery health, last charge, 12 V</td>
+<td><img src="docs/screens/dyno.png" alt="Virtual Dyno"><br><b>Virtual Dyno</b>: power and torque curve from a pull, against the engine computer's torque</td>
+<td><img src="docs/screens/dtc_scanner.png" alt="Fault Scanner"><br><b>Fault Scanner</b>: fault codes of every control unit, with their texts; Check Control messages</td>
+</tr>
+<tr>
+<td><img src="docs/screens/ambient_config.png" alt="Ambient config, colour page"><br><b>Ambient config</b>: any colour on the colour ring, whole car or upper / lower lights, brightness; driving-mode colours, animations and favourites</td>
+<td><img src="docs/screens/service.png" alt="Service"><br><b>Service</b>: service requirements, next service, details per item; an Engine page with oil life, spark plugs, engine hours and the particulate filter</td>
+</tr>
+<tr>
+<td><img src="docs/screens/zf8hp.png" alt="Transmission Config, live page"><br><b>Transmission Config</b> (ZF 8HP, experimental): live oil and electronics temperatures, gear, shaft speeds, converter clutch</td>
+<td><img src="docs/screens/zf8hp_clutches.png" alt="Transmission Config, clutch adaptations"><br><b>Transmission Config</b>: clutch fill adaptations A–E, shift maps, temperature history</td>
+</tr>
+<tr>
+<td><img src="docs/screens/edrive.png" alt="eDrive"><br><b>eDrive</b>: real electric range, battery charge, last charge, this drive</td>
 <td><img src="docs/screens/edrive_log.png" alt="eDrive charge log"><br><b>eDrive</b>: charge log with cost and totals</td>
 </tr>
 <tr>
-<td><img src="docs/screens/dyno.png" alt="Virtual Dyno"><br><b>Virtual Dyno</b>: power and torque curve from a pull</td>
-<td><img src="docs/screens/dtc_scanner.png" alt="Fault Scanner"><br><b>Fault Scanner</b>: fault codes of every control unit, with their texts</td>
-</tr>
-<tr>
-<td><img src="docs/screens/service.png" alt="Service"><br><b>Service</b>: service requirements, next service, details per item; an Engine page with oil life, spark plugs, engine hours and the particulate filter</td>
-<td><img src="docs/screens/doom.png" alt="Doom"><br><b>Doom</b>: Freedoom in full resolution across the whole screen, on the iDrive controller, saves itself</td>
-</tr>
-<tr>
-<td><img src="docs/screens/edrive2.png" alt="eDrive battery page"><br><b>eDrive</b>: HV battery power now, regen / drive against the battery's limits, drive totals</td>
-<td><img src="docs/screens/edrive2_battery.png" alt="eDrive battery page"><br><b>eDrive</b>: cell temperatures and voltages, coolant, power the battery allows</td>
+<td><img src="docs/screens/edrive2.png" alt="eDrive energy page"><br><b>eDrive</b>: live battery usage, regen, where the power goes now</td>
+<td><img src="docs/screens/edrive2_battery.png" alt="eDrive battery page"><br><b>eDrive</b>: battery health, every cell's voltage, temperature</td>
 </tr>
 <tr>
 <td><img src="docs/screens/edrive_48v.png" alt="eDrive on a 48 V mild hybrid"><br><b>eDrive</b> on a 48 V mild hybrid: the 48 V battery, the DC/DC converter and the 12 V battery</td>
-<td><img src="docs/screens/edrive_12v.png" alt="eDrive without a hybrid system"><br><b>eDrive</b> without a hybrid system: the 12 V battery's charge from the DME (40AD) with Ah left, what it is doing (charging, regen, supplying), the voltage of the last 2 min where the DME gives no current (e.g. G20 320i), this drive's regen and charging time</td>
+<td><img src="docs/screens/edrive_12v.png" alt="eDrive without a hybrid system"><br><b>eDrive</b> without a hybrid system: the 12 V battery's charge from the DME with Ah left, what it is doing (charging, regen, supplying), voltage, this drive's regen and charging time</td>
 </tr>
 <tr>
 <td><img src="docs/screens/edrive_12v_history.png" alt="eDrive 12 V history"><br><b>eDrive</b> without a hybrid system, History: the last hour's voltage and charge, the charge the car recorded and the time per charge band</td>
-<td><img src="docs/screens/live_adjustments.png" alt="Engine Config, exhaust flap following the driving mode"><br><b>Engine Config</b>: exhaust flap open, closed, handed back to the car (OEM) or following the driving mode (Sport open, Eco Pro closed), held against the DME's timeout</td>
+<td><img src="docs/screens/live_data.png" alt="Live Data, a screen of gauges"><br><b>Live Data</b>: a screen of your own, sport-display bar and numbers</td>
 </tr>
 <tr>
-<td><img src="docs/screens/live_adjustments_closed.png" alt="Engine Config, exhaust flap closed"><br><b>Engine Config</b>: flap closed, the selected mode in red; Close handed back to the car above a set engine speed; more adjustments can be added as tabs</td>
-<td><img src="docs/screens/live_adjustments_map.png" alt="Live Adjustments, engine map"><br><b>Live Adjustments</b> (tuned DME): engine map 1–4 with one press; the DME echoes the request back</td>
+<td><img src="docs/screens/live_data_dial.png" alt="Live Data, dial layout"><br><b>Live Data</b>: the same screen as a dial and two numbers</td>
+<td><img src="docs/screens/live_data_signals.png" alt="Live Data, car signals"><br><b>Live Data</b>: every signal the car sends the head unit, live</td>
 </tr>
 <tr>
-<td><img src="docs/screens/live_adjustments_cooling.png" alt="Live Adjustments, Max Cooling"><br><b>Live Adjustments</b> (tuned DME): Max Cooling on / off</td>
-<td><img src="docs/screens/live_adjustments_map_readback.png" alt="Live Adjustments, engine map read back"><br><b>Live Adjustments</b> (tuned DME, not yet tested on a car): engine map confirmed by reading it back from the DME</td>
-</tr>
-<tr>
-<td><img src="docs/screens/live_adjustments_burbles.png" alt="Live Adjustments, burbles"><br><b>Live Adjustments</b> (tuned DME, not yet tested on a car): burble aggression 0–12 picked with – / +, sent on Apply and read back; Off</td>
-<td><img src="docs/screens/live_data.png" alt="Live Data, a screen of gauges"><br><b>Live Data</b>: a screen of your own, sport-display bar and numbers with the last 5 minutes</td>
-</tr>
-<tr>
-<td><img src="docs/screens/live_data_trips.png" alt="Live Data, trips"><br><b>Live Data</b>: the trip computer, distance, fuel and cost per trip</td>
 <td><img src="docs/screens/live_data_engine.png" alt="Live Data, engine values"><br><b>Live Data</b>: the engine unit's values in groups, read live</td>
+<td><img src="docs/screens/live_data_trips.png" alt="Live Data, trips"><br><b>Live Data</b>: the trip computer, distance, fuel and cost per trip</td>
 </tr>
 <tr>
-<td><img src="docs/screens/live_data_pick.png" alt="Live Data, choosing a gauge's value"><br><b>Live Data</b>: a gauge's value chosen from a group, each with what it reads now</td>
+<td><img src="docs/screens/live_adjustments.png" alt="Engine Config, exhaust flap"><br><b>Engine Config</b>: exhaust flap open, closed, handed back to the car (OEM) or following the driving mode (Sport open, Eco Pro closed), held against the DME's timeout</td>
+<td><img src="docs/screens/live_adjustments_closed.png" alt="Engine Config, exhaust flap closed"><br><b>Engine Config</b>: flap closed, the selected mode in red; Close handed back to the car above a set engine speed</td>
+</tr>
+<tr>
+<td><img src="docs/screens/live_adjustments_map.png" alt="Engine Config, engine map"><br><b>Engine Config</b> (tuned DME, experimental): engine map 1–4, Max Cooling, burbles and Active Sound as tabs, for the tuning software picked in Settings (shown here without a car)</td>
+<td><img src="docs/screens/doom.png" alt="Doom"><br><b>Doom</b>: Freedoom in full resolution across the whole screen, on the iDrive controller, saves itself</td>
 </tr>
 </table>
 
 <sub>Every animation is recorded offline from the app's built-in demo drive through the engine's
 own drawing code (`mgu-renderd --replay`, see [6.3](#63-preview-build-deploy)), over the HMI's
-back arrow and status icons, in the default M Tricolour theme. GIFs play at 50 fps at most;
+back arrow and status icons, in the default M Tricolour theme, as the car shows them: pages and
+Settings as tabs in the header, no button bar. GIFs play at 50 fps at most;
 the car shows 60. Every app also has M Red, Ice White and Night Amber themes. In the car the
 same screens show live data.</sub>
 
@@ -204,6 +207,7 @@ the unit and kept across reboots.
 | **Doom** | Freedoom: Phase 1 (four episodes, free game data) running in the head unit as WebAssembly. The engine draws the 3D view in full resolution across the whole screen (1920 x 504, Doom's vertical field of view widened to the screen), with the status bar, menus and messages on top at 4:3; 35 fps on the VM. A main menu (Play / Continue, New game, all settings) comes first; the game then has the screen to itself with no header or button bar, and BACK returns to the menu. **Turn the controller to aim, push it to walk and sidestep, press to fire and open doors, press twice for the next weapon.** While you play, the game has the controller to itself: the HMI ignores the knob, press and tilt, so pushing forward no longer opens the HMI's pull-down menu and pushing left no longer leaves the game. BACK, MENU and the touchscreen always work. This uses the controller gate that `deploy-car.sh` loads into the HMI (see [5.1](#51-what-deploy-carsh-install-does)). Without the gate, the game reads the controller signal itself and the HMI reacts to it too. It pauses when you leave the screen or a popup / call covers it, and saves itself each time, so it carries on where you stopped. Settings, in the main menu: difficulty, episode, move speed (slow walk by default, walk, run), aim speed and direction, render resolution (full / medium / low). GPL-2.0, see [Doom licences](#doom-licences). **Parked only** by default: the game saves and waits while the car drives (setting *Parked only*, can be turned off). |
 | **Engine Config** | Live engine tweaks as tabs, starting with **Exhaust Flap**: Open the flap, Close it, hand control back to the car (OEM) or let it follow the driving mode (**Drive mode**: Sport open, Comfort / Adaptive OEM, Eco Pro closed, on every change), shown on the rear silencer with the flap's butterfly turning in the right tailpipe and the big state word. Open / Close are sent again every 15 s (*Hold*, the DME lets a tester's command go after ~20 s), and Close is handed back to the car above a set engine speed (*Close: hand back above*, 4,000 rpm by default) or without a live engine speed. **Safe by default** — the *Exhaust Flap* setting ships **Disarmed** (simulated, touches nothing); set it to **Armed** only after you have validated the command on your own car. When armed and a matching DME is detected, it drives the electric exhaust flap over the car's own diagnostic link (UDS `2F 60FD` "EL_AGK", Bosch MG1 / DME8 as used by B48 / B58 / S58 on MGU ID7; OPEN 10 %, CLOSE 90 %, OEM hands control back and the DME self-times the override in ~20 s). The command was confirmed on a real car; other DME variants are unverified, so each owner arms it themselves. **Tuned DME (experimental):** pick the tuning software the car runs in Settings (*Tuning software*: Off, BM3, MHD; ships Off, which sends nothing) and its tabs appear: **BM3** — Engine Map 1–4 and Burbles (written to the DME's memory and confirmed by read-back, only after the BM3 CustomROM is identified) and Active Sound (ASD on / off); **MHD** — Engine Map 1–4 and Max Cooling (each press counts when the DME echoes it). Other tuning software can be added (see the app's README). **xDrive (experimental, ships Off):** switches xDrive off until the next ignition cycle through the DSC's own `LMV_FUNKTION` job (issue #28). It only works with the engine off, in P, parking brake on, stationary, and needs two presses. The DSC reports AWD / RWD once the engine runs, and the ignition cycle brings xDrive back. **xDrive live** (read only, on an xDrive car or with the xDrive setting): the front / rear split, each wheel's slip, the front axle against the rear, steering wheel, yaw rate and g. |
 | **Ambient config** | The ambient light's colour: set one of BMW's colours by number, or let the driving mode choose (a colour each for Sport, Comfort and Eco Pro, on a plug-in hybrid Sport, Hybrid, Electric and Eco Pro, and Adaptive on cars that have it; *Leave as is* gives your own colour back). It runs from the head unit's start, so the modes work with the app closed. Only the colour is set; brightness and the light's other modes stay as they are. On the Animations tab, Turn signal glow (that side's lights blink green) and Open door red can be switched on; both are off by default. With the car locked and left, it gives the lights back and writes nothing, so the car can sleep. Only for use on private property (hidden until its setting is switched on, off by default): a Strobe tab flashes the high beam. **Police** (the default) flashes one headlight, then both, then the other (4 flashes of 80 ms, tunable: flashes a burst, flash length, order); **Strobe** flashes the high beam and fog lights; **In turn** the left and right lights; up to about 5 flashes a second, the most the head unit's diagnostic link passes. The flashes are the car's own light functions, switched on for a set time by the body controller (`LEUCHTEN_FUNKTION`, BDC / BDC_G11 / BDC_G05), so nothing runs brighter than the car makes it and nothing stays on if the app stops; for police the other LED headlight unit (FLM01 / FLE) is held at its own lights meanwhile. Cars without that job fall back to the headlight units' LED channels (never above the current the car's own lamp test uses) or the body controller's lamp outputs. A light show flashes every outside light in turn for 15 s. At most 30 s a press, then a rest at least as long, at most 2 minutes in any 10, and on FLM01 headlights it stops at 90 °C LED temperature. It needs someone in the car; Stop, switching the setting off or locking and leaving the car stops it and hands the lamps back to the car. If IterioDev's Comfort tool (behind his Ambient Light app) is running, the app warns that both change the same lights and recommends uninstalling it: one ambient app at a time. |
+| **Transmission Config** | Experimental ZF 8HP monitor, read from the gearbox unit (EGS) over the head unit's own diagnostic link, no cable: live oil and electronics temperatures, shaft and engine speeds, gear and converter-clutch state; clutch fill-pressure and fast-fill corrections A–E with their evaluation counters; upshift / downshift / skip maps and cold upshift maps; time spent in each of 23 temperature bands; converter and engagement learning; the EGS fault memory; a browser for all 108 records it reads, and the 8HP applied-element reference. Read-only. Verified on a G22 (SGBD `0F25D0`) and read on a G20 330e's hybrid 8HP; any other EGS stops reading unless *EGS variant* is set to *Try any (unverified)*. Every page carries an EXPERIMENTAL badge. Details in [apps/zf8hp/README.md](apps/zf8hp/README.md). |
 
 **Experimental:** [Transmission Config](apps/zf8hp/README.md) (ZF 8HP) reads clutch adaptations, shift maps,
 temperature history and live transmission data; it is read-only, requires the verified EGS
@@ -548,24 +552,23 @@ the default):
 
 ```
  ┌──┬──────────────────────────────────────────────────────┬───────────────────────┐
- │H │ M Vitals  ENGINE  THERMALS  FUEL & IGN.  CHASSIS │ HMI status strip       │  header: app name + page tabs
- ├──┼──────────────────────────────────────────────────────┴───────────────────────┤
+ │H │ M Vitals  ENGINE  THERMALS  FUEL & IGN.  CHASSIS  SETTINGS │ HMI status strip │  header: app name, page tabs, Settings
+ ├──┼────────────────────────────────────────────────────────────┴──────────────────┤
  │  │                                                                              │
  │ <│                       page content, scaled up to fill                        │
  │  │                                                                              │
- ├──┴──────────────────────────────────────────────────────────────────────────────┤
- │      NEXT PAGE          PREVIOUS PAGE          SETTINGS                          │  slim 48 px bar
- └─────────────────────────────────────────────────────────────────────────────────┘
+ │  │                                                                              │
+ └──┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Header** in the HMI's title strip, in the strip's own black: the app's name, its page tabs
   and badges (DEMO), only as wide as that. Right of it the strip is see-through, so the HMI's own
   status (radio station, phone signal, notifications, volume, voice, profile, clock) shows and
   works as usual.
-- **Slim button bar**, 48 px instead of the HMI's 120 px, drawn by the kit. Each label sits over
-  the HMI button underneath, so touch and controller presses still go to the HMI as before.
-  The bar buttons report focus to the app (`Focusable=3`), so the button the iDrive controller
-  is on lights up like BMW's own.
+- **No button bar** with mgu-render (touch routed to the app): Next page / Previous page become
+  the header's tabs, Settings its last tab, and an app's other buttons are drawn on its page. The
+  page gets the full height. With an older renderer the kit draws a slim 48 px bar instead, each
+  label over the HMI button underneath (`Focusable=3`, so the button the controller is on lights up).
 - The HMI's back arrow and home button stay visible: that column is see-through down to the
   bar; below it the app covers the HMI's own bar, so it doesn't show at the bottom left. HMI
   popups (options, warnings, calls) hide the renderer's surface while they're open.

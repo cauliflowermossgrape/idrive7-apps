@@ -81,6 +81,8 @@ class RenderClient extends EventEmitter {
             // testing: the screen another head unit's renderer tells (MGU_RENDERD_SCREEN=2880x960: iDrive 8)
             const m = /^(\d+)x(\d+)$/.exec(process.env.MGU_RENDERD_SCREEN || '');
             if (m) this.screen = { w: Number(m[1]), h: Number(m[2]) };
+            // as the car's renderer: touch routing on, so the kit runs the screen (tabs, no button bar)
+            this.touch = process.env.MGU_RENDERD_TOUCH !== '0';
             this._write(msg(M.HELLO, this._hello()));
             if (this.opts.native) { this.native = true; this._write(this._u32msg(X.MODE, [X_MODE_LAYER])); }
             setImmediate(() => this.emit('ready', this.screen));
