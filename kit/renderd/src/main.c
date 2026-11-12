@@ -440,14 +440,24 @@ static void apply_visibility(client *c) {
      * Store's beside idrive7-apps') or the HMI may have set the screen's layers without it meanwhile: it was then
      * visible but not on any screen, and the app showed a black page. Should that fail, through our own connection
      * as before 2.1.12, in the same commit as its visibility: the app shows, at the old cost of other programs'
-     * layers taken off the screen. */
+     * layers taken off the screen. Our other shown layers go on again first: that connection's copy of the list
+     * no longer has them (they went on through connections of their own). With no screen at all, the next update
+     * tries again (layer_on stays 0). */
+    int placed = 1;
     if (on && !c->layer_on &&
         layer_onto_screen(LAYER_BASE + c->slot, out_w > 0 ? out_w : screen_w, out_h > 0 ? out_h : screen_h)) {
         struct ivi_controller_screen *scr = centre_screen();
-        if (scr) ivi_controller_screen_add_layer(scr, c->cl);
+        if (scr) {
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                client *o = clients[i];
+                if (o && o != c && o->cl && o->layer_on) ivi_controller_screen_add_layer(scr, o->cl);
+            }
+            ivi_controller_screen_add_layer(scr, c->cl);
+        }
+        placed = scr != NULL;
         log_warn("%s: its layer %s", c->app, scr ? "went on the screen through the renderer's own connection" : "could not be put on any screen");
     }
-    c->layer_on = on;
+    c->layer_on = on && placed;
     ivi_controller_layer_set_visibility(c->cl, on);
     ivi_controller_surface_set_visibility(c->cs, on);
     ivi_controller_commit_changes(ictl);
