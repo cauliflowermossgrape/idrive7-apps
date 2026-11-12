@@ -112,14 +112,20 @@ async function background(bg) {
         if (key === 'turnGlow' || key === 'doorRed' || key === 'drive') control.signals();
     });
     const others = new Others({ log }).start();
-    // the high beam strobe and the light show (strobe.js): private ground only, behind the experimental setting,
+    // the high beam strobe and the light show (strobe.js): only for use on private property, behind its setting,
     // with someone in the car; why not, or null
     const checks = () => [
         ['Switched on in the settings', settings.get('strobe') === true],
         ['Someone in the car', !control._away],
     ];
     const gate = () => { const c = checks().find((x) => !x[1]); return c ? (c[2] || c[0].toLowerCase() + ': no') : null; };
-    const strobe = new Strobe({ diag, log, allowed: gate });
+    // the high beam's channels learned on a headlight unit, kept in the data folder
+    const fs = require('fs'), path = require('path');
+    const chFile = bg.dataDir ? path.join(bg.dataDir, 'strobe_channels.json') : null;
+    let channels = null;
+    try { channels = chFile ? JSON.parse(fs.readFileSync(chFile, 'utf8')) : null; } catch (e) { channels = null; }
+    const strobe = new Strobe({ diag, log, allowed: gate, channels });
+    strobe.on('learned', (c) => { try { if (chFile) fs.writeFileSync(chFile, JSON.stringify(c)); } catch (e) { log.warn('strobe: ' + e); } });
     const findStrobe = () => { if (settings.get('strobe') === true && !strobe.kind) strobe.find().catch((e) => log.warn('strobe: ' + e)); };
     findStrobe();
     settings.onChange((key) => { if (key === 'strobe') { if (settings.get('strobe') === true) findStrobe(); else strobe.stop(); } });
@@ -355,15 +361,16 @@ mgu.run({
         }
 
         /*
-         * Strobe (experimental, private ground only): the high beams flashed by the body controller (strobe.js), both
-         * together or left and right in turn, fast / normal / slow, at most 30 s a press; and the light show, every lamp
-         * output flashing for 15 s, run by the body controller itself. Only with the setting on and someone in the car;
+         * Strobe (only for use on private property): the high beams flashed through the headlight units or the body
+         * controller (strobe.js), both together or left and right in turn, fast / normal / slow, at most 30 s a press;
+         * Learn high beam finds a headlight's high beam channels; and the light show, 15 s. Only with the setting on and someone in the car;
          * a press arms, a second starts; Stop, the setting off or the car locked and left stops it and gives the lamps back.
          */
         function drawStrobe(cv, t) {
             G.panel(cv, t, 24, 44, 736, 468, 'High beam strobe');
-            const kindText = !strobe ? 'Not available' : strobe.kind ? 'Body controller: ' + (strobe.kind === 'g05' ? 'BDC_G05' : 'BDC / BDC_G11')
-                : 'Looking for the body controller\'s lamp control...';
+            const kindText = !strobe ? 'Not available' : strobe.kind ? 'Lamps: ' + strobe.kindName
+                + (strobe.head ? (strobe.high ? ' · high beam channel ' + strobe.high.map((c) => c.ch).join(', ') : ' · high beam not learned yet') : '')
+                : 'Looking for the headlights\' lamp control...';
             cv.text(kindText, 44, 112, 18, t.dim);
             checks().forEach(([label, ok, why], i) => {
                 const y = 148 + i * 32;
@@ -385,10 +392,19 @@ mgu.run({
             G.button(cv, t, 520, 426, 220, 48, on ? 'Stop' : 'Start strobe', () => {
                 if (on) strobe.stop(); else strobe.start({ pattern: pat, rate }).catch((e) => log.warn('strobe: ' + e));
                 return redraw();
-            }, { primary: on, key: 'strobe-go', confirm: !on, busy: !strobe || !strobe.kind || strobe.running === 'show' });
+            }, { primary: on, key: 'strobe-go', confirm: !on, busy: !strobe || !strobe.kind || strobe.running === 'show' || strobe.running === 'learn' });
+            if (strobe && strobe.head) {
+                // the headlight units: which channels are the high beam, seen while it is switched on with the stalk
+                const learning = strobe.running === 'learn';
+                G.button(cv, t, 520, 338, 220, 48, learning ? 'Stop' : 'Learn high beam', () => {
+                    if (learning) strobe.stop(); else strobe.learn().catch((e) => log.warn('strobe: ' + e));
+                    return redraw();
+                }, { primary: learning, key: 'strobe-learn', busy: !learning && !!strobe.running });
+            }
 
             G.panel(cv, t, 776, 44, 800, 468, 'Light show');
-            ['Every lamp output flashes for 15 s, run by the body controller', 'itself (BDC_G11 and BDC_G05).'].forEach((l, i) => cv.text(l, 796, 112 + i * 26, 18, t.dim));
+            (strobe && strobe.head ? ['The headlights flash fully on and dark, left and right in', 'turn, for 15 s.']
+                : ['Every lamp output flashes for 15 s, run by the body controller', 'itself (BDC_G11 and BDC_G05).']).forEach((l, i) => cv.text(l, 796, 112 + i * 26, 18, t.dim));
             cv.text('Only for use on private property.', 796, 190, 20, t.warn, { font: 'bold' });
             ['Flashing headlights on public roads is illegal and dangerous', 'to other drivers.'].forEach((l, i) => cv.text(l, 796, 220 + i * 26, 18, t.text));
             const srate = settings.get('showRate') === 'fast' ? 'fast' : 'normal';
@@ -400,7 +416,7 @@ mgu.run({
             G.button(cv, t, 1336, 426, 220, 48, showing ? 'Stop' : 'Start show', () => {
                 if (showing) strobe.stop(); else strobe.show({ rate: srate }).catch((e) => log.warn('light show: ' + e));
                 return redraw();
-            }, { primary: showing, key: 'show-go', confirm: !showing, busy: !strobe || !strobe.kind || strobe.running === 'strobe' });
+            }, { primary: showing, key: 'show-go', confirm: !showing, busy: !strobe || !strobe.kind || strobe.running === 'strobe' || strobe.running === 'learn' });
         }
 
         async function render() {
