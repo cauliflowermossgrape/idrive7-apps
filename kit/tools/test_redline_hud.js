@@ -459,6 +459,45 @@ for (let t = 0; t < Hud.DEMO_MS * 3; t += 37) {
         }
         ok(bad.length === 0, 'ramp: the needle is one visible piece either side of every mark (wrong at: ' + bad.slice(0, 8).join(', ') + ')');
     }
+    // 2.0.39 (issue #91 feedback): the HUD looks page's preview is drawn on the screen's recorder, which had no fill(),
+    // so Ramp's rail and band came out black. Recorded and played back (the PNG fallback) it matches the glass, and
+    // the gear's foot is level with the 0's in every gear font, the line and the readout under it
+    {
+        const R = require(path.join(ROOT, 'kit', 'runtime', 'record'));
+        const K = 2, W = Draw.IW * K, H = Draw.IH * K;
+        const frame = (font) => ({ d: { rpm: 5200, gear: 1, stage: 'M' }, shift: 6400, redline: 6800, max: 8000, blink: true,
+            cue: { from: 4800, at: 6400, shift: false, limiter: false }, down: 0, peak: 0, chip: null, readouts: [{ label: 'km/h', value: '42', tone: 'text' }], mode: 'M',
+            opts: Hud.optsFrom(settingsOf({ hudStyle: 'ramp', hudGearFont: font })) });
+        const rec = new R.Recorder(W, H), a = new Canvas(W, H), b = new Canvas(W, H);
+        Draw.drawLayer(Draw.scaled(rec, K, 0, 0), frame('auto')); R.play(rec.words(), a);
+        Draw.drawLayer(Draw.scaled(b, K, 0, 0), frame('auto'));
+        let diff = 0, lit = 0;
+        for (let i = 0; i < a.d.length; i++) diff = Math.max(diff, Math.abs(a.d[i] - b.d[i]));
+        for (let y = 45 * K; y < 60 * K; y++) for (let x = 250 * K; x < 300 * K; x++) if (a.d[(y * W + x) * 4 + 3] > 128) lit++;
+        ok(diff <= 2 && lit > 100, 'ramp preview: the recorder draws the rail and band as the glass does (max diff ' + diff + ', rail px ' + lit + ')');
+        ok(R.stripTris && R.triangulate([[0, 0], [10, 0], [10, 10], [5, 3], [0, 10]]).length === 3, 'recorder: a concave polygon cut into 3 triangles');
+        // the lowest lit row in a column range of one layer drawn at 1x
+        const foot = (font, x0, x1, y0, y1) => {
+            const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, frame(font));
+            let low = -1; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (cv.d[(y * cv.w + x) * 4 + 3] > 128) low = y;
+            return low;
+        };
+        // the line only parts the gear from a readout: Gear off, or nothing under the gear, leaves no line
+        const lineAt = (gear, ro) => {
+            const fr = frame('auto'); fr.opts = Object.assign({}, fr.opts, { gear: gear }); fr.readouts = ro;
+            const cv = new Canvas(Draw.IW, Draw.IH); Draw.drawLayer(cv, fr);
+            let n = 0; for (let x = 66; x < 92; x++) if (cv.d[(95 * cv.w + x) * 4 + 3] > 128) n++;
+            return n;
+        };
+        const kmh = [{ label: 'km/h', value: '42', tone: 'text' }];
+        ok(lineAt(true, kmh) > 20 && lineAt(false, kmh) === 0 && lineAt(true, []) === 0,
+            'ramp: the line under the gear only with a gear and a readout (' + [lineAt(true, kmh), lineAt(false, kmh), lineAt(true, [])].join(' / ') + ')');
+        const zero = foot('auto', 30, 46, 70, 100);
+        ['auto', 'ubuntu', 'barlow'].forEach((font) => {
+            const g = foot(font, 100, 126, 50, 94), line = foot(font, 70, 90, 91, 100);
+            ok(Math.abs(g - zero) <= 1 && line - g >= 3, 'ramp: gear in ' + font + ' ends level with the 0 (' + g + ' / ' + zero + '), clear of the line (' + line + ')');
+        });
+    }
     // placement and the windshield's window
     const at = (o) => Hud.placeOf(settingsOf(o));
     ok(JSON.stringify(at({})) === JSON.stringify({ x: 200, y: 140, w: 400, h: 130 }) && Object.keys(Hud.outsideGlass(at({}))).length === 0, 'place: default fully on the glass');

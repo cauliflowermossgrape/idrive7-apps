@@ -506,8 +506,9 @@ function scaled(r, k, ox, oy) {
         arc: (cx, cy, r0, r1, a0, a1, c) => r.arc(X(cx), Y(cy), r0 * k, r1 * k, a0, a1, c),
         fillRect: (x, y, w, h, c) => r.fillRect(X(x), Y(y), w * k, h * k, c),
         quad: (pts, c) => r.quad(P(pts), c),
-        // any polygon in one piece (Ramp's rail and band: no seams); a canvas without it gets nothing drawn
-        fill: (pts, c) => (r.fill ? r.fill(P(pts), c) : null),
+        // any polygon in one piece (Ramp's rail and band: no seams); a canvas without it gets nothing drawn.
+        // strip: pts is a top edge then its bottom edge reversed, point for point (the screen's recorder cuts it so)
+        fill: (pts, c, strip) => (r.fill ? r.fill(P(pts), c, strip) : null),
         polyline: (pts, w, c) => r.polyline(P(pts), w * k, c),
         // a path with round joins (Ramp's rail); a plain polyline where the canvas has no stroke
         stroke: (pts, w, c) => (r.stroke ? r.stroke(P(pts), w * k, c) : r.polyline(P(pts), w * k, c)),
