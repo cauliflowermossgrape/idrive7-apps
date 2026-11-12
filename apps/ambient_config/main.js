@@ -386,15 +386,15 @@ mgu.run({
             // police on the high beam (light functions with the headlight units): its tuning in place of Lights
             const policeTune = strobe && strobe.kind === 'fn' && strobe.mask && pat === 'police';
             const cyc = (key, vals, def) => { const v = String(settings.get(key) || def); return vals.indexOf(v) >= 0 ? v : def; };
-            const burst = cyc('policeBurst', ['1', '2', '3', '4'], '3'), flashMs = cyc('strobeFlashMs', ['50', '80', '100', '150'], '100');
-            const order = cyc('policeOrder', ['lrb', 'lr', 'lbr'], 'lrb');
+            const burst = cyc('policeBurst', ['1', '2', '3', '4'], '4'), flashMs = cyc('strobeFlashMs', ['50', '80', '100', '150'], '80');
+            const order = cyc('policeOrder', ['lbr', 'lrb', 'lr'], 'lbr');
             const next = (vals, v) => vals[(vals.indexOf(v) + 1) % vals.length];
             if (policeTune) {
                 cv.text('Police: flashes a burst · flash · order (tap to change)', 44, 274, 18, t.dim);
                 const ORDER_NAMES = { lrb: 'L R Both', lr: 'L R', lbr: 'L Both R' };
                 [['policeBurst', burst + (burst === '1' ? ' flash' : ' flashes'), ['1', '2', '3', '4'], burst],
                     ['strobeFlashMs', flashMs + ' ms', ['50', '80', '100', '150'], flashMs],
-                    ['policeOrder', ORDER_NAMES[order], ['lrb', 'lr', 'lbr'], order]].forEach(([key, label, vals, v], i) => {
+                    ['policeOrder', ORDER_NAMES[order], ['lbr', 'lrb', 'lr'], order]].forEach(([key, label, vals, v], i) => {
                     G.button(cv, t, 44 + i * 150, 284, 140, 42, label, () => { settings.set(key, next(vals, v)); return redraw(); }, { key: 'tune-' + key });
                 });
             } else if (strobe && strobe.patterns) {

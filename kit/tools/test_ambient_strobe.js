@@ -43,7 +43,7 @@ function fakeCar(car, o, clock) {
             if (sid === 0x3E) return data[0] === 0x80 ? null : [0x7E, 0x00];
             if (isHead) {
                 const did = car === 'fle' ? [0xD6, 0x31] : [0xD6, 0x67];
-                if (sid === 0x22 && data[0] === 0xD6 && data[1] === 0x30) return car === 'flm' ? [0x62, 0xD6, 0x30].concat(new Array(8).fill(60), new Array(12).fill((opt.hotC || 50) + 40)) : [0x7F, 0x22, 0x31];
+                if (sid === 0x22 && data[0] === 0xD6 && data[1] === 0x30) return car === 'flm' || car === 'fnflm' ? [0x62, 0xD6, 0x30].concat(new Array(8).fill(60), new Array(12).fill((opt.hotC || 50) + 40)) : [0x7F, 0x22, 0x31];
                 if (sid === 0x22) return data[0] === did[0] && data[1] === did[1] ? [0x62].concat(did, opt.deaf ? LOW.slice(0, 2 * n) : head[target]) : [0x7F, 0x22, 0x31];
                 if (sid === 0x31 && data[0] === 0x02 && data[1] === 0x30 && data[2] === 0x00) return session[target] === 0x03 ? [0x71, 0x02, 0x30, 0x00] : [0x7F, 0x31, 0x7F];
                 if (sid === 0x31 && data[0] === 0x01 && data[1] === 0xA5 && data[2] === 0x43) {
@@ -118,8 +118,8 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         await run;
         const f = fns(diag);
         ok(diag.sent[0] === '40 10 03', 'light functions: the extended session first');
-        ok(f.slice(0, 8).map((x) => x[1]).join() === '9,9,10,10,9,9,10,10' && f.slice(0, 8).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 10),
-            'police without headlight units: cornering left, left, right, right, 100 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
+        ok(f.slice(0, 8).map((x) => x[1]).join() === '9,9,10,10,9,9,10,10' && f.slice(0, 8).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 8),
+            'police without headlight units: cornering left, left, right, right, 80 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
         const offs = f.filter((x) => x[3] === 0).map((x) => x[1]).sort((a, b) => a - b).join();
         ok(offs === '9,10' && diag.sent[diag.sent.length - 1] === '40 10 01', 'stopped: each used light switched off (time 0), the default session');
         ok(f.every((x) => x[2] * 256 + x[3] <= 15), 'never more than 150 ms lit a request');
@@ -160,7 +160,7 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         const { s, diag } = make('fnflm');
         ok(await s.find() === 'fn' && s.mask && s.mask.sides.join() === '67,68' && diag.sent.every((x) => / 22 /.test(x)), 'light functions and FLM01 headlights found, reads only');
         diag.sent.length = 0;
-        const run = s.start({ pattern: 'police', rate: 'fast' });
+        const run = s.start({ pattern: 'police', rate: 'fast', burst: 3, order: 'lrb', flashMs: 100 });
         stopAfter(s, diag, 40);
         await run;
         const seq = diag.sent.filter((x) => / 31 0[12] 30 00|2E D5 42/.test(x)).map((x) => /2E D5 42 00 05 00 0A/.test(x) ? 'H' : /2E D5 42/.test(x) ? 'h0' : x.slice(0, 2) + (/ 31 01/.test(x) ? 'hold' : 'free'));
@@ -168,6 +168,36 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
             'police: left (right held), right (left held), both, right, left, then both (' + seq.join() + ')');
         ok(JSON.stringify(writes(diag, 0x44)[0]) === JSON.stringify(LOW), 'the held side: exactly its own lights as read, nothing brighter');
         ok(/ 31 02 30 00,40 2E D5 42 00 05 00 00,43 10 01,44 10 01,40 10 01$/.test(diag.sent.join()), 'stopped: let go, high beam off, every session back to default (' + diag.sent.slice(-5).join(', ') + ')');
+    }
+
+    // police as it comes: 4 flashes of 80 ms, left, both, right, both
+    {
+        const { s, diag } = make('fnflm');
+        await s.find(); diag.sent.length = 0;
+        const run = s.start({});
+        stopAfter(s, diag, 40);
+        await run;
+        const seq = diag.sent.filter((x) => / 31 0[12] 30 00|2E D5 42 00 05 00 08/.test(x)).map((x) => /2E D5 42/.test(x) ? 'H' : x.slice(0, 2) + (/ 31 01/.test(x) ? 'hold' : 'free'));
+        ok(seq.slice(0, 17).join() === '44hold,H,H,H,H,44free,H,H,H,H,43hold,H,H,H,H,43free,H', 'police by default: 4 flashes of 80 ms, left, both, right, both (' + seq.join() + ')');
+    }
+    // hot headlights stop police too
+    {
+        const { s, diag } = make('fnflm', { hotC: 95 });
+        await s.find(); diag.sent.length = 0;
+        await s.start({});
+        ok(/hot \(95 °C\)/.test(s.note) && !diag.sent.some((x) => /2E D5 42 00 05 00 [^0]/.test(x)), 'police: hot headlights, no flash (' + s.note + ')');
+    }
+    // at most 2 minutes of flashing in 10
+    {
+        const { s, diag } = make('fn');
+        await s.find();
+        for (let i = 0; i < 4; i++) { await s.start({ pattern: 'both' }); s._clock.t += 31000; }
+        diag.sent.length = 0;
+        await s.start({ pattern: 'both' });
+        ok(diag.sent.length === 0 && /2 min in the last 10 min/.test(s.note), 'after 2 minutes of flashing: rest (' + s.note + ')');
+        s._clock.t += 600000;
+        await s.start({ pattern: 'both' });
+        ok(/done/.test(s.note), 'and after the rest it flashes again');
     }
 
     // police tuned: 2 flashes a burst, 50 ms, left / right only, 2 flashes a second

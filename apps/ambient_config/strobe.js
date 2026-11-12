@@ -60,9 +60,9 @@ const F = { high: 0x05, indL: 0x06, indR: 0x07, fog: 0x08, cornL: 0x09, cornR: 0
     reverse: 0x0F, parkL: 0x10, parkR: 0x11 };
 // a flash's length (10 ms) and the least time from one flash to the next, by rate; never more than 150 ms lit, so
 // nothing stays on if the app goes
-const FLASH = { fast: { on: 10, gap: 0 }, normal: { on: 12, gap: 120 }, slow: { on: 15, gap: 350 } };
+const FLASH = { fast: { on: 8, gap: 0 }, normal: { on: 12, gap: 120 }, slow: { on: 15, gap: 350 } };
 // police: this many high beam flashes on one side, then on the other (the other headlight held at its own lights)
-const POLICE_BURST = 3;
+const POLICE_BURST = 4;
 // the order of the bursts, round and round
 const POLICE_ORDERS = {
     lrb: ['left', 'right', 'both', 'right', 'left', 'both'],
@@ -92,6 +92,10 @@ const LEARN_MS = 15000;          // how long learn() waits for the high beam
 // (22 D630, the last 12 bytes, value - 40 °C) at or above HOT_C stop it, read at the start and every HOT_EVERY_MS
 const MAX_CUR = 150;             // 1500 mA, the most the description allows any channel
 const REST_MS = 10000;
+// and over time: at most BUDGET_MS of flashing in any BUDGET_WINDOW_MS
+const BUDGET_MS = 120000;
+const BUDGET_WINDOW_MS = 600000;
+const HOT_FN_EVERY_MS = 10000;   // the headlights' temperatures while the body controller flashes (police)
 const HOT_C = 90;
 const HOT_EVERY_MS = 5000;
 const statusIndex = (kind, el) => KINDS[kind].first + el - 1;   // the output's byte after 62 <did>
@@ -259,9 +263,11 @@ class Strobe extends EventEmitter {
 
     /** FLM01: the hottest calculated LED temperature of the sides (°C), or null where not known. */
     async _hottest() {
-        if (this.kind !== 'flm') return null;
+        // FLM01 headlight units: their own (strobe on the channels) or held for police
+        const sides = this.kind === 'flm' ? this.sides : this.kind === 'fn' && this.mask && this.mask.head === HEAD.flm ? this.mask.sides : null;
+        if (!sides) return null;
         let max = null;
-        for (const a of this.sides) {
+        for (const a of sides) {
             const r = await this._ask(a, 0x22, [0xD6, 0x30], 1500);
             if (!r || r[0] !== 0x62 || r.length < 23) continue;
             for (const b of r.slice(11, 23)) if (b > 0 && b < 0xFF) max = Math.max(max === null ? -99 : max, b - 40);
@@ -348,7 +354,7 @@ class Strobe extends EventEmitter {
      */
     async _runPolice(flash, ms, o) {
         const t0 = this.now(), m = this.mask, H = m.head;
-        const phases = POLICE_ORDERS[o && o.order] || POLICE_ORDERS.lrb;
+        const phases = POLICE_ORDERS[o && o.order] || POLICE_ORDERS.lbr;
         const burst = Math.max(1, Math.min(4, +(o && o.burst) || POLICE_BURST));
         const base = {};
         let step = 0, end = null, held = null;
@@ -357,6 +363,9 @@ class Strobe extends EventEmitter {
                 const r = await this._ask(a, 0x10, [0x03]);
                 if (!r || r[0] !== 0x50) { end = ['Strobe: ' + hex([a]) + ' refused the diagnostic session', 'warn']; return; }
             }
+            const hot0 = await this._hottest();
+            if (hot0 !== null && hot0 >= HOT_C) { end = ['Strobe not started: the headlights are hot (' + hot0 + ' °C)', 'warn']; return; }
+            let hotT = this.now();
             for (const a of m.sides) {
                 const r = await this._ask(a, 0x22, H.read, 1500);
                 if (!r || r[0] !== 0x62 || r.length < 3 + 2 * H.n) { end = ['Strobe: no channel reading from the headlight ' + hex([a]), 'warn']; return; }
@@ -364,6 +373,11 @@ class Strobe extends EventEmitter {
                 for (let i = 0; i < H.n; i++) base[a].push({ cur: r[3 + 2 * i], pwm: r[4 + 2 * i] });
             }
             for (let k = 0; !end && !this._stop; k++) {
+                if (this.now() - hotT > HOT_FN_EVERY_MS) {
+                    const hot = await this._hottest();
+                    hotT = this.now();
+                    if (hot !== null && hot >= HOT_C) { end = ['Strobe stopped: the headlights got hot (' + hot + ' °C)', 'warn']; break; }
+                }
                 // flashing the left side holds the right one, and the other way round; both: none held
                 const phase = phases[k % phases.length];
                 const hold = phase === 'left' ? m.sides[1] : phase === 'right' ? m.sides[0] : null;
@@ -406,11 +420,32 @@ class Strobe extends EventEmitter {
     _why() {
         if (!this.kind) return 'no headlight or lamp output control found';
         if (this.head && !this.high) return 'the high beam\'s channels are not known yet (Learn)';
-        if (this.restUntil && this.now() < this.restUntil) return 'the LEDs rest ' + Math.ceil((this.restUntil - this.now()) / 1000) + ' s more';
-        return this.allowed();
+        return this._resting() || this.allowed();
     }
 
-    _rest(t0) { this.restUntil = this.now() + Math.max(REST_MS, this.now() - t0); }
+    _rest(t0) {
+        const t1 = this.now();
+        this.restUntil = t1 + Math.max(REST_MS, t1 - t0);
+        this.runs = (this.runs || []).filter((r) => r[1] > t1 - BUDGET_WINDOW_MS).concat([[t0, t1]]);
+    }
+
+    /** Flashing time in the last BUDGET_WINDOW_MS, ms. */
+    _flashedLately() {
+        const from = this.now() - BUDGET_WINDOW_MS;
+        return (this.runs || []).reduce((n, r) => n + Math.max(0, r[1] - Math.max(r[0], from)), 0);
+    }
+
+    /** Why the lights must rest, or null. */
+    _resting() {
+        if (this.restUntil && this.now() < this.restUntil) return 'the lights rest ' + Math.ceil((this.restUntil - this.now()) / 1000) + ' s more';
+        if (this._flashedLately() >= BUDGET_MS) {
+            // the oldest run leaves the window when enough has gone by
+            let need = this._flashedLately() - BUDGET_MS + 1000, wait = 0;
+            for (const r of this.runs) { wait = r[1] + BUDGET_WINDOW_MS - this.now(); need -= r[1] - r[0]; if (need <= 0) break; }
+            return 'the lights have flashed ' + Math.round(BUDGET_MS / 60000) + ' min in the last ' + Math.round(BUDGET_WINDOW_MS / 60000) + ' min; rest ' + Math.ceil(Math.max(wait, 1000) / 60000) + ' min';
+        }
+        return null;
+    }
 
     /** The high beams flashing until stop(), MAX_MS, a refusal or allowed() saying no. */
     async start(o) {
@@ -533,8 +568,7 @@ class Strobe extends EventEmitter {
     /** The light show for SHOW_MS: the body controller's own (BDC_G11, BDC_G05), or the headlights in turn. */
     async show(o) {
         if (this.running) return;
-        const why = !this.kind ? 'no headlight or lamp output control found'
-            : this.restUntil && this.now() < this.restUntil ? 'the LEDs rest ' + Math.ceil((this.restUntil - this.now()) / 1000) + ' s more' : this.allowed();
+        const why = !this.kind ? 'no headlight or lamp output control found' : this._resting() || this.allowed();
         if (why) { this._say('Light show not started: ' + why, 'warn'); return; }
         const s0 = this.now();
         if (this.kind === 'fn') {
