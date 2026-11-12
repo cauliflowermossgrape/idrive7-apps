@@ -118,10 +118,10 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         await run;
         const f = fns(diag);
         ok(diag.sent[0] === '40 10 03', 'light functions: the extended session first');
-        ok(f.slice(0, 8).map((x) => x[1]).join() === '9,9,10,10,9,9,10,10' && f.slice(0, 8).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 8),
-            'police without headlight units: cornering left, left, right, right, 80 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
+        ok(f.slice(0, 8).map((x) => x[1]).join() === '5,5,5,5,5,5,5,5' && f.slice(0, 8).every((x) => x[0] === 0 && x[2] === 0 && x[3] === 8),
+            'police without headlight units: high beam bursts, 80 ms each (' + f.slice(0, 6).map((x) => hex(x)).join(' / ') + ')');
         const offs = f.filter((x) => x[3] === 0).map((x) => x[1]).sort((a, b) => a - b).join();
-        ok(offs === '9,10' && diag.sent[diag.sent.length - 1] === '40 10 01', 'stopped: each used light switched off (time 0), the default session');
+        ok(offs === '5' && diag.sent[diag.sent.length - 1] === '40 10 01', 'stopped: each used light switched off (time 0), the default session');
         ok(f.every((x) => x[2] * 256 + x[3] <= 15), 'never more than 150 ms lit a request');
     }
     {

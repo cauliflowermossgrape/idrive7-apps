@@ -73,7 +73,9 @@ const POLICE_ORDERS = {
 const flashTicks = (ms) => Math.max(3, Math.min(15, Math.round((+ms || 100) / 10)));
 // the patterns, one function a request; police and in turn only ever one side at a time (the high beam is both)
 const FN_PATTERNS = {
-    police: { all: ['cornL', 'cornL', 'cornR', 'cornR'], high: ['cornL', 'cornL', 'cornR', 'cornR'] },
+    // police without headlight units to hold a side: high beam bursts with a pause (cornering lights are side
+    // markers on some cars)
+    police: { all: ['high', 'high', 'high', 'high', 'pause', 'pause'], high: ['high', 'high', 'high', 'high', 'pause', 'pause'] },
     both: { all: ['high', 'fog'], high: ['high'] },
     alternate: { all: ['cornL', 'cornR'], high: ['cornL', 'cornR'] },
 };
@@ -328,6 +330,7 @@ class Strobe extends EventEmitter {
                 if (stopWhy) { end = [what + ' stopped: ' + stopWhy, 'warn']; break; }
                 if (this.now() - t0 > ms) { end = [what + ' done (' + Math.round(ms / 1000) + ' s)', 'dim']; break; }
                 const at = this.now(), name = seq[step % seq.length];
+                if (name === 'pause') { step++; await this.sleep(Math.max(200, flash.gap)); continue; }
                 const res = await this._fn(name, flash.on);
                 used[name] = true;
                 if (res !== true) { end = [what + ' stopped: refused (' + res + ')', 'warn']; break; }
