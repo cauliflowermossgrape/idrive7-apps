@@ -83,7 +83,7 @@ module.exports = function battery12(ctx, sh) {
         }
         return now - lastActiveT < IDLE_AFTER_MOVE;
     };
-    const inUse = () => driving() || Date.now() - lastUserT < IDLE_AFTER_USER;
+    const inUse = () => !L.left && (driving() || Date.now() - lastUserT < IDLE_AFTER_USER);
     const shown = () => Date.now() - lastDrawT < SHOWN_MS;
     let paused = false;
     /** Reads may go now: driven within IDLE_AFTER_MOVE, or the app started / the page used within IDLE_AFTER_USER. */

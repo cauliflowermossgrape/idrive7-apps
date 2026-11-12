@@ -412,6 +412,36 @@ const checks = [
         assert((await (await boot(dir, {}, { demo: 'off', hybrid: '48v' })).draw()).includes('48 V SYSTEM'));
         assert((await (await boot(dir, {}, { demo: 'off', hybrid: 'no' })).draw()).includes('ALTERNATOR'));
     }],
+    ['12. the car locked and left (VehicleCondition: parked, nobody in it): nothing is read, so it can sleep; the charge done meanwhile is logged from the level before it', async () => {
+        const dir = tmp('left');
+        const b = await boot(dir, { soc: 6, soh: 90, v12: 12.5 }, { demo: 'off' });
+        const reads = [], value = reader.value.bind(reader);
+        reader.value = (k, l) => { reads.push(k); return value(k, l); };
+        now += 20000; await b.read();
+        assert(reads.indexOf('soc') >= 0, 'in use: the charge is read');
+        b.signal('VehicleCondition', { statusConditionVehicle: 'PARKEN_BN_IO' });
+        reads.length = 0; asked = [];
+        values.soc = 72; for (let i = 0; i < 3; i++) { now += 20000; await b.read(); }
+        values.soc = 100; now += 3 * 3600000; await b.read();
+        assert.deepStrictEqual([reads, asked], [[], []], 'locked and left: nothing read');
+        b.signal('VehicleCondition', { statusConditionVehicle: 'WOHNEN' });
+        now += 20000; await b.read();
+        assert(reads.indexOf('soc') >= 0, 'someone in the car again: read');
+        const s = state(dir).session || state(dir).lastCharge;
+        assert(s && s.from === 6 && s.to === 100, 'the charge from 6 %: ' + JSON.stringify(s));
+    }],
+    ['13. a charge jump right after the head unit wakes, its clock not yet set and a speed sent: logged from the level before it', async () => {
+        const dir = tmp('jump');
+        let b = await boot(dir, { soc: 6, soh: 90, v12: 12.5 }, { demo: 'off' });
+        now += 20000; await b.read();
+        b.exit();
+        // the next start: the clock as at switch-off (2 min later), the car already rolling, 71 %
+        now += 120000;
+        b = await boot(dir, { soc: 71, soh: 90, v12: 12.5 }, { demo: 'off' });
+        b.drive(8); await b.read();
+        const c = state(dir).lastCharge;
+        assert(c && c.from === 6 && c.to === 71, 'the charge 6 -> 71: ' + JSON.stringify(c));
+    }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
         const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();

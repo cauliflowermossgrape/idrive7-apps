@@ -56,6 +56,7 @@ jobs:
       - run: node kit/tools/test_dids.js
       - run: node kit/tools/test_engine.js
       - run: node kit/tools/test_edrive.js
+      - run: node kit/tools/test_fastkw.js
       - run: node kit/tools/test_widget_fixes.js
       - run: node kit/tools/test_warmup.js
       - run: node kit/tools/test_draggy.js
@@ -115,6 +116,7 @@ jobs:
       - run: node kit/tools/test_redline_hud_nav.js
       - run: node kit/tools/test_redline_features.js
       - run: node kit/tools/test_ambient_rgb.js
+      - run: node kit/tools/test_fastkw.js
       - run: node kit/tools/test_redline_fuel.js
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js

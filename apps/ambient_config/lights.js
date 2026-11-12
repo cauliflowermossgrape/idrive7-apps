@@ -10,7 +10,9 @@
  * whole-car colour is 2 writes instead of 19. The 6E answer does not prove a light took it: after a still colour the
  * buses are read back once and a light that missed it is written again. A still colour holds 60 s and is written
  * again every 40 s, a moving one holds 5 s. carColour() gives every light back to the car (NAD 0 off, read back).
- * flash(rgb, ms) lays a colour over everything for a moment; dim(f) scales the brightness (night). Writes that fail
+ * flash(rgb, ms) lays a colour over everything for a moment; overlay(key, test, at) lays one over the lights test(light)
+ * picks until overlay(key, null) - at(ms, on) with on flipping each frame, so a blink is as fast as the writes go (the turn signal's glow, an open door; the rest keep the scene, or the car's own
+ * colour); dim(f) scales the brightness (night). Writes that fail
  * in a row (the car switched off, the BDC asleep) pause the writing for 10 s.
  *
  *   const l = new Lights({ diag, log }); await l.find();
@@ -22,7 +24,7 @@ const { BDC, BUSES, parseStatus, writeFrame, releaseFrame } = require('./lin');
 const S = require('./scenes');
 
 const HOLD_S = 60, RENEW_MS = 40000, MOVE_HOLD_S = 5, MOVE_RENEW_MS = 3000;
-const PAUSE_MS = 10000, FAILS = 4;
+const PAUSE_MS = 10000, FAILS = 4, RELEASE_TRIES = 3;
 const ALL = 0;                 // NAD 0: every light of the bus
 const CHECK_MS = 1500;         // a still colour's read-back, this long after its last write
 
@@ -76,6 +78,9 @@ class Lights extends EventEmitter {
     at(light, scene, t) {
         const now = this.now();
         if (this._flash && now < this._flash.until) return { rgb: this._flash.rgb, bright: 100 };
+        // the overlay set last wins
+        const ov = this._overs ? Array.from(this._overs.values()).reverse().find((o) => o.test(light)) : null;
+        if (ov) { const v = ov.at(now - ov.t0, !!this._phase); return { rgb: v.rgb, bright: Math.round(v.bright * this._dim) }; }
         const sc = scene || this.scene;
         if (!sc) return null;
         const v = S.lightAt(sc, light, t == null ? now - this.t0 : t);
@@ -122,6 +127,21 @@ class Lights extends EventEmitter {
         }, (ms || 600) + 20);
     }
 
+    /** A colour over the lights test(light) picks: at(ms since it began) -> { rgb, bright }; test null: taken off. */
+    overlay(key, test, at) {
+        if (!this._overs) this._overs = new Map();
+        if (!test) {
+            if (!this._overs.delete(key)) return;
+            // with no colour of ours on, those lights go back to the car's
+            if (!this.scene && !this._overs.size) this._giveBack();
+        } else {
+            this._overs.delete(key);
+            this._overs.set(key, { test, at, t0: this.now() });
+        }
+        this._frame = null;
+        this._kick();
+    }
+
     dim(f) { if (f !== this._dim) { this._dim = f; this._frame = null; this._kick(); } }
 
     stop() { this._stopped = true; clearTimeout(this._timer); clearTimeout(this._onceTimer); }
@@ -142,15 +162,16 @@ class Lights extends EventEmitter {
     _next() {
         if (this._release.length) {
             const r = this._release.shift();
-            return r.light ? { lights: [r.light], frame: releaseFrame(r.light.bus, r.light.nad), off: true }
-                : { lights: this.lights.filter((l) => l.bus === r.bus), frame: releaseFrame(r.bus, ALL), off: true };
+            return r.light ? { r, lights: [r.light], frame: releaseFrame(r.light.bus, r.light.nad), off: true }
+                : { r, lights: this.lights.filter((l) => l.bus === r.bus), frame: releaseFrame(r.bus, ALL), off: true };
         }
-        const now = this.now(), flashing = !!(this._flash && now < this._flash.until + 50);
-        if (!this.scene && !flashing) return null;
-        const moving = S.moves(this.scene) || flashing, renew = moving ? MOVE_RENEW_MS : RENEW_MS, hold = moving ? MOVE_HOLD_S : HOLD_S;
+        const now = this.now(), flashing = !!(this._flash && now < this._flash.until + 50), over = !!(this._overs && this._overs.size);
+        if (!this.scene && !flashing && !over) return null;
+        const moving = S.moves(this.scene) || flashing || over, renew = moving ? MOVE_RENEW_MS : RENEW_MS, hold = moving ? MOVE_HOLD_S : HOLD_S;
         for (let tries = 0; tries < 2; tries++) {
             if (!this._frame || !this._frame.todo.length) {
                 if (this._frame && this._frame.wrote) this._frames.push(now);
+                this._phase = !this._phase;             // (overlays that blink: on one frame, off the next)
                 this._frame = { t: now - this.t0, todo: this._plan(now - this.t0), wrote: false };
             }
             while (this._frame.todo.length) {
@@ -171,13 +192,15 @@ class Lights extends EventEmitter {
     _plan(t) {
         const items = [];
         for (let bus = 0; bus < BUSES.length; bus++) {
-            const on = this.lights.filter((l) => l.bus === bus).sort((a, b) => a.y - b.y);
-            const wants = on.map((l) => this.at(l, null, t));
-            if (!on.length || wants.some((w) => !w)) continue;
+            // (no scene: only the lights an overlay or a flash colours; the others keep the car's own colour)
+            const all = this.lights.filter((l) => l.bus === bus).sort((a, b) => a.y - b.y);
+            const at = all.map((l) => this.at(l, null, t)), on = all.filter((l, i) => at[i]), wants = at.filter((w) => w);
+            if (!on.length) continue;
             const key = (w) => w.rgb.join() + '/' + w.bright, count = {};
             wants.forEach((w) => { count[key(w)] = (count[key(w)] || 0) + 1; });
             const top = Object.keys(count).sort((a, b) => count[b] - count[a])[0];
-            const most = count[top] > 1 ? wants.find((w) => key(w) === top) : null;
+            // (NAD 0 reaches every light of the bus: only when all of them take a colour of ours)
+            const most = on.length === all.length && count[top] > 1 ? wants.find((w) => key(w) === top) : null;
             if (most) items.push({ lights: on, need: on.filter((l, i) => key(wants[i]) === top), want: most, nad: ALL });
             on.forEach((l, i) => { if (!most || key(wants[i]) !== top) items.push({ lights: [l], need: [l], want: wants[i], nad: l.nad }); });
         }
@@ -247,7 +270,9 @@ class Lights extends EventEmitter {
                     });
                     if (this.error) { this.error = null; this.emit('change'); }
                 } else {
-                    if (w.off) this._release.push(w.lights.length > 1 ? { bus: w.lights[0].bus } : { light: w.lights[0] });
+                    // a give-back not taken: tried RELEASE_TRIES times, then left (the light's colour runs out by itself
+                    // within its hold), so a body module that has gone to sleep is not asked again and again
+                    if (w.off && (w.r.tries || 0) + 1 < RELEASE_TRIES) this._release.push(Object.assign({}, w.r, { tries: (w.r.tries || 0) + 1 }));
                     this.error = reply ? 'the body module refused (' + (reply[2] || 0).toString(16) + ')' : this.error || 'no answer from the body module';
                     if (++this._fails >= FAILS) {
                         this.log.warn('lights: ' + this.error + ', pausing');

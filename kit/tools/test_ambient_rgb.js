@@ -63,12 +63,13 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     const BUS = [[0x0f, 0x0c], [0x15, 0x01, 0x05, 0x13]];
     const lit = BUS.map((b) => b.map(() => [0, 0, 0]));
     const writes = [];
-    let refuse = false, drop = null;
+    let refuse = false, drop = null, asleep = false;
     const diag = {
         physical: async (target, sid, data) => {
             await sleep(2);
             if (target !== L.BDC) return null;
             const bus = data[0] === 0xda ? 0 : 1;
+            if (sid === 0x22 && asleep) return null;
             if (sid === 0x22) {
                 const b = [0x62].concat(data);
                 for (let i = 0; i < 26; i++) b.push.apply(b, BUS[bus][i] ? [BUS[bus][i], lit[bus][i][2], lit[bus][i][1], lit[bus][i][0], 100, 0, 0, 0, 0, 0] : [0xff, 0xff, 0xff, 0xff, 0x7f, 3, 7, 7, 7, 7]);
@@ -136,18 +137,51 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     await sleep(500);
     ok(lit[0].concat(lit[1]).every((c) => c.join() === '0,0,0'), 'after the flash with the car\'s colour on: given back');
 
+    // an overlay with the car's own colour on: only the lights it picks are written, the rest keep the car's colour
+    writes.length = 0;
+    lights.overlay('doors', (l) => l.name === 'Driver front door line', () => ({ rgb: [255, 0, 0], bright: 100 }));
+    await sleep(150);
+    ok(writes.length >= 1 && writes.every((w) => w[0] === 0xe3 && w[2] === 3) && lit[1][2].join() === '254,0,0' && lit[1][0].join() === '0,0,0',
+        'an open door: its light red alone, no write to the whole bus (' + writes.map((w) => w[2]).join() + ')');
+    writes.length = 0;
+    lights.overlay('turn', (l) => /^Passenger/.test(l.name), (t) => ({ rgb: [0, 230, 60], bright: 50 }));
+    await sleep(150);
+    ok(writes.some((w) => w[0] === 0xda && w[2] === 0) && lit[0].every((c) => c.join() === '0,230,60') && lit[1][2].join() === '254,0,0',
+        'a turn signal\'s glow over that side (a bus all of it: one write), the door still red');
+    // a blink: on one frame, off the next
+    writes.length = 0;
+    lights.overlay('turn', (l) => l.name === 'Driver front door line', (t, on) => (on ? { rgb: [0, 230, 60], bright: 100 } : { rgb: [0, 0, 0], bright: 0 }));
+    await sleep(200);
+    const nad3 = writes.filter((w) => w[0] === 0xe3 && w[2] === 3).map((w) => w[4]);
+    ok(nad3.length >= 4 && nad3.every((b, i) => i === 0 || b !== nad3[i - 1]), 'a blink: fully on, then dark, write after write (' + nad3.join() + ')');
+    lights.overlay('doors', null); lights.overlay('turn', null);
+    await sleep(300);
+    ok(lit[0].concat(lit[1]).every((c) => c.join() === '0,0,0'), 'both taken off with the car\'s colour on: given back');
+
     refuse = true; writes.length = 0;
     lights.show(look('solid', { upper: { rgb: [1, 2, 3], bright: 50 } }));
     await sleep(400);
     ok(writes.length === 4 && /refused/.test(lights.error), 'refused writes: paused after 4 (' + writes.length + ', ' + lights.error + ')');
-    refuse = false;
+    // giving back to a body module that no longer answers (the car going to sleep): each bus tried 3 times, then left
+    refuse = false; lights._pauseTill = 0;
+    lights.show(look('solid', { upper: { rgb: [9, 9, 9], bright: 50 } }));
+    await sleep(150);
+    refuse = true; asleep = true; writes.length = 0;
+    lights.carColour();
+    await sleep(12500);
+    const gb = writes.filter((w) => w[3] === 0);
+    ok(gb.length <= 6 && gb.length >= 2, 'a give-back not taken: at most 3 tries a bus, then nothing more (' + gb.length + ')');
+    writes.length = 0; await sleep(300);
+    ok(writes.length === 0, 'and nothing after');
+    refuse = false; asleep = false;
     lights.stop();
 
     // control: the driver's look, driving modes, favourites
     const values = { follow: true, keep: true, welcome: false, sportPulse: true, nightDim: true, flashAlerts: true }, fns = [];
     const settings = { get: (k) => values[k], set: (k, v) => { values[k] = v; fns.forEach((f) => f(k, v)); }, onChange: (f) => fns.push(f) };
     const shows = [];
-    const fake = { scene: null, show(s) { this.scene = s; shows.push(s); }, carColour() { this.scene = null; shows.push(null); }, dim(f) { this.f = f; }, flash(rgb, ms) { this.flashed = [rgb, ms]; } };
+    const fake = { scene: null, overs: {}, show(s) { this.scene = s; shows.push(s); }, carColour() { this.scene = null; shows.push(null); }, dim(f) { this.f = f; }, flash(rgb, ms) { this.flashed = [rgb, ms]; },
+        overlay(k, test, at) { if (test) this.overs[k] = { test, at }; else delete this.overs[k]; } };
     const amb = new EventEmitter(); amb._m = 'comfort'; amb.mode = () => amb._m;
     const c = new Control({ settings, lights: fake, ambient: amb, log });
     c.start();
@@ -191,6 +225,37 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     ok(!fake.flashed, 'flashes off: none');
     c.stop();
 
+    // the car locked and left: the car's own light; someone back in: the look again
+    c.setLook({ kind: 'solid', upper: { rgb: [0, 0, 255], bright: 60 } });
+    c.away(true);
+    ok(fake.scene === null && values.on === true, 'parked, nobody in: the car\'s own light, the look kept for later');
+    c.away(false);
+    ok(fake.scene && fake.scene.upper.rgb.join() === '0,0,255', 'someone back in: the look again');
+    // the turn signals and the doors over the look, each with its setting
+    const pl = (code) => L.place(code);
+    c.turn('left');
+    ok(fake.overs.turn && fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x19)) && !fake.overs.turn.test(pl(0x0c)) && !fake.overs.turn.test(pl(0x01)),
+        'left turn signal: the driver\'s side lights (left-hand drive), not the footwells nor the other side');
+    const g = [true, false].map((on) => fake.overs.turn.at(0, on));
+    ok(g[0].rgb.join() === '0,230,60' && g[0].bright === 100 && g[1].bright === 0 && g[1].rgb.join() === '0,0,0', 'its blink: green fully on, then dark');
+    values.drive = 'rhd'; c.turn('left');
+    ok(fake.overs.turn.test(pl(0x0c)) && !fake.overs.turn.test(pl(0x05)), 'right-hand drive: left is the passenger\'s side');
+    values.drive = 'lhd'; c.turn('both');
+    ok(fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x0c)), 'hazards: both sides');
+    c.away(true);
+    ok(!fake.overs.turn, 'the car locked and left: no glow');
+    c.away(false); c.turn(null);
+    ok(!fake.overs.turn, 'turn signal off: the glow off');
+    settings.set('turnGlow', false); c.turn('right');
+    ok(!fake.overs.turn, 'Turn signal glow off: none');
+    c.doors(['passenger rear']);
+    ok(fake.overs.doors && fake.overs.doors.test(pl(0x10)) && fake.overs.doors.test(pl(0x22)) && fake.overs.doors.test(pl(0x45)) && !fake.overs.doors.test(pl(0x0c))
+        && fake.overs.doors.at(0, true).rgb.join() === '255,0,0' && fake.overs.doors.at(0, false).bright === 0, 'the passenger rear door open: its lights blink red, the front door\'s not');
+    c.doors([]);
+    ok(!fake.overs.doors, 'closed: red off');
+    settings.set('doorRed', false); c.doors(['driver front']);
+    ok(!fake.overs.doors, 'Open door red off: none');
+    values.turnGlow = undefined; values.doorRed = undefined; c.doors([]); c.turn(null);
     // a restart with Welcome on: the sweep, then the look
     values.welcome = true; shows.length = 0;
     const c2 = new Control({ settings, lights: fake, ambient: amb, log });
