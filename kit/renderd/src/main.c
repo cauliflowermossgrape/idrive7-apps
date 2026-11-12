@@ -152,7 +152,8 @@ typedef struct client {
     uint32_t frames_shown, ticks;
     /* watchdog: an app on screen that stops talking (hung) is hidden until it talks again */
     uint64_t last_msg; int stale;
-    int layer_on;                /* the layer was last made visible (apply_visibility) */
+    int layer_on;                /* the layer was last made visible, on top of the screen (apply_visibility) */
+    uint64_t place_retry;        /* putting the layer on the screen failed: try again from then (0: not waiting) */
     /* touch claims, logical px (CLAIM) */
     int nclaim; float claim[16][4];
     /* frame cap (MI_FPS): at least min_us between two frames drawn; 0 = none */
@@ -431,22 +432,36 @@ static void origin(const client *c, float *x, float *y) {
 }
 
 static int layer_onto_screen(uint32_t layer_id, int w, int h);
+static void apply_visibility(client *c);
+/* layers whose putting on the screen failed, tried again when their time comes (from the main loop) */
+static void retry_placing(void) {
+    uint64_t t = 0;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        client *c = clients[i];
+        if (!c || !c->cl || c->layer_on || !c->place_retry) continue;
+        if (!t) t = now_us();
+        if (t >= c->place_retry) apply_visibility(c);
+    }
+}
 static void apply_visibility(client *c) {
     if (!c->cl) return;
     int on = shown(c);                                     /* never show an empty or dead surface */
-    const int was_on = c->layer_on;
-    /* shown again: the layer back on the centre screen, on top. Another renderer (the MGU Store's beside
-     * idrive7-apps') or the HMI may have set the screen's layers without it meanwhile: it was then visible
-     * but not on any screen, and the app showed a black page. */
-    c->layer_on = on;
+    /* shown again: the layer back on the centre screen, on top, before it is made visible (so it never shows
+     * under another program's layer), through a fresh connection (layer_onto_screen). Another renderer (the MGU
+     * Store's beside idrive7-apps') or the HMI may have set the screen's layers without it meanwhile: it was then
+     * visible but not on any screen, and the app showed a black page. Should that fail, it is tried again once a
+     * second while the app is shown (retry_placing). */
+    int placed = c->layer_on;
+    if (on && !placed && (!c->place_retry || now_us() >= c->place_retry)) {
+        placed = !layer_onto_screen(LAYER_BASE + c->slot, out_w > 0 ? out_w : screen_w, out_h > 0 ? out_h : screen_h);
+        if (!placed && !c->place_retry) log_warn("%s: its layer could not be put on the screen; trying again every second", c->app);
+        c->place_retry = placed ? 0 : now_us() + 1000000;   /* the main loop tries again (retry_placing) */
+    }
+    if (!on) c->place_retry = 0;                           /* hidden: nothing to retry; tried at once when shown */
+    c->layer_on = on && placed;
     ivi_controller_layer_set_visibility(c->cl, on);
     ivi_controller_surface_set_visibility(c->cs, on);
     ivi_controller_commit_changes(ictl);
-    if (on && !was_on) {   /* after its visibility is committed: through a fresh connection (layer_onto_screen) */
-        wl_display_roundtrip(dpy);
-        if (layer_onto_screen(LAYER_BASE + c->slot, out_w > 0 ? out_w : screen_w, out_h > 0 ? out_h : screen_h))
-            log_warn("%s: its layer could not be put on the screen", c->app);
-    }
 }
 
 static void send_state(client *c) {
@@ -530,6 +545,8 @@ static void surface_destroy(client *c) {
     if (c->frame_cb) { wl_callback_destroy(c->frame_cb); c->frame_cb = NULL; }
     if (c->cl) { ivi_controller_layer_destroy(c->cl, 1); c->cl = NULL; }
     if (c->cs) { ivi_controller_surface_destroy(c->cs, 1); c->cs = NULL; }
+    c->layer_on = 0;                                       /* a new layer goes on the screen at its first show */
+    c->place_retry = 0;
     if (c->es != EGL_NO_SURFACE) { eglMakeCurrent(edpy, init_es, init_es, ectx); eglDestroySurface(edpy, c->es); c->es = EGL_NO_SURFACE; }
     if (c->win) { wl_egl_window_destroy(c->win); c->win = NULL; }
     if (c->is) { ivi_surface_destroy(c->is); c->is = NULL; }
@@ -545,14 +562,17 @@ static void surface_destroy(client *c) {
  * long-open connection, our layer took the screen back to the list of the day we started, and every layer other
  * programs had put on the screen since was dropped: the movie player's (mgu-player) flashed off on each of its app's
  * BACK while that app's own screen came back. A new connection sees the list as it is, so other layers stay. */
-struct fresh_scr { struct ivi_controller *ctl; struct wl_output *out[16]; int nout; struct { uint32_t id; struct ivi_controller_screen *s; } scr[16]; int nscr; };
+struct fresh_scr { struct ivi_controller *ctl; struct wl_output *out[16]; int nout; struct { uint32_t id; struct ivi_controller_screen *s; } scr[16]; int nscr; int failed; };
 static void fs_screen(void *d, struct ivi_controller *c, uint32_t id, struct ivi_controller_screen *s) {
     struct fresh_scr *f = d; (void)c;
     if (f->nscr < 16) { f->scr[f->nscr].id = id; f->scr[f->nscr].s = s; f->nscr++; }
+    else wl_proxy_destroy((struct wl_proxy *)s);
 }
 static void fs_id(void *d, struct ivi_controller *c, uint32_t id) { (void)d, (void)c, (void)id; }
 static void fs_error(void *d, struct ivi_controller *c, int32_t o, int32_t t, int32_t code, const char *m) {
-    (void)d, (void)c; log_warn("layer onto the screen: ivi error object %d type %d code %d: %s", o, t, code, m ? m : "");
+    struct fresh_scr *f = d; (void)c;
+    f->failed = 1;
+    log_warn("layer onto the screen: ivi error object %d type %d code %d: %s", o, t, code, m ? m : "");
 }
 static const struct ivi_controller_listener fs_ctl = { fs_screen, fs_id, fs_id, fs_error };
 static void fs_global(void *d, struct wl_registry *r, uint32_t name, const char *iface, uint32_t ver) {
@@ -583,7 +603,7 @@ static int layer_onto_screen(uint32_t layer_id, int w, int h) {
         l = ivi_controller_layer_create(f.ctl, layer_id, w, h);   /* the existing layer (winston takes the id) */
         ivi_controller_screen_add_layer(scr, l);
         ivi_controller_commit_changes(f.ctl);
-        ok = wl_display_roundtrip(d) >= 0;
+        ok = wl_display_roundtrip(d) >= 0 && !f.failed;
     } else ok = 0;
     /* proxies freed only (no destroy request): the layer belongs to the scene, not to this connection */
     if (l) wl_proxy_destroy((struct wl_proxy *)l);
@@ -626,10 +646,8 @@ static int surface_create(client *c) {
     ivi_controller_layer_add_surface(c->cl, c->cs);
     ivi_controller_layer_set_visibility(c->cl, 0);
     ivi_controller_commit_changes(ictl);
-    ivi_controller_commit_changes(ictl);
     wl_display_roundtrip(dpy);                            /* the layer exists before another connection puts it on */
-    if (layer_onto_screen(lid, out_w > 0 ? out_w : screen_w, out_h > 0 ? out_h : screen_h))   /* on top of the screen's layers */
-        log_warn("%s: no screen to put the layer on", c->app);
+    /* it goes on the screen, on top, when it is first shown (apply_visibility) */
     log_info("%s: surface 0x%x on layer 0x%x at %d,%d %dx%d (scale %.3f; on the screen %d,%d %dx%d)", c->app, sid, lid,
              c->x, c->y, c->w, c->h, c->xf.s, m[0], m[1], m[2], m[3]);
     return 0;
@@ -1796,6 +1814,7 @@ int main(int argc, char **argv) {
         if (pf[3].revents & (POLLIN | POLLHUP)) { if (gate_read() != 0) update_all(); }
         if (pf[4].revents & POLLIN) ccu_read();
         embed_dispatch(&pf[5]);
+        retry_placing();
         for (int k = 6; k < np; k++) {
             client *c = clients[map[k]];
             if (!c) continue;
