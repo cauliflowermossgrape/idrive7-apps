@@ -22,7 +22,7 @@ Module._load = function (req, parent, isMain) {                 // the app's ./k
     return load.call(this, req, parent, isMain);
 };
 
-const { AutoFlap, flapFor } = require(path.join(APP, 'auto'));
+const { AutoFlap, flapFor, modeName } = require(path.join(APP, 'auto'));
 const { Controller } = require(path.join(APP, 'controller'));
 const IMG = require(path.join(APP, 'muffler_img'));
 const UI = require(path.join(APP, 'ui'));
@@ -53,6 +53,20 @@ async function autoTests() {
         assert.deepStrictEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 61].map(flapFor),
             ['OPEN', 'OPEN', 'OPEN', 'OEM', 'OEM', 'OEM', 'CLOSED', 'CLOSED', 'CLOSED', 'OEM', null, null]);
         assert.deepStrictEqual(['SPORT_DYNAMIC', 'SPORT_EXPERT', 'ECO_PRO_EFFICIENT', 'COMFORT'].map(flapFor), ['OPEN', 'OPEN', 'CLOSED', 'OEM']);
+    });
+    await t('mode map: the plug-in hybrids\' modes (issue #160)', async () => {
+        assert.deepStrictEqual([15, 16, 23, 28, 17, 19, 18, 20, 21, 22].map(flapFor),
+            ['OPEN', 'OPEN', 'OPEN', 'OPEN', 'OEM', 'OEM', 'CLOSED', 'CLOSED', 'CLOSED', null]);
+        assert.deepStrictEqual(['PHEV_SPORT_STANDARD', 'PHEV_SPORT_PLUS', 'BOOST', 'PHEV_HYBRID_STANDARD', 'PHEV_HYBRID_COMFORT',
+            'PHEV_HYBRID_ECO', 'PHEV_ELECTRIC_STANDARD', 'PHEV_ELECTRIC_INDIVIDUAL'].map(flapFor),
+            ['OPEN', 'OPEN', 'OPEN', 'OEM', 'OEM', 'CLOSED', 'CLOSED', 'CLOSED']);
+        assert.deepStrictEqual(['PHEV_HYBRID_STANDARD', 17, 'PHEV_ELECTRIC_STANDARD'].map(modeName), ['Hybrid', 'Hybrid', 'Electric']);
+    });
+    await t('PHEV: Sport -> Open, Hybrid -> OEM, Hybrid Eco -> Close (issue #160)', async () => {
+        const x = auto({ hold: 'off' }); await x.a.driveMode('PHEV_SPORT_STANDARD'); await x.a.driveMode('PHEV_HYBRID_STANDARD');
+        assert.strictEqual(x.a.note().text, 'Hybrid');
+        await x.a.driveMode('PHEV_HYBRID_ECO');
+        assert.deepStrictEqual(x.sent, ['OPEN', 'OEM', 'CLOSED']);
     });
     await t('Sport -> Open, Comfort -> OEM, Eco Pro -> Close', async () => {
         const x = auto({ hold: 'off' }); await x.a.driveMode(1); await x.a.driveMode(4); await x.a.driveMode(7);
@@ -331,7 +345,8 @@ async function languageTests() {
     // every line auto.js can put under the state word, and its pieces
     const lines = ['RPM signal lost · OEM requested · select CLOSE again', 'RPM signal lost · Close paused · the car has the flap',
         'Waiting for the driving mode', 'holding', 'Sport', 'Sport+', 'Sport Individual', 'Comfort', 'Comfort+',
-        'Comfort Individual', 'Eco Pro', 'Eco Pro+', 'Eco Pro Individual', 'Adaptive', 'Sport · holding'];
+        'Comfort Individual', 'Eco Pro', 'Eco Pro+', 'Eco Pro Individual', 'Adaptive', 'Sport · holding',
+        'Hybrid', 'Hybrid Eco', 'Hybrid Comfort', 'Electric', 'Electric Individual', 'Sport Boost'];
     const label = glyphs('kit/runtime/fonts/label.json');
     for (const lang of Object.keys(ATLAS)) {
         await t('status line ' + lang + ': every line from the shared catalogue, the rpm figure kept, all glyphs in the atlas', async () => {
