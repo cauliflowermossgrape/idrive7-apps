@@ -1,5 +1,9 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.16
+
+- Up to 64 apps connected at once (was 16). While this renderer has the community socket, IterioDev's apps connect to it as well as ours; with both sets installed on an iDrive 8 car the 16 slots filled and the later apps (ours among them) drew in the HMI's text screen (issue #152). A slot costs only while its app is connected, and pictures stay under the all-apps limit as before.
+
 ## idrive7-apps mgu-renderd 2.1.15
 
 - iDrive 8 from the Store: the Store package is for iDrive 7 and iDrive 8 (component.json `mguHmi`). Its unit no longer passes iDrive 7's touch area (`touch_area=84,0,1836,720`): the renderer's built-in default for a 1920 x 720 screen is now that area (right of the back column, the title strip included, for the kit's page tabs), and a 2880 x 960 screen gets iDrive 8's app area. Same for `mgu-app-install.sh renderd`, which no longer looks for Hmi8 to leave it out. The page template step already does nothing on iDrive 8 (no HmiMain3D).

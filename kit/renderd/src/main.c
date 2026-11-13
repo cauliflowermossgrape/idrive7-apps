@@ -66,7 +66,10 @@
 #include "ivi-application-client-protocol.h"
 #include "ivi-controller-client-protocol.h"
 
-#define MAX_CLIENTS 16
+/* apps connected at once: ours and, on the community socket, IterioDev's (they connect there too while this renderer
+ * has it). 16 filled up on an iDrive 8 car with both sets installed (issue #152). A slot costs only while connected
+ * (pictures stay under GFX_IMG_ALL for all apps together); layer and surface ids are base + slot, 0x00-0x3f each. */
+#define MAX_CLIENTS 64
 #define MAX_MSG (24u << 20)
 #define MAX_IN (MAX_MSG + (1u << 17))  /* an app's input buffer: a whole MAX_MSG message, its header and some of the next */
 #define LAYER_BASE layer_base      /* "MR"; the community renderers use "MG", 0x4d470000 and 0x4d470100 */
