@@ -5,7 +5,7 @@
 // flash checked, the session kept with 3E 00, and the lamps handed back however it ends.
 //   node kit/tools/test_ambient_strobe.js
 const path = require('path');
-const { Strobe, MAX_MS } = require(path.join(__dirname, '..', '..', 'apps', 'ambient_config', 'strobe'));
+const { Strobe, MAX_MS, gateChecks, gateWhy } = require(path.join(__dirname, '..', '..', 'apps', 'ambient_config', 'strobe'));
 
 let fails = 0, checks = 0;
 const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
@@ -454,6 +454,44 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(ev[0] === 'hold' && ev[ev.length - 1] === 'go', 'light show: held and let go the same way');
     }
 
+    // the light show only with the car standing still; the high beam strobe may run while driving
+    {
+        const g = (o, what) => gateWhy(gateChecks(Object.assign({ setting: true, away: false, moving: false }, o)), what);
+        ok(g({}, 'show') === null && g({}, 'strobe') === null, 'standing: both may run');
+        ok(g({ moving: true }, 'show') === 'the car standing still (light show): no', 'moving: no light show (' + g({ moving: true }, 'show') + ')');
+        ok(g({ moving: true }, 'strobe') === null, 'moving: the strobe may run');
+        ok(g({ moving: true }, 'learn') === null, 'moving: learning may run');
+        ok(g({ setting: false }, 'strobe') === 'switched on in the settings: no', 'off in the settings');
+        ok(g({ away: true }, 'strobe') === 'someone in the car: no', 'nobody in the car');
+        ok(gateChecks({ setting: true, away: false, moving: true }).length === 3, 'the Strobe tab lists three checks');
+    }
+    // the speed the light show goes by (kit/parked.js): re-read every 2 s, quiet after driving = moving
+    {
+        const Parked = require(path.join(__dirname, '..', 'runtime', 'parked'));
+        let fields = null, opts = null;
+        const ctx = { signals: { watch: (svc, v, f, l, o) => { fields = f; opts = o; return Promise.resolve({}); } } };
+        const p = Parked.watch(ctx, null);
+        const send = (kmh) => fields.statusCarSpeed2({ speedVehicleCentreOfGravity: Math.round(kmh / 0.015625) });
+        ok(opts && opts.pollMs === 2000, 'the speed re-read every 2 s');
+        ok(p.moving() === false, 'no speed yet (a VM, a bench): standing');
+        send(50);
+        ok(p.moving() === true, 'driving at 50 km/h: moving');
+        ok(p.moving() === true, 'quiet after driving: still moving until a speed is read again');
+        send(0);
+        ok(p.moving() === false, 'stopped: standing');
+    }
+    // the gate is asked which: the strobe's flashes ask for 'strobe', the light show's for 'show'
+    {
+        const asked = new Set();
+        const { s } = make('bdc', { allowed: (what) => { asked.add(what); return what === 'show' ? 'the car standing still (light show): no' : null; } });
+        await s.find();
+        await s.show({});
+        ok(asked.has('show') && /Light show not started: the car standing still/.test(s.note), 'the light show asks for show and is stopped (' + s.note + ')');
+        const b = make('bdc', { allowed: (what) => { asked.add(what); return 'held for the test'; } });
+        await b.s.find();
+        await b.s.start({});
+        ok(asked.has('strobe') && /held for the test/.test(b.s.note), 'the strobe asks for strobe');
+    }
     console.log('ambient strobe: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

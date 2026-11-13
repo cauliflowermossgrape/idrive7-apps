@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.4.4",
+  "version": "2.4.5",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -42,8 +42,8 @@
       "CentralLockingSystemAndPanelStatus": "s"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "_optional": "the car's speed: driven (for a car that does not say it is locked and left)",
-      "statusCarSpeed2": "s"
+      "_optional": "the car's speed: driven (for a car that does not say it is locked and left), and the light show only standing still",
+      "statusCarSpeed2": "rs"
     }
   },
   "screens": [

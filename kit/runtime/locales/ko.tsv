@@ -2263,6 +2263,7 @@ graded	회 평가
 vs shift point	(변속 시점 대비)
 CRUISE	순항
 # Ambient config 2.0: the app's screens (main.js, scenes.js, lights.js)
+The car standing still (light show)	차량 정지 상태 (라이트 쇼)
 Animations	애니메이션
 Driving modes	주행 모드
 Favourites	즐겨찾기
