@@ -1018,11 +1018,12 @@ function start(ctx, src) {
         return calmFor(drive, setupMode(settings, profileOf(drive, settings)));
     }
 
-    /** Demo frame for the test pattern: 6300 rpm in 3rd, warm. */
+    /** Demo frame for the test pattern: 6300 rpm in 3rd, warm (temps in the unit chosen). */
     function sample() {
         const o = optsNow(), d = { rpm: 6300, gear: 3, stage: 'D', oil: 96, coolant: 97 };
+        const deg = (c) => Math.round(o.fahrenheit ? c * 9 / 5 + 32 : c) + '°';
         return { d: d, shift: 6700, redline: 7000, max: 8000, blink: true, cue: shiftCue({}, 6300, 0, 6700, 7000, 0), down: 0, peak: 0, chip: null,
-            readouts: [{ label: 'BOOST', value: '1.1', tone: 'text' }, { label: 'OIL', value: '96°', tone: 'text' }, { label: 'WATER', value: '97°', tone: 'text' }], opts: o };
+            readouts: [{ label: 'BOOST', value: '1.1', tone: 'text' }, { label: 'OIL', value: deg(d.oil), tone: 'text' }, { label: 'WATER', value: deg(d.coolant), tone: 'text' }], opts: o };
     }
 
     let lastKey = '';

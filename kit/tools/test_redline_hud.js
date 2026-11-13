@@ -118,6 +118,9 @@ ok(r.every((it) => typeof it.value === 'string'), 'no extras (null): no crash, n
 ok(!r.some((it) => /NaN|undefined/.test(it.value)), 'no NaN or undefined in a value');
 r = Hud.readoutsFor({ rpm: 5500 }, null, null, null, Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, oil: false, coolant: false, gearbox: false, fahrenheit: true }), { outside: -5 });
 ok(r[0] && r[0].value === '23°' && r[0].tone === 'cold', 'outside in °F, blue near freezing: ' + JSON.stringify(r));
+r = Hud.readoutsFor({ rpm: 5500, oil: 96, coolant: 97 }, null, null, null, Object.assign({}, o, { rpm: false, boost: false, torque: false, power: false, throttle: false, g: false, outside: false, gearbox: false, smartTemps: false, fahrenheit: true }), null);
+ok(r.some((it) => it.label === 'OIL' && it.value === '205°') && r.some((it) => it.label === 'WATER' && it.value === '207°'), 'oil and water in °F: ' + JSON.stringify(r));
+ok(/o\.fahrenheit \? c \* 9 \/ 5 \+ 32/.test(fs.readFileSync(path.join(APP, 'hud.js'), 'utf8')) && !/value: '96°'/.test(fs.readFileSync(path.join(APP, 'hud.js'), 'utf8')), 'test pattern sample: temps follow hudTempUnit');
 r = Hud.readoutsFor({ rpm: 5500 }, null, null, null, Object.assign({}, o, { style: 'vfd', boost: false, torque: false, power: false, throttle: false, g: false, outside: false }), {});
 ok(!r.some((it) => it.label === 'RPM'), 'the VFD layout has its own rpm digits, no RPM readout');
 
