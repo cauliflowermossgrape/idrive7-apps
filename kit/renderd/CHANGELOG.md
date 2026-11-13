@@ -1,5 +1,9 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.13
+
+- Touch beside the MGU Store's renderer: the divert also takes the touches the Store's renderer (from port 30571) and IterioDev's (30569) hand on to the HMI over lo. The Store's renderer keeps its divert in all the time while an overlay of its claims (IterioDev's overlays), sees every touch first and passes the ones outside its claims to the HMI past our rule: on an iDrive 8 car our apps got no touch at all, and the taps reached the HMI under them (issue #152). Ours (30573) are not taken back: nothing loops.
+
 ## idrive7-apps mgu-renderd 2.1.12
 
 - Layers: an app's layer goes on the centre screen through a connection made for it and closed again (as mgu-render's `src/relist.c`), not through the renderer's own. Winston applies a screen's `add_layer` to the layer list as the calling connection last saw it, so through the long-open connection every layer another program had put on the screen since the renderer started was taken off whenever an app was shown again. Seen on a car: a movie player's own layer flashed off on each BACK of its app (59 times in 34 BACKs; 0 in 8 with this change).

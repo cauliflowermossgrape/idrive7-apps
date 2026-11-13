@@ -16,7 +16,9 @@
  * ours has its own table and ports, so neither removes the other's rule or takes
  * the other's port. Each diverts only while one of its own apps is shown with claims, so they take turns. Were
  * both in at once, the first chain to see a PDU takes it; on lo our rule lets IterioDev's re-injections (from
- * 30569) through as well as ours, and his catches ours, so a PDU passes each renderer at most once.
+ * 30569) through as well as ours, and his catches ours, so a PDU passes each renderer at most once. On the car
+ * our rule also takes what the other two hand on to the HMI over lo (from 30569 and 30571): the Store's
+ * renderer keeps its rule in while an overlay of its stays on screen, and without that our apps got no touch.
  * A gesture that goes to the HMI while apps claim closes them (E_CLOSED): the user tapped the HMI, e.g. its home
  * button - with no claim left the rule goes, and the rest of that gesture reaches the HMI directly.
  *
@@ -136,7 +138,14 @@ static int touch_rules(const char *iface, const char *saddr)
     } else {
         char src[64] = "";
         if (saddr && *saddr) snprintf(src, sizeof src, "ip saddr %s ", saddr);
-        snprintf(rule, sizeof rule, "iifname \"%s\" %sudp dport %d notrack udp dport set %d", iface, src, PORT_HMI, PORT_IN);
+        /* and what the other renderers hand on to the HMI (IterioDev's from PORT_OTHER_OUT, the Store's mgu-render's
+         * from PORT_STORE_OUT): a renderer whose rule is in all the time (the Store's, for an overlay that stays on
+         * screen) sees every PDU first and passes the ones outside its claims to the HMI over lo, past the display
+         * rule; without this our apps get no touch while it runs (iDrive 8 car, issue #152). Ours (PORT_OUT) are
+         * not caught: nothing loops. */
+        snprintf(rule, sizeof rule, "iifname \"%s\" %sudp dport %d notrack udp dport set %d\n"
+                 "iifname \"lo\" udp sport { %d, %d } udp dport %d notrack udp dport set %d",
+                 iface, src, PORT_HMI, PORT_IN, PORT_OTHER_OUT, PORT_STORE_OUT, PORT_HMI, PORT_IN);
         snprintf(open_fw, sizeof open_fw, "nft list chain ip filter input 2>/dev/null | grep -q 'udp dport %d accept' || "
                  "nft insert rule ip filter input iifname %s %sudp dport %d accept", PORT_IN, iface, src, PORT_IN);
     }
