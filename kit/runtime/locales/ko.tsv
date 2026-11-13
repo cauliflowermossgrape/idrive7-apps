@@ -1773,6 +1773,137 @@ Recorded by the car	차량에 저장된 기록
 STATE OF CHARGE, LAST 5	최근 충전 상태 5회
 older	이전
 TIME SPENT PER CHARGE BAND	충전량 구간별 누적 시간
+# Names drawn from code: Ambient zones and light show states, Live Data, Service
+Apps	앱
+Driver front door decor	운전석 앞문 장식
+Driver front door handle	운전석 앞문 손잡이
+Driver front door line	운전석 앞문 라인
+Driver front door pocket	운전석 앞문 포켓
+Driver rear door decor	운전석 뒤문 장식
+Driver rear door handle	운전석 뒤문 손잡이
+Driver rear door line	운전석 뒤문 라인
+Driver rear door pocket	운전석 뒤문 포켓
+Passenger front door decor	조수석 앞문 장식
+Passenger front door handle	조수석 앞문 손잡이
+Passenger front door line	조수석 앞문 라인
+Passenger front door pocket	조수석 앞문 포켓
+Passenger rear door decor	조수석 뒤문 장식
+Passenger rear door handle	조수석 뒤문 손잡이
+Passenger rear door line	조수석 뒤문 라인
+Passenger rear door pocket	조수석 뒤문 포켓
+B-pillar driver	운전석 B필러
+Driver seat back	운전석 등받이
+Console decor driver front	콘솔 장식 운전석 앞
+Console line driver front	콘솔 라인 운전석 앞
+Footwell driver front	풋웰 운전석 앞
+Console decor driver rear	콘솔 장식 운전석 뒤
+Console line driver rear	콘솔 라인 운전석 뒤
+Footwell driver rear	풋웰 운전석 뒤
+B-pillar passenger	조수석 B필러
+Passenger seat back	조수석 등받이
+Console decor passenger front	콘솔 장식 조수석 앞
+Console line passenger front	콘솔 라인 조수석 앞
+Footwell passenger front	풋웰 조수석 앞
+Console decor passenger rear	콘솔 장식 조수석 뒤
+Console line passenger rear	콘솔 라인 조수석 뒤
+Footwell passenger rear	풋웰 조수석 뒤
+Dash decor centre	대시보드 장식 중앙
+Dash line centre	대시보드 라인 중앙
+Dash decor driver	대시보드 장식 운전석
+Dash line driver	대시보드 라인 운전석
+Dash decor passenger	대시보드 장식 조수석
+Dash line passenger	대시보드 라인 조수석
+Sunroof front left	선루프 앞 왼쪽
+Sunroof front left rear	선루프 앞 왼쪽 뒤
+Sunroof front right	선루프 앞 오른쪽
+Sunroof front right rear	선루프 앞 오른쪽 뒤
+Sunroof rear left	선루프 뒤 왼쪽
+Sunroof rear left rear	선루프 뒤 왼쪽 뒤
+Sunroof rear right	선루프 뒤 오른쪽
+Sunroof rear right rear	선루프 뒤 오른쪽 뒤
+Gear selector left	기어 레버 왼쪽
+Light blade left	라이트 블레이드 왼쪽
+Gear selector right	기어 레버 오른쪽
+Light blade right	라이트 블레이드 오른쪽
+Centre stack tray	센터 스택 트레이
+Console backlit decor	콘솔 백라이트 장식
+Console tray	콘솔 트레이
+Cupholder front	컵홀더 앞
+Cupholder rear	컵홀더 뒤
+Colour rolling from side to side	좌우로 흐르는 색
+FLE headlights	FLE 헤드라이트
+Flashes a second	초당 깜빡임
+Learn high beam	상향등 학습
+Learn stopped	학습 중지
+Light show	라이트 쇼
+Light show done	라이트 쇼 완료
+Light show on	라이트 쇼 켜짐
+Light show starting...	라이트 쇼 시작 중...
+Light show stopped	라이트 쇼 중지
+Light show stopped: refused (	라이트 쇼 중지: 거부됨 (
+Only for use on private property.	사유지에서만 사용하세요.
+Passenger	조수석
+Pattern	패턴
+Someone in the car	차 안에 사람 있음
+Start show	쇼 시작
+Start strobe	스트로브 시작
+Strobe done (	스트로브 완료 (
+Strobe starting...	스트로브 시작 중...
+Strobe stopped	스트로브 중지
+Strobe stopped: refused (	스트로브 중지: 거부됨 (
+Switched on in the settings	설정에서 켜짐
+L Both R	왼쪽 양쪽 오른쪽
+L R Both	왼쪽 오른쪽 양쪽
+Coolant temperature	냉각수 온도
+Engine oil temperature	엔진오일 온도
+Wheel speed	휠 속도
+Torque (actual)	토크 (실제)
+Reference torque	기준 토크
+Injector correction	인젝터 보정
+Rough running	엔진 부조
+Scan units first	먼저 장치를 검색하세요
+Make a screen in the app	앱에서 화면 만들기
+Remove this screen	이 화면 삭제
+Press again to remove this screen	다시 누르면 이 화면이 삭제됩니다
+Not identified	식별 안 됨
+Engine unit name	엔진 ECU 이름
+Calibration ID	캘리브레이션 ID
+Calibration verification number	캘리브레이션 검증 번호
+Tyre pressure target	타이어 공기압 목표
+Sport plus	스포츠 플러스
+Comfort plus	컴포트 플러스
+Eco pro plus	에코 프로 플러스
+State of charge (SOC)	충전 상태 (SOC)
+State of health (SOH)	배터리 수명 (SOH)
+Highest cell temperature	최고 셀 온도
+Capacity SOH (separate estimate)	용량 SOH (별도 추정)
+SOC estimate quality	SOC 추정 품질
+Active standby	활성 대기
+Passive standby	수동 대기
+Unsupported layout	지원하지 않는 레이아웃
+Energy flow (converter mode)	에너지 흐름 (컨버터 모드)
+AVERAGE EVERY	평균 주기
+ENGINE TIME	엔진 시간
+Exhaust emissions test	배출가스 검사
+NOT RUNNING	실행 안 됨
+LIKELY RUNNING	실행 중 추정
+No CBS records	CBS 기록 없음
+No reply / timeout	응답 없음 / 시간 초과
+OIL ASH	오일 재
+PRESSURE ACROSS	차압
+REGENERATIONS	재생 횟수
+Regeneration	재생
+Since the last one	지난 재생 이후
+Previous	이전
+TEMPERATURE BEFORE	필터 전 온도
+From the temperature before the filter	필터 전 온도 기준
+Substitute value	대체값
+Substitute value (modular)	대체값 (모듈)
+Manipulated data	조작된 데이터
+Unexpected UDS reply	예상치 못한 UDS 응답
+TASU not available	TASU 사용 불가
+OK (modular)	정상 (모듈)
+
 # eDrive: the 48 V mild hybrid page and the 12 V details
 Plug-in hybrid	플러그인 하이브리드
 48 V mild hybrid	48 V 마일드 하이브리드
@@ -2243,3 +2374,29 @@ Another ambient app	다른 앰비언트 앱
 IterioDev's Comfort tool is running. It changes the ambient lights too, so the colours jump between the two apps. Uninstall it in the Store (Installed, Head-unit tools, Comfort) and use one ambient app at a time.	IterioDev의 Comfort 도구가 실행 중입니다. 이 도구도 앰비언트 조명을 바꾸므로 두 앱 사이에서 색이 계속 바뀝니다. Store의 설치됨 → 헤드유닛 도구 → Comfort에서 제거하고 앰비언트 앱은 하나만 사용하세요.
 Left	왼쪽
 Right	오른쪽
+Hybrid Eco	하이브리드 에코
+Hybrid Comfort	하이브리드 컴포트
+Electric Individual	전기 개별 설정
+Sport Boost	스포츠 부스트
+Turn signal glow	방향지시등 연동 조명
+Open door red	문 열림 시 빨간색
+High beam strobe and light show (only for use on private property)	상향등 스트로브 및 라이트쇼 (사유지에서만 사용)
+Strobe lights	스트로브 조명
+All lights	전체 라이트
+High beam	상향등
+Strobe flashes a second	스트로브 초당 깜빡임
+Police flashes a burst	경찰 패턴 1회 깜빡임 수
+Strobe flash length	스트로브 점등 시간
+Police order	경찰 패턴 순서
+Left, both, right	왼쪽, 양쪽, 오른쪽
+Left, right, both	왼쪽, 오른쪽, 양쪽
+Left, right	왼쪽, 오른쪽
+Strobe pattern	스트로브 패턴
+In turn	번갈아
+Strobe speed	스트로브 속도
+Light show speed	라이트쇼 속도
+Battery power	배터리 전력
+Fast (the car's eDRIVE needle)	빠르게 (차량 eDRIVE 게이지 바늘)
+Battery readings only	배터리 측정값만
+Police	경찰
+Strobe	스트로브

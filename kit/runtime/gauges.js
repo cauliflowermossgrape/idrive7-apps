@@ -312,7 +312,7 @@ function bar(cv, t, x, y, w, h, g) {
         cv.text(vs, x + w - uw, y + 30, 44, g.valueColor ? t[g.valueColor] || g.valueColor : isNum(v) ? t.text : t.dim, { align: 'right', font: 'num' });
         if (g.unit) cv.text(' ' + g.unit, x + w, y + 30, 26, t.dim, { align: 'right' });
         if (g.peakText && isNum(g.peak)) {
-            const ps = 'PEAK ' + fmt(g.peak, g.decimals), po = { font: 'label', spacing: 1, literal: true };
+            const ps = localizeLabel('PEAK') + ' ' + fmt(g.peak, g.decimals), po = { font: 'label', spacing: 1, literal: true };
             const px = x + cv.textWidth(label, 22, { font: 'bold', spacing: 2 }) + 22;
             if (px + cv.textWidth(ps, 20, po) <= x + w - uw - cv.textWidth(vs, 44, { font: 'num' }) - 18) cv.text(ps, px, y + 26, 20, t.hang || t.accent2 || t.dim, po);
         }
