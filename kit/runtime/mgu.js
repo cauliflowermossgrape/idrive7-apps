@@ -38,8 +38,46 @@ const RHMI_RES = path.join(APP_ROOT, 'rhmiData', 'resources');
 /* ---------------- logging: SDK logger (DLT) + small rotating file ---------------- */
 const LOG_FILE = path.join(DATA_DIR, SPEC.id + '.log');
 const RUN_TAG = Date.now().toString(36);
+// Drawn frames (the HMI screens' images without the GPU renderer, the home-screen widgets) are written to RAM, not to the
+// eMMC: /tmp is tmpfs (one mount for every process), and the HMI takes a frame from there as from the app's resource
+// folder, as long as it can read it (the folder and the files world-readable; mode 0770 gets RESOURCE_ERROR). Up to 4
+// rotating files an image, so this stays a few hundred KB. A head unit that refuses one: the resource folder again.
+const FRAME_DIR = path.join('/tmp', 'mgu-frames-' + SPEC.id + '-' + (process.getuid ? process.getuid() : 0));
+let frameRam = null;                    // null: not tried yet; true: frames in FRAME_DIR; false: in the resource folder
 // drop drawn frames left by earlier runs
 try { fs.readdirSync(RHMI_RES).filter((f) => /^dyn_/.test(f)).forEach((f) => { try { fs.unlinkSync(path.join(RHMI_RES, f)); } catch (e) {} }); } catch (e) {}
+try { fs.readdirSync(FRAME_DIR).forEach((f) => { try { fs.unlinkSync(path.join(FRAME_DIR, f)); } catch (e) {} }); } catch (e) {}
+/** Write a frame's PNG (file: its name in the resource folder); returns the path to hand to the HMI. */
+function writeFrame(file, png) {
+    if (frameRam !== false) {
+        try {
+            if (frameRam === null) {
+                try { fs.mkdirSync(FRAME_DIR, 0o755); } catch (e) { if (e.code !== 'EEXIST') throw e; }    // (node 8: no recursive)
+                fs.chmodSync(FRAME_DIR, 0o755);
+            }
+            const ram = path.join(FRAME_DIR, path.basename(file));
+            fs.writeFileSync(ram + '.tmp', png);
+            fs.chmodSync(ram + '.tmp', 0o644);
+            fs.renameSync(ram + '.tmp', ram);
+            if (frameRam === null) fileLog('INFO', 'frames: in RAM (' + FRAME_DIR + ')');
+            frameRam = true;
+            return ram;
+        } catch (e) {
+            frameRam = false;
+            fileLog('WARN', 'frames: not in RAM (' + (e && e.message || e) + '): written to the resource folder');
+        }
+    }
+    fs.writeFileSync(file + '.tmp', png);
+    fs.renameSync(file + '.tmp', file);
+    return file;
+}
+/** The HMI refused a frame: one from RAM sends the next ones to the resource folder. */
+function frameRefused(file, e) {
+    if (frameRam && file.indexOf(FRAME_DIR + '/') === 0) {
+        frameRam = false;
+        fileLog('WARN', 'frames: the HMI refused one from RAM (' + (e && e.message || e) + '): written to the resource folder from now on');
+    }
+}
 function fileLog(level, msg) {
     try {
         const st = fs.existsSync(LOG_FILE) ? fs.statSync(LOG_FILE) : null;
@@ -286,14 +324,13 @@ class Ui {
             const rb = this.rhmi.getResourceBundle();
             // per-run file names: the HMI keeps state per resource path, so
             // names reused from an earlier run of the app get rejected
-            const file = path.join(RHMI_RES, 'dyn_' + RUN_TAG + '_' + name.toLowerCase() + '_' + (st.n++ % 4) + '.png');
+            let file = path.join(RHMI_RES, 'dyn_' + RUN_TAG + '_' + name.toLowerCase() + '_' + (st.n++ % 4) + '.png');
             const t0 = Date.now(), first = !st.shown;
             const png = Buffer.isBuffer(frame) ? frame : frame.png();
             const t1 = Date.now();
-            fs.writeFileSync(file + '.tmp', png);
-            fs.renameSync(file + '.tmp', file);
+            file = writeFrame(file, png);
             if (first) log.info('image ' + name + ': png written ' + (Date.now() - t0) + ' ms');
-            await rb.createResourceHandles([file]);
+            try { await rb.createResourceHandles([file]); } catch (e) { frameRefused(file, e); throw e; }
             const handle = rb.getResourceHandle(file);
             if (first) log.info('image ' + name + ': handle ' + JSON.stringify(handle));
             await c.setValue(0, cell || 'Graphic', handle, 'Asset');
@@ -396,12 +433,22 @@ class Widget {
         c.on('created', (e) => { this.vis[e.spawnId] = true; this._static(e.spawnId); this._changed('placed'); });
         c.on('resize', (e) => { this._forget(e.spawnId); this._changed('resized'); });
         c.on('visible', (e) => { this.vis[e.spawnId] = !!e.visible; if (e.visible) this._forget(e.spawnId); this._changed(e.visible ? 'shown' : 'hidden'); });
-        ['abort', 'destroyed'].forEach((n) => c.on(n, (e) => { delete this.vis[e.spawnId]; this._forget(e.spawnId); this._changed('removed'); }));
+        ['abort', 'destroyed'].forEach((n) => c.on(n, (e) => { delete this.vis[e.spawnId]; this._drop(e.spawnId); this._changed('removed'); }));
         c.on('action', (e) => { log.info('widget tapped (' + e.spawnId + ')'); this._tap.forEach((fn) => { try { fn(e); } catch (err) { log.error(err); } }); });
         this.instances().forEach((i) => this._static(i.spawnId));
         this._changed('ready');
     }
     _forget(spawnId) { const st = this._img[spawnId]; if (st) st.lastPx = null; }
+    /** a removed widget: its handles and drawn frames go (RAM or resource folder) */
+    _drop(spawnId) {
+        const st = this._img[spawnId];
+        delete this._img[spawnId];
+        if (st && st.live.length && this.comp) this.comp.getResourceBundle().destroyResourceHandles(st.live).catch(() => {});
+        for (let k = 0; k < 4; k++) {
+            const f = 'dyn_' + RUN_TAG + '_w' + spawnId + '_' + k + '.png';
+            [FRAME_DIR, RHMI_RES].forEach((d) => { try { fs.unlinkSync(path.join(d, f)); } catch (e) { /* not there */ } });
+        }
+    }
     /** The layout's fixed cells (app.json startWidget.cells), written once per placed widget. */
     _static(spawnId) {
         const cells = this.spec.cells || {};
@@ -426,11 +473,10 @@ class Widget {
             const px = Buffer.from(frame.d.buffer, frame.d.byteOffset, frame.d.length);
             if (st.lastPx && Date.now() - st.lastPush < 5000 && px.equals(st.lastPx)) return;
             const rb = this.comp.getResourceBundle();
-            const file = path.join(RHMI_RES, 'dyn_' + RUN_TAG + '_w' + spawnId + '_' + (st.n++ % 4) + '.png');
+            let file = path.join(RHMI_RES, 'dyn_' + RUN_TAG + '_w' + spawnId + '_' + (st.n++ % 4) + '.png');
             const t0 = Date.now(), png = frame.png(), t1 = Date.now();
-            fs.writeFileSync(file + '.tmp', png);
-            fs.renameSync(file + '.tmp', file);
-            await rb.createResourceHandles([file]);
+            file = writeFrame(file, png);
+            try { await rb.createResourceHandles([file]); } catch (e) { frameRefused(file, e); throw e; }
             await this.comp.setValue(Number(spawnId), cell, rb.getResourceHandle(file), 'Asset');
             this.timing.png += t1 - t0; this.timing.push += Date.now() - t1;
             if (!st.lastPush) log.info('widget ' + spawnId + ': first image in ' + (Date.now() - t0) + ' ms');
