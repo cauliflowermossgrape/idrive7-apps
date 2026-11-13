@@ -1,5 +1,10 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.14
+
+- Touch beside the MGU Store's renderer: our divert runs after the other renderers' (nft priority -299, theirs -300), so with both in, theirs sees a touch first. The Store's overlays are drawn over our apps: a tap on one is its own, and what it doesn't want comes on to us over lo. At the same priority the order was the tables', and once IterioDev's overlays were on, a tap could close our app as "the HMI was touched" (iDrive 8 car, issue #152).
+- A touch handed to the HMI is logged with where it was and where it came from (the display, the Store's renderer, IterioDev's).
+
 ## idrive7-apps mgu-renderd 2.1.13
 
 - Touch beside the MGU Store's renderer: the divert also takes the touches the Store's renderer (from port 30571) and IterioDev's (30569) hand on to the HMI over lo. The Store's renderer keeps its divert in all the time while an overlay of its claims (IterioDev's overlays), sees every touch first and passes the ones outside its claims to the HMI past our rule: on an iDrive 8 car our apps got no touch at all, and the taps reached the HMI under them (issue #152). Ours (30573) are not taken back: nothing loops.

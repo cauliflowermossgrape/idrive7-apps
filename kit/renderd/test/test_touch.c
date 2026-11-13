@@ -86,6 +86,8 @@ int main(void)
     CHECK(outs() == 1 && loads() == 0, "start: a leftover of ours is not removed");
     touch_tick(1);
     CHECK(loads() == 1 && strstr(slurp(), "udp dport set 30572"), "claimed: rule not in");
+    /* after the other renderers' -300: their overlays (drawn over our apps) see a touch first (issue #152) */
+    CHECK(strstr(slurp(), "priority -299;") != NULL, "rule not after the other renderers': %s", slurp());
     touch_tick(1);
     CHECK(loads() == 1, "claimed twice: loaded twice");
     touch_tick(0);
