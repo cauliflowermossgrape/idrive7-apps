@@ -111,7 +111,7 @@ class Strobe extends EventEmitter {
     constructor(o) {
         super();
         this.diag = o.diag; this.log = o.log;
-        this.allowed = o.allowed || (() => 'not set up');        // null: may run; else why not
+        this.allowed = o.allowed || (() => 'not set up');        // allowed('strobe' | 'show' | 'learn'): null, may run; else why not
         this.now = o.now || Date.now;
         this.sleep = o.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
         this.learned = Array.isArray(o.channels) && o.channels.length ? o.channels : null;   // [{ ch, cur, pwm }]
@@ -343,7 +343,7 @@ class Strobe extends EventEmitter {
             const r = await this._ask(BDC, 0x10, [0x03]);
             if (!r || r[0] !== 0x50) { end = [what + ': the body controller refused the diagnostic session', 'warn']; return; }
             while (!this._stop) {
-                const stopWhy = this.allowed();
+                const stopWhy = this.allowed(this.running);
                 if (stopWhy) { end = [what + ' stopped: ' + stopWhy, 'warn']; break; }
                 if (this.now() - t0 > ms) { end = [what + ' done (' + Math.round(ms / 1000) + ' s)', 'dim']; break; }
                 const at = this.now(), name = seq[step % seq.length];
@@ -412,7 +412,7 @@ class Strobe extends EventEmitter {
                 }
                 for (let i = 0; i < burst; i++) {
                     if (this._stop) break;
-                    const stopWhy = this.allowed();
+                    const stopWhy = this.allowed(this.running);
                     if (stopWhy) { end = ['Strobe stopped: ' + stopWhy, 'warn']; break; }
                     if (this.now() - t0 > ms) { end = ['Strobe done (' + Math.round(ms / 1000) + ' s)', 'dim']; break; }
                     const at = this.now();
@@ -440,7 +440,7 @@ class Strobe extends EventEmitter {
     _why() {
         if (!this.kind) return 'no headlight or lamp output control found';
         if (this.head && !this.high) return 'the high beam\'s channels are not known yet (Learn)';
-        return this._resting() || this.allowed();
+        return this._resting() || this.allowed('strobe');
     }
 
     _rest(t0) {
@@ -521,7 +521,7 @@ class Strobe extends EventEmitter {
             t.keep = this.now();
             const targets = head ? this.sides : [FL_L, FL_R];
             while (!this._stop) {
-                const stopWhy = this.allowed();
+                const stopWhy = this.allowed(this.running);
                 if (stopWhy) { end = ['Strobe stopped: ' + stopWhy, 'warn']; break; }
                 if (this.now() - t0 > MAX_MS) { end = ['Strobe done (' + MAX_MS / 1000 + ' s)', 'dim']; break; }
                 const on = step % 2 === 0, at = this.now();
@@ -590,7 +590,7 @@ class Strobe extends EventEmitter {
     show(o) { return this._held(() => this._show(o)); }
     async _show(o) {
         if (this.running) return;
-        const why = !this.kind ? 'no headlight or lamp output control found' : this._resting() || this.allowed();
+        const why = !this.kind ? 'no headlight or lamp output control found' : this._resting() || this.allowed('show');
         if (why) { this._say('Light show not started: ' + why, 'warn'); return; }
         const s0 = this.now();
         if (this.kind === 'fn') {
@@ -620,7 +620,7 @@ class Strobe extends EventEmitter {
                 const t0 = this.now(), half = o && o.rate === 'fast' ? 0 : 200;
                 let step = 0;
                 while (!this._stop && this.now() - t0 < ms) {
-                    const stopWhy = this.allowed();
+                    const stopWhy = this.allowed(this.running);
                     if (stopWhy) { end = ['Light show stopped: ' + stopWhy, 'warn']; break; }
                     const at = this.now();
                     const rs = await Promise.all(this.sides.map((a, i) => this._setChannels(a, base[a][(step + i) % 2 === 0 ? 'lit' : 'dark'])));
@@ -638,7 +638,7 @@ class Strobe extends EventEmitter {
                 this._say('Light show on');
                 const t0 = this.now(), t = { keep: this.now() };
                 while (!this._stop && this.now() - t0 < ms) {
-                    const stopWhy = this.allowed();
+                    const stopWhy = this.allowed(this.running);
                     if (stopWhy) { end = ['Light show stopped: ' + stopWhy, 'warn']; break; }
                     await this._keep(t);
                     await this.sleep(200);
@@ -702,4 +702,20 @@ class Strobe extends EventEmitter {
     stop() { this._stop = true; }
 }
 
-module.exports = { Strobe, KINDS, HEAD, F, FN_PATTERNS, FLASH, POLICE_ORDERS, flashTicks, SIDES, FL_L, FL_R, HALF_MS, MAX_MS, SHOW_MS, statusIndex };
+/*
+ * Whether the strobe and the light show may run now: switched on in the settings and someone in the car; the light show
+ * (every headlight LED against all dark) also only with the car standing still. The high beam strobe may run while driving.
+ *   gateChecks({ setting, away, moving }) -> [[label, ok, why, only], ...]   (only: the check is for that one alone)
+ *   gateWhy(checks, what) -> null (what - 'strobe', 'show', 'learn' - may run) | why not
+ * moving: kit/parked.js's moving() - a speed over 3 km/h, and quiet after driving counts as moving until a speed is read again.
+ */
+function gateChecks(o) {
+    return [
+        ['Switched on in the settings', o.setting === true],
+        ['Someone in the car', !o.away],
+        ['The car standing still (light show)', !o.moving, null, 'show'],
+    ];
+}
+const gateWhy = (checks, what) => { const c = checks.find((x) => !x[1] && (!x[3] || x[3] === what)); return c ? c[0].toLowerCase() + ': no' : null; };
+
+module.exports = { gateChecks, gateWhy, Strobe, KINDS, HEAD, F, FN_PATTERNS, FLASH, POLICE_ORDERS, flashTicks, SIDES, FL_L, FL_R, HALF_MS, MAX_MS, SHOW_MS, statusIndex };
