@@ -24,21 +24,13 @@
     },
     {
       "id": "mgu-inputgate",
-      "path": "kit/renderd/prebuilt",
-      "version": "1.0.0",
+      "path": "kit/renderd/inputgate/tool",
       "title": "Controller gate",
-      "description": "Lets the apps have the iDrive controller (tabs, page buttons, settings, Doom); loads into the HMI at the next start",
+      "description": "Lets the apps have the iDrive controller (tabs, page buttons, settings, Doom); loads into the HMI at the next start (iDrive 7 and iDrive 8)",
       "needs": ["renderer"],
       "optional": false,
-      "mguHmi": ["ID7"],
-      "preload": {
-        "library": "mgu-inputgate.so",
-        "unit": "hmi.service",
-        "process": "HmiMain3D",
-        "strikes": 2,
-        "checkAfterSeconds": 120,
-        "healthySeconds": 60
-      }
+      "uninstallable": true,
+      "mguHmi": ["ID7", "ID8"]
     }
   ]
 }
