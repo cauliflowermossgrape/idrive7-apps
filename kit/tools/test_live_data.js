@@ -195,6 +195,18 @@ async function main() {
         });
     }));
 
+    // fuel quality (KQE 4035, issue #166): 3 counts, then 5 refuellings of mileage (x 8 km) and quality range
+    {
+        const reply = [0x62, 0x40, 0x35, 0x00, 0x02, 0x00, 0x05, 0x00, 0x1B, 0x07, 0xD0, 0x03, 0x07, 0x9E, 0x02];
+        while (reply.length < 3 + 21) reply.push(0);
+        const v = decode(dme['4035'], reply);
+        assert.deepStrictEqual([v[0].value, v[1].value, v[2].value], [2, 5, 27], 'fuel quality: refuellings by range');
+        assert.deepStrictEqual([v[3].value, v[4].value, v[5].value, v[6].value], [16000, 3, 15600, 2], 'fuel quality: the last refuellings, km x 8 and range');
+        const items = USEFUL[0x12].find((g) => g.group === 'Fuel quality').items;
+        assert.strictEqual(items.length, 15, 'fuel quality: adapted, time, 3 counts, 5 x (mileage, range)');
+        assert.strictEqual(items.find((it) => it.name === 'Refuelling 1, fuel quality').map[v[4].raw], 'High');
+    }
+
     /* ---------- Energy: mapped units, field offsets, scaling and converter directions ---------- */
     const energyCatalogs = {};
     for (const sgbd of ['BATT48', 'PCU48']) {

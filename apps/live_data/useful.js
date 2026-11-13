@@ -12,6 +12,8 @@
  * -45 °C count as no data (an unset sensor reads -48 or -273).
  * Engine unit identifiers: DME8FF_R (B58 / B48 / B38, G series); one that isn't there is skipped.
  */
+/* KQE's quality range of a refuelling (Qualitaetsbereich 1 low, 2 medium, 3 high); 0: no refuelling in that place yet */
+const QUALITY = { 0: '-', 1: 'Low', 2: 'Medium', 3: 'High' };
 const cyl = (name, dids, extra) => dids.map((did, i) => Object.assign({ name: name + ', cylinder ' + (i + 1), c: [did] }, extra));
 
 const DME = [
@@ -59,15 +61,25 @@ const DME = [
         { name: 'Fuel tank, left half', c: ['5949'], u: 'l', d: 1 },
         { name: 'Fuel tank, right half', c: ['594A'], u: 'l', d: 1 },
         { name: 'Fuel tank level', c: ['OBD 2F'], u: '%', d: 0 },
-        { name: 'Time since refuelling', c: ['57E3'], u: 'h', d: 1 },
         { name: 'High pressure fuel (rail)', c: ['58EF', '5658', 'OBD 23'], u: 'bar', d: 0 },
         { name: 'High pressure fuel target', c: ['5837', '56C1'], u: 'bar', d: 0 },
         { name: 'Low pressure fuel', c: ['58F3', '5463'], u: 'bar', d: 2 },
         { name: 'Fuel consumption', c: ['5656', 'OBD 5E'], u: 'l/h', d: 1 },
         { name: 'Fuel mass flow', c: ['4521'], u: 'kg/h', d: 1 },
         { name: 'Ethanol in the fuel', c: ['550D', 'OBD 52'], u: '%', d: 0 },
-        { name: 'Fuel quality (adapted)', c: ['5776'], u: 'RON', lin: [98, -7], d: 1 },
     ] },
+    // the engine unit's fuel quality detection (KQE, 4035, issue #166): refuellings counted by quality range and the
+    // last five with their mileage; also on the S63's master unit (0x12, DME8FF_R; its second unit 0x13 has no list)
+    { group: 'Fuel quality', items: [
+        { name: 'Fuel quality (adapted)', c: ['5776'], u: 'RON', lin: [98, -7], d: 1 },
+        { name: 'Time since refuelling', c: ['57E3'], u: 'h', d: 1 },
+        { name: 'Refuellings, low quality', c: ['4035/0'], d: 0 },
+        { name: 'Refuellings, medium quality', c: ['4035/1'], d: 0 },
+        { name: 'Refuellings, high quality', c: ['4035/2'], d: 0 },
+    ].concat([1, 2, 3, 4, 5].reduce((a, n) => a.concat([
+        { name: 'Refuelling ' + n + ', mileage', c: ['4035/' + (n * 2 + 1)], u: 'km', d: 0 },
+        { name: 'Refuelling ' + n + ', fuel quality', c: ['4035/' + (n * 2 + 2)], d: 0, map: QUALITY },
+    ]), [])) },
     { group: 'Boost and air', items: [
         { name: 'Boost', minus: ['4205', '4201'], u: 'bar', d: 2 },
         { name: 'Charge pressure (absolute)', c: ['4205', '57C1'], u: 'bar', d: 2 },
