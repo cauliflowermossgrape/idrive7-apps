@@ -7,6 +7,8 @@
  *               Sport / Sport+ / Sport Individual -> OPEN
  *               Comfort / Comfort+ / Comfort Individual / Adaptive -> OEM (the car's own strategy)
  *               Eco Pro / Eco Pro+ / Eco Pro Individual -> CLOSED
+ *               plug-in hybrids: Sport / Sport Individual / Sport+ / Boost -> OPEN, Hybrid / Hybrid Comfort -> OEM,
+ *               Hybrid Eco / Electric / Electric Individual -> CLOSED
  *             DRIVE MODE is saved with the settings (key driveLink, not shown in the menu), so it is still on
  *             after the next start.
  *   rpm guard Close is paused (OEM sent, the DME opens the flap as it needs) while the live engine speed
@@ -23,6 +25,10 @@
  */
 
 const HYST = 500;
+// actualValueModeDrivingExperience's plug-in hybrid numbers (PHEV_SPORT_STANDARD 15 ... BOOST 28, as in Ambient config)
+const PHEV_FLAP = { 15: 'OPEN', 16: 'OPEN', 23: 'OPEN', 28: 'OPEN',      // PHEV Sport, Sport Individual, Sport+, Boost
+    17: 'OEM', 19: 'OEM',                                                // PHEV Hybrid (Standard), Hybrid Comfort
+    18: 'CLOSED', 20: 'CLOSED', 21: 'CLOSED' };                          // PHEV Hybrid Eco, Electric, Electric Individual
 
 /** The driving mode (statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, name or number) -> flap mode. */
 function flapFor(raw) {
@@ -33,12 +39,14 @@ function flapFor(raw) {
         if (n >= 4 && n <= 6) return 'OEM';        // Comfort, Comfort plus, Comfort individual
         if (n >= 7 && n <= 9) return 'CLOSED';     // Eco pro, Eco pro plus, Eco pro individual
         if (n === 10) return 'OEM';                // Adaptive
+        if (PHEV_FLAP[n]) return PHEV_FLAP[n];     // the plug-in hybrids' own modes (330e, X5 45e ...)
         return null;                               // 0, 61-63: initialising / invalid
     }
     const s = String(raw).toUpperCase();
-    if (/SPORT/.test(s)) return 'OPEN';
-    if (/ECO/.test(s)) return 'CLOSED';
-    if (/COMFORT|ADAPTIVE|TRAFFIC/.test(s)) return 'OEM';
+    if (/SPORT|BOOST/.test(s)) return 'OPEN';
+    if (/ECO/.test(s)) return 'CLOSED';            // Eco Pro, PHEV Hybrid Eco
+    if (/ELECTRIC|ELEKTR/.test(s)) return 'CLOSED'; // PHEV Electric: the engine only starts when it has to
+    if (/COMFORT|ADAPTIVE|TRAFFIC|HYBRID/.test(s)) return 'OEM';  // PHEV Hybrid (Standard) is the hybrids' Comfort
     return null;
 }
 
@@ -46,7 +54,11 @@ function flapFor(raw) {
 function modeName(raw) {
     const N = { 1: 'Sport', 2: 'Sport+', 3: 'Sport Individual', 4: 'Comfort', 5: 'Comfort+', 6: 'Comfort Individual',
         7: 'Eco Pro', 8: 'Eco Pro+', 9: 'Eco Pro Individual', 10: 'Adaptive', SPORT_DYNAMIC: 'Sport', SPORT_EXPERT: 'Sport+',
-        ECO_PRO_EFFICIENT: 'Eco Pro' };
+        ECO_PRO_EFFICIENT: 'Eco Pro', 15: 'Sport', 16: 'Sport Individual', 17: 'Hybrid', 18: 'Hybrid Eco', 19: 'Hybrid Comfort',
+        20: 'Electric', 21: 'Electric Individual', 23: 'Sport+', 28: 'Sport Boost', PHEV_SPORT_STANDARD: 'Sport',
+        PHEV_SPORT_INDIVIDUAL: 'Sport Individual', PHEV_SPORT_PLUS: 'Sport+', PHEV_HYBRID_STANDARD: 'Hybrid',
+        PHEV_HYBRID_ECO: 'Hybrid Eco', PHEV_HYBRID_COMFORT: 'Hybrid Comfort', PHEV_ELECTRIC_STANDARD: 'Electric',
+        PHEV_ELECTRIC_INDIVIDUAL: 'Electric Individual', BOOST: 'Sport Boost' };
     return N[raw] || (raw == null ? null : String(raw).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()));
 }
 

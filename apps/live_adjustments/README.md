@@ -20,7 +20,7 @@ flap's butterfly turning in the right tailpipe, and four buttons:
 | Open | the flap open |
 | Close | the flap closed (the rpm guard below) |
 | OEM | the flap handed back to the DME |
-| Drive mode | the flap follows the driving mode (FES) on every change: Sport / Sport+ / Sport Individual → Open; Comfort / Comfort+ / Comfort Individual / Adaptive → OEM; Eco Pro / Eco Pro+ / Eco Pro Individual → Close. The line under the state word names the driving mode. Open, Close or OEM stop following it. Saved with the settings (key `driveLink`, not in the menu), so it is still on after the next start |
+| Drive mode | the flap follows the driving mode (FES) on every change: Sport / Sport+ / Sport Individual → Open; Comfort / Comfort+ / Comfort Individual / Adaptive → OEM; Eco Pro / Eco Pro+ / Eco Pro Individual → Close. On a plug-in hybrid (330e, X5 45e ...): Sport / Sport Individual / Sport+ / Boost → Open; Hybrid / Hybrid Comfort → OEM; Hybrid Eco / Electric / Electric Individual → Close. The line under the state word names the driving mode. Open, Close or OEM stop following it. Saved with the settings (key `driveLink`, not in the menu), so it is still on after the next start |
 
 What the flap should do is `auto.js`; every command still goes through `controller.js`.
 
