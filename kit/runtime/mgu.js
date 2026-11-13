@@ -177,12 +177,25 @@ class Settings {
         if (!s || s.hidden) return false;
         return !s.when || Object.keys(s.when).every((k) => [].concat(s.when[k]).indexOf(this.values[k]) >= 0);
     }
+    /**
+     * The text of a number setting's value. "labels": a value's own text (e.g. 0 = "Auto"). "unitBy" + "units":
+     * the value is kept in "unit" and shown in the unit another setting chose (kit/tools/build.py names them all
+     * in the HMI's drop-down), e.g.
+     *   "unit": "kW", "unitBy": "powerUnit", "units": { "hp": { "unit": "hp", "mul": 1.34102 } }
+     *   "unit": "°C", "unitBy": "tempUnit", "units": { "f": { "unit": "°F", "mul": 1.8, "add": 32 } }
+     */
+    numberText(s, v) {
+        if (s.labels && s.labels[String(v)] !== undefined) return s.labels[String(v)];
+        const u = s.unitBy && s.units ? s.units[this.values[s.unitBy]] : null;
+        if (u && typeof v === 'number') return Math.round(v * (u.mul || 1) + (u.add || 0)) + ' ' + u.unit;
+        return String(v) + (s.unit ? ' ' + s.unit : '');
+    }
     /** Human text for the current value of a setting. */
     display(key) {
         const s = this.item(key), v = this.values[key];
         if (!s) return String(v);
         if (s.type === 'choice') { const o = (s.options || []).find((x) => x[0] === v); return o ? o[1] : String(v); }
-        if (s.type === 'number') return (s.labels && s.labels[String(v)] !== undefined ? s.labels[String(v)] : String(v) + (s.unit ? ' ' + s.unit : '')) + (s.markDefault && v === s.default ? ' (default)' : '');
+        if (s.type === 'number') return this.numberText(s, v) + (s.markDefault && v === s.default ? ' (default)' : '');
         if (s.type === 'bool') return v ? 'On' : 'Off';
         return String(v);
     }

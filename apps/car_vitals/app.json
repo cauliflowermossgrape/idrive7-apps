@@ -2,7 +2,7 @@
   "id": "car_vitals",
   "title": "M Vitals",
   "description": "Live engine, thermal, intake / fuel / ignition, tyre and chassis gauges",
-  "version": "2.27.2",
+  "version": "2.27.3",
   "vendor": "custom",
   "loggingId": "OA93",
   "iconGlyph": "gauge",
@@ -224,6 +224,8 @@
       "label": "Max power (100% on sport display)",
       "type": "number",
       "unit": "kW",
+      "unitBy": "powerUnit",
+      "units": { "hp": { "unit": "hp", "mul": 1.34102 }, "ps": { "unit": "PS", "mul": 1.35962 } },
       "default": 215,
       "steps": [
         100,
@@ -330,6 +332,8 @@
       "label": "Oil temp warning",
       "type": "number",
       "unit": "°C",
+      "unitBy": "tempUnit",
+      "units": { "f": { "unit": "°F", "mul": 1.8, "add": 32 } },
       "default": 125,
       "steps": [
         110,

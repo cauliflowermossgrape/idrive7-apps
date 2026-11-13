@@ -99,11 +99,12 @@ function list(r, t, key, rows, focus, y0, controller) {
 list.scroll = {};
 
 /* ---------------- settings ---------------- */
-function values(s) {
+function values(s, settings) {
     if (s.type === 'choice') return (s.options || []).map((o) => [o[0], o[1]]);
     if (s.type === 'number') {
-        // "labels": a value's own text (e.g. 0 = "Auto"), as Settings.display() shows it
-        const text = (v) => (s.labels && s.labels[String(v)] !== undefined ? s.labels[String(v)] : String(v) + (s.unit ? ' ' + s.unit : ''));
+        // a value's text in the unit chosen (mgu.js Settings.numberText: "labels", "unitBy")
+        const text = (v) => (settings && settings.numberText ? settings.numberText(s, v)
+            : s.labels && s.labels[String(v)] !== undefined ? s.labels[String(v)] : String(v) + (s.unit ? ' ' + s.unit : ''));
         return (s.steps || []).map((v) => [v, text(v) + (s.markDefault && v === s.default ? ' (default)' : '')]);
     }
     return null;
@@ -137,7 +138,7 @@ function listSheet(settings, title, opts) {
         rows() {
             if (this.open) {
                 const cur = settings.get(this.open.key);
-                return values(this.open).map((v) => ({ label: v[1], kind: 'radio', on: v[0] === cur }));
+                return values(this.open, settings).map((v) => ({ label: v[1], kind: 'radio', on: v[0] === cur }));
             }
             return entries(this.group).map((s) => (s.extra ? { label: s.extra.label, value: valueOf(s.extra), kind: 'more' }
                 : s.group && !s.key ? { label: s.group, kind: 'more' }
@@ -195,7 +196,7 @@ function listSheet(settings, title, opts) {
         },
         choose() {
             if (this.open) {
-                const v = values(this.open)[this.sub];
+                const v = values(this.open, settings)[this.sub];
                 if (v && v[0] !== settings.get(this.open.key)) settings.set(this.open.key, v[0]);
                 this.open = null;
                 return null;

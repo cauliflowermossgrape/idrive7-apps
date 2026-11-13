@@ -168,7 +168,14 @@ def setting_options(s):
         steps = s.get('steps') or []
         unit = (' ' + s['unit']) if s.get('unit') else ''
         named = s.get('labels') or {}
-        values, labels = list(steps), [named.get('%g' % v, ('%g' % v) + unit) for v in steps]
+        # "unitBy" + "units" (kit/runtime/sheet.js numberText): the HMI's rows are fixed here, so they name
+        # the value in every unit ("215 kW / 288 hp / 292 PS")
+        alts = [u for u in (s.get('units') or {}).values()] if s.get('unitBy') else []
+        def text(v):
+            if alts and isinstance(v, (int, float)):
+                return ' / '.join([('%g' % v) + unit] + ['%d %s' % (int(v * u.get('mul', 1) + u.get('add', 0) + 0.5), u['unit']) for u in alts])
+            return ('%g' % v) + unit
+        values, labels = list(steps), [named.get('%g' % v, text(v)) for v in steps]
     if s.get('markDefault'):
         labels = [lb + ' (default)' if v == s.get('default') else lb for v, lb in zip(values, labels)]
     return values, labels
