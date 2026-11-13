@@ -89,7 +89,10 @@ DBR_UNITS="display-bridge.socket display-bridge.service display-bridge-hmi.servi
 DBR_DROPIN=mgu-renderd.conf
 # controller gate for full-screen apps (kit/renderd/inputgate): preloaded into the HMI
 GATE_SO=$RENDERD_DIR/mgu-inputgate.so
-GATE_DROPIN_NAME=hmi.service.d/zz-mgu-inputgate.conf
+# the HMI it goes into: Hmi8 (hmi8.service) on iDrive 8, HmiMain3D (hmi.service) on iDrive 7
+if [ ! -e /usr/bin/HmiMain3D ] && [ -e /usr/bin/Hmi8 ]; then HMI_UNIT=hmi8.service; HMI_PROC=Hmi8
+else HMI_UNIT=hmi.service; HMI_PROC=HmiMain3D; fi
+GATE_DROPIN_NAME=$HMI_UNIT.d/zz-mgu-inputgate.conf
 APP_GID=12202          # tm_oap_app: every app has it, so they may use the renderer's socket
 # MainApp's usableUidsAndGids is 12203..12450 and it allocates from the bottom;
 # custom apps are allocated from the top so the two never meet.
@@ -702,7 +705,7 @@ remove_embed() {
 hmi_preload() {   # the HMI's LD_PRELOAD without ours (other drop-ins may preload things too)
     # from the unit files themselves (systemctl show prints values with spaces as [unprintable]);
     # the last assignment wins, as in systemd
-    systemctl cat hmi.service --no-pager 2>/dev/null | awk '
+    systemctl cat $HMI_UNIT --no-pager 2>/dev/null | awk '
         /^# \// { ours = index($0, "mgu-inputgate") > 0; next }
         ours { next }
         /^[ \t]*Environment=/ && index($0, "LD_PRELOAD=") {
@@ -725,7 +728,7 @@ GATE_GUARD=$RENDERD_DIR/inputgate-guard.sh
 GATE_UNIT=mgu-inputgate-guard.service
 GATE_CHECK=mgu-inputgate-check.service
 gate_guard_text() {
-    cat <<'GUARD'
+    cat <<'GUARD' | sed "s/@HMI_PROC@/$HMI_PROC/g; s/@HMI_UNIT@/$HMI_UNIT/g"
 #!/bin/sh
 # added by mgu-app-install.sh - boot guard for the controller gate (mgu-inputgate.so in the HMI)
 D=/var/opt/mgu-renderd; RUN=/run/mgu-inputgate.env; N=$D/inputgate.strikes; MAX=2
@@ -743,8 +746,8 @@ boot)
     ;;
 check)   # (mgu-inputgate-check.service, after the HMI) the HMI has run with the gate for a minute
     sleep 120
-    p=$(pidof HmiMain3D 2>/dev/null | cut -d' ' -f1)
-    if [ -n "$p" ] && grep -q mgu-inputgate "/proc/$p/maps" 2>/dev/null && systemctl is-active -q hmi.service; then
+    p=$(pidof @HMI_PROC@ 2>/dev/null | cut -d' ' -f1)
+    if [ -n "$p" ] && grep -q mgu-inputgate "/proc/$p/maps" 2>/dev/null && systemctl is-active -q @HMI_UNIT@; then
         up=$(cut -d. -f1 /proc/uptime); st=$(cut -d')' -f2 "/proc/$p/stat" | awk '{print $20}')
         if [ $((up - st / 100)) -ge 60 ]; then echo 0 > "$N"; sync; echo "controller gate: HMI healthy with it"; fi
     fi
@@ -763,7 +766,7 @@ gate_unit_text() {
 Description=mgu controller gate boot guard
 DefaultDependencies=no
 RequiresMountsFor=$RENDERD_DIR
-Before=hmi.service
+Before=$HMI_UNIT
 
 [Service]
 Type=oneshot
@@ -778,7 +781,7 @@ gate_check_text() {
 # added by mgu-app-install.sh - the HMI came up healthy with the controller gate: reset the guard
 [Unit]
 Description=mgu controller gate check
-After=hmi.service
+After=$HMI_UNIT
 RequiresMountsFor=$RENDERD_DIR
 
 [Service]
@@ -806,7 +809,7 @@ gate_env_text() {
     echo "LD_PRELOAD=${other:+$other }$GATE_SO"
 }
 gate_loaded() {
-    p=$(pidof HmiMain3D 2>/dev/null | cut -d' ' -f1)
+    p=$(pidof $HMI_PROC 2>/dev/null | cut -d' ' -f1)
     [ -n "$p" ] && grep -q mgu-inputgate "/proc/$p/maps" 2>/dev/null
 }
 gate_state() {    # one line for status
@@ -822,11 +825,11 @@ gate_state() {    # one line for status
 hmi_healthy() {   # HMI up for a while with the gate loaded (--now only)
     i=0
     while [ $i -lt 60 ]; do
-        p=$(pidof HmiMain3D 2>/dev/null | cut -d' ' -f1)
+        p=$(pidof $HMI_PROC 2>/dev/null | cut -d' ' -f1)
         if [ -n "$p" ] && grep -q mgu-inputgate "/proc/$p/maps" 2>/dev/null; then
             sleep 15
-            p2=$(pidof HmiMain3D 2>/dev/null | cut -d' ' -f1)
-            [ "$p2" = "$p" ] && systemctl is-active -q hmi.service && return 0
+            p2=$(pidof $HMI_PROC 2>/dev/null | cut -d' ' -f1)
+            [ "$p2" = "$p" ] && systemctl is-active -q $HMI_UNIT && return 0
             return 1
         fi
         sleep 1; i=$((i+1))
@@ -835,9 +838,9 @@ hmi_healthy() {   # HMI up for a while with the gate loaded (--now only)
 }
 gate_files_remove() {
     rm -f "/run/systemd/system/$GATE_DROPIN_NAME" /run/mgu-inputgate.env
-    rmdir /run/systemd/system/hmi.service.d 2>/dev/null
+    rmdir /run/systemd/system/$HMI_UNIT.d 2>/dev/null
     if [ -e "/etc/systemd/system/$GATE_DROPIN_NAME" ] || [ -e "/etc/systemd/system/$GATE_UNIT" ] || [ -e "/etc/systemd/system/$GATE_CHECK" ]; then
-        rootfs_rw_do sh -c "rm -f '/etc/systemd/system/$GATE_DROPIN_NAME' '/etc/systemd/system/$GATE_UNIT' '/etc/systemd/system/$GATE_CHECK' && { rmdir /etc/systemd/system/hmi.service.d 2>/dev/null; true; }"
+        rootfs_rw_do sh -c "rm -f '/etc/systemd/system/$GATE_DROPIN_NAME' '/etc/systemd/system/$GATE_UNIT' '/etc/systemd/system/$GATE_CHECK' && { rmdir /etc/systemd/system/$HMI_UNIT.d 2>/dev/null; true; }"
     fi
     rm -f "$RENDERD_DIR/inputgate.env" "$RENDERD_DIR/inputgate.strikes" "$GATE_GUARD"
     systemctl daemon-reload
@@ -846,7 +849,9 @@ install_inputgate() {
     now=0; [ "${1:-}" = "--now" ] && now=1      # (--persist: accepted, it always is)
     src=$SELF_DIR/mgu-inputgate.so
     [ -f "$src" ] || die "mgu-inputgate.so not found next to $0"
-    [ -d "$RENDERD_DIR" ] || die "install the renderer first (sh $0 renderd)"
+    # a renderer: this kit's, or the Store's (idrive7-renderd); the gate's files go in $RENDERD_DIR either way
+    [ -d "$RENDERD_DIR" ] || [ -d /var/opt/idrive7-renderd ] || die "install the renderer first (sh $0 renderd)"
+    mkdir -p "$RENDERD_DIR" || die "cannot make $RENDERD_DIR"
     rm -f "/run/systemd/system/$GATE_DROPIN_NAME"      # (older installers tried it from /run)
     cp "$src" "$GATE_SO.new" && chmod 755 "$GATE_SO.new" && chown 0:0 "$GATE_SO.new" && mv "$GATE_SO.new" "$GATE_SO" || die "copy failed"
     # (new file + rename: a running copy keeps reading its own)
@@ -855,7 +860,7 @@ install_inputgate() {
     echo 0 > "$RENDERD_DIR/inputgate.strikes"          # installing again = a fresh try
     gate_unit_text > "$TMP.unit" && gate_check_text > "$TMP.check" && gate_dropin_text > "$TMP.gate" || die "tmp"
     if ! cmp -s "$TMP.unit" "/etc/systemd/system/$GATE_UNIT" || ! cmp -s "$TMP.check" "/etc/systemd/system/$GATE_CHECK" || ! cmp -s "$TMP.gate" "/etc/systemd/system/$GATE_DROPIN_NAME"; then
-        rootfs_rw_do sh -c "cp '$TMP.unit' '/etc/systemd/system/$GATE_UNIT' && cp '$TMP.check' '/etc/systemd/system/$GATE_CHECK' && mkdir -p /etc/systemd/system/hmi.service.d && cp '$TMP.gate' '/etc/systemd/system/$GATE_DROPIN_NAME'" || { rm -f "$TMP.unit" "$TMP.check" "$TMP.gate"; die "cannot write the controller gate's units to /etc/systemd/system"; }
+        rootfs_rw_do sh -c "cp '$TMP.unit' '/etc/systemd/system/$GATE_UNIT' && cp '$TMP.check' '/etc/systemd/system/$GATE_CHECK' && mkdir -p /etc/systemd/system/$HMI_UNIT.d && cp '$TMP.gate' '/etc/systemd/system/$GATE_DROPIN_NAME'" || { rm -f "$TMP.unit" "$TMP.check" "$TMP.gate"; die "cannot write the controller gate's units to /etc/systemd/system"; }
     fi
     rm -f "$TMP.unit" "$TMP.check" "$TMP.gate"
     systemctl daemon-reload
@@ -868,12 +873,12 @@ install_inputgate() {
     # the HMI isn't healthy
     systemctl restart "$GATE_UNIT" 2>/dev/null
     say "restarting the HMI with the controller gate (VM / bench: on a car this reboots the head unit)..."
-    systemctl restart hmi.service 2>/dev/null || say "(systemctl reported an error stopping the old HMI - normal, it stops with SIGABRT)"
+    systemctl restart $HMI_UNIT 2>/dev/null || say "(systemctl reported an error stopping the old HMI - normal, it stops with SIGABRT)"
     if ! hmi_healthy; then
         warn "the HMI did not come back healthy with the controller gate - taking it out again"
         gate_files_remove; rm -f "$GATE_SO"
-        systemctl reset-failed hmi.service 2>/dev/null
-        systemctl restart hmi.service || warn "HMI restart without the gate failed too - reboot the head unit"
+        systemctl reset-failed $HMI_UNIT 2>/dev/null
+        systemctl restart $HMI_UNIT || warn "HMI restart without the gate failed too - reboot the head unit"
         return 1
     fi
     echo 0 > "$RENDERD_DIR/inputgate.strikes"
@@ -884,7 +889,7 @@ remove_inputgate() {
     gate_files_remove
     rm -f "$GATE_SO"      # (a running HMI keeps its mapped copy; without the drop-in it is not loaded again)
     [ $had = 1 ] || { say "controller gate not installed"; return 0; }
-    if [ "${1:-}" = "--now" ]; then say "restarting the HMI without the controller gate (VM / bench only)..."; systemctl restart hmi.service 2>/dev/null; fi
+    if [ "${1:-}" = "--now" ]; then say "restarting the HMI without the controller gate (VM / bench only)..."; systemctl restart $HMI_UNIT 2>/dev/null; fi
     # switching the car off and on is not a head-unit start: the HMI keeps running with the gate (issue #117)
     say "controller gate removed - the HMI drops it when the head unit reboots (systemctl reboot, or hold the volume knob);"
     say "  switching the car off and on does not restart the head unit. Or: sh $0 inputgate-remove --reboot"

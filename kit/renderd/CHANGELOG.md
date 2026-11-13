@@ -1,5 +1,10 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.18
+
+- The controller gate on iDrive 8 (to try, issue #152): whether the gate is loaded is now looked up in Hmi8 too (iDrive 8's HMI; HmiMain3D on iDrive 7), so apps there are offered the controller once `mgu-inputgate.so` runs in it. The HMI's surface is still looked up by `hmi_process` only (unchanged layout on iDrive 8).
+- `mgu-app-install.sh inputgate` sets the gate up for `hmi8.service` / `Hmi8` on iDrive 8 (same boot guard: two starts without the HMI coming up healthy with it and it is left out), and takes the Store's renderer (`idrive7-renderd`) as the renderer it needs. iDrive 7 gets the same files as before.
+
 ## idrive7-apps mgu-renderd 2.1.17
 
 - Beside IterioDev's renderer (his App Manager's service package, or the Store's `mgu-renderd` tool): it binds the same community socket and uses the same ivi ids, so the two cannot run together. While it is installed (its `mgu-renderd.service`, started with `--socket`) or a `mgu-renderd --socket` runs, this renderer stands down: it says so once, sets up nothing (socket, touch divert, layers) and looks again every 30 s; once it is gone it starts. Its apps and ours then draw on IterioDev's renderer.
