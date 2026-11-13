@@ -91,8 +91,13 @@ Oil temp warning	유온 경고
 Boost	부스트
 Boost from	부스트 데이터 출처
 Engine unit (OBD)	엔진 제어기 (OBD)
-Gearbox oil temperature	변속기 유온
-Gearbox temperature (EGS)	변속기 온도 (EGS)
+Gearbox oil temperature	미션오일 온도
+Gearbox temperature (EGS)	미션오일 온도 (EGS)
+Gearbox oil is warm at	미션오일 예열 완료 온도
+GEARBOX	미션오일
+GEARBOX READY IN	미션오일 예열까지
+GEARBOX WARMING UP	미션오일 예열 중
+GEARBOX HOT - EASE OFF	미션오일 과열 - 부하를 줄이세요
 Tyre card	타이어 정보
 Tyre temperatures	타이어 온도
 xDrive card	xDrive 정보
@@ -232,7 +237,7 @@ CHARGING  (engine / DC-DC running)	충전 중 (엔진 / DC-DC 작동)
 KWH PER DAY, 14 DAYS	일별 kWh, 최근 14일
 Engine oil	엔진오일
 Engine speed	엔진 회전수
-Gearbox oil	변속기 오일
+Gearbox oil	미션오일
 Gearbox (EGS)	변속기 (EGS)
 Ambient	외기
 Intake air (IAT)	흡기 (IAT)
@@ -819,7 +824,7 @@ FES boost	FES 부스트
 FES g [lat, long]	FES g [횡, 종]
 gear programme	변속 프로그램
 gear selection	기어 선택
-gearbox oil	변속기 오일
+gearbox oil	미션오일
 lateral acceleration	횡가속도
 longitudinal acceleration	종가속도
 on target	목표 일치
@@ -974,7 +979,7 @@ Running-in check	길들이기 점검
 Water filter	워터 필터
 Statutory vehicle inspection (HU)	자동차 정기검사 (HU)
 Emissions inspection (AU)	배출가스 검사 (AU)
-Transmission oil	변속기 오일
+Transmission oil	미션오일
 Clutch	클러치
 Pedestrian-protection bonnet struts	보행자 보호 보닛 지지대
 First-aid kit	구급상자
@@ -2028,7 +2033,7 @@ Throttle (accelerator pedal)	스로틀 (가속 페달)
 G-force (sideways and braking / accelerating together)	G-포스 (좌우와 제동·가속 함께)
 Oil temp	오일 온도
 Water temp	냉각수 온도
-Gearbox temp	변속기 온도
+Gearbox temp	미션오일 온도
 Outside temp (blue at 3 °C and below)	외기 온도 (3 °C 이하 파란색)
 Cold-engine shift limit	냉간 엔진 변속 한계
 Only when cold or hot	차갑거나 뜨거울 때만
