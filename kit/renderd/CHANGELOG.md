@@ -1,5 +1,10 @@
 # mgu-render changelog
 
+## idrive7-apps mgu-renderd 2.1.17
+
+- Beside IterioDev's renderer (his App Manager's service package, or the Store's `mgu-renderd` tool): it binds the same community socket and uses the same ivi ids, so the two cannot run together. While it is installed (its `mgu-renderd.service`, started with `--socket`) or a `mgu-renderd --socket` runs, this renderer stands down: it says so once, sets up nothing (socket, touch divert, layers) and looks again every 30 s; once it is gone it starts. Its apps and ours then draw on IterioDev's renderer.
+- The kit installer (`mgu-app-install.sh renderd`) no longer overwrites a `mgu-renderd.service` that is not its own (IterioDev's has the same name), and the Store package's install step removes only the kit installer's unit (its marker line), never IterioDev's.
+
 ## idrive7-apps mgu-renderd 2.1.16
 
 - Up to 64 apps connected at once (was 16). While this renderer has the community socket, IterioDev's apps connect to it as well as ours; with both sets installed on an iDrive 8 car the 16 slots filled and the later apps (ours among them) drew in the HMI's text screen (issue #152). A slot costs only while its app is connected, and pictures stay under the all-apps limit as before.

@@ -1693,6 +1693,47 @@ static void usage(const char *a0) {
     fprintf(stderr, "usage: %s [-c FILE] [-s key=value]... [-v] [--share | --unshare] | --replay FILE --out FILE.pam [--raw FILE.rgba] [--uid N]\n", a0);
 }
 
+/* IterioDev's renderer (his App Manager's service package, also as the Store's "mgu-renderd" tool): it binds the same
+ * community socket and uses the same ivi ids as this renderer, so the two cannot run together. Installed (its unit,
+ * started with "--socket"; this repository's installer writes a unit of the same name, with "-s socket_path=" and its
+ * marker line) or running (a mgu-renderd with "--socket"): why, else 0. */
+static int iterio_renderer(char *why, size_t n) {
+    static const char *units[] = { "/etc/systemd/system/mgu-renderd.service", "/run/systemd/system/mgu-renderd.service",
+                                   "/lib/systemd/system/mgu-renderd.service" };
+    for (size_t i = 0; i < sizeof units / sizeof *units; i++) {
+        FILE *f = fopen(units[i], "r");
+        if (!f) continue;
+        char line[1024]; int theirs = 0, ours = 0;
+        while (fgets(line, sizeof line, f)) {
+            if (strstr(line, "added by mgu-app-install.sh")) ours = 1;
+            if (!strncmp(line, "ExecStart=", 10) && strstr(line, " --socket")) theirs = 1;
+        }
+        fclose(f);
+        if (theirs && !ours) { snprintf(why, n, "its unit %s", units[i]); return 1; }
+    }
+    DIR *d = opendir("/proc");
+    struct dirent *e;
+    pid_t me = getpid();
+    while (d && (e = readdir(d))) {
+        char *end; long pid = strtol(e->d_name, &end, 10);
+        if (*end || pid <= 0 || pid == me) continue;
+        char p[64], b[1024]; snprintf(p, sizeof p, "/proc/%ld/cmdline", pid);
+        int fd = open(p, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) continue;
+        ssize_t len = read(fd, b, sizeof b - 1);
+        close(fd);
+        if (len <= 0) continue;
+        b[len] = 0;
+        const char *base = strrchr(b, '/'); base = base ? base + 1 : b;
+        if (strcmp(base, "mgu-renderd")) continue;
+        for (char *a = b + strlen(b) + 1; a < b + len; a += strlen(a) + 1) {
+            if (!strcmp(a, "--socket")) { snprintf(why, n, "process %ld", pid); closedir(d); return 1; }
+        }
+    }
+    if (d) closedir(d);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const char *rin = NULL, *rout = "out.pam", *rraw = NULL;
     uint32_t ruid = (uint32_t)getuid();
@@ -1733,6 +1774,20 @@ int main(int argc, char **argv) {
 
     signal(SIGPIPE, SIG_IGN);
     signal(SIGTERM, on_sig); signal(SIGINT, on_sig);
+    /* on the community socket: stand down while IterioDev's renderer is installed or runs (its apps and ours then
+     * draw on it), looked at again every 30 s; nothing of ours (socket, touch divert, layers) is set up meanwhile */
+    if (!strcmp(cfg.socket_path, "/run/mgu-renderd/renderd.sock")) {
+        char why[128];
+        int said = 0;
+        while (!quit && iterio_renderer(why, sizeof why)) {
+            if (!said) log_warn("IterioDev's renderer is installed (%s): it has the apps' socket, this renderer stands down "
+                                "until it is removed", why);
+            said = 1;
+            sleep(30);
+        }
+        if (quit) return 0;
+        if (said) log_info("IterioDev's renderer is gone: starting");
+    }
     if (!getenv("XDG_RUNTIME_DIR")) setenv("XDG_RUNTIME_DIR", "/run/wayland", 1);
     dpy = wl_display_connect(cfg.wayland_display);
     if (!dpy) { log_error("cannot connect to the compositor %s (%s)", cfg.wayland_display, strerror(errno)); return 1; }

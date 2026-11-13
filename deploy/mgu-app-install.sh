@@ -554,6 +554,13 @@ retire_store_renderer() {
 install_renderd() {
     src=$SELF_DIR/mgu-renderd
     [ -f "$src" ] || die "mgu-renderd not found next to $0"
+    # IterioDev's renderer has a unit of the same name (his App Manager's, or the Store's "mgu-renderd" tool): never
+    # overwritten. The two cannot run together (the same socket and layer ids); ours stands down while his is there.
+    for u in "/etc/systemd/system/$RENDERD_UNIT" "/run/systemd/system/$RENDERD_UNIT"; do
+        if [ -f "$u" ] && ! grep -q 'added by mgu-app-install.sh' "$u"; then
+            die "$u is another renderer's (IterioDev's): remove it first (the Store, or his App Manager), then run this again"
+        fi
+    done
     retire_store_renderer
     # everything is put in place first and the running renderer is restarted only at the end, in
     # one step (the apps draw in software only for those few seconds); unchanged: not restarted
