@@ -387,7 +387,7 @@ async function specTests() {
     const S = {};
     spec.settings.forEach((s) => { S[s.key] = s; });
     await t('app.json: Engine Config\'s settings kept (names, defaults, Disarmed), Hold and the Close limit after the arm switch', async () => {
-        assert.deepStrictEqual(spec.settings.map((s) => s.key), ['arm', 'hold', 'closeLimit', 'tuner', 'xdrive', 'theme', 'layout', 'renderer', 'demo']);
+        assert.deepStrictEqual(spec.settings.map((s) => s.key), ['arm', 'hold', 'closeLimit', 'tuner', 'mapPin', 'mapPinCode', 'xdrive', 'theme', 'layout', 'renderer', 'demo']);
         assert.deepStrictEqual([S.arm.label, S.arm.default, S.tuner.default, S.xdrive.default], ['Exhaust Flap', 'off', 'off', 'off']);
         assert.deepStrictEqual([S.hold.default, S.closeLimit.default], ['on', '4000']);
         assert.ok(!S.driveLink, 'Drive mode is saved with the settings but not shown in the menu');

@@ -31,8 +31,10 @@ const { XDriveControl } = require('./xdrive');
 const { XDriveLive } = require('./xdrive_live');
 const Car = require('./kit/car');
 const { AutoFlap } = require('./auto');
+const { PinLock } = require('./pin');
 
 const FES = 'de.bmw.infotainment.drivingexcitement.FES';
+const PIN_PAGES = ['Engine Map', 'Burbles'];   // behind the PIN when its setting is on (pin.js)
 const RPM_STALE_MS = 5000;          // the Close rpm guard: an engine speed older than this is none
 
 /** The tabs this car gets: Exhaust Flap always, the picked tune's pages, xDrive when switched on, xDrive live with
@@ -91,6 +93,11 @@ mgu.run({
             xdriveOff: tuneAct(() => xdrive.requestOff()),
             xdriveOn: tuneAct(() => xdrive.requestOn()),
         };
+        // the PIN in front of the Engine Map and Burbles tabs (setting "PIN for Engine Map and Burbles"); locked again when the app leaves the screen
+        const pin = new PinLock({ get: (k) => settings.get(k), set: (k, v) => settings.set(k, v) });
+        acts.pinDigit = (n) => () => { pin.digit(n); repaint(); };
+        acts.pinBack = () => { pin.back(); repaint(); };
+        if (ui.onVisible) ui.onVisible((name, on) => { if (name === 'MAIN' && !on) pin.lock(); });
         const pages = () => pagesFor(tune.features(), xdrive.enabled, xlive.seen);
 
         const render = async () => {
@@ -107,6 +114,7 @@ mgu.run({
             v.pages = list;
             v.page = page;
             v.tune = tune.view();
+            v.pin = pin.locked() && PIN_PAGES.indexOf(page) >= 0 ? pin.view(page) : null;
             if (page === 'xDrive' || page === 'xDrive live') {
                 const r = xdrive.tick();             // DBE1 read now and then, only on this tab
                 if (r) r.then(repaint).catch((e) => log.error('xdrive', e));
@@ -133,6 +141,7 @@ mgu.run({
         // the DME is looked at again when the flap's or the tune's setting changes, or (armed) while none was found
         // yet: it may have been asleep at start-up. A theme change with the DME found sends nothing.
         const lost = () => controller.armedSetting && !(controller.ident && controller.ident.present);
+        settings.onChange((key, value) => { pin.settingChanged(key, value); repaint(); });
         settings.onChange((key) => Promise.resolve((REFRESH_KEYS.indexOf(key) >= 0 || lost()) && controller.refresh())
             .then(() => key === 'tuner' && tune.refresh())
             .then(() => key === 'xdrive' && xdrive.refresh())

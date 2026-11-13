@@ -67,6 +67,11 @@ the check engine light flash (MHD's map-change indication) — the map page says
 normal. None of the DIDs MHD reads (`22 3010/3020/3030/3031/3032/37FE/586A/4098`) changed
 between map 1 and map 2. BM3: limited smoke testing on one G22 (as the former BM3 Live app).
 
+**PIN for Engine Map and Burbles** (setting, off by default): the Engine Map and Burbles tabs show a keypad
+until the PIN is entered (one PIN, one unlock for both). Turned on, it asks for a new 4-digit PIN twice. It locks again whenever the app leaves the screen;
+5 wrong PINs block it for 60 s. Turning the setting off asks for the PIN first. Only a salted hash is saved
+(`mapPinCode`). Forgot it: delete the app's `settings.json` or reinstall the app.
+
 **Other tuning software** (MG Flasher and others): add a choice to the `tuner` setting in
 `app.json`, its tabs to `FEATURES` in `tune.js` and its commands there, with a test case in
 `kit/tools/test_live_adjustments.js`. Contributions from owners who can capture the commands

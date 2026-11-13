@@ -41,6 +41,7 @@ function draw(cv, G, t, v, act) {
     // the buttons (where the kit runs the screen) end G.MARGIN over it, as the other apps' last lines
     const bottom = G.pageBottom(cv) - (cv.own ? G.MARGIN : 0);
 
+    if (v.pin && (page === 'Engine Map' || page === 'Burbles')) return drawPin(cv, G, t, v.pin, act || {}, bottom);
     if (page === 'Engine Map') return drawMap(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'Max Cooling') return drawCooling(cv, G, t, v.tune || {}, act || {}, bottom);
     if (page === 'Burbles') return drawBurbles(cv, G, t, v.tune || {}, act || {}, bottom);
@@ -148,6 +149,40 @@ function drawMap(cv, G, t, m, act, bottom) {
     noteLine(cv, G, t, m, bottom);
     buttonRow(cv, G, t, [1, 2, 3, 4].map((n) => ['Map ' + n, act.map && act.map(n), m.map === n]),
         bottom, 200, m.busy, 'la_map');
+    return cv;
+}
+
+/**
+ * Engine Map / Burbles behind the PIN (pin.js): what to do, a dot for each digit, the message, and the keypad
+ * (1-5 over 6-0 and Delete) where the kit runs the screen; elsewhere only the words (the tabs' buttons
+ * aren't there either).
+ */
+function drawPin(cv, G, t, p, act, bottom) {
+    const rowH = 56, rowGap = 18, padTop = bottom - 2 * rowH - rowGap;
+    const cy = G.TOP + (padTop - G.TOP) / 2 - 40;
+    cv.text(p.title, W / 2, cy, 30, t.text, { align: 'center', font: 'bold', spacing: 1 });
+    const r = 11, gap = 40, x0 = W / 2 - ((p.len - 1) * gap) / 2;
+    for (let i = 0; i < p.len; i++) {
+        if (i < p.digits) cv.circle(x0 + i * gap, cy + 46, r, t.text);
+        else cv.strokeRoundRect(x0 + i * gap - r, cy + 46 - r, 2 * r, 2 * r, r, 2, G.withAlpha('#ffffff', 0.4));
+    }
+    if (p.msg) cv.text(p.msg, W / 2, cy + 96, 18, p.warn ? (t.warn || '#d29922') : t.dim, { align: 'center', font: 'label' });
+    if (!cv.own) {
+        cv.text('Enter the PIN on the touchscreen', W / 2, cy + 130, 16, t.dim, { align: 'center', font: 'label' });
+        return cv;
+    }
+    const bw = 150, bg = 20, busy = p.wait > 0;
+    const row = (keys, y) => {
+        let bx = (W - (keys.length * bw + (keys.length - 1) * bg)) / 2;
+        keys.forEach((k) => {
+            const del = k === 'del';
+            G.button(cv, t, bx, y, bw, rowH, del ? 'Delete' : String(k), del ? act.pinBack : act.pinDigit && act.pinDigit(k),
+                { key: 'la_pin_' + k, busy: busy && !del });
+            bx += bw + bg;
+        });
+    };
+    row([1, 2, 3, 4, 5], padTop);
+    row([6, 7, 8, 9, 0, 'del'], padTop + rowH + rowGap);
     return cv;
 }
 
