@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OA9A",
   "iconGlyph": "temp",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.15" },
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",

@@ -498,11 +498,6 @@ restore() {
 }
 
 renderd_unit() {   # the unit file text
-    # touch_area: iDrive 7's app area plus the title strip (the kit's page tabs are there). iDrive 8 (Hmi8) has
-    # neither the tabs there nor that size: the renderer then takes its own iDrive 8 area (title strip and climate
-    # bar left to the HMI)
-    TOUCH_AREA="-s touch_area=84,0,1836,720"
-    if pidof Hmi8 >/dev/null 2>&1; then TOUCH_AREA=""; fi
     cat <<UNIT
 # added by mgu-app-install.sh - GPU renderer for the custom apps (remove: sh mgu-app-install.sh renderd-remove)
 [Unit]
@@ -518,8 +513,9 @@ Environment=XDG_RUNTIME_DIR=/run/wayland
 RuntimeDirectory=mgu-renderd
 RuntimeDirectoryMode=0755
 ExecStartPre=/bin/sh -c 'until [ -S /run/wayland/wayland-0 ]; do sleep 1; done'
-ExecStart=$RENDERD_DIR/mgu-renderd -s socket_path=/run/mgu-renderd/renderd.sock -s socket_group=$APP_GID -s embed_marker=$EMBED_RUN/hmi-template $TOUCH_AREA
-# touch_area: apps may claim the title strip too (the kit's page tabs are there); only what an app claims is its
+ExecStart=$RENDERD_DIR/mgu-renderd -s socket_path=/run/mgu-renderd/renderd.sock -s socket_group=$APP_GID -s embed_marker=$EMBED_RUN/hmi-template
+# where apps may claim touches: the renderer's own default for the screen it finds (iDrive 7: the title strip too,
+# for the kit's page tabs; iDrive 8: the app area); only what an app claims is its
 # a stopped renderer leaves no touch divert behind (only its own table)
 ExecStopPost=-/bin/sh -c 'nft delete table ip idrive7_render 2>/dev/null; true'
 Restart=always

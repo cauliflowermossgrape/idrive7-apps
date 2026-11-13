@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
+  "mguHmi": ["ID7"],
+  "requires": { "idrive7-renderd": "2.1.7", "mgu-inputgate": "1.0.0" },
   "autostart": true,
   "signals": {
     "de.bmw.infotainment.misc.ComfortFunctionIuK": {

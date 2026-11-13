@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OA94",
   "iconGlyph": "flag",
+  "mguHmi": ["ID7"],
+  "requires": { "idrive7-renderd": "2.1.7", "mgu-inputgate": "1.0.0" },
   "signals": {
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs"

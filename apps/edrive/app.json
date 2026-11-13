@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.15" },
   "signals": {
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",

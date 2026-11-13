@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OA93",
   "iconGlyph": "gauge",
+  "mguHmi": ["ID7"],
+  "requires": { "idrive7-renderd": "2.1.7", "mgu-inputgate": "1.0.0" },
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",

@@ -4,8 +4,6 @@
     "path": "apps/*",
     "manifest": "app.json",
     "icon": "icon.png",
-    "mguHmi": ["ID7"],
-    "requires": { "idrive7-renderd": "2.1.7", "mgu-inputgate": "1.0.0" },
     "build": {
       "python": "kit/tools/build.py",
       "args": ["{id}"],
@@ -21,8 +19,8 @@
       "id": "idrive7-renderd",
       "path": "kit/renderd/prebuilt",
       "title": "GPU renderer",
-      "description": "The apps' own GPU renderer (mgu-render): draws them at 60 fps, beside the MGU Store's Renderer; installed with the apps",
-      "mguHmi": ["ID7"]
+      "description": "The apps' own GPU renderer (mgu-render): draws them at 60 fps, beside the MGU Store's Renderer; installed with the apps (iDrive 7 and iDrive 8)",
+      "mguHmi": ["ID7", "ID8"]
     },
     {
       "id": "mgu-inputgate",

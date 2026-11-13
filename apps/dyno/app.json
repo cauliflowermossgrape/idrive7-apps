@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OA98",
   "iconGlyph": "dyno",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.15" },
   "signals": {
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs",

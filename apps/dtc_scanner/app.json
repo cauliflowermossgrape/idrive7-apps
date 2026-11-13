@@ -6,6 +6,8 @@
   "vendor": "custom",
   "loggingId": "OA95",
   "iconGlyph": "engine",
+  "mguHmi": ["ID7"],
+  "requires": { "idrive7-renderd": "2.1.7", "mgu-inputgate": "1.0.0" },
   "signals": {
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",
