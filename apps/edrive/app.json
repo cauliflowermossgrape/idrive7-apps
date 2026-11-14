@@ -824,6 +824,7 @@
         "cellT": [
           {
             "did": "DDC0",
+            "note": "cell temperatures min / max / avg, 0.01 °C; confirmed on an iX3 G08: 62 DD C0 09 03 09 24 09 10 01 = 23.07 / 23.40 / 23.20 °C",
             "fields": {
               "min": {
                 "at": 0,
