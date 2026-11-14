@@ -92,7 +92,7 @@ function context(dir, set) {
         settings: { get: (k) => S[k], onChange() {} },
         log: quiet, spec: SPEC, dataDir: dir,
         signals: { watch: (iface, ver, handlers) => { Object.assign(watchers, handlers); return Promise.resolve({}); } },
-        onTab() {}, hideButton() {}, onScroll() {}, loop(name, fps, fn) { this.frame = fn; },
+        onTab() {}, hideButton() {}, onScroll(fn) { this.scroll = fn; }, loop(name, fps, fn) { this.frame = fn; },
         theme: () => themes.theme('m_tricolour'), canvas: (w, h) => {
             const cv = new Canvas(w, h), text = cv.text.bind(cv);
             cv.text = (str, x, y, size, color, opts) => {
@@ -119,7 +119,7 @@ async function boot(dir, vals, set) {
     onExit.forEach((f) => process.removeListener('exit', f));
     await flush();
     return {
-        texts: ctx.texts, reader,
+        texts: ctx.texts, reader, ctx,
         page: async () => { await ctx.clicks.BTN_PAGE(); await flush(); },
         read: async () => { diag.available = true; diag.emit('available', true); await flush(); },
         readNow: async () => { diag.available = true; ctx.clicks.BTN_READ(); await flush(); },
@@ -490,6 +490,27 @@ const checks = [
         // 10 kWh stored x 1.1 (charging losses) x R$ 1.00
         const t = b.texts.map((x) => x.str);
         assert(t.some((x) => x.includes('R$ 11,00')) && !t.some((x) => x.includes('€')), t.join(' | '));
+    }],
+    ['16. Diagnostic: the scan\'s bytes in hex over pages, and the signals whole (wrapped), reached by scrolling', async () => {
+        const dir = tmp('dump');
+        // a finished scan: a long reply (100 bytes: 3 lines of 40), short ones sharing a line
+        const long = Array.from({ length: 100 }, (_, i) => i);
+        fs.writeFileSync(path.join(dir, 'scan_07.json'), JSON.stringify({ t: now - 60000, done: 1536, noReply: 0,
+            hits: [{ did: 'E5CE', bytes: [0x1D, 0x52, 0x1D, 0x2C, 0x1D, 0x71] }, { did: 'E553', bytes: [0x0F, 0x67, 0x0F, 0x6E] }, { did: 'E544', bytes: long }] }));
+        const b = await boot(dir, { soc: 75 }, { hybrid: 'bev', diagPage: true });
+        const ctx = b.ctx, canvas = ctx.canvas;
+        ctx.canvas = (w, h) => Object.assign(canvas(w, h), { place: { scale: 1, ox: 0, oy: 0 }, targets: [] });
+        const big = { displayRepartitionDriveElectricPower: 4 };
+        for (let i = 0; i < 30; i++) big['displayRepartitionSomethingLong' + i] = 1000 + i;
+        b.signal('statusDisplayElectricalPowerDistribution', big);
+        for (let i = 0; i < 4; i++) await b.page();
+        // every part is drawn somewhere on the scrolled page: scroll through it and collect what shows
+        const seen = new Set();
+        for (let k = 0; k < 40; k++) { (await b.draw()).forEach((x) => seen.add(x)); ctx.scroll(492); now += 1000; }
+        const all = Array.from(seen);
+        assert(all.includes('E5CE: 1D 52 1D 2C 1D 71    E553: 0F 67 0F 6E'), 'short replies share a line: ' + all.filter((x) => /E5/.test(x)).join(' | '));
+        assert(all.some((x) => x.startsWith('E544 +0000  00 01 02')) && all.some((x) => x.startsWith('E544 +0080  50 51')), 'the long reply over lines');
+        assert(all.some((x) => x.includes('displayRepartitionSomethingLong29')) && !all.some((x) => x.includes('…')), 'the long signal whole, not cut');
     }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();

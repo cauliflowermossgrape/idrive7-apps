@@ -1000,11 +1000,17 @@ mgu.run({
          * move the parts) only the first part.
          */
         function renderDiagAll(cv, t, d) {
-            const parts = (isHybrid() ? DIAG_PARTS_HYBRID : DIAG_PARTS_12V).map((p) => ({
-                diag: () => renderDiag(cv, t, d), signals: () => renderSignals(cv, t, d),
-                unit: () => lv.draw('unit', cv, t),
-                scan: () => { lv.draw('scan', cv, t); G.button(cv, t, 1576 - 20 - 120, 56, 120, 40, 'Reset', () => { lv.action('scan'); return render(); }, { key: 'scan', confirm: true }); },
-            })[p]);
+            // the scan's bytes (a page per DUMP_ROWS lines) follow the scan, the signals take as many pages as they need
+            const sig = signalLines(), sigPages = Math.max(1, Math.ceil(sig.length / SIGNAL_ROWS));
+            const parts = [];
+            (isHybrid() ? DIAG_PARTS_HYBRID : DIAG_PARTS_12V).forEach((p) => {
+                if (p === 'diag') parts.push(() => renderDiag(cv, t, d));
+                else if (p === 'unit') parts.push(() => lv.draw('unit', cv, t));
+                else if (p === 'scan') {
+                    parts.push(() => { lv.draw('scan', cv, t); G.button(cv, t, 1576 - 20 - 120, 56, 120, 40, 'Reset', () => { lv.action('scan'); return render(); }, { key: 'scan', confirm: true }); });
+                    for (let i = 0, n = lv.dumpPages(); i < n; i++) parts.push(() => lv.draw('dump', cv, t, i));
+                } else for (let i = 0; i < sigPages; i++) parts.push(() => renderSignals(cv, t, d, sig, i, sigPages));
+            });
             const pl = cv.place;
             if (!pl) { parts[0](); return; }
             cv.scroll = true;
@@ -1175,8 +1181,27 @@ mgu.run({
         }
 
         /** The car's signals as received (climate, comfort, power figures), one per line - for checking scalings. */
-        function renderSignals(cv, t, d) {
-            G.panel(cv, t, 24, 44, 1552, 468, 'Car signals');
+        /** The car's raw signals as lines of [name, text]: a long value goes on over as many lines as it needs. */
+        const SIGNAL_ROWS = 14, SIGNAL_CHARS = 150;
+        function signalLines() {
+            const rows = [['A/C', rawClimate['A/C']], ['blower', rawClimate.blower], ['compressor', rawClimate.compressor],
+                ['climate', rawClimate.climate], ['ac', rawClimate.ac]].concat(Object.keys(live.raw).sort().map((k) => [k, live.raw[k]]));
+            const out = [];
+            rows.forEach(([k, v]) => {
+                const txt = v || '-';
+                for (let i = 0; i < txt.length; ) {
+                    // (break after a comma where there is one, so a name and its value stay together)
+                    let j = Math.min(txt.length, i + SIGNAL_CHARS);
+                    if (j < txt.length) { const c = txt.lastIndexOf(',', j - 1); if (c > i + 40) j = c + 1; }
+                    out.push([i ? '' : k, txt.slice(i, j), !!v]);
+                    i = j;
+                }
+            });
+            return out;
+        }
+        function renderSignals(cv, t, d, lines, pageNo, pageCount) {
+            lines = lines || signalLines(); pageNo = pageNo || 0; pageCount = pageCount || Math.max(1, Math.ceil(lines.length / SIGNAL_ROWS));
+            G.panel(cv, t, 24, 44, 1552, 468, 'Car signals' + (pageCount > 1 ? '  ·  ' + (pageNo + 1) + ' / ' + pageCount : ''));
             const seatTxt = Object.keys(live.seats).map((k) => k + ' ' + (live.seats[k] === null ? '?' : live.seats[k])).join(' ') || translate('n/a');
             const bt = live.batt;
             cv.text('climate ' + (live.climate === null ? translate('n/a') : live.climate === 'ac' ? translate('on') + ' (A/C)' : translate(live.climate ? 'on' : 'off'))
@@ -1185,17 +1210,11 @@ mgu.run({
                 + '  ·  battery ' + (bt && G.isNum(bt.avg) ? bt.avg + ' °C (' + bt.min + '..' + bt.max + ')' : translate('n/a'))
                 + '  ·  HV ' + (G.isNum(live.hvV) ? live.hvV : translate('n/a')), 48, 112, 21, t.text, { font: 'label' });
             cv.fillRect(48, 128, 1504, 1, t.tick);
-            const rows = [['A/C', rawClimate['A/C']], ['blower', rawClimate.blower], ['compressor', rawClimate.compressor],
-                ['climate', rawClimate.climate], ['ac', rawClimate.ac]].concat(Object.keys(live.raw).sort().map((k) => [k, live.raw[k]]));
-            // up to 14 rows between the summary and the note: the spacing shrinks to fit them all
-            const step = Math.min(26, Math.floor(310 / Math.max(1, rows.length))), fz = step >= 24 ? 18 : 16;
-            let y = 154;
-            rows.forEach(([k, v]) => {
-                if (y > 470) return;
-                cv.text(k, 48, y, fz + 1, t.dim, { font: 'bold' });
-                const txt = v || '-';
-                cv.text(txt.length > 160 ? txt.slice(0, 159) + '…' : txt, 230, y, fz, v ? t.text : t.dim, { font: 'label' });
-                y += step;
+            // SIGNAL_ROWS lines a page, whole values (they go on over the next lines and pages)
+            lines.slice(pageNo * SIGNAL_ROWS, (pageNo + 1) * SIGNAL_ROWS).forEach(([k, txt, has], i) => {
+                const y = 154 + i * 23;
+                if (k) cv.text(k, 48, y, 18, t.dim, { font: 'bold' });
+                cv.text(txt, 230, y, 17, has ? t.text : t.dim, { font: 'label' });
             });
             cv.text('Raw values as the car sends them - for checking the scalings (config.scaling in app.json).', 48, 498, 18, t.dim);
         }

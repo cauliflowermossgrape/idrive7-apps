@@ -877,6 +877,38 @@ module.exports = function live(ctx, sh) {
         cv.text('Take a photo when it says DONE. Settings > Scan unit picks the unit. Replies are saved in the app\'s data folder (scan_' + hex(scan.unit) + '.json).', 48, 498, 18, t.dim);
     }
 
+    /* ---------- scan bytes: every reply in hex, a page at a time ----------
+     * For working out a new car's identifiers from photos of the screen (no file to fetch from the unit):
+     * 'E544 +040  1D 52 ..' with BYTES_LINE bytes a line (+offset in decimal, as the scan's guesses count);
+     * short replies share a line. The latest read where the live comparison has one. */
+    const BYTES_LINE = 40, DUMP_ROWS = 17, DUMP_CHARS = 132;
+    function dumpLines() {
+        const lines = [];
+        let short = '';
+        const flush = () => { if (short) { lines.push(short); short = ''; } };
+        scan.hits.forEach((h) => {
+            const now = cmpState.unit === scan.unit && cmpState.now[h.did], b = (now && now.length ? now : h.bytes) || [];
+            const hx = (a) => a.map((x) => hex(x)).join(' ');
+            if (b.length <= 12) {
+                const item = h.did + ': ' + (hx(b) || '-');
+                if (short && short.length + 4 + item.length > DUMP_CHARS) flush();
+                short += (short ? '    ' : '') + item;
+                return;
+            }
+            flush();
+            for (let i = 0; i < b.length; i += BYTES_LINE) lines.push(h.did + ' +' + String(i).padStart(4, '0') + '  ' + hx(b.slice(i, i + BYTES_LINE)));
+        });
+        flush();
+        return lines;
+    }
+    const dumpPages = () => (scan.t && !scan.running && scan.hits.length ? Math.ceil(dumpLines().length / DUMP_ROWS) : 0);
+    function renderDump(cv, t, d, i) {
+        const lines = dumpLines(), n = Math.max(1, Math.ceil(lines.length / DUMP_ROWS));
+        G.panel(cv, t, 24, 44, 1552, 468, 'Scan bytes: ' + SCAN_UNITS[scan.unit].name + ' 0x' + hex(scan.unit) + '  ·  ' + (i + 1) + ' / ' + n);
+        cv.text('identifier +offset (decimal), bytes in hex  ·  photograph every page', 1552, 80, 18, t.dim, { align: 'right' });
+        lines.slice(i * DUMP_ROWS, (i + 1) * DUMP_ROWS).forEach((l, k) => cv.text(l, 48, 122 + k * 23, 18, t.text, { font: 'label' }));
+    }
+
     /* ---------- home-screen widget ----------
      * Drawn into the layout's image cell (app.json startWidget). Big widget: power, state, bar,
      * range left, charge, cell temperature and this drive; small one: power, state, charge and the bar.
@@ -1006,9 +1038,11 @@ module.exports = function live(ctx, sh) {
         draw(name, cv, t) {
             drawn(); pageDrawT = Date.now();
             const d = data();
-            ({ battery: renderBattery, unit: renderUnit, scan: renderScan })[name](cv, t, d);
+            ({ battery: renderBattery, unit: renderUnit, scan: renderScan, dump: renderDump })[name](cv, t, d, arguments[3]);
             return d;
         },
+        /** How many pages the scan's bytes take (0: no finished scan). */
+        dumpPages,
         /**
          * The climate's power now when it is known better than eDrive's estimate: measured from the battery
          * (standing, engine off, not plugged in), the climate unit's own figures, or the last measurement with
