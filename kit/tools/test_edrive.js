@@ -568,6 +568,7 @@ const checks = [
         delete process.env.CLUSTER_INFO_DIR;
         assert(off && off.values.soc.pct === 50 && !off.values.erange, 'off: the charge, no range: ' + JSON.stringify(off));
         assert.strictEqual(off.vehicle, 'bev', 'an electric car says so, for the cluster apps');
+        assert(off.values.soh.pct === 100 && off.values.energy.kwh === 37, 'health and energy (50 % of 74 kWh) shared: ' + JSON.stringify(off.values));
         assert(on && on.values.erange && on.values.erange.km === 220, 'on: 220 km at 50 % of 440: ' + JSON.stringify(on));
     }],
     ['7. charge totals keep English singular and plural', async () => {

@@ -797,6 +797,12 @@ mgu.run({
                 if (lv.clusterInfoWants()) {
                     const ci = { v: 1, t: out.t, app: 'eDrive', values: {} };
                     if (isBev()) ci.vehicle = 'bev';        // (the cluster apps' Vehicle: Auto finds an electric car by this)
+                    // for an electric car's cluster layout: the use per 100 km lately (the battery's own readings over
+                    // the distance driven), the battery's health and the energy in it now
+                    const use = lv.consumption();
+                    if (G.isNum(use.perKm)) ci.values.use = { kwh100: +(use.perKm * 100).toFixed(1) };
+                    if (G.isNum(d.soh)) ci.values.soh = { pct: +d.soh.toFixed(1) };
+                    if (G.isNum(out.soc)) ci.values.energy = { kwh: +(kwhPerPct() * out.soc).toFixed(1) };
                     // (no limits read, as on an iX3 G08: an electric car's gauge ends from the Power gauge setting)
                     const gk = settings.get('gaugeKw');
                     if (G.isNum(out.kw)) ci.power = { kw: out.kw, outMax: out.limitOut || (isBev() && gk) || 100, inMax: out.limitIn || (isBev() && gk * 0.5) || 60, old: false };
