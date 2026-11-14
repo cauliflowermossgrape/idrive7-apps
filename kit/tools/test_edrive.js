@@ -511,6 +511,24 @@ const checks = [
         assert(all.includes('E5CE: 1D 52 1D 2C 1D 71    E553: 0F 67 0F 6E'), 'short replies share a line: ' + all.filter((x) => /E5/.test(x)).join(' | '));
         assert(all.some((x) => x.startsWith('E544 +0000  00 01 02')) && all.some((x) => x.startsWith('E544 +0080  50 51')), 'the long reply over lines');
         assert(all.some((x) => x.includes('displayRepartitionSomethingLong29')) && !all.some((x) => x.includes('…')), 'the long signal whole, not cut');
+        // the scan's own buttons: Baseline says at once that it took, Scan again (two presses) starts a new scan
+        const last = [];
+        ctx.canvas = (w, h) => { const cv = Object.assign(canvas(w, h), { place: { scale: 1, ox: 0, oy: 0 }, own: true }); last[0] = cv; return cv; };
+        const press = async (key) => { await b.draw(); const tg = last[0].targets.filter((x) => x.key === key).pop(); assert(tg, key + ' button drawn'); await tg.run(); await flush(); };
+        for (let k = 0; k < 40; k++) { ctx.scroll(-492); now += 1000; await b.draw(); }
+        ctx.scroll(2 * 492); now += 1000;            // the scan part
+        await press('scan');
+        assert((await b.draw()).some((x) => /^NEW BASELINE|^CHANGED SINCE BASELINE/.test(x)), 'Baseline shows it took');
+        await press('rescan');
+        assert(!(await b.draw()).some((x) => /starting a new scan/.test(x)), 'Scan again asks to confirm first');
+        await press('rescan');
+        assert((await b.draw()).some((x) => /starting a new scan/.test(x)), 'Scan again: starting');
+        diag.available = true; diag.physical = async () => null;
+        // (the start is 2 s after the press; other 2 s timers are the power read's)
+        const due = timers.filter((x) => x.ms === 2000); timers = timers.filter((x) => x.ms !== 2000);
+        due.forEach((x) => x.fn()); await flush();
+        const after = await b.draw();
+        assert(after.some((x) => /^SCANNING|^DONE just now  ·  0 answer/.test(x)), 'the new scan ran (the stand-in unit answers nothing, so it is done at once): ' + after.filter((x) => /scan|SCAN|DONE|start/.test(x)).join(' | '));
     }],
     ['17. an identifier refused with NRC 31 (not in this car) is left alone after 3 refusals; a busy one keeps being asked', async () => {
         const dir = tmp('dead'), asks = {};

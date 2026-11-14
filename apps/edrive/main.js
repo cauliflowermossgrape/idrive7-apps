@@ -1009,7 +1009,12 @@ mgu.run({
                 if (p === 'diag') parts.push(() => renderDiag(cv, t, d));
                 else if (p === 'unit') parts.push(() => lv.draw('unit', cv, t));
                 else if (p === 'scan') {
-                    parts.push(() => { lv.draw('scan', cv, t); G.button(cv, t, 1576 - 20 - 120, 56, 120, 40, 'Reset', () => { lv.action('scan'); return render(); }, { key: 'scan', confirm: true }); });
+                    // Baseline: the live comparison starts again from the values now; Scan again: every identifier asked anew
+                    parts.push(() => {
+                        lv.draw('scan', cv, t);
+                        G.button(cv, t, 1576 - 20 - 170, 56, 170, 40, 'Scan again', () => { lv.action('rescan'); return render(); }, { key: 'rescan', confirm: true });
+                        G.button(cv, t, 1576 - 20 - 170 - 12 - 170, 56, 170, 40, 'Baseline', () => { lv.action('scan'); return render(); }, { key: 'scan' });
+                    });
                     for (let i = 0, n = lv.dumpPages(); i < n; i++) parts.push(() => lv.draw('dump', cv, t, i));
                 } else for (let i = 0; i < sigPages; i++) parts.push(() => renderSignals(cv, t, d, sig, i, sigPages));
             });

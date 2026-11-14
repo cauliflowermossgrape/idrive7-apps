@@ -451,7 +451,7 @@ module.exports = function live(ctx, sh) {
         loadScan();
         if (scan.t) { try { fs.writeFileSync(scanFile(u, true), JSON.stringify({ hits: scan.hits, done: scan.done, t: scan.t, noReply: scan.noReply })); } catch (e) { /* ok */ } }
         scan.prev = scan.t ? { hits: scan.hits, t: scan.t } : scan.prev;
-        Object.assign(scan, { unit: u, running: true, done: 0, hits: [], noReply: 0, t: Date.now() });
+        Object.assign(scan, { unit: u, running: true, done: 0, hits: [], noReply: 0, t: Date.now(), starting: 0 });
         log.info('scan: ' + unit.name + ' 0x' + hex(u) + ', ' + scan.total + ' identifiers');
         for (const [a, b] of unit.ranges) {
             for (let did = a; did <= b; did++) {
@@ -857,10 +857,13 @@ module.exports = function live(ctx, sh) {
         G.panel(cv, t, 24, 44, 1552, 468, 'Scan: ' + SCAN_UNITS[scan.unit].name + ' 0x' + hex(scan.unit));
         const pct = Math.round(scan.done / scan.total * 100);
         const ago = (ms) => (ms < 90000 ? 'just now' : ms < 5400000 ? Math.round(ms / 60000) + ' min ago' : Math.round(ms / 3600000) + ' h ago');
-        cv.text(scan.running ? 'SCANNING  ' + pct + ' %  (' + scan.done + ' / ' + scan.total + ')  -  stay on this page, car in READY'
+        // (the page's own buttons, Baseline and Scan again, are at the panel's right: the status ends left of them)
+        const sx = cv.own ? 1552 - 380 : 1552;
+        cv.text(scan.starting && Date.now() - scan.starting < 6000 ? 'starting a new scan...'
+            : scan.running ? 'SCANNING  ' + pct + ' %  (' + scan.done + ' / ' + scan.total + ')  -  stay here, car in READY'
             : scan.known ? scan.hits.length + ' ' + plural(scan.hits.length, 'identifiers known for this car', 'identifiers known for this car') + '  ·  Reset = new baseline'
-            : scan.t ? 'DONE ' + ago(Date.now() - scan.t) + '  ·  ' + scan.hits.length + ' answer' + (scan.noReply >= 25 && !scan.hits.length ? ' (unit not answering)' : '') + '  ·  Reset = new baseline'
-            : diag.available ? 'starting...' : 'no diagnostic link yet', 1552, 80, 20, scan.running ? t.warn : t.dim, { font: 'bold', align: 'right' });
+            : scan.t ? 'DONE ' + ago(Date.now() - scan.t) + '  ·  ' + scan.hits.length + ' answer' + (scan.noReply >= 25 && !scan.hits.length ? ' (unit not answering)' : '')
+            : diag.available ? 'starting...' : 'no diagnostic link yet', sx, 80, 20, scan.running || scan.starting ? t.warn : t.dim, { font: 'bold', align: 'right' });
         const cells = [], packs = [], ch = changes();
         if (scan.unit === 7) scan.hits.forEach((h) => guesses(h.bytes).forEach((g) => (g.kind === 'cell' ? cells : packs).push(h.did + '@' + g.at + ' ' + (g.kind === 'cell' ? g.value.toFixed(3) : g.value.toFixed(1)))));
         const block = (y, label, list) => {
@@ -876,7 +879,9 @@ module.exports = function live(ctx, sh) {
         if (scan.unit === 7) {
             block(126, 'LOOK LIKE CELL VOLTAGES (V)', cells);
             // once the live comparison has something: what moved (the battery current follows the climate's load)
-            if (ch && ch.length) block(236, 'CHANGED SINCE RESET ' + ago(Date.now() - cmpState.t).toUpperCase() + ' (identifier@byte before>now)  ·  climate HI / LO, A/C on / off', ch);
+            // (asked for with Baseline: shown even while nothing has changed, so the press is seen to have worked)
+            if (ch && (ch.length || cmpState.user)) block(236, 'CHANGED SINCE BASELINE ' + ago(Date.now() - cmpState.t).toUpperCase() + ' (identifier@byte before>now)  ·  read ' + cmpState.cycles + 'x' + (ch.length ? '' : ', nothing changed yet'), ch);
+            else if (cmpState.user) block(236, 'NEW BASELINE: reading the ' + scan.hits.length + ' identifiers...', []);
             else block(236, 'LOOK LIKE PACK VOLTAGE (V)', packs);
         } else {
             block(126, ch ? 'CHANGED SINCE RESET ' + ago(Date.now() - cmpState.t).toUpperCase() + ' (identifier@byte before>now)  ·  live, read ' + cmpState.cycles + 'x' : 'LIVE COMPARISON: starts when the scan is done', ch || []);
@@ -1077,10 +1082,12 @@ module.exports = function live(ctx, sh) {
             touched();
             if (name === 'scan') {
                 // a scan from the last week: a new baseline for the live comparison; else scan again
-                if (scan.t && !scan.running && Date.now() - scan.t < 7 * 86400000 && scan.hits.length) rebase();
-                else { scan.running = false; setTimeout(runScan, 2000); }
+                if (scan.t && !scan.running && Date.now() - scan.t < 7 * 86400000 && scan.hits.length) { rebase(); cmpState.user = true; }
+                else { scan.running = false; scan.starting = Date.now(); setTimeout(runScan, 2000); }
                 return;
             }
+            // every identifier asked again, whatever the last scan's age (it also stops one that is running)
+            if (name === 'rescan') { scan.running = false; scan.starting = Date.now(); cmpState.user = false; setTimeout(runScan, 2000); return; }
             Object.assign(trip, { out: 0, regen: 0, charged: 0, climate: 0, peakOut: 0, peakIn: 0, since: Date.now() });
         },
         /** The first bar button's name on page `name` when it has an action there (action()), else null. */
