@@ -155,6 +155,9 @@ mgu.run({
         // learned before 1.8 the use per km also held the climate draw: keep it, but light, so it relearns soon
         if (st.learn && st.rangeV !== 2) { const f = Math.min(1, 10 / st.learn.km); st.learn.km *= f; st.learn.pct *= f; }
         st.rangeV = 2;
+        // 2.10.0 on an iX3 G08 took DDBC's all-zero reply for 0 %: that reading would log a charge 0 -> the real level
+        if (st.lastSoc === 0) { delete st.lastSoc; delete st.lastSocT; }
+        if (st.session && st.session.from === 0) st.session = null;
         // (an electric car's big battery: the plausibility limits on % per km scale with it; a plug-in hybrid's stay)
         const model = new RangeModel(st, { kwh: () => (isBev() ? battKwh() : 12) });
         let savedAt = 0, saved = JSON.stringify(st);

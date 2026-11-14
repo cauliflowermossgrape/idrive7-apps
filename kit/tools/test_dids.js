@@ -51,6 +51,18 @@ test('outside min..max: null, with the reason kept', async () => {
     assert.strictEqual(rd.raws[rd.key(c)].why, 'out of range');
 });
 
+test('nonZero: an all-zero reply is no value; the next candidate answers (iX3 G08: DDBC zeros, E5CE)', async () => {
+    const replies = { DDBC: [0x62, 0xDD, 0xBC, 0, 0, 0, 0, 0, 0], E5CE: [0x62, 0xE5, 0xCE, 0x20, 0x6E, 0x20, 0x59, 0x20, 0x81] };
+    const rd = new DidReader({ physical: async (ecu, sid, req) => replies[((req[0] << 8) | req[1]).toString(16).toUpperCase()] }, { ecu: 7 });
+    const ddbc = { did: 'DDBC', bytes: 2, factor: 0.1, min: 0, max: 100, nonZero: true };
+    const list = [ddbc, { did: 'E5CE', bytes: 2, factor: 0.01, min: 0, max: 100, nonZero: true }];
+    assert.strictEqual(await rd.value('soc', list), 83.02);
+    assert.strictEqual(rd.raws[rd.key(ddbc)].why, 'all zero');
+    assert.strictEqual(rd.pick.soc, 1);
+    // without nonZero the zeros are a value (0 %), as before
+    assert.strictEqual(await rd.read(Object.assign({}, ddbc, { nonZero: false })), 0);
+});
+
 (async () => {
     let failed = 0;
     for (const [name, fn] of cases) {

@@ -10,6 +10,8 @@
  *     value = raw * factor + offset, outside min..max = not plausible; signed: true = raw is
  *     two's complement (e.g. a torque that can be negative)
  *     bit: k = only bit k of raw (0 or 1), before factor / offset (a status flag)
+ *     nonZero: true = a reply whose data bytes are all 0 is no value (a unit that answers the DID
+ *     but has nothing in it, e.g. an iX3 G08's battery unit on DDBC: 62 DD BC 00 00 00 00 00 00)
  *   or { ecu, obd: '0F', ... }: the same PID with OBD service 01 instead of 0x22 F4xx
  *     (for engine units that refuse the F4xx identifiers with NRC 31); 'at' counts from the
  *     first data byte after the PID
@@ -50,6 +52,7 @@ class DidReader {
         if (uds[0] === 0x7F) { r.why = 'NRC ' + hex(uds[2]) + (NRC[uds[2]] ? ' ' + NRC[uds[2]] : ''); return null; }
         const at = (obd === null ? 3 : 2) + (c.at || 0), n = c.bytes || 1;
         if (uds.length < at + n) { r.why = 'reply too short'; return null; }
+        if (c.nonZero && uds.slice(obd === null ? 3 : 2).every((x) => x === 0)) { r.why = 'all zero'; return null; }
         let raw = 0;
         for (let i = 0; i < n; i++) raw = raw * 256 + uds[at + i];
         if (c.signed && raw >= Math.pow(2, 8 * n - 1)) raw -= Math.pow(2, 8 * n);      // two's complement

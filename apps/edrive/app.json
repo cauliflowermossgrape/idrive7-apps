@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -553,7 +553,19 @@
           "factor": 0.1,
           "offset": 0,
           "min": 0,
-          "max": 100
+          "max": 100,
+          "nonZero": true
+        },
+        {
+          "did": "E5CE",
+          "bytes": 2,
+          "at": 0,
+          "factor": 0.01,
+          "offset": 0,
+          "min": 0,
+          "max": 100,
+          "nonZero": true,
+          "note": "Gen5 eDrive (iX3 G08, i4, iX): the battery's raw charge, 3 values of 0.01 % (charge, lowest, highest cell block?), e.g. 62 E5 CE 20 6E 20 59 20 81 = 83.02 %; the G08's DDBC answers all 0"
         }
       ],
       "soh": [
@@ -671,6 +683,17 @@
           "min": 5,
           "max": 18,
           "note": "battery voltage from the battery sensor, 1 mV (seen on F32 DMEs)"
+        },
+        {
+          "ecu": 64,
+          "did": "F442",
+          "bytes": 2,
+          "at": 0,
+          "factor": 0.001,
+          "offset": 0,
+          "min": 5,
+          "max": 18,
+          "note": "body controller BDC (0x40): for electric cars, which have no engine unit (iX3 G08: 0x12 / 0x13 / 0x18 don't answer); not yet confirmed"
         }
       ],
       "chargeMinPct": 3,
@@ -749,7 +772,20 @@
                 "bytes": 2,
                 "factor": 0.1,
                 "min": 0,
-                "max": 100
+                "max": 100,
+                "nonZero": true
+              }
+            }
+          },
+          {
+            "did": "E5CE",
+            "fields": {
+              "pct": {
+                "bytes": 2,
+                "factor": 0.01,
+                "min": 0,
+                "max": 100,
+                "nonZero": true
               }
             }
           }

@@ -403,7 +403,7 @@ module.exports = function live(ctx, sh) {
      * found by scanning with something off, then on (heater, A/C). Battery replies holding a 2-byte value
      * that reads as a cell voltage (3.0-4.3 V at 1 mV) or a pack voltage (200-460 V at 0.01 V) are flagged. */
     const SCAN_UNITS = {
-        7: { name: 'battery unit (SME)', ranges: [[0xDD00, 0xDDFF], [0xDF00, 0xDFFF], [0xD600, 0xD6FF], [0x6300, 0x63FF]] },
+        7: { name: 'battery unit (SME)', ranges: [[0xDD00, 0xDDFF], [0xDF00, 0xDFFF], [0xD600, 0xD6FF], [0x6300, 0x63FF], [0xE500, 0xE5FF]] },  // E5xx: Gen5 eDrive (iX3 G08)
         120: { name: 'climate unit (IHKA)', ranges: [[0xD000, 0xDFFF], [0x4000, 0x41FF]] },
     };
     const scanUnit = () => (SCAN_UNITS[+settings.get('scanUnit')] ? +settings.get('scanUnit') : 7);
