@@ -450,14 +450,20 @@ const checks = [
         let t = await b.draw();
         assert(t.includes('RANGE') && !t.includes('HYBRID') && t.includes('range down to 0 %'), t.join(' | '));
         assert(!t.some((x) => /engine starts/.test(x)), 'no engine: ' + t.join(' | '));
-        // a full battery's range from the electric car's setting (471 km at 20 °C, the iX3's WLTP), not the hybrid's 50 km
+        // a full battery's range from the electric car's setting (440 km at 20 °C, the iX3's real range), not the hybrid's 50 km
         b.signal('ExteriorTemperature', { temperatureExterior: 120 });      // 20 °C (x 0.5 - 40)
         values.soc = 50; now += 20000; await b.read();
         t = await b.draw();
         const big = t.map((x) => +x).filter((x) => x > 200 && x < 260);
-        assert(big.length, 'about 235 km at 50 %: ' + t.join(' | '));
+        assert(big.length, 'about 220 km at 50 %: ' + t.join(' | '));
         // 70.3 kWh in the battery (74 usable x 95 %), half of it now
         assert(t.some((x) => /^35\.[12]$/.test(x)) && t.some((x) => /70\.3/.test(x)), 'kWh from the BEV size: ' + t.join(' | '));
+        // -10 °C: the electric car keeps ~74 % of it (EV Database's iX3: 325 of 440 km), not a plug-in hybrid's 40-60 %
+        b.signal('ExteriorTemperature', { temperatureExterior: 60 });       // -10 °C
+        t = await b.draw();
+        const full = t.map((x) => /^FULL: (\d+) KM$/i.exec(x)).filter(Boolean).map((m) => +m[1])[0];
+        assert(full >= 300 && full <= 350, 'a full battery at -10 °C ~325 km: ' + full + ' in ' + t.join(' | '));
+        b.signal('ExteriorTemperature', { temperatureExterior: 120 });
         // driving at 60 km/h, 14 kWh / 100 km (0.2 % per km of 70.3 kWh); the motor's speed on the rpm signal
         // doesn't count as an engine, and no 5 s rpm freshness is needed to learn
         let soc = 50;

@@ -32,7 +32,7 @@
  *     a plug-in hybrid (the high-voltage battery unit answers): all of the above;
  *     an electric car (BEV, e.g. the iX3 G08; set by hand): the same pages, without an engine - the range
  *     runs down to the "range down to" charge (0 % by default), no low-battery hybrid zone, the battery size
- *     and range when full have their own settings (74 kWh usable / 471 km, the iX3 G08's, by default: its charge reading
+ *     and range when full have their own settings (74 kWh usable / 440 km, the iX3 G08's, by default: its charge reading
  *     E5CE matches the car's own display, a share of the usable capacity, so the usable size, not the gross 80 kWh);
  *     a 48 V mild hybrid (no high-voltage battery, the 48 V battery BATT48 answers): its own page
  *     only - the 48 V battery's charge, voltage, power, health and temperature, the 48 V / 12 V
@@ -102,6 +102,12 @@ const JUMP_PCT = 10;              // the charge this much higher than the readin
  * Scaled by the "range at 20 °C" setting.
  */
 const RANGE_CURVE = [[-10, 20, 30], [0, 30, 38], [10, 40, 45], [20, 50, 50]];
+/**
+ * The same for an electric car with a heat pump and a big battery, which loses much less in the cold: from EV
+ * Database's iX3 G08 real ranges, -10 °C with heating against 23 °C: combined 325 / 440 km (0.74), city 385 / 560
+ * (0.69), highway 275 / 350 (0.79) - the city and highway ratios are the low and high end at -10 °C.
+ */
+const RANGE_CURVE_BEV = [[-10, 34.5, 39.5], [0, 39, 43], [10, 44.5, 47.5], [20, 50, 50]];
 
 /** Demo: charge drains, outside temperature swings across the cold threshold. */
 class Demo {
@@ -672,7 +678,7 @@ mgu.run({
         }
         /** Range of a full battery at tC: { lo, hi, mid } in km (no temperature: 10 °C assumed). */
         function rangeAt(tC) {
-            const k = range20() / 50, c = RANGE_CURVE;
+            const k = range20() / 50, c = isBev() ? RANGE_CURVE_BEV : RANGE_CURVE;
             const t = G.isNum(tC) ? tC : 10;
             let lo, hi;
             if (t >= c[c.length - 1][0]) { lo = c[c.length - 1][1]; hi = c[c.length - 1][2]; }
