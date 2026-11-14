@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.9",
+  "version": "2.10.10",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -606,6 +606,17 @@
           "offset": 0,
           "min": 40,
           "max": 110
+        },
+        {
+          "did": "E545",
+          "bytes": 2,
+          "at": 4,
+          "factor": 0.01,
+          "offset": 0,
+          "min": 40,
+          "max": 110,
+          "nonZero": true,
+          "note": "Gen5 eDrive (iX3 G08): 5A A0 26 44 26 77 26 B0 58 C8 59 3F 59 C1 = nominal 232.00 Ah, health lowest / mean / highest cell 97.96 / 98.47 / 99.04 %, capacity 227.28 / 228.47 / 229.77 Ah (228.47 / 232 = 98.48 %); the mean is read. Every cell's health: E5D0"
         }
       ],
       "v12": [
@@ -754,6 +765,18 @@
                 "max": 500
               }
             }
+          },
+          {
+            "did": "E54D",
+            "fields": {
+              "v": {
+                "bytes": 2,
+                "factor": 0.01,
+                "min": 150,
+                "max": 500
+              }
+            },
+            "note": "Gen5 eDrive (iX3 G08): pack voltage, 91 16 = 371.42 V with the car's signal at 371.5 V (E54A: 370.72 V, the cells' sum)"
           }
         ],
         "hvI": [
@@ -769,6 +792,20 @@
                 "max": 800
               }
             }
+          },
+          {
+            "did": "E561",
+            "timeoutMs": 600,
+            "fields": {
+              "a": {
+                "bytes": 4,
+                "factor": 0.01,
+                "signed": true,
+                "min": -800,
+                "max": 800
+              }
+            },
+            "note": "Gen5 eDrive (iX3 G08): the battery's current, 0.01 A signed, as DD69 (negative = discharging). From one scan: FF FF FF AA = -0.86 A at 371 V = 0.32 kW, standing with the climate off; not yet confirmed while driving"
           }
         ]
       },
@@ -1271,7 +1308,7 @@
         "offset": 0,
         "invalid": 65535,
         "max": 8,
-        "comment": "Climate2.statusActualValuePowerACCompressor -> kW. Assumed to come in W: check the raw value on the Signals page with the A/C on (an electric compressor uses ~0.5-4 kW) and adjust factor if needed"
+        "smallBelow": 100, "smallFactor": 0.1, "comment": "Climate2.statusActualValuePowerACCompressor -> kW. An iX3 G08 sends 11 with the A/C on and 0 off (as its power distribution display): steps of 0.1 kW, so a raw value under smallBelow counts x smallFactor. Else assumed to come in W: check the raw value on the Signals page with the A/C on (an electric compressor uses ~0.5-4 kW) and adjust factor if needed"
       }
     },
     "probes": [

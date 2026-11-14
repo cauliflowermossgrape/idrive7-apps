@@ -298,7 +298,9 @@ mgu.run({
         const onCompressor = (v) => {
             seen('compressor', v);
             const r = one(v, 'actualValuePowerACCompressor');
-            live.acPower = r; live.acRaw = r; live.acKw = typeof r === 'number' ? sc('acPower', r) : null;
+            // (a small raw value: steps of 0.1 kW, as an iX3 G08 sends - config.scaling.acPower smallBelow / smallFactor)
+            const cs = S.acPower || {}, small = typeof r === 'number' && cs.smallBelow && r < cs.smallBelow && r !== cs.invalid;
+            live.acPower = r; live.acRaw = r; live.acKw = typeof r !== 'number' ? null : small ? r * cs.smallFactor : sc('acPower', r);
         };
         /** Climate during the stretch since the last charge reading: true / false / null / 'mixed'. */
         const stretchClimate = () => (seg.climateMixed ? 'mixed' : seg.climate);
