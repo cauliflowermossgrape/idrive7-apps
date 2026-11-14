@@ -16,7 +16,8 @@
  * Over the look (or the car's own colour), with their settings switched on (both off by default): turn(side) - while a turn signal is on, that side's
  * door lines blink green, fully on and off, as fast as the lights take it (setting turnGlow; hazards: both sides; not with
  * the car locked and left); doors(open) - an open door's line blinks red until it closes (setting doorRed; not with
- * the car locked and left, so a door left open does not keep the body module awake). Left is
+ * the car locked and left, so a door left open does not keep the body module awake); with the hazards on (setting
+ * hazardRed) every light pulses red, bright then dim, in place of the turn glow (not with the car locked and left). Left is
  * the driver's side on a left-hand drive car.
  */
 const fs = require('fs');
@@ -28,6 +29,9 @@ const NIGHT = 0.5;
 const GLOW = [0, 230, 60], RED = [255, 0, 0];
 /* On one frame, dark the next (the light on at no brightness: black, not the car's own colour). */
 const blink = (rgb) => (t, on) => (on ? { rgb, bright: 100 } : { rgb: [0, 0, 0], bright: 0 });
+/* Bright one frame, dim the next (every light one colour: one write a bus, so it keeps about the hazards' pace). */
+const PULSE_DIM = 15;
+const pulse = (rgb) => (t, on) => ({ rgb, bright: on ? 100 : PULSE_DIM });
 const DOORS = ['driver front', 'driver rear', 'passenger front', 'passenger rear'];
 /* The lights by a side of the car (x across the cabin picture: the driver's side 0) and by a door. */
 const sideOf = (l) => (l.x <= 0.15 ? 'driver' : l.x >= 0.85 ? 'passenger' : null);
@@ -109,10 +113,15 @@ class Control {
     turn(side) { this._turn = side || null; this.signals(); }
     /** The doors open: some of DOORS. */
     doors(open) { this._doors = (open || []).filter((d) => DOORS.indexOf(d) >= 0); this.signals(); }
-    /** The turn signal's glow and the open doors' red, as the settings and the car say now. */
+    /** The turn signal's glow, the hazards' red pulse and the open doors' red, as the settings and the car say now. */
     signals() {
         const rhd = this.settings.get('drive') === 'rhd', side = (s) => (s === 'left') !== rhd ? 'driver' : 'passenger';
-        const turn = this.settings.get('turnGlow') === true && !this._away ? this._turn : null;
+        const hazard = this.settings.get('hazardRed') === true && !this._away && this._turn === 'both';
+        if (hazard !== this._hazard) {
+            this._hazard = hazard;
+            this.lights.overlay('hazard', hazard ? () => true : null, pulse(RED));
+        }
+        const turn = this.settings.get('turnGlow') === true && !this._away && !hazard ? this._turn : null;
         const sides = turn === 'both' ? ['driver', 'passenger'] : turn ? [side(turn)] : [];
         const all = () => this.lights.lights || [];
         const key = sides.join();

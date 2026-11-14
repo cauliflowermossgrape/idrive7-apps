@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.4.5",
+  "version": "2.5.0",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -129,6 +129,13 @@
     {
       "key": "doorRed",
       "label": "Open door red",
+      "type": "bool",
+      "default": false,
+      "hidden": true
+    },
+    {
+      "key": "hazardRed",
+      "label": "Hazard red",
       "type": "bool",
       "default": false,
       "hidden": true

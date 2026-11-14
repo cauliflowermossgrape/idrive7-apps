@@ -6,8 +6,8 @@
  *   Colour         the colour ring (and white) for the whole car, the upper lights or the lower ones, the
  *                  brightness, and the car from above lit as the car is; Original colour gives the light back
  *   Animations     Solid, Breathing, Rainbow, Smooth fade, Colour wave, how fast, shown moving on the car picture;
- *                  Turn signal glow (that side's door lines blink green with it) and Open door red (its line blinking), each off until
- *                  switched on
+ *                  Turn signal glow (that side's door lines blink green with it), Open door red (its line blinking) and
+ *                  Hazard red (every light pulses red while the hazards are on), each off until switched on
  *   Driving modes  for each driving mode the car has: Choose colour (the Colour and Animations tabs change that mode's
  *                  look until Done), the animation button stepping through them, or Original colour (BMW's); with
  *                  nothing chosen, the Colour tab's colour; welcome sweep, Sport pulse, Redline's shift flash
@@ -110,7 +110,7 @@ async function background(bg) {
     settings.onChange((key) => {
         if (key === 'nightDim') control.night(control._night);
         if (key === 'follow') control.apply();
-        if (key === 'turnGlow' || key === 'doorRed' || key === 'drive') control.signals();
+        if (key === 'turnGlow' || key === 'doorRed' || key === 'hazardRed' || key === 'drive') control.signals();
     });
     const others = new Others({ log }).start();
     // the high beam strobe and the light show (strobe.js): only for use on private property, behind its setting,
@@ -300,11 +300,13 @@ mgu.run({
             if (editing) return editBar(cv, t, x);
             G.button(cv, t, x, 240, 0, 48, 'Original colour', () => { control.carColour(); return redraw(); }, { primary: !control.on(), key: 'car2' });
             status(cv, t, x, 330);
-            // over every look, off until switched on: the turn signal's green glow, an open door's red. Under the other
-            // ambient app's warning (4 lines, to y 440) they go side by side, a little lower
-            const togs = others.comfort ? [[x, 460, 200, 40], [x + 212, 460, 190, 40]] : [[x, 400, 400, 48], [x, 456, 400, 48]];
-            [['turnGlow', 'Turn signal glow'], ['doorRed', 'Open door red']].forEach(([k, n], i) => {
-                const [bx, by, bw, bh] = togs[i];
+            // over every look, off until switched on: the turn signal's green glow, an open door's red, the hazards' red
+            // pulse. Under the other ambient app's warning (4 lines, to y 440) all three side by side, a little lower
+            const togs = others.comfort ? [[x, 460, 128, 40, 'Turn glow'], [x + 136, 460, 128, 40, 'Door red'], [x + 272, 460, 128, 40, 'Hazard red']]
+                : [[x, 400, 400, 48], [x, 456, 194, 48], [x + 206, 456, 194, 48]];
+            [['turnGlow', 'Turn signal glow'], ['doorRed', 'Open door red'], ['hazardRed', 'Hazard red']].forEach(([k, n], i) => {
+                const [bx, by, bw, bh, short] = togs[i];
+                n = short || n;
                 G.button(cv, t, bx, by, bw, bh, n, () => { settings.set(k, settings.get(k) !== true); return redraw(); }, { primary: settings.get(k) === true, key: 'tog-' + k });
             });
             if (!others.comfort && lights.state === 'ours' && S.moves(lights.scene)) cv.text(lights.rate.toFixed(0) + ' writes a second, ' + lights.fps.toFixed(1) + ' frames a second', x, 390, 18, t.dim);
