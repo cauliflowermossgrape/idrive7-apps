@@ -862,7 +862,10 @@ module.exports = function live(ctx, sh) {
         }
         cv.fillRect(48, 330, 1504, 1, t.tick);
         cv.text('ALL THAT ANSWER (identifier: bytes)', 48, 358, 20, t.dim, { font: 'bold', spacing: 1 });
-        const all = scan.hits.map((h) => h.did + ':' + (h.bytes.length || (cmpState.now[h.did] || []).length)).join('  ');
+        // with few answers, their bytes (the latest read): one photo is enough to work out a new car's identifiers
+        const bytesOf = (h) => (cmpState.now[h.did] && cmpState.now[h.did].length ? cmpState.now[h.did] : h.bytes) || [];
+        const withBytes = scan.hits.map((h) => { const b = bytesOf(h); return h.did + ': ' + b.slice(0, 16).map((x) => hex(x)).join(' ') + (b.length > 16 ? ' ..(' + b.length + ')' : ''); }).join('   ');
+        const all = withBytes.length <= 4 * 170 ? withBytes : scan.hits.map((h) => h.did + ':' + (h.bytes.length || (cmpState.now[h.did] || []).length)).join('  ');
         for (let i = 0, line = 0; i < all.length && line < 4; line++) {
             cv.text(all.slice(i, i + 170), 48, 388 + line * 24, 17, t.text, { font: 'label' });
             i += 170;
