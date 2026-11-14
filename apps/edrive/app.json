@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.12",
+  "version": "2.10.13",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -714,6 +714,17 @@
           "min": 5,
           "max": 18,
           "note": "battery voltage from the battery sensor, 1 mV (seen on F32 DMEs)"
+        },
+        {
+          "ecu": 7,
+          "did": "E5B6",
+          "bytes": 2,
+          "at": 0,
+          "factor": 0.01,
+          "offset": 0,
+          "min": 5,
+          "max": 18,
+          "note": "Gen5 eDrive (iX3 G08, no engine unit): probably the 12 V supply as the battery unit measures it, 0.01 V - 05 BB = 14.67 V and 05 B9 = 14.65 V in two scans with the car in READY (the DC/DC charging); not yet confirmed against a meter or with the car not in READY"
         }
       ],
       "chargeMinPct": 3,
