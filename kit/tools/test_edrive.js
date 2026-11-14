@@ -512,6 +512,23 @@ const checks = [
         assert(all.some((x) => x.startsWith('E544 +0000  00 01 02')) && all.some((x) => x.startsWith('E544 +0080  50 51')), 'the long reply over lines');
         assert(all.some((x) => x.includes('displayRepartitionSomethingLong29')) && !all.some((x) => x.includes('…')), 'the long signal whole, not cut');
     }],
+    ['17. an identifier refused with NRC 31 (not in this car) is left alone after 3 refusals; a busy one keeps being asked', async () => {
+        const dir = tmp('dead'), asks = {};
+        delete require.cache[LIVE];
+        timers = [];
+        const why = { DD68: 'NRC 31 out of range', DD69: 'NRC 31 out of range', DDB4: 'NRC 21 busy' }, raws = {};
+        const reader = { raws, key: (p) => p.did, async read(p) { asks[p.did] = (asks[p.did] || 0) + 1; raws[p.did] = { bytes: '7F 22 31', why: why[p.did] }; return null; } };
+        const ctx = context(dir);
+        ctx.spec = { config: { battery: { fast: { hvV: [{ did: 'DD68', fields: { v: {} } }, { did: 'DDB4', fields: { v: {} } }], hvI: [{ did: 'DD69', fields: { a: {} } }] }, slow: {} } } };
+        require(LIVE)(ctx, { diag: { available: true, on() {}, physical: async () => null }, reader, exclusive: (fn) => fn(), live: Object.assign(L0(), { speed: 50 }), page: () => 'main', climateKw: () => 0 });      // driving: in use throughout
+        for (let i = 0; i < 12; i++) { now += 31000; await power(); }
+        assert.strictEqual(asks.DD68, 3, 'the refused voltage identifier: 3 asks, then left alone (' + JSON.stringify(asks) + ')');
+        assert.strictEqual(asks.DD69, 3, 'the refused current identifier alike');
+        assert(asks.DDB4 === 3, 'with no current identifier in the car the power read stops: ' + JSON.stringify(asks));
+        // half an hour on: asked once more
+        now += 30 * 60000; await power();
+        assert.strictEqual(asks.DD69, 4, 'asked again after 30 min: ' + JSON.stringify(asks));
+    }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
         const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();

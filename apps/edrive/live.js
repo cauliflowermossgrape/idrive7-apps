@@ -149,13 +149,29 @@ module.exports = function live(ctx, sh) {
         r.fields = out;
         return out;
     }
+    /* An identifier the unit refuses with NRC 31 (request out of range) isn't in this car: after DEAD_AFTER
+     * refusals it is asked only every DEAD_RETRY_MS (a plug-in hybrid's identifiers on an iX3 G08: 9 of them,
+     * each a request on the car's gateway every round). Any other failure (busy, no reply) keeps being tried. */
+    const DEAD_AFTER = 3, DEAD_RETRY_MS = 30 * 60000, dead = {};
+    const isDead = (c) => { const d = dead[reader.key(primary(c))]; return !!d && d.n >= DEAD_AFTER && Date.now() - d.t < DEAD_RETRY_MS; };
+    function noteDead(c, v) {
+        const key = reader.key(primary(c)), r = reader.raws[key];
+        if (v || !r || !/^NRC 31/.test(r.why || '')) { delete dead[key]; return; }
+        const d = dead[key] || (dead[key] = { n: 0, t: 0 });
+        if (d.n >= DEAD_AFTER) d.n = DEAD_AFTER - 1;      // the retry after DEAD_RETRY_MS: one more refusal is enough
+        d.n++; d.t = Date.now();
+        if (d.n === DEAD_AFTER) log.info(key + ': not in this car (NRC 31), asked again in ' + DEAD_RETRY_MS / 60000 + ' min');
+    }
     /** A value's candidates, starting with the one that answered last. */
-    async function readGroup(name, list) {
+    async function readGroup(group, list) {
         list = list || [];
-        const start = pick[name] || 0;
+        const start = pick[group] || 0;
         for (let k = 0; k < list.length; k++) {
-            const i = (start + k) % list.length, v = await readFields(list[i]);
-            if (v) { pick[name] = i; return v; }
+            const i = (start + k) % list.length;
+            if (isDead(list[i])) continue;
+            const v = await readFields(list[i]);
+            noteDead(list[i], v);
+            if (v) { pick[group] = i; return v; }
         }
         return null;
     }
@@ -265,6 +281,7 @@ module.exports = function live(ctx, sh) {
         // (no high-voltage battery: nothing to ask; the tries cost the 12 V reads seconds every 30 s)
         if (sh.kind && sh.kind() !== 'phev') return;
         if (!diag.available || !inUse() || (!iOk && iFail >= 3 && Date.now() - iTry < 30000)) return;
+        if ((cfg.fast.hvI || []).length && cfg.fast.hvI.every(isDead)) return;     // no current identifier in this car
         const queued = Date.now();
         await exclusive(async () => {
             const w = Date.now() - queued;
@@ -321,6 +338,7 @@ module.exports = function live(ctx, sh) {
         for (const name of SLOW) {
             if (asked && name !== 'soc') continue;
             if (!(cfg.slow[name] || []).length || Date.now() < (slowSkipUntil[name] || 0)) continue;
+            if (cfg.slow[name].every(isDead)) continue;          // none of its identifiers is in this car
             if (!pageShown() && name !== 'soc' && name !== 'limits') continue;
             // each try is its own turn on the link, so a power read can go between them
             const one = () => exclusive(() => readGroup(name, cfg.slow[name]).catch((e) => { log.warn(name + ': ' + e); return null; }), false, name);
