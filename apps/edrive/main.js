@@ -1066,7 +1066,13 @@ mgu.run({
         const pad = (n) => (n < 10 ? '0' : '') + n;
         const dateOf = (ms) => { const x = new Date(ms); return pad(x.getDate()) + '.' + pad(x.getMonth() + 1) + '  ' + pad(x.getHours()) + ':' + pad(x.getMinutes()); };
         const price = () => settings.get('price') || 0;
-        const money = (kwh) => (G.isNum(kwh) && price() > 0 ? (kwh * LOSS * price()).toFixed(2) + ' €' : null);
+        // the cost in the currency set: € after the number, R$ / $ / £ before it (R$ with a decimal comma, as in Brazil)
+        const CUR = { eur: [' €', false], brl: ['R$ ', true], usd: ['$', true], gbp: ['£', true] };
+        const money = (kwh) => {
+            if (!G.isNum(kwh) || !(price() > 0)) return null;
+            const c = CUR[settings.get('currency')] || CUR.eur, n = (kwh * LOSS * price()).toFixed(2);
+            return c[1] ? c[0] + (settings.get('currency') === 'brl' ? n.replace('.', ',') : n) : n + c[0];
+        };
 
         function renderLog(cv, t, d) {
             const all = d.demo ? demo.log() : (st.log || []);

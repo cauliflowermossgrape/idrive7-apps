@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.4",
+  "version": "2.10.5",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -276,7 +276,7 @@
       "when": { "hybrid": ["auto", "yes", "bev"] },
       "label": "Electricity price",
       "type": "number",
-      "unit": "EUR/kWh",
+      "unit": "per kWh",
       "default": 0.25,
       "steps": [
         0,
@@ -313,8 +313,28 @@
         0.5,
         0.55,
         0.6,
-        0.7
+        0.7,
+        0.8,
+        0.9,
+        1,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+        1.5,
+        1.8,
+        2,
+        2.5,
+        3
       ]
+    },
+    {
+      "key": "currency",
+      "when": { "hybrid": ["auto", "yes", "bev"] },
+      "label": "Currency",
+      "type": "choice",
+      "default": "eur",
+      "options": [["eur", "Euro (€)"], ["brl", "Brazilian real (R$)"], ["usd", "US dollar ($)"], ["gbp", "Pound sterling (£)"]]
     },
     {
       "key": "distUnit",

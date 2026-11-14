@@ -473,6 +473,18 @@ const checks = [
         assert(t.some((x) => /^learned from/.test(x)), 'the range is learned: ' + t.join(' | '));
         b.exit();
     }],
+    ['15. the cost in Brazilian reais: R$ before the number, decimal comma', async () => {
+        const dir = tmp('brl'), current = Date.now();
+        const log = [{ from: 20, to: 80, fromT: current - 7200000, toT: current - 3600000, kwh: 10 }];
+        fs.writeFileSync(path.join(dir, 'battery.json'), JSON.stringify({ log }));
+        const b = await boot(dir, {}, { hybrid: 'bev', currency: 'brl', price: 1 });
+        for (let i = 0; i < 2; i++) await b.page();
+        b.texts.length = 0;
+        await b.page();
+        // 10 kWh stored x 1.1 (charging losses) x R$ 1.00
+        const t = b.texts.map((x) => x.str);
+        assert(t.some((x) => x.includes('R$ 11,00')) && !t.some((x) => x.includes('€')), t.join(' | '));
+    }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
         const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();
