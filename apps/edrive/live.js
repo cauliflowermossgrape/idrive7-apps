@@ -126,8 +126,10 @@ module.exports = function live(ctx, sh) {
                 const v = raw * (f.factor == null ? 1 : f.factor) + (f.offset || 0);
                 cells.push((f.min != null && v < f.min) || (f.max != null && v > f.max) ? null : v);
             }
+            // (a reply with room for more cells than the pack has: the empty slots at its end aren't cells)
+            while (cells.length && cells[cells.length - 1] === null) cells.pop();
             const ok = cells.filter(G.isNum);
-            if (ok.length < cells.length / 2) return null;
+            if (!ok.length || ok.length < cells.length / 2) return null;
             out.cells = cells;
             out.min = Math.min(...ok); out.max = Math.max(...ok); out.avg = ok.reduce((a, v) => a + v, 0) / ok.length;
             out.minAt = cells.indexOf(out.min) + 1; out.maxAt = cells.indexOf(out.max) + 1;
@@ -855,7 +857,9 @@ module.exports = function live(ctx, sh) {
         };
         if (scan.unit === 7) {
             block(126, 'LOOK LIKE CELL VOLTAGES (V)', cells);
-            block(236, 'LOOK LIKE PACK VOLTAGE (V)', packs);
+            // once the live comparison has something: what moved (the battery current follows the climate's load)
+            if (ch && ch.length) block(236, 'CHANGED SINCE RESET ' + ago(Date.now() - cmpState.t).toUpperCase() + ' (identifier@byte before>now)  ·  climate HI / LO, A/C on / off', ch);
+            else block(236, 'LOOK LIKE PACK VOLTAGE (V)', packs);
         } else {
             block(126, ch ? 'CHANGED SINCE RESET ' + ago(Date.now() - cmpState.t).toUpperCase() + ' (identifier@byte before>now)  ·  live, read ' + cmpState.cycles + 'x' : 'LIVE COMPARISON: starts when the scan is done', ch || []);
             cv.text('Climate OFF, press Reset drive totals, then set HI (heater) or LO with A/C: the values that follow it show up here.', 48, 300, 18, t.dim);

@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.3",
+  "version": "2.10.4",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -808,6 +808,36 @@
                 "max": 4.4
               }
             }
+          },
+          {
+            "did": "E554",
+            "array": {
+              "bytes": 2,
+              "factor": 0.001,
+              "min": 2.5,
+              "max": 4.4
+            },
+            "note": "Gen5 eDrive (iX3 G08): every cell's voltage, 2 bytes each (224 bytes: room for 112, the G08 has 94 in series), found with the Scan page"
+          },
+          {
+            "did": "E553",
+            "fields": {
+              "min": {
+                "at": 0,
+                "bytes": 2,
+                "factor": 0.001,
+                "min": 2.5,
+                "max": 4.4
+              },
+              "max": {
+                "at": 2,
+                "bytes": 2,
+                "factor": 0.001,
+                "min": 2.5,
+                "max": 4.4
+              }
+            },
+            "note": "Gen5 eDrive (iX3 G08): lowest and highest cell voltage (3.943 / 3.950 V seen)"
           }
         ],
         "cellT": [
