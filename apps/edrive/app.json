@@ -565,7 +565,7 @@
           "min": 0,
           "max": 100,
           "nonZero": true,
-          "note": "Gen5 eDrive (iX3 G08, i4, iX): the battery's raw charge, 3 values of 0.01 % (charge, then probably the lowest and highest); confirmed on an iX3 G08: 62 E5 CE 1D 52 1D 2C 1D 71 = 75.06 % (74.68 / 75.37); its DDBC answers all 0. The body controller (0x40) refuses F442 (NRC 31): no 12 V from it"
+          "note": "Gen5 eDrive (iX3 G08, i4, iX): the battery's raw charge, 3 values of 0.01 % (charge, then probably the lowest and highest); confirmed on an iX3 G08: 62 E5 CE 1D 52 1D 2C 1D 71 = 75.06 % (74.68 / 75.37), the car's own display showing 75 %; its DDBC answers all 0. The body controller (0x40) refuses F442 (NRC 31): no 12 V from it"
         }
       ],
       "soh": [
