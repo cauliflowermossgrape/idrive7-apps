@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.5",
+  "version": "2.10.6",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -265,10 +265,10 @@
     {
       "key": "bevKwh",
       "when": { "hybrid": ["bev"] },
-      "label": "Battery size when new (electric car)",
+      "label": "Battery size when new (usable, electric car)",
       "type": "number",
       "unit": "kWh",
-      "default": 80,
+      "default": 74,
       "steps": [42.2, 66.5, 70.2, 74, 80, 83.9, 94.8, 105.2, 111.5]
     },
     {

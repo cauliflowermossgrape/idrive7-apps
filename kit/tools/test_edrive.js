@@ -456,9 +456,9 @@ const checks = [
         t = await b.draw();
         const big = t.map((x) => +x).filter((x) => x > 200 && x < 260);
         assert(big.length, 'about 235 km at 50 %: ' + t.join(' | '));
-        // 76 kWh in the battery (80 x 95 %), half of it now
-        assert(t.some((x) => x === '38.0') && t.some((x) => /76\.0/.test(x)), 'kWh from the BEV size: ' + t.join(' | '));
-        // driving at 60 km/h, 15 kWh / 100 km (0.2 % per km of 76 kWh); the motor's speed on the rpm signal
+        // 70.3 kWh in the battery (74 usable x 95 %), half of it now
+        assert(t.some((x) => /^35\.[12]$/.test(x)) && t.some((x) => /70\.3/.test(x)), 'kWh from the BEV size: ' + t.join(' | '));
+        // driving at 60 km/h, 14 kWh / 100 km (0.2 % per km of 70.3 kWh); the motor's speed on the rpm signal
         // doesn't count as an engine, and no 5 s rpm freshness is needed to learn
         let soc = 50;
         for (let r = 0; r < 90; r++) {
