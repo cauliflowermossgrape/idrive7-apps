@@ -1,8 +1,8 @@
 {
   "id": "edrive",
   "title": "eDrive",
-  "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy, last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.9.2",
+  "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
+  "version": "2.10.0",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -211,6 +211,10 @@
           "Plug-in hybrid"
         ],
         [
+          "bev",
+          "Electric car (BEV)"
+        ],
+        [
           "48v",
           "48 V mild hybrid"
         ],
@@ -242,8 +246,34 @@
       ]
     },
     {
+      "key": "bevRange20",
+      "when": { "hybrid": ["bev"] },
+      "label": "Range when full, 20 °C (electric car)",
+      "type": "number",
+      "unit": "km",
+      "default": 400,
+      "steps": [150, 200, 250, 300, 350, 380, 400, 420, 450, 500, 550, 600, 650]
+    },
+    {
+      "key": "bevReserve",
+      "when": { "hybrid": ["bev"] },
+      "label": "Range down to",
+      "type": "choice",
+      "default": "0",
+      "options": [["0", "0 %"], ["2", "2 %"], ["5", "5 %"], ["10", "10 %"], ["15", "15 %"], ["20", "20 %"]]
+    },
+    {
+      "key": "bevKwh",
+      "when": { "hybrid": ["bev"] },
+      "label": "Battery size when new (electric car)",
+      "type": "number",
+      "unit": "kWh",
+      "default": 80,
+      "steps": [42.2, 66.5, 70.2, 74, 80, 83.9, 94.8, 105.2, 111.5]
+    },
+    {
       "key": "price",
-      "when": { "hybrid": ["auto", "yes"] },
+      "when": { "hybrid": ["auto", "yes", "bev"] },
       "label": "Electricity price",
       "type": "number",
       "unit": "EUR/kWh",
@@ -428,7 +458,10 @@
         80,
         100,
         120,
-        150
+        150,
+        200,
+        250,
+        300
       ]
     },
     {
@@ -509,7 +542,7 @@
     }
   ],
   "config": {
-    "comment": "HV battery values and the 12 V voltage are read with UDS ReadDataByIdentifier (0x22). Each value tries its candidates in order and keeps the first that answers with a plausible number: value = raw * factor + offset, raw = 'bytes' big-endian bytes from 'at' (0 = first data byte after the DID). 'ecu' on a candidate overrides battery.ecu (decimal: 7 = SME battery unit, 18 = DME engine unit). DIDs differ between models: check the Diagnostics page in the app and adjust here if a value shows n/a or looks wrong. F442 is the standard OBD 'control module voltage' (terminal 30, i.e. the 12 V battery). The live pages (live.js) read config.battery.fast (pack voltage and current, as fast as the car answers) and config.battery.slow (cells, temperatures, limits, every slowPoll s): each a list of candidates { ecu (optional, decimal), did, fields }, every field { at, bytes, factor, offset, signed, min, max } on the same reply; the first that answers is used. powerSign: kW = V x A / 1000 x powerSign (+ = the battery gives power); if regen shows while accelerating, set it to 1. probes: climate-unit values (IHKA 0x78; with a factor, the climate's kW on the Energy page); scanKnown: identifiers the Scan page compares when a unit has no saved scan. Without a hybrid system (battery12.js): soc40 (40AD) and cap12 (40A9) are candidates with fields too; v12 keeps asking the candidate that answered (an engine unit like a G20 320i's answers 402B with all FF and refuses F442: OBD 42 or the gearbox unit then)",
+    "comment": "HV battery values and the 12 V voltage are read with UDS ReadDataByIdentifier (0x22). Each value tries its candidates in order and keeps the first that answers with a plausible number: value = raw * factor + offset, raw = 'bytes' big-endian bytes from 'at' (0 = first data byte after the DID). 'ecu' on a candidate overrides battery.ecu (decimal: 7 = SME battery unit, 18 = DME engine unit). DIDs differ between models: check the Diagnostics page in the app and adjust here if a value shows n/a or looks wrong. F442 is the standard OBD 'control module voltage' (terminal 30, i.e. the 12 V battery). The live pages (live.js) read config.battery.fast (pack voltage and current, as fast as the car answers) and config.battery.slow (cells, temperatures, limits, every slowPoll s): each a list of candidates { ecu (optional, decimal), did, fields }, every field { at, bytes, factor, offset, signed, min, max } on the same reply; the first that answers is used. powerSign: kW = V x A / 1000 x powerSign (+ = the battery gives power); if regen shows while accelerating, set it to 1. probes: climate-unit values (IHKA 0x78; with a factor, the climate's kW on the Energy page); scanKnown: identifiers the Scan page compares when a unit has no saved scan. Without a hybrid system (battery12.js): soc40 (40AD) and cap12 (40A9) are candidates with fields too; v12 keeps asking the candidate that answered (an engine unit like a G20 320i's answers 402B with all FF and refuses F442: OBD 42 or the gearbox unit then). Electric cars (Hybrid system: Electric car (BEV), e.g. the iX3 G08): the same battery unit (SME 0x07) and identifiers are tried first; they are the plug-in hybrids' and not yet confirmed on a Gen5 eDrive car - check the Diagnostics and Scan pages and adjust here",
     "battery": {
       "ecu": 7,
       "soc": [

@@ -442,6 +442,37 @@ const checks = [
         const c = state(dir).lastCharge;
         assert(c && c.from === 6 && c.to === 71, 'the charge 6 -> 71: ' + JSON.stringify(c));
     }],
+    ['14. an electric car (iX3 G08): no engine, no hybrid zone, its own size and range; learns from an 80 kWh pack', async () => {
+        const dir = tmp('bev');
+        // 8 %: a plug-in hybrid's held zone (HYBRID), an electric car's plain range down to 0 %
+        const b = await boot(dir, { soc: 8, soh: 95, v12: 12.6 }, { demo: 'off', hybrid: 'bev' });
+        now += 20000; await b.read();
+        let t = await b.draw();
+        assert(t.includes('RANGE') && !t.includes('HYBRID') && t.includes('range down to 0 %'), t.join(' | '));
+        assert(!t.some((x) => /engine starts/.test(x)), 'no engine: ' + t.join(' | '));
+        // a full battery's range from the electric car's setting (400 km at 20 °C), not the hybrid's 50 km
+        b.signal('ExteriorTemperature', { temperatureExterior: 120 });      // 20 °C (x 0.5 - 40)
+        values.soc = 50; now += 20000; await b.read();
+        t = await b.draw();
+        const big = t.map((x) => +x).filter((x) => x > 100 && x < 400);
+        assert(big.length, 'about 200 km at 50 %: ' + t.join(' | '));
+        // 76 kWh in the battery (80 x 95 %), half of it now
+        assert(t.some((x) => x === '38.0') && t.some((x) => /76\.0/.test(x)), 'kWh from the BEV size: ' + t.join(' | '));
+        // driving at 60 km/h, 15 kWh / 100 km (0.2 % per km of 76 kWh); the motor's speed on the rpm signal
+        // doesn't count as an engine, and no 5 s rpm freshness is needed to learn
+        let soc = 50;
+        for (let r = 0; r < 90; r++) {
+            for (let i = 0; i < 10; i++) { now += 2000; b.drive(60); }
+            if (r === 0) b.signal('statusEngineSpeed2', { actualValueRPMEngineCrankshaft: 5200 });
+            now += 1; soc -= 60 / 180 * 0.2; values.soc = soc; await b.read();
+        }
+        const L = state(dir).learn;
+        assert(L && L.km > 20, 'electric driving learned: ' + JSON.stringify(state(dir).learn));
+        assert(!state(dir).engineStarts && !state(dir).engineAll, 'no engine learned');
+        t = await b.draw();
+        assert(t.some((x) => /^learned from/.test(x)), 'the range is learned: ' + t.join(' | '));
+        b.exit();
+    }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
         const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();

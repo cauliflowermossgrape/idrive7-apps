@@ -739,7 +739,7 @@ module.exports = function live(ctx, sh) {
         cv.text('CHARGE', r, 112, 18, t.dim, { font: 'bold', spacing: 1.2, align: 'right' });
         const pc = cv.text('%', r, 148, 20, t.dim, { font: 'bold', align: 'right' });
         cv.text(G.isNum(d.soc) ? G.fmt(d.soc, 1) : '--', r - pc - 6, 148, 32, d.stale && d.stale.soc ? t.dim : t.text, { font: 'bold', align: 'right' });
-        if (G.isNum(d.soc)) cv.text('~' + G.fmt(d.soc / 100 * settings.get('designKwh'), 1) + ' kWh', r, 172, 16, t.dim, { align: 'right' });
+        if (G.isNum(d.soc)) cv.text('~' + G.fmt(d.soc / 100 * (sh.battKwh ? sh.battKwh() : settings.get('designKwh')), 1) + ' kWh', r, 172, 16, t.dim, { align: 'right' });
         if (cells) {
             // bars: from a floor below the lowest cell, so the differences show
             const x0 = x + 80, bw0 = r - x0, btop = 210, base = 420 + G.toMargin(ex, 70), n = cells.length, bw = bw0 / n;

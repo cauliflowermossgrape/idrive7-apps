@@ -30,6 +30,9 @@
  *     monthly / all-time totals and a 14-day chart
  *   - which system the car has (setting "Hybrid system", else found by itself and remembered):
  *     a plug-in hybrid (the high-voltage battery unit answers): all of the above;
+ *     an electric car (BEV, e.g. the iX3 G08; set by hand): the same pages, without an engine - the range
+ *     runs down to the "range down to" charge (0 % by default), no low-battery hybrid zone, the battery size
+ *     and range when full have their own settings (80 kWh / 400 km by default);
  *     a 48 V mild hybrid (no high-voltage battery, the 48 V battery BATT48 answers): its own page
  *     only - the 48 V battery's charge, voltage, power, health and temperature, the 48 V / 12 V
  *     converter (PCU48) and the 12 V battery it charges;
@@ -152,7 +155,8 @@ mgu.run({
         // learned before 1.8 the use per km also held the climate draw: keep it, but light, so it relearns soon
         if (st.learn && st.rangeV !== 2) { const f = Math.min(1, 10 / st.learn.km); st.learn.km *= f; st.learn.pct *= f; }
         st.rangeV = 2;
-        const model = new RangeModel(st);
+        // (an electric car's big battery: the plausibility limits on % per km scale with it; a plug-in hybrid's stay)
+        const model = new RangeModel(st, { kwh: () => (isBev() ? battKwh() : 12) });
         let savedAt = 0, saved = JSON.stringify(st);
         const save = () => {
             savedAt = Date.now(); saved = JSON.stringify(st);
@@ -191,6 +195,8 @@ mgu.run({
         };
         const paceNow = () => (live.pace !== null && live.lastMove && Date.now() - live.lastMove < PACE_KEEP ? live.pace : null);
         const onRpm = (rpm) => {
+            // an electric car has no engine: whatever this signal carries (0, or the motor's speed), it never runs
+            if (isBev()) { live.rpm = 0; live.rpmT = Date.now(); return; }
             const was = live.rpm;
             live.rpm = rpm; live.rpmT = Date.now();
             if (rpm > 400) seg.engine = true;
@@ -202,8 +208,16 @@ mgu.run({
                 save();
             }
         };
-        /** Charge at which the engine starts: the setting, or the median of the engine starts seen. */
+        /** An electric car (BEV): no engine, no low-battery hybrid zone; only by the setting. */
+        function isBev() { return settings.get('hybrid') === 'bev'; }
+        /** Battery size when new (kWh): an electric car's own setting, else the plug-in hybrid's. */
+        function battKwh() { return isBev() ? settings.get('bevKwh') : settings.get('designKwh'); }
+        /** Range of a full battery at 20 °C (km), the same way. */
+        function range20() { return isBev() ? settings.get('bevRange20') : settings.get('range20'); }
+        /** Charge at which the engine starts: the setting, or the median of the engine starts seen.
+         *  An electric car: the charge the range counts down to (0 % by default). */
         function reserve() {
+            if (isBev()) { const b = +settings.get('bevReserve'); return isFinite(b) ? b : 0; }
             const s = settings.get('reserve');
             if (s != null && s !== 'auto' && isFinite(+s)) return +s;
             const e = (st.engineStarts || []).filter((x) => x > HOLD_TOP).sort((a, b) => a - b);
@@ -302,7 +316,7 @@ mgu.run({
         };
 
         /** kWh in 1 % of charge today (size when new x health). */
-        const kwhPerPct = () => settings.get('designKwh') * (G.isNum(live.soh) ? live.soh : 100) / 100 / 100;
+        const kwhPerPct = () => battKwh() * (G.isNum(live.soh) ? live.soh : 100) / 100 / 100;
 
         // the car locked and left (its own state: parked or standby, nobody in it): nothing is read, so it can sleep
         ctx.signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
@@ -447,9 +461,11 @@ mgu.run({
             // since the last reading with the engine off throughout (and the car awake: rpm signal live):
             // standing / creeping teaches the climate + on-board draw per hour, driving the use per km
             const h = (now - (st.lastSocT || 0)) / 3600000;
-            const held = G.isNum(prev) && Math.min(prev, soc) <= HOLD_TOP + 1;    // low-battery hybrid zone
+            const held = !isBev() && G.isNum(prev) && Math.min(prev, soc) <= HOLD_TOP + 1;    // low-battery hybrid zone
+            // the car awake: the rpm signal live (an electric car may not send it: the readings 2 min apart are enough)
+            const awake = isBev() || now - live.rpmT < 5000;
             if (held) { /* the car manages the charge here: nothing to learn */ }
-            else if (G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && now - live.rpmT < 5000 && !st.session) {
+            else if (G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session) {
                 // seat / steering-wheel heating over the stretch: the mean of its start and end
                 model.learn(prev - soc, h, seg.km, live.ambient, kwhPerPct(), stretchClimate(), (seg.comfort + comfortKw()) / 2);
             } else if (G.isNum(prev) && h < 120000 / 3600000 && seg.engine && seg.engineAll && now - live.rpmT < 5000 && !st.session) {
@@ -511,12 +527,13 @@ mgu.run({
                 }
             }
         }
-        /* The car's system: 'phev' (plug-in hybrid), 'mhev' (48 V mild hybrid) or 'none'; the setting, else what
+        /* The car's system: 'phev' (plug-in hybrid; an electric car too: the same pages, isBev() for what differs),
+         * 'mhev' (48 V mild hybrid) or 'none'; the setting, else what
          * answered: the high-voltage battery unit, else the 48 V battery once the high-voltage one is known to be
          * missing (st.mild48 / st.no48 remembered as st.hybrid / st.noHybrid are); a plug-in hybrid until known. */
         function kind() {
             const set = settings.get('hybrid');
-            if (set === 'yes') return 'phev';
+            if (set === 'yes' || set === 'bev') return 'phev';
             if (set === '48v') return 'mhev';
             if (set === 'no') return 'none';
             return st.hybrid || !st.noHybrid ? 'phev' : st.mild48 ? 'mhev' : 'none';
@@ -651,7 +668,7 @@ mgu.run({
         }
         /** Range of a full battery at tC: { lo, hi, mid } in km (no temperature: 10 °C assumed). */
         function rangeAt(tC) {
-            const k = settings.get('range20') / 50, c = RANGE_CURVE;
+            const k = range20() / 50, c = RANGE_CURVE;
             const t = G.isNum(tC) ? tC : 10;
             let lo, hi;
             if (t >= c[c.length - 1][0]) { lo = c[c.length - 1][1]; hi = c[c.length - 1][2]; }
@@ -732,7 +749,7 @@ mgu.run({
             return (G.isNum(km) ? Math.round(D(km)) : '--') + ' ' + dU();
         };
         let share = () => {};          // (below) the power, charge and range for other apps
-        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, kind: () => kind(), page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]),
+        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, battKwh, kind: () => kind(), page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]),
             onPower: () => share() });
         const isLive = (p) => lv.PAGES.indexOf(p) >= 0;
 
@@ -891,7 +908,7 @@ mgu.run({
             // ---- range: what is left until the engine starts
             // the room under the page (if any): the bars and the last charge go down with the panels' bottom
             const ex = G.panel(cv, t, 24, 44, 720, 468, 'Real electric range').h - 468, ey = Math.round(ex / 2);
-            const hold = has && d.soc <= HOLD_TOP + 0.5;       // low-battery hybrid zone
+            const hold = !isBev() && has && d.soc <= HOLD_TOP + 0.5;       // low-battery hybrid zone
             if (hold) {
                 cv.text('HYBRID', 48, 196, 96, t.warn, { font: 'bold' });
                 cv.text(translate('battery held at') + ' 5-' + HOLD_TOP + ' %', 720, 196, 26, t.dim, { align: 'right' });
@@ -900,7 +917,7 @@ mgu.run({
                 const rw = cv.text(has ? String(Math.round(D(e.mid))) : '--', 48, 196, 120, has ? t.text : t.dim, { font: 'num' });
                 cv.text(dU(), 58 + rw, 196, 38, t.dim, { font: 'bold' });
                 if (has) cv.text(Math.round(D(e.lo)) + ' - ' + Math.round(D(e.hi)) + ' ' + dU(), 720, 150, 30, t.text, { font: 'bold', align: 'right' });
-                cv.text('engine starts at ' + G.fmt(e.res, 0) + ' %', 720, 196, 26, t.dim, { align: 'right' });
+                cv.text((isBev() ? 'range down to ' : 'engine starts at ') + G.fmt(e.res, 0) + ' %', 720, 196, 26, t.dim, { align: 'right' });
                 cv.text(e.learned ? 'learned from ' + Math.round(D(st.learn.km)) + ' ' + dU() : 'Learns while driving', 720, 236, 22, t.dim, { align: 'right' });
             }
             // one status line under the number: low battery / engine on, else a missing or old charge reading
@@ -961,7 +978,7 @@ mgu.run({
             }
 
             // ---- this drive (from the battery's own power readings, live.js)
-            const holds = G.isNum(d.soh) ? settings.get('designKwh') * d.soh / 100 : settings.get('designKwh');
+            const holds = G.isNum(d.soh) ? battKwh() * d.soh / 100 : battKwh();
             const inBat = has ? [G.fmt(holds * d.soc / 100, 1), G.fmt(holds, 1)] : ['--', G.fmt(holds, 1)];
             lv.drawTrip(cv, t, 1172, 44, 404, 468, climFoot, inBat);
             G.button(cv, t, 1576 - 20 - 120, 56, 120, 40, 'Reset', () => { lv.action('battery'); return render(); }, { key: 'trip', confirm: true });
@@ -1004,7 +1021,7 @@ mgu.run({
 
         /** Battery health (capacity vs. new), energy in the pack now and its temperature - on the Battery page, under the cells. */
         function renderHealth(cv, t, d, x, y, w, h) {
-            const soh = d.soh, kwh = settings.get('designKwh');
+            const soh = d.soh, kwh = battKwh();
             const cap = G.isNum(soh) ? kwh * soh / 100 : null;                     // what a full charge holds today
             const now = G.isNum(cap) && G.isNum(d.soc) ? cap * d.soc / 100 : null;  // energy in the pack right now
             // room below the page (ex): the energy now goes down until it ends G.MARGIN over the panel's bottom, as the
