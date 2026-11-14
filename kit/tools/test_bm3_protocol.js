@@ -58,7 +58,22 @@ function binaryMarker(token) {
     return [0x62, 0xF3, 1].concat(Array.from(payload));
 }
 
+function hashMarker(tag) {
+    // the S58 layout (G87, issue #175): BM3_, a binary block (synthetic here), the only '#' at byte 101, the tag
+    const payload = Buffer.alloc(255, 0);
+    payload.write('BM3_');
+    for (let i = 4; i < 101; i++) payload[i] = ((i * 37 + 11) & 0xFF) === 0x23 ? 0x24 : (i * 37 + 11) & 0xFF;
+    payload.write('#' + tag + '\0', 101, 'latin1');
+    return [0x62, 0xF3, 1].concat(Array.from(payload));
+}
+
 async function markerDetectionChecks() {
+    // the S58 marker (G87 M2 with F4C9L8R02, issue #175)
+    assert.strictEqual(markerRom(hashMarker('F4C9L8R02GGGJM_G87_RWD_USA_KOR_ULEV246_'), bundled), 'F4C9L8R02');
+    assert.throws(() => markerRom(hashMarker('ZZZZZZZZZGGGJM_G87_RWD_USA_'), bundled), /no profile/);
+    assert.throws(() => markerRom(hashMarker('F4C9L8R02'), bundled));                       // no build characters
+    { const two = hashMarker('F4C9L8R02GGGJM_G87_RWD_USA_'); two[3 + 50] = 0x23; assert.throws(() => markerRom(two, bundled)); }
+
     const captured = binaryMarker('R4C9H5V02OKLX0');
     assert.strictEqual(markerRom(captured, bundled), 'R4C9H5V02');
     const calls = [];
@@ -80,6 +95,27 @@ async function markerDetectionChecks() {
         [0x2C, 2, 0xF3, 1, 0x24, 0x80, 0x7F, 0xFE, 0x50, 0, 255],
         [0x22, 0xF3, 1], [0x23, 0x14, 0x60, 3, 0x80, 6, 1]
     ]);
+    // a DME that refuses the dynamic DID: the marker read straight from its address
+    {
+        const direct = [];
+        const pd = new Bm3Protocol({ available: true, physical: async (target, sid, data) => {
+            direct.push([sid].concat(data));
+            if (sid === 0x2C) return [0x7F, 0x2C, 0x31];
+            if (sid === 0x23 && data[5] === 255) return [0x63].concat(hashMarker('F4C9L8R02GGGJM_G87_RWD_USA_').slice(3));
+            return null;
+        } }, bundled, { bm3MarkerAddress: '807FFE50' });
+        assert.deepStrictEqual(await pd.identify(), { rom: 'F4C9L8R02' });
+        assert.deepStrictEqual(direct, [[0x2C, 3, 0xF3, 1], [0x23, 0x14, 0x80, 0x7F, 0xFE, 0x50, 255]], 'refused: one direct read');
+        // no answer to the dynamic DID: an error, no direct read
+        const silent = [];
+        const ps = new Bm3Protocol({ available: true, physical: async (target, sid, data) => { silent.push(sid); return null; } }, bundled, { bm3MarkerAddress: '807FFE50' });
+        await assert.rejects(() => ps.identify(), /did not answer/);
+        assert.deepStrictEqual(silent, [0x2C]);
+        // the direct read refused too, or a short marker: no profile
+        const pr = new Bm3Protocol({ available: true, physical: async (target, sid) => (sid === 0x23 ? [0x63, 1, 2, 3] : [0x7F, sid, 0x31]) }, bundled, { bm3MarkerAddress: '807FFE50' });
+        await assert.rejects(() => pr.identify(), /marker length/);
+        assert.strictEqual(pr.profile, null);
+    }
     const damagedPrefix = captured.slice(); damagedPrefix[3] = 0;
     const damagedDelimiter = captured.slice(); damagedDelimiter[3 + 68] = 0;
     const noTerminator = captured.slice(); noTerminator[noTerminator.indexOf(0, 3 + 71)] = 0x5F;
@@ -101,8 +137,11 @@ async function markerDetectionChecks() {
         clearReply = rejected;
         const before = calls.length;
         await assert.rejects(() => p.identify());
-        assert.strictEqual(calls.length, before + 1, 'clear failure must stop before defining/reading');
+        // a refusal (NRC) tries the direct read once (this stub's is too short); no answer or a wrong answer stops
+        const refused = !!rejected && rejected[0] === 0x7F;
+        assert.strictEqual(calls.length, before + (refused ? 2 : 1), 'clear failure must stop before defining/reading');
         assert.deepStrictEqual(calls[before], [0x2C, 3, 0xF3, 1]);
+        if (refused) assert.deepStrictEqual(calls[before + 1], [0x23, 0x14, 0x80, 0x7F, 0xFE, 0x50, 255]);
         assert.strictEqual(p.profile, null);
     }
     clearReply = [0x6C, 3, 0xF3, 1];
