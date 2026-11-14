@@ -796,6 +796,7 @@ mgu.run({
                 // their format, while they ask for the power (wanted*.json there): ours as edrive.json
                 if (lv.clusterInfoWants()) {
                     const ci = { v: 1, t: out.t, app: 'eDrive', values: {} };
+                    if (isBev()) ci.vehicle = 'bev';        // (the cluster apps' Vehicle: Auto finds an electric car by this)
                     // (no limits read, as on an iX3 G08: an electric car's gauge ends from the Power gauge setting)
                     const gk = settings.get('gaugeKw');
                     if (G.isNum(out.kw)) ci.power = { kw: out.kw, outMax: out.limitOut || (isBev() && gk) || 100, inMax: out.limitIn || (isBev() && gk * 0.5) || 60, old: false };
