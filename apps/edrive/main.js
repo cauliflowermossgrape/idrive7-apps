@@ -772,7 +772,9 @@ mgu.run({
          * range at this charge, as the Range page has it) }.
          * Written at each new power reading (at most every SHARE_MIN_MS) and four times a second; nothing while the
          * demo runs. live.js reads the power fast while another app asks for it (its WANTED). */
-        const SHARED = '/tmp/mgu-edrive.json', SHARE_MIN_MS = 80, CI_FILE = '/dev/shm/cluster-info/edrive.json';
+        const SHARED = '/tmp/mgu-edrive.json', SHARE_MIN_MS = 80;
+        // (Cluster Info's folder: CLUSTER_INFO_DIR as it has it, for a test)
+        const CI_FILE = path.join(process.env.CLUSTER_INFO_DIR || '/dev/shm/cluster-info', 'edrive.json');
         let sharedAt = 0;
         share = () => {
             if (Date.now() - sharedAt < SHARE_MIN_MS) return;
@@ -794,8 +796,12 @@ mgu.run({
                 // their format, while they ask for the power (wanted*.json there): ours as edrive.json
                 if (lv.clusterInfoWants()) {
                     const ci = { v: 1, t: out.t, app: 'eDrive', values: {} };
-                    if (G.isNum(out.kw)) ci.power = { kw: out.kw, outMax: out.limitOut || 100, inMax: out.limitIn || 60, old: false };
+                    // (no limits read, as on an iX3 G08: an electric car's gauge ends from the Power gauge setting)
+                    const gk = settings.get('gaugeKw');
+                    if (G.isNum(out.kw)) ci.power = { kw: out.kw, outMax: out.limitOut || (isBev() && gk) || 100, inMax: out.limitIn || (isBev() && gk * 0.5) || 60, old: false };
                     if (G.isNum(out.soc)) ci.values.soc = { pct: out.soc };
+                    // Settings > Range on the cluster / HUD: Cluster Info shows a shared electric range instead of the car's own
+                    if (settings.get('clusterRange') && G.isNum(out.rangeKm)) ci.values.erange = { km: out.rangeKm };
                     const bt = d.batt && G.isNum(d.batt.avg) ? d.batt.avg : null;
                     if (G.isNum(bt)) ci.values.battery = { c: bt };
                     fs.writeFileSync(CI_FILE + '.tmp', JSON.stringify(ci), { mode: 0o644 });

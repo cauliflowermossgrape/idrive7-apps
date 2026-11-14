@@ -43,7 +43,7 @@ const BG_POWER_S = 2;             // power read in the background (drive totals)
  * { t, power, soc }, renewed each second while it shows them. While fresh, the power is read as fast as while
  * shown, and the charge with the slow reads, with the app closed too. */
 const WANTED = '/tmp/mgu-edrive-wanted.json', WANTED_FRESH_MS = 3000;
-const CI_DIR = '/dev/shm/cluster-info';    // Cluster Info's shared folder (eroobeeroo/idrive7-cluster-info)
+const CI_DIR = process.env.CLUSTER_INFO_DIR || '/dev/shm/cluster-info';    // Cluster Info's shared folder (eroobeeroo/idrive7-cluster-info)
 const TRACE_S = 120;              // power trace on the Battery page
 const SEAT_KW = [0, 0.04, 0.07, 0.1];   // seat heating per level 0..3 (estimate)
 const WHEEL_KW = 0.06;                  // steering-wheel heating (estimate)

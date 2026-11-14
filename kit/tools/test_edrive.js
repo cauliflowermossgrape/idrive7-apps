@@ -547,6 +547,28 @@ const checks = [
         now += 30 * 60000; await power();
         assert.strictEqual(asks.DD69, 4, 'asked again after 30 min: ' + JSON.stringify(asks));
     }],
+    ['18. Cluster Info: eDrive\'s range shared as the electric range only with the setting on; an electric car\'s gauge ends', async () => {
+        const ciDir = tmp('ci');
+        process.env.CLUSTER_INFO_DIR = ciDir;
+        const shared = async (set) => {
+            delete require.cache[MAIN];
+            fs.writeFileSync(path.join(ciDir, 'wanted.json'), JSON.stringify({ t: now, power: true }));
+            try { fs.unlinkSync(path.join(ciDir, 'edrive.json')); } catch (e) { /* none yet */ }
+            const iv = global.setInterval, every = [];
+            global.setInterval = (fn, ms) => { every.push({ fn, ms }); return 0; };
+            const b = await boot(tmp('ci-car'), { soc: 50, soh: 100 }, Object.assign({ hybrid: 'bev', gaugeKw: 250 }, set));
+            global.setInterval = iv;
+            b.signal('ExteriorTemperature', { temperatureExterior: 120 });
+            now += 20000; await b.read();
+            fs.writeFileSync(path.join(ciDir, 'wanted.json'), JSON.stringify({ t: now, power: true }));
+            now += 1000; every.filter((x) => x.ms === 250).forEach((x) => x.fn());
+            try { return JSON.parse(fs.readFileSync(path.join(ciDir, 'edrive.json'), 'utf8')); } catch (e) { return null; }
+        };
+        const off = await shared({}), on = await shared({ clusterRange: true });
+        delete process.env.CLUSTER_INFO_DIR;
+        assert(off && off.values.soc.pct === 50 && !off.values.erange, 'off: the charge, no range: ' + JSON.stringify(off));
+        assert(on && on.values.erange && on.values.erange.km === 220, 'on: 220 km at 50 % of 440: ' + JSON.stringify(on));
+    }],
     ['7. charge totals keep English singular and plural', async () => {
         const dir = tmp('charge-counts'), today = new Date(), current = today.getTime();
         const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();
