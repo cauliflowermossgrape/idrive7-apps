@@ -450,12 +450,12 @@ const checks = [
         let t = await b.draw();
         assert(t.includes('RANGE') && !t.includes('HYBRID') && t.includes('range down to 0 %'), t.join(' | '));
         assert(!t.some((x) => /engine starts/.test(x)), 'no engine: ' + t.join(' | '));
-        // a full battery's range from the electric car's setting (400 km at 20 °C), not the hybrid's 50 km
+        // a full battery's range from the electric car's setting (471 km at 20 °C, the iX3's WLTP), not the hybrid's 50 km
         b.signal('ExteriorTemperature', { temperatureExterior: 120 });      // 20 °C (x 0.5 - 40)
         values.soc = 50; now += 20000; await b.read();
         t = await b.draw();
-        const big = t.map((x) => +x).filter((x) => x > 100 && x < 400);
-        assert(big.length, 'about 200 km at 50 %: ' + t.join(' | '));
+        const big = t.map((x) => +x).filter((x) => x > 200 && x < 260);
+        assert(big.length, 'about 235 km at 50 %: ' + t.join(' | '));
         // 76 kWh in the battery (80 x 95 %), half of it now
         assert(t.some((x) => x === '38.0') && t.some((x) => /76\.0/.test(x)), 'kWh from the BEV size: ' + t.join(' | '));
         // driving at 60 km/h, 15 kWh / 100 km (0.2 % per km of 76 kWh); the motor's speed on the rpm signal

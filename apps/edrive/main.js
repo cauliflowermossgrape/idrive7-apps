@@ -32,7 +32,7 @@
  *     a plug-in hybrid (the high-voltage battery unit answers): all of the above;
  *     an electric car (BEV, e.g. the iX3 G08; set by hand): the same pages, without an engine - the range
  *     runs down to the "range down to" charge (0 % by default), no low-battery hybrid zone, the battery size
- *     and range when full have their own settings (80 kWh / 400 km by default);
+ *     and range when full have their own settings (80 kWh / 471 km, the iX3 G08's WLTP range, by default);
  *     a 48 V mild hybrid (no high-voltage battery, the 48 V battery BATT48 answers): its own page
  *     only - the 48 V battery's charge, voltage, power, health and temperature, the 48 V / 12 V
  *     converter (PCU48) and the 12 V battery it charges;
