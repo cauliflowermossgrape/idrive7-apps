@@ -41,7 +41,12 @@ class DidReader {
     async read(c) {
         const ecu = c.ecu == null ? this.ecu : c.ecu, obd = c.obd ? parseInt(c.obd, 16) : null, did = obd === null ? parseInt(c.did, 16) : null;
         const r = { t: Date.now(), ok: false, value: null, bytes: '', why: '' };
-        this.raws[this.key(c)] = r;
+        // (the last result stays in raws until this one is in: a diagnostics view of a value read several times a
+        // second would else show the empty one in between)
+        try { return await this._read(c, ecu, obd, did, r); } finally { this.raws[this.key(c)] = r; }
+    }
+
+    async _read(c, ecu, obd, did, r) {
         // ours: the positive reply for this DID / PID, or a refusal of the same service
         const sid = obd === null ? 0x22 : 0x01;
         const accept = (u) => (obd === null ? u[0] === 0x62 && ((u[1] << 8) | u[2]) === did : u[0] === 0x41 && u[1] === obd) || (u[0] === 0x7F && u[1] === sid);

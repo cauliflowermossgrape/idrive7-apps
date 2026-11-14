@@ -2,7 +2,7 @@
   "id": "edrive",
   "title": "eDrive",
   "description": "Real electric range, live battery power, cells and climate power, HV battery health (SOH) and energy (plug-in hybrids and electric cars such as the iX3 G08), last charge, charge log, the 12 V battery (charge, voltage, what it does, regen, history) and a home-screen widget; on a 48 V mild hybrid its 48 V battery and DC/DC converter",
-  "version": "2.10.10",
+  "version": "2.10.11",
   "vendor": "custom",
   "loggingId": "OA9C",
   "iconGlyph": "battery",
@@ -805,7 +805,7 @@
                 "max": 800
               }
             },
-            "note": "Gen5 eDrive (iX3 G08): the battery's current, 0.01 A signed, as DD69 (negative = discharging). From one scan: FF FF FF AA = -0.86 A at 371 V = 0.32 kW, standing with the climate off; not yet confirmed while driving"
+            "note": "Gen5 eDrive (iX3 G08): the battery's current, 0.01 A signed, as DD69 (negative = discharging). FF FF FF AA = -0.86 A at 371 V = 0.32 kW, standing with the climate off; on the car it reads 2.3 times a second and the standing draw learned from it is 0.27 kW"
           }
         ]
       },
