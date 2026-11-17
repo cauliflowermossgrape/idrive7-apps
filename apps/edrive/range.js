@@ -65,18 +65,13 @@ const acKwTypical = (tC) => curve(AC_KW, tC);
 // slow traffic is ~1.5 %/km); more comes from standing / creeping, where "per km" means nothing
 const ENGINE_MAX_PCT_KM = 3;
 
-/** Battery size (kWh) the plausibility limits on % per km below were set for (a 330e / 530e). */
-const REF_KWH = 12;
-
 class RangeModel {
-    /**
-     * opts.kwh: () => the battery's size (kWh). The limits on what counts as a plausible % per km scale with
-     * it, so an electric car's big battery (0.2 % per km on an 80 kWh pack) isn't thrown out as too little.
-     * Without it: REF_KWH, the plug-in hybrid's limits as they always were.
-     */
-    constructor(st, opts) {
+    constructor(st) {
         this.st = st; this.stoodH = Infinity;
-        this.kwh = opts && opts.kwh;
+        // the % per km limits below are for a plug-in hybrid's battery (~12 kWh, ~0.12 kWh per %): a bigger battery
+        // uses fewer % per km for the same driving, so main.js sets scale = 0.12 / kWh per % on a fully electric car
+        // (74 kWh: 0.16). 1 = the limits as they are.
+        this.scale = 1;
         // learned before 2.1: stretches of standing with the engine charging counted too (e.g. +18 %/km)
         const A = st.engineAll;
         if (A && A.km > 0 && Math.abs(A.pct / A.km) > ENGINE_MAX_PCT_KM) { delete st.engineAll; delete st.engineUse; }
@@ -86,14 +81,8 @@ class RangeModel {
      * % per km for driving alone, once there is enough of it (>= 5 km and 2 %); else null. With a
      * speed (km/h): that speed band's own value, leaning on the overall one while it has little driving.
      */
-    /** % per km limits scale: 1 for a 12 kWh battery, 0.15 for an 80 kWh one. */
-    scale() {
-        const k = this.kwh ? this.kwh() : REF_KWH;
-        return isNum(k) && k > 0 ? REF_KWH / k : 1;
-    }
-
     drivePctPerKm(kmh) {
-        const L = this.st.learn, s = this.scale();
+        const L = this.st.learn, s = this.scale;
         if (!L || L.km < 5 || L.pct < 2 * s) return null;
         const a = L.pct / L.km;
         if (!(a > 0.2 * s && a < 10 * s)) return null;
@@ -109,8 +98,8 @@ class RangeModel {
     driveOffPctPerKm(kmh) {
         const b = this.st.driveOff && this.st.driveOff[speedBandOf(kmh)];
         if (!b || b.km < 3) return null;
-        const a = b.pct / b.km, s = this.scale();
-        return a > 0.1 * s && a < 15 * s ? a : null;
+        const a = b.pct / b.km;
+        return a > 0.1 * this.scale && a < 15 * this.scale ? a : null;
     }
 
     /**
@@ -260,4 +249,4 @@ class RangeModel {
     }
 }
 
-module.exports = { RangeModel, auxKwTypical, acKwTypical, bandOf, speedBandOf, LEARN_KM, AUX_KW, BASE_KW, AC_KW, SPEED_BANDS };
+module.exports = { RangeModel, curve, auxKwTypical, acKwTypical, bandOf, speedBandOf, LEARN_KM, AUX_KW, BASE_KW, AC_KW, SPEED_BANDS };
