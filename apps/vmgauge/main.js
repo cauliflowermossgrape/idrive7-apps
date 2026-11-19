@@ -304,7 +304,10 @@ mgu.run({
             power.nm = nm;
             power.hp = kw * 1.35962;         // metric PS
             power.stamp = Date.now();
-            const now = Date.now(), ttl = settings.get('peakResetMs') || 6000;
+            // peak reset: the 'peakResetMs' setting stores seconds (the number stepper's unit
+            // label was changed from ms to s in 0.1.5; old saves hold ms - treat >1000 as ms)
+            const raw = Number(settings.get('peakResetSec'));
+            const ttl = (!isNaN(raw) && raw > 0) ? (raw > 1000 ? raw : raw * 1000) : 6000;
             if (num(power.peakHp) && now - power.peakAt > ttl) { power.peakHp = null; power.peakNm = null; }
             if (!num(power.peakHp) || power.hp > power.peakHp) { power.peakHp = power.hp; power.peakNm = power.nm; power.peakAt = now; }
             if (now - power.lastPush > 200) {
@@ -437,10 +440,10 @@ mgu.run({
             const y = G.TOP + 2 * (barH + gap), h = G.BOTTOM - y;
             const now = Date.now(), t0 = now - 30000;
             const hs = power.hist.filter((p) => p.t >= t0);
-            const maxV = Math.max(1, hs.length ? Math.max.apply(null, hs.map((p) => Math.max(p.hp, p.nm))) : 1);
-            const yMax = Math.max(100, Math.ceil(maxV / 50) * 50);
-            G.chart(cv, t, 24, y, 1552, h, {
-                xMin: t0, xMax: now, yMin: 0, yMax,
+            // fixed scale to 600 (hp / Nm), chart compressed to ~2/3 of the width, centered
+            const cw = Math.round(1552 * 0.66), cx = 24 + Math.round((1552 - cw) / 2);
+            G.chart(cv, t, cx, y, cw, h, {
+                xMin: t0, xMax: now, yMin: 0, yMax: 600, yStep: 100,
                 xStep: 10000, xFmt: (xx) => Math.round((xx - now) / 1000) + 's',
                 yUnit: 'hp · Nm', yFmt: (yy) => String(Math.round(yy)),
                 series: [

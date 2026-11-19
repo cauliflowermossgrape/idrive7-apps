@@ -71,3 +71,11 @@ MAIN перекомпонован в сетку 3×4 (данные в плитк
 `node kit/tools/test_vmgauge_poll.js`, RTT задаётся переменной окружения RTT).
 При реальном RTT с ГУ (~150 мс по логам) ожидайте ~1 обн/с на быструю плитку — для
 проверки замерьте время ответа DID в vmgauge.log и подберите MED_GAP/SLOW_GAP под канал.
+
+## v0.1.5 — Power tab
+- Peak reset (hp/Nm) uses the `peakResetSec` setting (seconds, default 6; old `peakResetMs`
+  saves are ignored, the new key has a fresh default). The old code read `peakResetMs` which
+  existed in app.json but the ttl compared Date.now()-peakAt — reset only fired while computePower
+  ran (engine on); peaks now clear 6 s after the last new maximum as intended.
+- Bottom chart: fixed y-scale 0..600 (step 100) for both hp and Nm series; chart width
+  compressed to ~2/3 of the page and centered horizontally.

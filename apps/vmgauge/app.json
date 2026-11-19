@@ -2,7 +2,7 @@
   "id": "vmgauge",
   "title": "VMGauge",
   "description": "Boost, temperatures, oil pressure, lambda, knock and misfire counters for the MGU (iDrive 7)",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "vendor": "custom",
   "loggingId": "OAA1",
   "iconGlyph": "gauge",
@@ -163,17 +163,17 @@
       "default": false
     },
     {
-      "key": "peakResetMs",
+      "key": "peakResetSec",
       "label": "Peak reset interval",
       "type": "number",
-      "unit": "ms",
-      "default": 6000,
+      "unit": "s",
+      "default": 6,
       "steps": [
-        3000,
-        6000,
-        10000,
-        30000,
-        60000
+        3,
+        6,
+        10,
+        30,
+        60
       ]
     }
   ],
