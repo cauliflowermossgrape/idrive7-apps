@@ -429,6 +429,17 @@ function stat(cv, t, x, y, w, h, g) {
         cv.polyline(pts, 2.5, withAlpha(c, 0.85));
     }
     const vs = fmt(v, g.decimals);
+    if (g.center) {
+        // value + unit as one block, centred in the tile; sub line centred above the bottom margin
+        const vw = cv.textWidth(vs, size, { font: 'num' });
+        const us = g.unit ? ' ' + g.unit : '';
+        const uw = us ? cv.textWidth(us, 28) : 0;
+        const cx = x + w / 2;
+        cv.text(vs, cx - (vw + uw) / 2, vy, size, isNum(v) ? vcol : t.dim, { font: 'num' });
+        if (us) cv.text(us, cx + (vw + uw) / 2 - uw, vy, 28, t.dim);
+        if (g.sub) cv.text(g.sub, cx, y + hb - MARGIN, 22, t.dim, { align: 'center', spacing: 0.5 });
+        return;
+    }
     const vw = cv.textWidth(vs, size, { font: 'num' });
     cv.text(vs, x + 18, vy, size, isNum(v) ? vcol : t.dim, { font: 'num' });
     if (g.unit) cv.text(g.unit, x + 26 + vw, vy, 28, t.dim);

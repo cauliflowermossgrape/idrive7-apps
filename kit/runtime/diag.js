@@ -133,8 +133,19 @@ class Diag extends EventEmitter {
      * Physical request to one ECU; resolves with its UDS reply (null on timeout).
      * accept(uds) (optional) skips replies that aren't ours - another app may be
      * talking to the same ECU at the same time.
+     * Requests are serialized: the transport takes one at a time and an early send()
+     * can consume another request's busy retry, so concurrent callers would lose frames.
      */
     async physical(target, sid, data, timeoutMs, accept, opts) {
+        const prev = this._chain || Promise.resolve();
+        let release;
+        this._chain = new Promise((res) => { release = res; });
+        await prev.catch(() => {});
+        try { return await this._physicalNow(target, sid, data, timeoutMs, accept, opts); }
+        finally { release(); }
+    }
+
+    async _physicalNow(target, sid, data, timeoutMs, accept, opts) {
         let t, hardTimer, onFrame, finish, done = false;
         const got = new Promise((resolve) => {
             finish = (v) => {

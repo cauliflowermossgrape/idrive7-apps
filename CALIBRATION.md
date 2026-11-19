@@ -54,3 +54,20 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -i "C:\Users\dmpol\Dow
 4. Стандартные OBD-PID (lambda 0x24, voltage 0x42) если падают с NRC 31 — DME закрыт для OBD, тогда
    подбирать BMW-DID из SGBD (DME8FF_R).
 5. Для tcase — рассмотреть переход на `xdrive.front` (DB32, момент на переднюю ось) как у car_vitals.
+
+## v0.1.4: ярусы опроса и новый MAIN
+
+MAIN перекомпонован в сетку 3×4 (данные в плитках центрированы):
+- Ряд 1: Boost, AFR, Oil press [FAST ~90 мс] + Knock events [SLOW 8 с]
+- Ряд 2: Intake temp, EGT [MED 1.5 с], Gearbox oil [MED], Misfires [SLOW, свип 4 цилиндров ~2 с]
+- Ряд 3: Coolant, Oil temp (SOME/IP), Voltage [MED], Rail pressure [FAST]
+
+Пропуски зажигания: OBD service 06, mids A2..A5 (цилиндры 1-4), tid 0x0C; считаются,
+как и детонация, только при наддуве > 0.5 бар (первый ответ — базовая точка).
+
+Опрос — конвейер до 5 параллельных UDS-чтений (kit/diag сериализует physical() в один
+канал, kit/dids ограничивает maxConcurrent). Пропускная способность канала = 1000/RTT:
+при RTT 40 мс это ~25 зап/с, быстрые плитки MAIN получают ~4 обн/с каждая (тест
+`node kit/tools/test_vmgauge_poll.js`, RTT задаётся переменной окружения RTT).
+При реальном RTT с ГУ (~150 мс по логам) ожидайте ~1 обн/с на быструю плитку — для
+проверки замерьте время ответа DID в vmgauge.log и подберите MED_GAP/SLOW_GAP под канал.

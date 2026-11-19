@@ -27,8 +27,35 @@ class DidReader {
         this.diag = diag;
         this.ecu = defaults && defaults.ecu;
         this.timeoutMs = (defaults && defaults.timeoutMs) || 4000;
+        this.maxConcurrent = Math.max(1, (defaults && defaults.maxConcurrent) || 1);
         this.raws = {};
         this.pick = {};
+        this._live = 0;
+        this._waiters = [];
+    }
+
+    /** Run fn with at most maxConcurrent reads in flight (the transport serializes anyway;
+     * >1 keeps the pipe full while a reply is on its way instead of idling between reads).
+     * A queued waiter must re-check the limit when it wakes: several waiters can be released
+     * for one freed slot, and each one that slipped through would raise _live past the cap. */
+    async _slot(fn) {
+        let ticket = null;
+        while (this._live >= this.maxConcurrent) {
+            // one waiter object per queue position: a released waiter keeps its own ticket, so
+            // two wakeups can never consume the same freed slot (a plain shift() would let the
+            // second wakeup re-queue and be resolved twice -> _live drifting past the cap).
+            if (!ticket) { ticket = { done: false }; this._waiters.push(ticket); }
+            await new Promise((res) => { ticket.res = res; });
+        }
+        this._live++;
+        try { return await fn(); }
+        finally {
+            this._live--;
+            for (let i = 0; i < this._waiters.length; i++) {          // hand the slot to one waiter
+                const w = this._waiters[i];
+                if (!w.done) { w.done = true; this._waiters.splice(i, 1); w.res(); break; }
+            }
+        }
     }
 
     key(c) { return (c.ecu == null ? this.ecu : c.ecu) + ':' + DidReader.label(c); }
@@ -38,6 +65,10 @@ class DidReader {
 
     /** Read one candidate; returns the value or null (reason in raws). */
     async read(c) {
+        return this._slot(() => this._read(c));
+    }
+
+    async _read(c) {
         const ecu = c.ecu == null ? this.ecu : c.ecu, obd = c.obd ? parseInt(c.obd, 16) : null, did = obd === null ? parseInt(c.did, 16) : null;
         const r = { t: Date.now(), ok: false, value: null, bytes: '', why: '' };
         this.raws[this.key(c)] = r;
@@ -62,14 +93,25 @@ class DidReader {
         return v;
     }
 
-    /** Try a value's candidates, starting with the one that worked last. */
+    /**
+     * Try a value's candidates, starting with the one that worked last. A candidate that was
+     * rejected once (out of range / refused) is not retried until CAND_RECHECK_MS: while none
+     * has ever answered we rotate through all of them so every raw reply still gets logged
+     * for calibration; after a winner is picked only it and, on failure, the next ones are read.
+     */
     async value(name, list) {
         list = list || [];
+        const now = Date.now(), dead = name + '|dead';
+        if (!this[dead]) this[dead] = {};
+        const dts = this[dead];
         const start = this.pick[name] || 0;
         for (let k = 0; k < list.length; k++) {
             const i = (start + k) % list.length;
+            const key = this.key(list[i]);
+            if (this.pick[name] == null && dts[key] && now - dts[key] < DidReader.CAND_RECHECK_MS) continue;
             const v = await this.read(list[i]);
             if (v !== null) { this.pick[name] = i; return v; }
+            dts[key] = now;
         }
         return null;
     }
@@ -128,5 +170,7 @@ class DidReader {
         return uds;
     }
 }
+
+DidReader.CAND_RECHECK_MS = 30000;   // retry a rejected candidate no sooner than this
 
 module.exports = { DidReader };

@@ -27,7 +27,7 @@ mgu.run({
         ];
         let gTab = 'main';
         const v = {};                          // live DID values
-        const counters = { knock: 0 };
+        const counters = { knock: 0, misfire: 0 };
         const power = { hp: null, nm: null, peakHp: null, peakNm: null, peakAt: 0, stamp: 0, hist: [], lastPush: 0 };
         const fuelHist = [], fuelPush = { last: 0 };
         const ignHist = [], ignPush = { last: 0 };
@@ -53,25 +53,33 @@ mgu.run({
         const xcfg = Object.assign({ front: [] }, spec.xdrive || {});
         const link = new Diag(ctx.signals, log);
         link.quiet = true;
-        const rd = new DidReader(link, { ecu: dme.ecu, timeoutMs: 1200 });
+        const rd = new DidReader(link, { ecu: dme.ecu, timeoutMs: 1200, maxConcurrent: 6 });
         link.init().catch((e) => log.warn('diag init: ' + e));
 
-        let baro = 101.3, baroT = 0;
-        async function freshBaro() {
-            if (Date.now() - baroT > 60000) {
-                baroT = Date.now();
-                const b = await rd.value('baro', dme.baro);
-                if (b !== null) baro = b;
-            }
+        let baro = 101.3, baroT = 0, baroBusy = false;
+        function freshBaro() {                                   // never blocks a poll tick
+            if (baroBusy || Date.now() - baroT <= 60000) return Promise.resolve();
+            baroBusy = true; baroT = Date.now();
+            return rd.value('baro', dme.baro)
+                .then((b) => { if (b !== null) baro = b; })
+                .catch(() => {})
+                .then(() => { baroBusy = false; });
         }
 
         // Every DID metric; 'tcase' reads the transfer case (xcfg.front), not the DME.
+        // 'baro' and 'temps' are refreshed by their own schedulers (freshBaro / Car signals),
+        // so they are deliberately not in this list.
         const ALL = ['oilPressAbs', 'boost', 'iat', 'egt', 'lambda', 'mixtureAdapt', 'knockRetard',
-            'loadDirect', 'fuelPresAct', 'fuelPresReq', 'ignAdv', 'fuelTemp',
+            'loadDirect', 'fuelPresAct', 'fuelPresReq', 'ignAdv', 'fuelTemp', 'misfire',
             'radTemp', 'gearbox', 'voltage', 'battCurrent', 'aluIst', 'aluTemp', 'tcase'];
-        // The values the current tab shows, polled fast (~2-3/s) so nothing looks frozen.
+        // Poll tiers (Main re-layout): fast ~5/s, medium ~1/s, slow ~1/8s. A metric listed in a
+        // tier keeps that cadence on every tab; anything else refreshes at STALE_BG.
+        const FAST_SET = ['boost', 'mixtureAdapt', 'oilPressAbs', 'fuelPresAct', 'loadDirect'];
+        const MED_SET = ['iat', 'egt', 'gearbox', 'voltage', 'lambda'];
+        const SLOW_SET = ['knockRetard', 'misfire'];
+        // Metrics the current tab draws but that have no explicit tier above: these poll at
+        // MIN_GAP while their tab is open (per-tab fast set).
         const TAB_METRICS = {
-            main: ['boost', 'oilPressAbs', 'lambda', 'iat', 'gearbox', 'voltage', 'egt', 'loadDirect'],
             power: ['loadDirect', 'boost'],
             hpfp: ['fuelPresAct', 'fuelPresReq'],
             ign: ['ignAdv', 'knockRetard', 'lambda', 'mixtureAdapt'],
@@ -83,15 +91,115 @@ mgu.run({
         };
 
         const fail = {}, tried = {}, rawLog = {}, rawCount = {};
-        let fastIdx = 0, slowIdx = 0, tickNo = 0;
+        let tickNo = 0;
+        // misfire reads count as one logical metric (4 cylinders round-robin): the fail/cooldown
+        // bookkeeping is shared across mids, so a refused cylinder doesn't mute the others.
+        function misGated() { return (fail.misfire || 0) >= 3 && Date.now() - (tried.misfire || 0) < 30000; }
 
-        async function readMetric(metric) {
+        // ---- fast polling -------------------------------------------------
+        // The TASU transport takes one UDS request at a time (physical() is serialized in
+        // kit/diag), and each request costs ~150 ms round trip. So instead of waiting for a
+        // reply before sending the next one, every FAST_HZ ticks we dispatch a read without
+        // awaiting it; replies land as they come. Metrics that are due go through first, so
+        // the tiles on the active tab refresh about 5x/s.
+        const FAST_HZ = 12;                  // dispatch rate (~83 ms)
+        const MIN_GAP = 90;                  // fast metrics: don't re-send sooner than this
+        const MED_GAP = 1500;                // medium metrics: ~0.7 update/s (Main's 5 med tiles
+                                             // plus the shared pipe stay under the channel limit)
+        const SLOW_GAP = 8000;               // slow counters (knock): ~1/8 s
+        const MIS_GAP = 2000;                // each misfire cylinder: full sweep of 1-4 every ~2 s
+        const STALE_BG = 4000;               // off-tab metrics: fresh enough for 4 s
+        const bgLast = {};                   // metric -> ts of last completed read
+        const inflight = new Set();          // metrics with a read in flight
+        let qRot = 0;
+
+        function fastSet() {
+            const base = TAB_METRICS[gTab] || [];
+            const extra = [];
+            if ((gTab === 'power' || gTab === 'ign' || gTab === 'lap')) extra.push('loadDirect');
+            if (gTab === 'hpfp') extra.push('boost');
+            // the active tab's tiered metrics go through the same priority queue
+            FAST_SET.concat(MED_SET).concat(SLOW_SET).forEach((m) => {
+                if (ALL.indexOf(m) >= 0 && extra.indexOf(m) < 0 && base.indexOf(m) < 0) extra.push(m);
+            });
+            if (extra.indexOf('misfire') >= 0) extra.splice(extra.indexOf('misfire'), 1);   // handled per cylinder below
+            const seen = {}, out = [];
+            base.concat(extra).forEach((m) => { if (!seen[m]) { seen[m] = true; out.push(m); } });
+            return out;
+        }
+
+        // Poll gap for a metric: explicit tier first (fast/medium/slow on every tab), then
+        // whatever the active tab shows (fast), else background.
+        function gapFor(metric) {
+            if (metric.indexOf('misfire') === 0) return MIS_GAP;    // per cylinder
+            if (FAST_SET.indexOf(metric) >= 0) return MIN_GAP;
+            if (MED_SET.indexOf(metric) >= 0) return MED_GAP;
+            if (SLOW_SET.indexOf(metric) >= 0) return SLOW_GAP;
+            return fastSet().indexOf(metric) >= 0 ? MIN_GAP : STALE_BG;
+        }
+
+        function due(metric, now) {
+            const key = metric.indexOf('misfire') === 0 ? metric : null;   // 'misfire0'..'misfire3'
+            const m = key ? fail.misfire : fail[metric], t = key ? (tried[key] || 0) : (tried[metric] || 0), b = key ? (bgLast[key] || 0) : (bgLast[metric] || 0);
+            if (key ? inflight.has(key) : inflight.has(metric)) return false;
+            if ((m || 0) >= 3 && now - t < 30000) return false;
+            return now - b >= gapFor(metric);
+        }
+
+        // Pipeline instead of a request/reply loop: kit/diag serializes physical() onto one
+        // transport, so we keep up to MAX_INFLIGHT reads in flight and refill as replies land.
+        // The pipe is always full; the queue order decides who gets each free slot, so fast
+        // metrics (tier MIN_GAP) claim most slots and slow ones only what is left over.
+        const MAX_INFLIGHT = 5;
+        let fastRot = 0;
+        function fillPipes() {
+            const now = Date.now();
+            if (inflight.size >= MAX_INFLIGHT) return;
+            const fast = fastSet();
+            const rest = ALL.filter((m) => fast.indexOf(m) < 0);
+            const expand = (list) => {                       // misfire polls as 4 cylinders
+                const out = [];
+                list.forEach((m) => { if (m === 'misfire') for (let c = 0; c < MIS_MIDS.length; c++) out.push('misfire' + c); else out.push(m); });
+                return out;
+            };
+            const fastE = expand(fast), restE = expand(rest);
+            const lists = [fastE, restE], rots = [fastRot, qRot];
+            for (let p = 0; p < 2 && inflight.size < MAX_INFLIGHT; p++) {
+                const L = lists[p];
+                let r = rots[p];
+                for (let k = 0; k < L.length && inflight.size < MAX_INFLIGHT; k++) {
+                    const i = (r + k) % L.length, m = L[i];
+                    if (!due(m, now)) continue;
+                    r = (i + 1) % L.length;
+                    readMetric(m);
+                }
+                rots[p] = r;
+            }
+            fastRot = rots[0]; qRot = rots[1];
+        }
+
+        function readMetric(metric) {
+            if (metric.indexOf('misfire') === 0) {          // dispatched per cylinder: one slow
+                const c = +metric.slice(7);                 // or refused cylinder must not gate the rest
+                if (inflight.has(metric)) return;
+                inflight.add(metric); tried[metric] = Date.now();
+                readMisfires(c).catch((e) => log.warn('poll misfire: ' + e))
+                    .then(() => { inflight.delete(metric); bgLast[metric] = Date.now(); });
+                return;
+            }
+            if (inflight.has(metric)) return;                                  // never double-dispatch
+            inflight.add(metric);
+            tried[metric] = Date.now();
+            readMetricNow(metric)
+                .catch((e) => log.warn('poll ' + metric + ': ' + e))
+                .then(() => { inflight.delete(metric); bgLast[metric] = Date.now(); });   // pollTick refills
+        }
+
+        async function readMetricNow(metric) {
             const list = metric === 'tcase' ? xcfg.front : dme[metric];
             if (!Array.isArray(list) || !list.length) return;
-            if ((fail[metric] || 0) >= 3 && Date.now() - (tried[metric] || 0) < 30000) return;
-            tried[metric] = Date.now();
             let val;
-            if (metric === 'boost') { await freshBaro(); val = await rd.value('boost', dme.boost); if (val !== null) val = (val - baro) / 100; }
+            if (metric === 'boost') { freshBaro(); val = await rd.value('boost', dme.boost); if (val !== null) val = (val - baro) / 100; }
             else if (metric === 'tcase') val = await rd.value('tcase', xcfg.front);
             else val = await rd.value(metric, list);
             // log each candidate's raw reply, at most a few distinct shapes each (for calibration)
@@ -115,20 +223,38 @@ mgu.run({
             if (metric === 'oilPressAbs') v.oilPress = num(val) && num(baro) ? val - baro / 100 : null;
         }
 
-        async function pollLoop() {
-            for (;;) {
-                if (link.available) {
-                    tickNo++;
-                    const fast = TAB_METRICS[gTab];
-                    const doSlow = tickNo % 15 === 0;
-                    const queue = (doSlow || !fast || !fast.length) ? ALL : fast;
-                    const idx = doSlow ? slowIdx++ : fastIdx++;
-                    try { await readMetric(queue[idx % queue.length]); } catch (e) { log.warn('poll ' + queue[idx % queue.length] + ': ' + e); }
-                }
-                await new Promise((res) => setTimeout(res, link.available ? 350 : 1000));
+        // Misfires: OBD service 06, mids A2..A5 (cylinders 1-4), tid 0x0C = misfire count.
+        // Like the knock counter it only counts while boosting over 0.5 bar; we watch the
+        // rolling per-revolution ratio (value/min vs value/max) and add every new excess.
+        const MIS_MIDS = [0xA2, 0xA3, 0xA4, 0xA5];
+        const misPrev = {};                    // mid -> last positive { v, min, max }
+        let misFirst = true;
+        async function readMisfires(cyl) {
+            if (misGated()) return;                        // shared cooldown: don't spam a unit that refuses 06
+            const mid = MIS_MIDS[cyl % MIS_MIDS.length];
+            const recs = await rd.monitor(dme.ecu, mid);
+            const r = rd.raws[rd.monitorKey(dme.ecu, mid)];
+            if (r && !r.ok && r.why) log.info('MID ' + mid.toString(16).toUpperCase() + ': ' + r.bytes + ' | ' + r.why);
+            const rec = Array.isArray(recs) ? recs.filter((x) => x.tid === 0x0C)[0] : null;
+            if (!rec) { fail.misfire = (fail.misfire || 0) + 1; return; }
+            fail.misfire = 0;
+            const prev = misPrev[mid];
+            misPrev[mid] = { v: rec.value, min: rec.min, max: rec.max };
+            if (misFirst) misFirst = false;                    // first read only sets the baseline
+            else if (prev && prev.v < rec.value) {             // window advanced since the last read
+                const lo = prev.v - prev.min, hi = rec.value - rec.max;
+                const inc = Math.max(0, hi - Math.max(0, lo));
+                if (num(boostBar()) && boostBar() > 0.5) counters.misfire += inc;
             }
+            v.misfireOk = true;
         }
-        pollLoop();
+
+        function pollTick() {
+            if (!link.available) return;
+            tickNo++;
+            fillPipes();                                                     // fire and forget
+        }
+        setInterval(pollTick, Math.round(1000 / FAST_HZ));
 
         /* ---------------- derived values ---------------- */
         const F = () => settings.get('unitsTemp') === 'F';
@@ -227,6 +353,12 @@ mgu.run({
         function fuelWhy(k) {
             if (!link.p) return 'no diagnostic link';
             if (!link.available) return 'diagnostic link down';
+            if (k === 'misfire') {
+                const r = MIS_MIDS.map((mid) => rd.raws[rd.monitorKey(dme.ecu, mid)]).filter(Boolean);
+                if (!r.length) return 'reading misfire counters...';
+                if (r.every((x) => /NRC 31|NRC 11|NRC 12/.test(x.why))) return 'not available on this car';
+                return (r[0].why || 'no data');
+            }
             const list = k === 'tcase' ? xcfg.front : dme[k];
             const r = (list || []).map((c) => rd.raws[rd.key(c)]).filter(Boolean);
             if (!r.length) return 'reading...';
@@ -245,29 +377,54 @@ mgu.run({
             }
             return out;
         }
+        /** Centred stat tile: G.stat with center:true (value + unit mid-tile). */
+        function statC(cv, t, x, y, w, h, g) {
+            G.stat(cv, t, x, y, w, h, Object.assign({ center: true }, g));
+        }
         function drawTiles(cv, t, tiles) {
             grid(tiles.length).forEach((b, i) => {
                 const g = tiles[i];
                 if (g && g.draw) g.draw(cv, t, b.x, b.y, b.w, b.h);
-                else if (g) G.stat(cv, t, b.x, b.y, b.w, b.h, Object.assign({ size: b.h > 200 ? 96 : 64 }, g));
+                else if (g) statC(cv, t, b.x, b.y, b.w, b.h, Object.assign({ size: b.h > 200 ? 96 : 64 }, g));
+            });
+        }
+        function drawRowedTiles(cv, t, rows) {
+            const gap = 16, rh = (G.BOTTOM - G.TOP - gap * (rows.length - 1)) / rows.length;
+            rows.forEach((row, r) => {
+                const k = row.length || 1, w = (1552 - 24 * (k - 1)) / k;
+                const x0 = 24 + (1552 - (w * k + 24 * (k - 1))) / 2;
+                const y = G.TOP + r * (rh + gap);
+                // size: value baseline sits at y + 52 + size*0.78 + unit; centre it in the tile
+                const size = Math.max(36, Math.min(64, Math.round((rh - 52 - 28) / 0.78)));
+                row.forEach((g, c) => statC(cv, t, x0 + c * (w + 24), y, w, rh, Object.assign({ size }, g)));
             });
         }
 
         /* ---------------- tabs ---------------- */
+        // Main, three rows of four (fast / medium+slow / mixed cadences — see FAST/MED/SLOW_SET):
+        //  1. boost, AFR (mixture), oil pressure [fast] · knock events [slow]
+        //  2. intake air, EGT [medium] · gearbox oil (SOME/IP) · misfire events [slow]
+        //  3. coolant, engine oil (SOME/IP) · battery voltage [medium] · HPFP rail pressure [fast]
         function drawMain(cv, t, dd) {
-            drawTiles(cv, t, [
-                { label: 'Boost', value: boostBar(), unit: 'bar', decimals: 2, zones: [{ from: 0.05, to: 99, color: 'ok' }] },
-                { label: 'AFR', value: afr(), decimals: 1 },
-                { label: 'Oil pressure', value: oilPress(), unit: 'bar', decimals: 1, zones: [{ from: -99, to: 1.2, color: 'crit' }] },
-                { label: 'Intake air', value: T(v.iat), unit: tU(), decimals: 0, zones: [{ from: T(65), to: 999, color: 'crit' }] },
-                { label: 'Coolant', value: T(dd.coolant), unit: tU(), decimals: 0, zones: [{ from: T(112), to: 999, color: 'crit' }, { from: -99, to: T(60), color: 'cold' }] },
-                { label: 'Engine oil', value: T(dd.oil), unit: tU(), decimals: 0, color: 'oil', zones: [{ from: T(125), to: 999, color: 'crit' }] },
-                { label: 'Gearbox oil', value: T(v.gearbox), unit: tU(), decimals: 0, zones: [{ from: T(120), to: 999, color: 'warn' }] },
-                { label: 'Voltage', value: v.voltage, unit: 'V', decimals: 1, zones: [{ from: -99, to: 12, color: 'warn' }, { from: 15.5, to: 99, color: 'warn' }] },
-                { label: 'Knock count', value: counters.knock, decimals: 0 },
-                { label: 'EGT', value: T(v.egt), unit: tU(), decimals: 0, zones: [{ from: T(950), to: 999, color: 'crit' }] },
-                { label: 'Air charge', value: loadPct(), unit: '%', decimals: 0 },
-                { label: 'Fuel rail', value: fuelPresAct(), unit: 'bar', decimals: 0, zones: [{ from: -99, to: 20, color: 'crit' }] },
+            drawRowedTiles(cv, t, [
+                [
+                    { label: 'Boost', value: boostBar(), unit: 'bar', decimals: 2, zones: [{ from: 0.05, to: 99, color: 'ok' }] },
+                    { label: 'Mixture AFR', value: afr(), decimals: 1 },
+                    { label: 'Oil pressure', value: oilPress(), unit: 'bar', decimals: 1, zones: [{ from: -99, to: 1.2, color: 'crit' }] },
+                    { label: 'Knock events', value: counters.knock, decimals: 0, zones: [{ from: 1, to: 9e9, color: 'crit' }] },
+                ],
+                [
+                    { label: 'Intake air', value: T(v.iat), unit: tU(), decimals: 0, zones: [{ from: T(65), to: 999, color: 'crit' }] },
+                    { label: 'EGT', value: T(v.egt), unit: tU(), decimals: 0, zones: [{ from: T(950), to: 999, color: 'crit' }] },
+                    { label: 'Gearbox oil', value: T(v.gearbox), unit: tU(), decimals: 0, zones: [{ from: T(120), to: 999, color: 'warn' }] },
+                    { label: 'Misfires', value: v.misfireOk ? counters.misfire : null, decimals: 0, zones: [{ from: 1, to: 9e9, color: 'crit' }], sub: v.misfireOk ? undefined : fuelWhy('misfire') },
+                ],
+                [
+                    { label: 'Coolant', value: T(dd.coolant), unit: tU(), decimals: 0, zones: [{ from: T(112), to: 999, color: 'crit' }, { from: -99, to: T(60), color: 'cold' }] },
+                    { label: 'Engine oil', value: T(dd.oil), unit: tU(), decimals: 0, color: 'oil', zones: [{ from: T(125), to: 999, color: 'crit' }] },
+                    { label: 'Voltage', value: v.voltage, unit: 'V', decimals: 1, zones: [{ from: -99, to: 12, color: 'warn' }, { from: 15.5, to: 99, color: 'warn' }] },
+                    { label: 'Rail HPFP', value: fuelPresAct(), unit: 'bar', decimals: 0, zones: [{ from: -99, to: 20, color: 'crit' }] },
+                ],
             ]);
         }
 
