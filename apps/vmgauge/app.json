@@ -2,7 +2,7 @@
   "id": "vmgauge",
   "title": "VMGauge",
   "description": "Boost, temperatures, oil pressure, lambda, knock and misfire counters for the MGU (iDrive 7)",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "vendor": "custom",
   "loggingId": "OAA1",
   "iconGlyph": "gauge",
@@ -785,6 +785,18 @@
           "min": -200,
           "max": 2500,
           "note": "LMV_MOMENT.ISTMOMENT, actual torque to the front axle"
+        }
+      ],
+      "lockup": [
+        {
+          "ecu": 25,
+          "did": "DB43",
+          "bytes": 2,
+          "at": 0,
+          "factor": 0.5,
+          "min": 0,
+          "max": 100,
+          "note": "LMV requested front-axle torque share in % (guess: 0.5%/bit like DB32's Nm/4; raw bytes logged as DID lockup [DB43] for calibration)"
         }
       ]
     }
