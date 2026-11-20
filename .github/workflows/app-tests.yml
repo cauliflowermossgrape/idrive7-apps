@@ -111,6 +111,7 @@ jobs:
         with:
           node-version: '8.16.2'
       - run: node --version
+      - run: node kit/tools/test_m_drive.js
       - run: node kit/tools/test_redline_hud.js
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
