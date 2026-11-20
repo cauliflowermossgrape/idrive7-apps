@@ -1,0 +1,23 @@
+<!-- accent: #e7222e -->
+<defs>
+  <linearGradient id="md-blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c6e6ff"/><stop offset="1" stop-color="#5aa8ec"/></linearGradient>
+  <linearGradient id="md-navy" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f7ac0"/><stop offset="1" stop-color="#0f3f6b"/></linearGradient>
+  <linearGradient id="md-red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6a5f"/><stop offset="1" stop-color="#b8141c"/></linearGradient>
+  <linearGradient id="md-track" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a424d"/><stop offset="1" stop-color="#14181d"/></linearGradient>
+  <linearGradient id="md-fill" gradientUnits="userSpaceOnUse" x1="19" y1="0" x2="90" y2="0"><stop offset="0" stop-color="#1f5fd0"/><stop offset="1" stop-color="#6cc0ff"/></linearGradient>
+  <filter id="md-glow" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="2.4"/></filter>
+</defs>
+<path d="M33 22 H55 L43 80 H21 Z" fill="url(#md-blue)"/>
+<path d="M60 22 H82 L70 80 H48 Z" fill="url(#md-navy)"/>
+<path d="M87 22 H109 L97 80 H75 Z" fill="url(#md-red)"/>
+<path d="M15 113 L127 113 L133 91 L21 91 Z" fill="url(#md-track)"/>
+<path d="M19 110 L85 110 L90 94 L24 94 Z" fill="#3d9bff" filter="url(#md-glow)" opacity="0.55"/>
+<path d="M19.0 110 L30.0 110 L35.0 94 L24.0 94 Z" fill="url(#md-fill)"/>
+<path d="M32.2 110 L43.2 110 L48.2 94 L37.2 94 Z" fill="url(#md-fill)"/>
+<path d="M45.4 110 L56.4 110 L61.4 94 L50.4 94 Z" fill="url(#md-fill)"/>
+<path d="M58.6 110 L69.6 110 L74.6 94 L63.6 94 Z" fill="url(#md-fill)"/>
+<path d="M71.8 110 L82.8 110 L87.8 94 L76.8 94 Z" fill="url(#md-fill)"/>
+<path d="M85.0 110 L96.0 110 L101.0 94 L90.0 94 Z" fill="#2a3038"/>
+<path d="M98.2 110 L109.2 110 L114.2 94 L103.2 94 Z" fill="#7a1218"/>
+<path d="M111.4 110 L122.4 110 L127.4 94 L116.4 94 Z" fill="#e7222e"/>
+<path d="M84.5 112 L87.5 112 L94 92 L91 92 Z" fill="#ffffff"/>

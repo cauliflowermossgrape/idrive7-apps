@@ -201,6 +201,24 @@ def fetch_assets(adir, assets):
         open(dst, 'wb').write(data)
 
 
+def shared_sources(spec, adir):
+    """app.json "sharedSources": .js files of the repository staged beside the app's own (another app's modules,
+    reused without a copy in git), as {staged name: source path}. Each must be a relative path to an existing .js
+    file inside the repository, and its name may not collide with the app's own scripts or another shared one."""
+    root = os.path.realpath(ROOT)
+    own = {'app.js' if f == 'main.js' else f for f in os.listdir(adir) if f.endswith('.js')}
+    out = {}
+    for rel in spec.get('sharedSources', []):
+        src = os.path.realpath(os.path.join(root, rel)) if isinstance(rel, str) and not os.path.isabs(rel) else ''
+        if not src.endswith('.js') or not os.path.isfile(src) or not src.startswith(root + os.sep):
+            raise SystemExit('%s: sharedSources %r is not a .js file inside the repository' % (spec['id'], rel))
+        name = os.path.basename(src)
+        if name in own or name in out:
+            raise SystemExit('%s: sharedSources %r collides with the staged %s' % (spec['id'], rel, name))
+        out[name] = src
+    return out
+
+
 def build_ui(spec, language='en', hmi='ID7'):
     """screens/settings -> (application.xml, uiDescription.json, strings, screen meta) for hmi 'ID7' or 'ID8'
     (the same ids and names on both)"""
@@ -637,6 +655,8 @@ def build(app_id, language='en', preview_only=False):
               open(os.path.join(src, 'config', 'base.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     # app code
     fetch_assets(adir, spec.get('assets', []))
+    for name, source in shared_sources(spec, adir).items():
+        shutil.copy(source, os.path.join(src, 'javascript', name))
     for f in os.listdir(adir):
         if f.endswith('.js'):
             shutil.copy(os.path.join(adir, f), os.path.join(src, 'javascript', 'app.js' if f == 'main.js' else f))

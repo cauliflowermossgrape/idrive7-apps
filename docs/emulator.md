@@ -18,6 +18,7 @@ node kit/tools/emu.js redline          # then open http://localhost:8077
 | `--port 8080` | another port (default 8077); several emulators can run at the same time |
 | `--bg hmi.png` | a 1920 x 720 screenshot of your head unit's screen, shown instead of the HMI frame the page draws: it shows where the app leaves the screen see-through (the home and back column, the status corner). A photo of the screen does not line up |
 | `--no-touch` | start with touch routing off (see [Touch routing](#touch-routing)) |
+| `--preview-only` | build with `build.py --preview-only`: no BMW `oap-sdk` needed, nothing installable is made (e.g. `node kit/tools/emu.js m_drive --preview-only`) |
 
 The server answers this computer only (127.0.0.1), and only pages it serves itself, because it
 can rebuild and restart apps.

@@ -3,10 +3,13 @@
  * emu.js - live emulator: a built app running with the real runtime, drawn in the browser by the car's
  * GPU draw engine (kit/renderd/src/gfx.c as WebAssembly, kit/emu/web/gfx/).
  *
- *   node kit/tools/emu.js redline [--port 8077] [--bg screenshot.png] [--no-touch]   ->  http://localhost:8077 (this computer only)
+ *   node kit/tools/emu.js redline [--port 8077] [--bg screenshot.png] [--no-touch] [--preview-only]   ->  http://localhost:8077 (this computer only)
+ *
+ * --preview-only builds with build.py --preview-only: no BMW oap-sdk needed (the stubbed head unit runs without it), no
+ * installable package.
  *
  * Three parts in this process:
- *   app       python3 kit/tools/build.py <id>, then dist/<id> in a child node (hu-stub.js: a stubbed head
+ *   app       python3 kit/tools/build.py [--preview-only] <id>, then dist/<id> in a child node (hu-stub.js: a stubbed head
  *             unit, settings in preview/emu/<id>/). A save under apps/<id>/ or kit/runtime/ builds and
  *             restarts it; a failed build keeps the old one running.
  *   renderer  the daemon side of kit/renderd/PROTOCOL.md on a Unix socket (MGU_RENDERD_SOCKET for the app):
@@ -62,12 +65,13 @@ const BG = (() => { const b = opt('--bg', null); return b ? path.resolve(b) : nu
 // touch routing offered by the renderer (the Store's mgu-render: on; --no-touch or the page's switch: a renderer without
 // it, where the kit draws the slim bar over the HMI's own buttons and every tap is the HMI's)
 const Touch = { on: (() => { const i = args.indexOf('--no-touch'); if (i < 0) return true; args.splice(i, 1); return false; })() };
+const PREVIEW_ONLY = (() => { const i = args.indexOf('--preview-only'); if (i < 0) return false; args.splice(i, 1); return true; })();
 const HOSTS = ['localhost:' + PORT, '127.0.0.1:' + PORT];
 const listApps = () => fs.readdirSync(path.join(ROOT, 'apps')).filter((d) => fs.existsSync(path.join(ROOT, 'apps', d, 'app.json'))).sort();
 /** { id: title } from each app's app.json (the HMI's tile labels) */
 const appTitles = () => listApps().reduce((o, id) => { try { o[id] = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', id, 'app.json'), 'utf8')).title || id; } catch (e) { o[id] = id; } return o; }, {});
 let appId = args[0];
-if (!appId || listApps().indexOf(appId) < 0) { console.error('usage: node kit/tools/emu.js <app> [--port 8077] [--bg file.png] [--no-touch]\napps: ' + listApps().join(' ')); process.exit(2); }
+if (!appId || listApps().indexOf(appId) < 0) { console.error('usage: node kit/tools/emu.js <app> [--port 8077] [--bg file.png] [--no-touch] [--preview-only]\napps: ' + listApps().join(' ')); process.exit(2); }
 // (a short path: Unix socket paths are limited to ~104 bytes)
 const SOCK = path.join(os.tmpdir(), 'mgu-emu-' + process.pid + '.sock');
 const MAX_MSG = 24 << 20;                       // a bigger message ends the connection (PROTOCOL.md "Framing")
@@ -618,7 +622,7 @@ function build() {
     App.waiting = null;
     setStatus('building');
     let outText = '';
-    const p = App.building = spawn('python3', [path.join(ROOT, 'kit', 'tools', 'build.py'), id], { cwd: ROOT });
+    const p = App.building = spawn('python3', [path.join(ROOT, 'kit', 'tools', 'build.py')].concat(PREVIEW_ONLY ? ['--preview-only'] : [], [id]), { cwd: ROOT });
     p.stdout.on('data', (d) => { outText += d; });
     p.stderr.on('data', (d) => { outText += d; });
     p.on('error', (e) => { outText += String(e); });
