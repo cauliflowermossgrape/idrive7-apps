@@ -86,6 +86,7 @@ function headUnit(stage, o) {
         onTab(fn) { display.onTab = fn; },
         // as kit/mgu.js: the kit's own screen (tabs, page buttons, sheets, scrolling) where the renderer has the app
         onTap(fn) { display.onTap = fn; },
+        onTouch(fn) { display.onTouch = fn; },
         sheet: (sh) => display.openSheet(sh),
         // as mgu.js: the app's own rows at the bottom of the drawn settings
         settingsRow(row) { if (row && row.label) hu.settingsRows.push(row); },
@@ -128,7 +129,9 @@ function headUnit(stage, o) {
 function wireSettings(src, kitDir, spec, rows) {
     const m = src.match(/function wireSettings[\s\S]*?\n}\n/);
     if (!m) return () => {};
-    return new Function('listSheet', 'SPEC', 'settingsRows', m[0] + '\nreturn wireSettings;')(require(path.join(kitDir, 'sheet')).listSheet, spec, rows || []);
+    // (its QR log row: the app's log as mgu.js keeps it, in the data folder, the emulator's working folder)
+    return new Function('listSheet', 'SPEC', 'settingsRows', 'qrLogSheet', 'LOG_FILE', m[0] + '\nreturn wireSettings;')(
+        require(path.join(kitDir, 'sheet')).listSheet, spec, rows || [], require(path.join(kitDir, 'qrlog')).qrLogSheet, path.join(process.cwd(), spec.id + '.log'));
 }
 
 /**

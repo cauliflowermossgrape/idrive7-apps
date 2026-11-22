@@ -25,6 +25,7 @@ const themes = require('./themes');
 const { Display } = require('./display');
 const { HmiText } = require('./hmi-text');
 const { listSheet } = require('./sheet');
+const { qrLogSheet } = require('./qrlog');
 
 const sdkLog = logging.getSDKLogger();
 const SPEC = JSON.parse(fs.readFileSync(path.join(__dirname, 'app-spec.json'), 'utf8'));
@@ -567,7 +568,9 @@ function wireSettings(ctx) {
         ui.onClick('BTN_SETTINGS', () => {
             const d = ctx.display;
             if (d.sheet && d.sheet.settings) { d.closeSheet(); return null; }
-            const sh = listSheet(settings, null, { version: SPEC.version, extra: () => settingsRows });
+            // every app's last row: its log as QR codes (qrlog.js), for an issue sent without SSH
+            const qrRow = { label: 'QR log', value: 'The app\'s log as codes to photograph', open: () => qrLogSheet({ file: LOG_FILE, app: SPEC.id, version: SPEC.version }) };
+            const sh = listSheet(settings, null, { version: SPEC.version, extra: () => settingsRows.concat([qrRow]) });
             sh.settings = true;
             sh.onClose = () => refresh();
             if (d.openSheet(sh)) return null;
@@ -659,6 +662,11 @@ async function runInner(impl) {
         onTab(fn) { display.onTab = fn; },
         /** onTap(fn): fn(x, y) for a tap on the page (app drawing px), where the kit runs the screen. */
         onTap(fn) { display.onTap = fn; },
+        /**
+         * onTouch(fn): fn(phase, x, y) (1 down, 2 move, 3 up; app drawing px) where the kit runs the screen; true on the
+         * down takes the whole gesture (its moves and its up come to fn, no tap or scroll follows), else the kit has it.
+         */
+        onTouch(fn) { display.onTouch = fn; },
         /**
          * settingsRow({ label, value, open }): a row of the app's own at the very bottom of Settings, where the kit
          * draws them (the GPU renderer); value: text or () => text; open(): a sheet (sheet.js) shown in the settings'

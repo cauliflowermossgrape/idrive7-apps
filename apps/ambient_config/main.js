@@ -15,8 +15,8 @@
  * Everything goes to the car as it is picked. The lights are driven through the body controller (lights.js); a car
  * whose body controller does not answer keeps BMW's own colours (ambient.js), offered on the Colour tab.
  * It runs from the platform's start (app.json "autostart"): the look and the driving modes work with the app closed.
- * With IterioDev's Comfort tool running (others.js), which writes the same lights, it stands aside (no light writes
- * until Comfort is gone) and the Colour and Animations tabs say so in red and recommend uninstalling it.
+ * With IterioDev's Comfort tool writing the same lights (others.js: its own ambient colour on), it stands aside (no
+ * light writes until that is off or Comfort is gone) and the Colour and Animations tabs say so in red and recommend uninstalling it.
  */
 const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
@@ -80,7 +80,11 @@ async function background(bg) {
     const diag = await new Diag(signals, log).init();
     diag.quiet = true; diag.busyLog = false;
     // the lights found at an earlier start: the colour goes out at once, and the buses are read again after it
-    const lights = new Lights({ diag, log, known: settings.get('lightsKnown') });
+    S.setDecor(settings.get('decorWith'));
+    // light reads that failed (busy or silent) READ_FAILS times in a row: the body module's write is tried first and the
+    // reads are left out, as they hang it on some cars (#197, lights.js "Blind")
+    const READ_FAILS = 3;
+    const lights = new Lights({ diag, log, known: settings.get('lightsKnown'), writeFirst: (Number(settings.get('lightsReadFails')) || 0) >= READ_FAILS });
     const control = new Control({ settings, lights, ambient, log });
     control.start();
     // with the lights answering, the driving modes' looks replace BMW's colours by mode (ambient.js)
@@ -88,7 +92,16 @@ async function background(bg) {
     lights.on('found', (l) => settings.set('lightsKnown', l));
     // lights that did not answer: asked again every 2 min while the car is in use (parked and left: the car sleeps)
     const again = () => setTimeout(() => { if (control._away) again(); else find(); }, 120000);
-    const find = () => lights.find().then((l) => { if (!l.length) again(); }, (e) => { log.warn('lights: ' + e); again(); });
+    const counted = (l) => {
+        const n = Number(settings.get('lightsReadFails')) || 0;
+        if (l.length && !lights.blind) { if (n) settings.set('lightsReadFails', 0); }
+        else if (!l.length && lights.readFail && !control._away) {
+            settings.set('lightsReadFails', n + 1);
+            if (n + 1 >= READ_FAILS && !lights.writeFirst) { lights.writeFirst = true; log.info('lights: the reads failed ' + (n + 1) + ' times: the write is tried first from now'); }
+        }
+        return l;
+    };
+    const find = () => lights.find().then(counted).then((l) => { if (!l.length) again(); }, (e) => { log.warn('lights: ' + e); again(); });
     setTimeout(find, lights.lights.length ? FIND_LATER_MS : 0);
     signals.watch('de.bmw.infotainment.vehicle.Vehicle', '1', {
         statusDayNightChangeOver: (v) => {
@@ -142,15 +155,18 @@ async function background(bg) {
         .catch((e) => log.warn('doors: ' + (e && e.message || e)));
     settings.onChange((key) => {
         if (key === 'nightDim') control.night(control._night);
+        if (key === 'decorWith') { S.setDecor(settings.get('decorWith')); lights.redraw(); }
         if (key === 'follow') control.apply();
         if (key === 'turnGlow' || key === 'doorRed' || key === 'hazardRed' || key === 'drive') control.signals();
+        if (key === 'doorCar') control.carDoorSetting();
     });
     const others = new Others({ log }).start();
-    // IterioDev's Comfort tool writes the same lights: while it runs, ours stand aside (no writes, so the two don't fight
-    // and the lights don't jump), and carry on once it is gone
+    // IterioDev's Comfort tool writes the same lights while its own ambient colour is on: then ours stand aside (no
+    // writes, so the two don't fight and the lights don't jump), and carry on once it is off or gone. Comfort running
+    // for the Seats app alone (its ambient off) leaves the lights to us (others.js).
     const besideComfort = () => {
         lights.hold('comfort', others.comfort);
-        if (others.comfort) log.warn('lights: IterioDev\'s Comfort tool is running, Ambient config stands aside until it is gone');
+        if (others.comfort) log.warn('lights: IterioDev\'s Comfort tool has its ambient on, Ambient config stands aside until it is off or gone');
     };
     others.on('change', besideComfort);
     besideComfort();
@@ -171,9 +187,10 @@ async function background(bg) {
     strobe.on('learned', (c) => { try { if (chFile) fs.writeFileSync(chFile, JSON.stringify(c)); } catch (e) { log.warn('strobe: ' + e); } });
     const findStrobe = () => { if (settings.get('strobe') === true && !strobe.kind) strobe.find().catch((e) => log.warn('strobe: ' + e)); };
     findStrobe();
-    // the flasher lever (lever.js): a short pull while parked (also while driving with strobeLeverDriving, for private
-    // property) starts the strobe as the Strobe page has it, while its Lever start is on (off until switched on); the
-    // light status read only from then on
+    // the flasher lever (lever.js): three quick pulls while parked (also while driving with strobeLeverDriving, for
+    // private property) start the strobe as the Strobe page has it, while its Lever start is on (off until switched on),
+    // and three more while it flashes stop it; the light status read only from then on, 10 times a second (a quick pull
+    // is shorter than a slower read)
     const lever = new Lever();
     let leverWatch = null;
     const watchLever = () => {
@@ -182,6 +199,13 @@ async function background(bg) {
             statusLightStatus: (v) => {
                 const t = Date.now();
                 if (!lever.beam(beamOf(v && v.statusMainBeam_headlightFlasher), t)) return;
+                // three pulls while the strobe flashes stop it (however it was started; stopping needs no checks)
+                if (strobe.running === 'strobe') {
+                    lever.cool(t);
+                    log.info('strobe: stopped with the flasher lever');
+                    strobe.stop();
+                    return;
+                }
                 // (while driving only with its setting, for private property)
                 const parkedOk = parked.moving() === false || settings.get('strobeLeverDriving') === true;
                 if (settings.get('strobeLever') !== true || !strobe.kind || strobe.running || gate('strobe') !== null || !parkedOk) return;
@@ -189,7 +213,7 @@ async function background(bg) {
                 log.info('strobe: started with the flasher lever');
                 strobe.start(strobeOptions(settings, strobe)).catch((e) => log.warn('strobe: ' + e));
             },
-        }, log, { pollMs: 500 })).catch((e) => { leverWatch = null; log.warn('flasher lever: ' + (e && e.message || e)); });
+        }, log, { pollMs: 100 })).catch((e) => { leverWatch = null; log.warn('flasher lever: ' + (e && e.message || e)); });
     };
     watchLever();
     settings.onChange((key) => {
@@ -197,7 +221,7 @@ async function background(bg) {
         if (key === 'strobeLever') watchLever();
     });
     // (the car locked and left mid-flash: the gate says no at the next step and the strobe stops)
-    return { ambient, lights, control, active, others, strobe, checks };
+    return { ambient, lights, control, active, others, strobe, checks, lookAgain: () => lights.find({ force: true }).then(counted) };
 }
 
 const nearest = (rgb) => {
@@ -214,7 +238,7 @@ mgu.run({
     background,
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const { ambient, lights, control, active, others, strobe, checks } = ctx.background || await background(ctx);
+        const { ambient, lights, control, active, others, strobe, checks, lookAgain } = ctx.background || await background(ctx);
         // the Strobe tab only with its experimental setting on
         const tabs = () => TABS.concat(settings.get('strobe') === true ? ['Strobe'] : []);
         // editing: null (the driver's own look) or a driving mode whose look the Colour and Animations tabs change
@@ -251,8 +275,9 @@ mgu.run({
         const stepHue = (d) => { const c = partColour(look()); return setRgb(S.hsv(S.stepHue(S.hueOf(c.rgb), d), 1, 1)); };
 
         // another ambient app's service writing the same lights: says so in place of the status, wrapped to width w
-        const COMFORT_WARNING = 'IterioDev\'s Comfort tool is running and changes the same lights, so Ambient config has stopped ' +
-            'changing them. Uninstall Comfort in the Store (Installed, Head-unit tools, Comfort) to use Ambient config.';
+        const COMFORT_WARNING = 'IterioDev\'s Comfort tool has its ambient colour on and changes the same lights, so Ambient config ' +
+            'has stopped changing them. Turn its colour and its drive-mode colours off in IterioDev\'s Ambient Light app (the seats ' +
+            'keep working), or uninstall Comfort in the Store (Installed, Head-unit tools, Comfort).';
         // in red, so it is seen: nothing on these tabs reaches the lights while Comfort runs
         function warnOthers(cv, t, x, y, w) {
             const head = cv.textWidth(translate('Another ambient app is running'), 22, { font: 'bold', literal: true }) <= w
@@ -271,7 +296,8 @@ mgu.run({
             const n = lights.lights.length;
             const s = lights.state === 'finding' ? 'Looking for the car\'s lights...'
                 : lights.state === 'none' ? 'The car\'s lights did not answer'
-                    : lights.state === 'car' ? 'Original colour (as set in BMW\'s menu)' : 'On in the car: ' + n + ' lights';
+                    : lights.state === 'car' ? 'Original colour (as set in BMW\'s menu)'
+                        : lights.blind ? 'On in the car: one colour on all lights' : 'On in the car: ' + n + ' lights';
             cv.text(s, x, y, 20, lights.state === 'none' ? t.warn : t.dim);
             if (lights.error && lights.state !== 'none') cv.text(lights.error, x, y + 26, 18, t.warn);
         }
@@ -336,7 +362,7 @@ mgu.run({
                 G.button(cv, t, 796 + (i % 4) * 132, 186 + Math.floor(i / 4) * 62, 120, 50, String(n), () => { ambient.setSlot(n); return redraw(); },
                     { primary: n === now, busy: !ambient.available, key: 'slot-' + n });
             }
-            G.button(cv, t, 796, 386, 0, 48, 'Look again', () => { lights.find(); return redraw(); }, { key: 'again' });
+            G.button(cv, t, 796, 386, 0, 48, 'Look again', () => { lookAgain().catch((e) => log.warn('lights: ' + e)); return redraw(); }, { key: 'again' });
             if (others.comfort) warnOthers(cv, t, 1346, 136, 214);
         }
 
@@ -451,7 +477,7 @@ mgu.run({
                 cv.text(label + (!ok && why ? ' · ' + why : ''), 70, y, 20, ok ? t.text : t.dim);
             });
             cv.text('Only for use on private property.', 44, 222, 20, t.warn, { font: 'bold' });
-            // a short pull of the flasher lever while parked starts it (lever.js), only while this is on
+            // three quick pulls of the flasher lever while parked start it, three more stop it (lever.js), only while this is on
             const lever = settings.get('strobeLever') === true;
             G.button(cv, t, 520, 190, 220, 42, lever ? 'Lever start: On' : 'Lever start: Off', () => { settings.set('strobeLever', !lever); return redraw(); },
                 { primary: lever, key: 'strobe-lever', busy: !strobe });
@@ -584,16 +610,46 @@ mgu.run({
             return dirty || due || page === 4 ? render() : null;
         };
 
-        if (ctx.onTap) {
+        // the colour ring and the brightness dial under a finger (Colour tab): 'ring' or 'dial', else null
+        const ringAt = (x, y) => { const dx = x - RING.cx, dy = y - RING.cy, d = Math.sqrt(dx * dx + dy * dy); return d >= RING.r - 12 && d <= RING.R + 12; };
+        const dialAt = (x, y) => {
+            const ex = x - DIAL.cx, ey = y - DIAL.cy, e = Math.sqrt(ex * ex + ey * ey), a = Math.atan2(ex, -ey) * 180 / Math.PI;
+            return e >= DIAL.r - 14 && e <= DIAL.R + 14 && a >= -140 && a <= 140;
+        };
+        const hueAt = (x, y) => S.snapHue((Math.atan2(x - RING.cx, -(y - RING.cy)) * 180 / Math.PI + 360) % 360);
+        const brightAt = (x, y) => (Math.max(-135, Math.min(135, Math.atan2(x - DIAL.cx, -(y - DIAL.cy)) * 180 / Math.PI)) + 135) / 270 * 100;
+        // a finger on the ring or the dial: the colour or the brightness follows it while it moves, sent to the lights at
+        // most every DRAG_MS and once more where it lets go (a tap: there at once)
+        const DRAG_MS = 120;
+        let drag = null;                                    // { what: 'ring' | 'dial', at, x, y, timer }
+        const dragApply = () => {
+            if (!drag) return null;
+            drag.at = Date.now(); clearTimeout(drag.timer); drag.timer = null;
+            return drag.what === 'ring' ? setRgb(S.hsv(hueAt(drag.x, drag.y), 1, 1)) : setBright(brightAt(drag.x, drag.y));
+        };
+        if (ctx.onTouch) {
+            ctx.onTouch((phase, x, y) => {
+                if (phase === 1) {
+                    drag = null;
+                    if (page !== 0) return false;
+                    const what = ringAt(x, y) ? 'ring' : dialAt(x, y) ? 'dial' : null;
+                    if (!what) return false;
+                    drag = { what, at: 0, x, y, timer: null };
+                    dragApply();
+                    return true;
+                }
+                if (!drag) return false;
+                drag.x = x; drag.y = y;
+                if (phase === 3) { dragApply(); drag = null; return true; }
+                const wait = drag.at + DRAG_MS - Date.now();
+                if (wait <= 0) dragApply(); else if (!drag.timer) drag.timer = setTimeout(dragApply, wait);
+                return true;
+            });
+        } else if (ctx.onTap) {
             ctx.onTap((x, y) => {
                 if (page !== 0) return null;
-                const dx = x - RING.cx, dy = y - RING.cy, d = Math.sqrt(dx * dx + dy * dy);
-                if (d >= RING.r - 12 && d <= RING.R + 12) return setRgb(S.hsv(S.snapHue((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360), 1, 1));
-                const ex = x - DIAL.cx, ey = y - DIAL.cy, e = Math.sqrt(ex * ex + ey * ey);
-                if (e >= DIAL.r - 14 && e <= DIAL.R + 14) {
-                    const a = Math.atan2(ex, -ey) * 180 / Math.PI;
-                    if (a >= -140 && a <= 140) return setBright((Math.max(-135, Math.min(135, a)) + 135) / 270 * 100);
-                }
+                if (ringAt(x, y)) return setRgb(S.hsv(hueAt(x, y), 1, 1));
+                if (dialAt(x, y)) return setBright(brightAt(x, y));
                 return null;
             });
         }

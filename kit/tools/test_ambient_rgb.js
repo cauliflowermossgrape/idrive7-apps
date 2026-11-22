@@ -88,6 +88,13 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
             return [0x6e, data[0], data[1]];
         },
     };
+    // a body module that answers "busy, ask again" (7F 22 21) to the first reads, as a G21's did (#197): asked again
+    let busyLeft = 3;
+    const busyDiag = { physical: (target, sid, data) => (sid === 0x22 && busyLeft-- > 0 ? Promise.resolve([0x7f, 0x22, 0x21]) : diag.physical(target, sid, data)) };
+    const waited = [];
+    const patient = new Lights({ diag: busyDiag, log, checkMs: 40, sleep: (ms) => { waited.push(ms); return Promise.resolve(); } });
+    ok((await patient.find()).length === 6 && waited.join() === '400,800,1200', 'find: a busy body module asked again, later each time');
+    patient.stop();
     const lights = new Lights({ diag, log, checkMs: 40 });
     const found = await lights.find();
     ok(found.length === 6 && lights.state === 'car', 'find: both buses, nothing written yet');
@@ -104,6 +111,119 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     const before = fresh.lights[0];
     await fresh.find();
     ok(saved && saved.length === 6 && fresh.lights[0] === before, 'find(): the lights said (to keep), the known ones the same');
+    // a bus whose read the transport refuses this time keeps the lights known on it (#169: the passenger side was lost)
+    const flaky = { physical: (t, sid, data) => (sid === 0x22 && data[0] === 0xda ? Promise.reject(new Error('transport refused: APP_REQUEST_TEMPORARILY_NOT_ACCEPTED')) : diag.physical(t, sid, data)) };
+    const keepy = new Lights({ diag: flaky, log, known: JSON.parse(JSON.stringify(found)) });
+    let said = null;
+    keepy.on('found', (l) => { said = l; });
+    const kept = await keepy.find();
+    ok(kept.length === 6 && kept.filter((l) => l.bus === 0).length === 2 && said && said.length === 6, 'find: a bus refused this time keeps its known lights');
+    keepy.stop();
+    // every bus silent: the body module asked once (22 F186) whether it answers at all, the reply logged
+    const said2 = [], probes = [];
+    const deaf = { physical: (t, sid, data) => { if (sid === 0x22 && data[0] === 0xf1) { probes.push(data.slice()); return Promise.resolve([0x62, 0xf1, 0x86, 0x01]); } return Promise.resolve(null); } };
+    const lonely = new Lights({ diag: deaf, log: { info: (m) => said2.push(m), warn: (m) => said2.push(m) } });
+    await lonely.find(); await lonely.find();
+    ok(probes.length === 1 && said2.some((m) => /body module itself: answers \(62 f1 86 1\)/.test(m)), 'every bus silent: the body module asked once if it answers at all');
+    lonely.stop();
+    // #197: a G05 whose BDC answers only at its gateway address (0x10, ZGW_SP18) and the head unit refuses 0x40: the
+    // units scan, then the light read at 0x10, which answers; the lights then read and written there
+    const said3 = [], to10 = [];
+    const gw = {
+        physical: async (t, sid, data) => {
+            if (t === L.BDC) throw new Error('transport refused: APP_REQUEST_TEMPORARILY_NOT_ACCEPTED');
+            if (t !== 0x10) return null;
+            to10.push([sid].concat(data));
+            if (sid === 0x22 && data[0] === 0xda) return reply([0xda, 0x5f], [0x0f, 0x0c]);
+            if (sid === 0x22 && data[0] === 0xe3) return reply([0xe3, 0xd1], [0x15, 0x01]);
+            if (sid === 0x2e) return [0x6e, data[0], data[1]];
+            return null;
+        },
+        functional: async () => new Map([[0x10, [0x62, 0xf1, 0x50, 0x0f, 0x25, 0xf0]], [0x12, [0x62, 0xf1, 0x50, 0x0f, 0x26, 0xb4]]]),
+    };
+    const g05 = new Lights({ diag: gw, log: { info: (m) => said3.push(m), warn: (m) => said3.push(m) } });
+    const got = await g05.find();
+    ok(g05.bdc === 0x10 && got.length === 4, 'body module only at 0x10: its lights found there (' + got.length + ')');
+    ok(said3.some((m) => /units answering: 10:0F25F0 12:0F26B4/.test(m)) && said3.some((m) => /answer at 10: using it/.test(m)), 'the units and the address logged');
+    g05.show(look('solid', { upper: { rgb: [0, 255, 0], bright: 80 }, lower: { rgb: [0, 255, 0], bright: 80 } }));
+    await sleep(300);
+    ok(to10.some((r) => r[0] === 0x2e), 'colours written to 0x10');
+    g05.stop();
+    // #197 blind: a G21's body module answers the light reads "busy" for the whole drive but takes writes: one light per
+    // bus (NAD 0), any colour on all of them; not read again, "Look again" (force) reads
+    const busyCar = (o) => {
+        const c = { reads: 0, writes: [], readsWork: false };
+        c.diag = {
+            physical: async (t, sid, data) => {
+                if (t !== L.BDC) return null;
+                if (sid === 0x22 && data[0] === 0xf1) return [0x62, 0xf1, 0x86, 0x01];
+                if (sid === 0x22) { c.reads++; return c.readsWork ? reply(data, data[0] === 0xda ? [0x0f, 0x0c] : [0x15]) : (o && o.empty ? reply(data, []) : [0x7f, 0x22, 0x21]); }
+                c.writes.push(data.slice());
+                return o && o.noWrites ? null : [0x6e, data[0], data[1]];
+            },
+        };
+        return c;
+    };
+    const fastSleep = () => Promise.resolve();
+    const bc1 = busyCar(), saidB = [];
+    const blind = new Lights({ diag: bc1.diag, sleep: fastSleep, log: { info: (m) => saidB.push(m), warn: (m) => saidB.push(m) } });
+    let foundB = null; blind.on('found', (l) => { foundB = l; });
+    const gotB = await blind.find();
+    const blindKnown = foundB;
+    ok(blind.blind && gotB.length === 2 && gotB.every((l) => l.nad === 0 && l.blind) && foundB && foundB.length === 2, 'reads busy, writes taken: one light per bus (NAD 0)');
+    ok(bc1.writes.length === 2 && bc1.writes.every((w) => w[2] === 0 && w[3] === 0) && saidB.some((m) => /takes writes but not the light reads/.test(m)), 'the write test is a give-back (NAD 0 off), logged');
+    bc1.writes.length = 0;
+    blind.show(look('solid', { upper: { rgb: [0, 255, 0], bright: 80 } }));
+    await sleep(300);
+    ok(bc1.writes.some((w) => w[0] === 0xda && w[2] === 0 && w[3] === 1 && w[5] === 0 && w[6] === 254) && bc1.writes.some((w) => w[0] === 0xe3 && w[2] === 0 && w[3] === 1), 'a colour goes to every light of both buses (NAD 0)');
+    const readsB = bc1.reads;
+    await blind.find();
+    ok(bc1.reads === readsB, 'blind: not read again');
+    bc1.readsWork = true;
+    const full = await blind.find({ force: true });
+    ok(!blind.blind && full.length === 3 && full.every((l) => l.nad > 0), '"Look again" reads: the lights answering now replace the blind ones');
+    blind.stop();
+    // known blind lights at a start: used at once, not read
+    const bc2 = busyCar();
+    const known = new Lights({ diag: bc2.diag, log, known: blindKnown });
+    await known.find();
+    ok(known.blind && bc2.reads === 0 && known.lights.length === 2, 'blind lights from an earlier start: used, not read');
+    known.stop();
+    // writeFirst (reads failed before): the write test first, no read at all
+    const bc3 = busyCar();
+    const wf = new Lights({ diag: bc3.diag, log, writeFirst: true });
+    await wf.find();
+    ok(wf.blind && bc3.reads === 0, 'write first: blind without a single read');
+    wf.stop();
+    const bc4 = busyCar({ noWrites: true });
+    const wf2 = new Lights({ diag: bc4.diag, log, writeFirst: true });
+    const got4 = await wf2.find();
+    ok(!got4.length && bc4.reads === 0 && wf2.readFail && wf2.state === 'none', 'write first, writes not taken: no read either (the module asleep or hung)');
+    wf2.stop();
+    // a reply without lights (a car without them) is not what blind mode is for
+    const bc5 = busyCar({ empty: true });
+    const em = new Lights({ diag: bc5.diag, sleep: fastSleep, log });
+    await em.find();
+    ok(!em.blind && !em.readFail && bc5.writes.length === 0, 'a reply without lights: no write test, not counted');
+    em.stop();
+    // the write taken only at the BDC's gateway address (0x10): the lights written there
+    const bw = [];
+    const gwOnly = new Lights({ diag: { physical: async (t, sid, data) => {
+        if (sid === 0x22) return t === L.BDC ? [0x7f, 0x22, 0x21] : null;
+        if (t !== 0x10) return null;
+        bw.push(data.slice()); return [0x6e, data[0], data[1]];
+    } }, sleep: fastSleep, log });
+    await gwOnly.find();
+    gwOnly.show(look('solid', { upper: { rgb: [0, 0, 255], bright: 80 } }));
+    await sleep(300);
+    ok(gwOnly.blind && gwOnly.bdc === 0x10 && bw.some((w) => w[3] === 1), 'writes taken only at 0x10: blind there, the colour written to 0x10');
+    gwOnly.stop();
+    // and one where no address answers with lights: the probe once, nothing moved
+    const said4 = [];
+    const none = new Lights({ diag: { physical: async () => null, functional: async () => new Map([[0x10, [0x62, 0xf1, 0x50, 0x0f, 0x25, 0xf0]]]) }, log: { info: (m) => said4.push(m), warn: (m) => said4.push(m) } });
+    await none.find(); await none.find();
+    ok(none.bdc === L.BDC && said4.filter((m) => /units answering/.test(m)).length === 1 && said4.some((m) => /light read at 10: no answer/.test(m)), 'no lights anywhere: 0x40 kept, asked once');
+    none.stop();
     fresh.stop();
     await sleep(100);
     writes.length = 0; lit.forEach((b) => b.forEach((x, i) => { b[i] = [0, 0, 0]; }));
@@ -138,7 +258,9 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     writes.length = 0;
     lights.show(look('rainbow'));
     await sleep(60);
-    ok(writes.length >= 2 && writes.slice(0, 2).every((w) => w[2] === 0 && w.slice(5, 8).join() === writes[0].slice(5, 8).join()), 'rainbow: the whole car one colour, 2 writes a frame');
+    // (from the rainbow's first write: the breathing's write under way at the switch may land first)
+    const rw = writes.slice(Math.max(0, writes.findIndex((w) => w[2] === 0)));
+    ok(rw.length >= 2 && rw.slice(0, 2).every((w) => w[2] === 0 && w.slice(5, 8).join() === rw[0].slice(5, 8).join()), 'rainbow: the whole car one colour, 2 writes a frame');
     writes.length = 0;
     lights.show(look('wave'));
     await sleep(100);
@@ -196,6 +318,19 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     writes.length = 0; await sleep(300);
     ok(writes.length === 0, 'and nothing after');
     refuse = false; asleep = false;
+    // carOwn (the car's own open-door warning on a door's lights): given back at once, no colour of ours meanwhile
+    lights.show(look('solid', { upper: { rgb: [0, 0, 255], bright: 80 }, lower: { rgb: [0, 0, 255], bright: 80 } }));
+    await sleep(150);
+    const door = lights.lights.find((l) => l.bus === 0 && l.nad === 2);
+    writes.length = 0;
+    lights.carOwn('carDoor', (l) => l === door);
+    await sleep(150);
+    const gaveBack = writes.filter((w) => w[0] === 0xda && w[2] === door.nad && w[3] === 0), coloured = writes.filter((w) => w[0] === 0xda && (w[2] === door.nad || w[2] === 0) && w[3] === 1);
+    ok(door && gaveBack.length >= 1 && !coloured.length && lights.at(door) === null, 'carOwn: the light given back at once, no colour of ours on it');
+    writes.length = 0;
+    lights.carOwn('carDoor', null);
+    await sleep(150);
+    ok(writes.some((w) => w[0] === 0xda && (w[2] === door.nad || w[2] === 0) && w[3] === 1), 'carOwn off: our colour on it again');
     lights.stop();
 
     // control: the driver's look, driving modes, favourites
@@ -203,7 +338,8 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     const settings = { get: (k) => values[k], set: (k, v) => { values[k] = v; fns.forEach((f) => f(k, v)); }, onChange: (f) => fns.push(f) };
     const shows = [];
     const fake = { scene: null, overs: {}, show(s) { this.scene = s; shows.push(s); }, carColour() { this.scene = null; shows.push(null); }, dim(f) { this.f = f; }, flash(rgb, ms) { this.flashed = [rgb, ms]; },
-        overlay(k, test, at) { if (test) this.overs[k] = { test, at }; else delete this.overs[k]; } };
+        overlay(k, test, at) { if (test) this.overs[k] = { test, at }; else delete this.overs[k]; },
+        carOwn(k, test) { if (test) this.owns = test; else delete this.owns; } };
     const amb = new EventEmitter(); amb._m = 'comfort'; amb.mode = () => amb._m;
     const c = new Control({ settings, lights: fake, ambient: amb, log });
     c.start();
@@ -308,9 +444,31 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     c.doors(['passenger rear']);
     ok(fake.overs.doors.test(pl(0x10)) && !fake.overs.doors.test(pl(0x12)) && !fake.overs.doors.test(pl(0x22)) && !fake.overs.doors.test(pl(0x0c)),
         'door lines on the car: an open door blinks its own line only');
+    // a G26: each door line in two strips (0x62-0x65); only the first blinks, so the blink keeps its pace (#169)
+    c.doors([]); fake.lights = fake.lights.concat([0x62, 0x63, 0x64, 0x65].map(pl)); c.turn(null); c.turn('left'); c.doors(['passenger front']);
+    ok(fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x09)) && !fake.overs.turn.test(pl(0x62)) && !fake.overs.turn.test(pl(0x63))
+        && fake.overs.doors.test(pl(0x0c)) && !fake.overs.doors.test(pl(0x64)), 'two-strip door lines: the turn glow and an open door blink the first strip only');
+    fake.lights = fake.lights.filter((l) => l.loc < 0x62);
     c.doors([]); c.doors(['driver front']);
     fake.lights = fake.lights.filter((l) => l.loc !== 0x05);
     ok(fake.overs.doors.test(pl(0x07)) && fake.overs.doors.test(pl(0x08)), 'a door without its line: its other lights blink');
+    // the car's own open-door warning (doorCar, #169): one write per door (2E 48 04 <mode> <s>), no red blink of ours;
+    // a body module that refuses it: our red blink instead
+    const cmds = [];
+    let carAnswer = [0x6e, 0x48, 0x04];
+    fake.command = (d) => { cmds.push(d.slice()); return Promise.resolve(carAnswer); };
+    c.doors([]); settings.set('doorRed', true); settings.set('doorCar', true); c.carDoorSetting();
+    c.doors(['driver rear']);
+    await sleep(5);
+    ok(cmds.length === 1 && cmds[0].join() === [0x48, 0x04, 0x24, 4].join() && !fake.overs.doors, 'doorCar: the driver rear door asks the car\'s warning (mode 24), no red blink of ours');
+    ok(fake.owns && fake.owns({ name: 'Driver rear door line' }) && fake.owns({ name: 'Driver rear door line 2' }) && fake.owns({ name: 'Driver rear door handle' })
+        && !fake.owns({ name: 'Driver front door line' }), 'doorCar: that door\'s lights (both strips, the handle) are the car\'s meanwhile');
+    c.doors([]); cmds.length = 0; carAnswer = [0x7f, 0x2e, 0x31];
+    c.doors(['passenger front']);
+    await sleep(5);
+    ok(cmds.length === 1 && cmds[0][2] === 0x25 && fake.overs.doors && fake.overs.doors.test(pl(0x0c)), 'doorCar refused: our red blink instead');
+    ok(!fake.owns, 'doorCar refused: the door\'s lights ours again');
+    c.doors([]); values.doorCar = undefined; c.carDoorSetting(); delete fake.command;
     delete fake.lights;
     values.turnGlow = undefined; values.doorRed = undefined; c.doors([]); c.turn(null);
     // a restart with Welcome on: the sweep, then the look
@@ -342,6 +500,46 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
         ok(writes.length > 0 && !lh.held, 'let go: the scene is written again (' + writes.length + ' writes)');
         lh.stop && lh.stop();
         await sleep(50);
+    }
+
+    // after a blink longer than its renewal (the other lights renewed with the blink's 5 s hold), the still colour is
+    // renewed before those 5 s run out, not 40 s later (the car's own colour in between, #197)
+    {
+        let clock = 1e6;
+        const hw = [];
+        const hdiag = { physical: async (t, sid, data) => {
+            await sleep(1);
+            if (sid === 0x22) return diag.physical(t, sid, data);
+            hw.push({ at: clock, on: data[3] }); return [0x6e, data[0], data[1]];
+        } };
+        const lc = new Lights({ diag: hdiag, log, now: () => clock, checkMs: 40 });
+        await lc.find();
+        lc.show(look('solid', { upper: { rgb: [0, 0, 255], bright: 80 }, lower: { rgb: [0, 0, 255], bright: 80 } }));
+        await sleep(200); clock += 1000; await sleep(200);
+        lc.overlay('doors', (x) => x.bus === 0 && x.nad === 1, (t, on) => (on ? { rgb: [255, 0, 0], bright: 100 } : { rgb: [0, 0, 0], bright: 0 }));
+        for (let i = 0; i < 60; i++) { await sleep(15); clock += 100; }
+        lc.overlay('doors', null);
+        await sleep(200);
+        const end = clock; hw.length = 0;
+        for (let i = 0; i < 10; i++) { clock += 500; lc._kick(); await sleep(100); }
+        ok(hw.some((w) => w.on === 1 && w.at - end < 5000), 'after a blink: the still colour renewed before the blink\'s 5 s hold runs out');
+        lc.stop();
+        await sleep(50);
+    }
+
+    // decorWith (#140): the decor lights with the upper colour (default) or the lower one, as BMW groups them
+    {
+        const sc = { kind: 'solid', upper: { rgb: [255, 0, 0], bright: 80 }, lower: { rgb: [0, 0, 255], bright: 40 } };
+        const decor = { name: 'Driver front door decor', part: 'upper' }, line = { name: 'Driver front door line', part: 'upper' };
+        const dash = { name: 'Dash decor passenger', part: 'upper' }, foot = { name: 'Footwell driver front', part: 'lower' };
+        ok(S.lightAt(sc, decor, 0).rgb[0] === 255, 'decor: upper by default');
+        S.setDecor('lower');
+        ok(S.lightAt(sc, decor, 0).rgb[2] === 255 && S.lightAt(sc, decor, 0).bright === 40, 'decorWith lower: door decor takes the lower colour');
+        ok(S.lightAt(sc, dash, 0).rgb[2] === 255, 'decorWith lower: dash decor too');
+        ok(S.lightAt(sc, line, 0).rgb[0] === 255, 'decorWith lower: the door line stays upper');
+        ok(S.lightAt(sc, foot, 0).rgb[2] === 255, 'a footwell stays lower');
+        S.setDecor('upper');
+        ok(S.lightAt(sc, decor, 0).rgb[0] === 255, 'decorWith upper: back to upper');
     }
 
     fs.unlinkSync(process.env.MGU_AMBIENT_FLASH); fs.rmdirSync(TMP);
