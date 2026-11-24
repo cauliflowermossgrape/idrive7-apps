@@ -463,6 +463,11 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     c.doors([]); fake.lights = fake.lights.concat([0x62, 0x63, 0x64, 0x65].map(pl)); c.turn(null); c.turn('left'); c.doors(['passenger front']);
     ok(fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x09)) && !fake.overs.turn.test(pl(0x62)) && !fake.overs.turn.test(pl(0x63))
         && fake.overs.doors.test(pl(0x0c)) && !fake.overs.doors.test(pl(0x64)), 'two-strip door lines: the turn glow and an open door blink the first strip only');
+    settings.set('blinkBoth', true); c.signals();
+    ok(fake.overs.turn.test(pl(0x05)) && fake.overs.turn.test(pl(0x62)) && fake.overs.turn.test(pl(0x63)) && !fake.overs.turn.test(pl(0x64))
+        && fake.overs.doors.test(pl(0x0c)) && fake.overs.doors.test(pl(0x64)) && !fake.overs.doors.test(pl(0x65)), 'setting blinkBoth: both strips of a door line blink (#169)');
+    settings.set('blinkBoth', false); c.signals();
+    ok(!fake.overs.turn.test(pl(0x62)), 'blinkBoth off again: the first strip only');
     fake.lights = fake.lights.filter((l) => l.loc < 0x62);
     c.doors([]); c.doors(['driver front']);
     fake.lights = fake.lights.filter((l) => l.loc !== 0x05);

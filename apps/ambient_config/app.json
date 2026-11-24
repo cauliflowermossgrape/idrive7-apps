@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.7.23",
+  "version": "2.7.24",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -145,6 +145,12 @@
     {
       "key": "doorCar",
       "label": "Open door: the car's own warning (G20 / G26)",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "blinkBoth",
+      "label": "Turn glow and door red on both strips of a door line (G26: slower blink)",
       "type": "bool",
       "default": false
     },

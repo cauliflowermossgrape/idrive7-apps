@@ -45,11 +45,12 @@ const doorOf = (l) => {
  * second on the car against ~0.8 with every light of a side); a car whose side or door has none blinks all of them.
  * Not a line's second strip (a G26's "door line 2"): with both strips a side had twice the writes, so the blink went
  * half as fast and the strips lit visibly one after another (#169). The second strip keeps the look's colour. */
-const isLine = (l) => / door line$/i.test(String(l.name || ''));
+const isLine = (l, both) => (both ? / door line( 2)?$/i : / door line$/i).test(String(l.name || ''));
 // the body module's own open-door warnings (TAB_INNENLICHT_FUNKTIONSMODI), each door's mode; seconds a write lasts
 const CAR_DOOR_MODE = { 'driver front': 0x23, 'driver rear': 0x24, 'passenger front': 0x25, 'passenger rear': 0x26 };
 const CAR_DOOR_S = 4, CAR_DOOR_RENEW_MS = 3000;
-const linesOf = (all, pick) => (l) => pick(l) && (isLine(l) || !all().some((x) => pick(x) && isLine(x)));
+// both: the second strips too (setting blinkBoth: the whole strip blinks, at half the pace on a G26)
+const linesOf = (all, pick, both) => (l) => pick(l) && (isLine(l, both) || !all().some((x) => pick(x) && isLine(x, both)));
 
 const copy = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 const valid = (l) => !!l && typeof l === 'object' && !!l.upper && Array.isArray(l.upper.rgb) && !!l.lower && Array.isArray(l.lower.rgb);
@@ -130,17 +131,18 @@ class Control {
         const turn = this.settings.get('turnGlow') === true && !this._away && !hazard ? this._turn : null;
         const sides = turn === 'both' ? ['driver', 'passenger'] : turn ? [side(turn)] : [];
         const all = () => this.lights.lights || [];
-        const key = sides.join();
+        const both = this.settings.get('blinkBoth') === true;
+        const key = sides.join() + (both ? '+2' : '');
         if (key !== this._glow) {
             this._glow = key;
-            this.lights.overlay('turn', sides.length ? linesOf(all, (l) => sides.indexOf(sideOf(l)) >= 0) : null, blink(GLOW));
+            this.lights.overlay('turn', sides.length ? linesOf(all, (l) => sides.indexOf(sideOf(l)) >= 0, both) : null, blink(GLOW));
         }
         this._carDoor();
         // our red blink: the open doors the car's own warning doesn't show
         const doors = this.settings.get('doorRed') === true && !this._away ? this._doors.filter((d) => !this._carDoors[d]) : [];
-        if (doors.join() !== this._red) {
-            this._red = doors.join();
-            this.lights.overlay('doors', doors.length ? linesOf(all, (l) => doors.indexOf(doorOf(l)) >= 0) : null, blink(RED));
+        if (doors.join() + (both ? '+2' : '') !== this._red) {
+            this._red = doors.join() + (both ? '+2' : '');
+            this.lights.overlay('doors', doors.length ? linesOf(all, (l) => doors.indexOf(doorOf(l)) >= 0, both) : null, blink(RED));
         }
     }
 

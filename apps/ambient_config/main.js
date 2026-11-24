@@ -169,7 +169,7 @@ async function background(bg) {
         if (key === 'nightDim') control.night(control._night);
         if (key === 'decorWith') { S.setDecor(settings.get('decorWith')); lights.redraw(); }
         if (key === 'follow') control.apply();
-        if (key === 'turnGlow' || key === 'doorRed' || key === 'hazardRed' || key === 'drive') control.signals();
+        if (key === 'turnGlow' || key === 'doorRed' || key === 'hazardRed' || key === 'drive' || key === 'blinkBoth') control.signals();
         if (key === 'doorCar') control.carDoorSetting();
     });
     const others = new Others({ log }).start();
