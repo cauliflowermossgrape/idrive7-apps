@@ -19,6 +19,8 @@ let fails = 0, checks = 0;
 const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('FAIL ' + msg); } };
 const log = { info() {}, warn() {}, error() {} };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// until cond() holds, at most max ms (a busy machine runs the lights' timers late: a fixed wait then saw nothing)
+const until = async (cond, max) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < (max || 3000)) await sleep(20); };
 
 // status reply: 62 DA5F, records of 10 (location, blue, green, red, brightness, white, 4 faults), empty FF
 const reply = (did, locs, fault) => {
@@ -299,27 +301,28 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     // an overlay with the car's own colour on: only the lights it picks are written, the rest keep the car's colour
     writes.length = 0;
     lights.overlay('doors', (l) => l.name === 'Driver front door line', () => ({ rgb: [255, 0, 0], bright: 100 }));
-    await sleep(150);
+    await until(() => lit[1][2].join() === '254,0,0');
     ok(writes.length >= 1 && writes.every((w) => w[0] === 0xe3 && w[2] === 3) && lit[1][2].join() === '254,0,0' && lit[1][0].join() === '0,0,0',
         'an open door: its light red alone, no write to the whole bus (' + writes.map((w) => w[2]).join() + ')');
     writes.length = 0;
     lights.overlay('turn', (l) => /^Passenger/.test(l.name), (t) => ({ rgb: [0, 230, 60], bright: 50 }));
-    await sleep(150);
+    await until(() => lit[0].every((c) => c.join() === '0,230,60'));
     ok(writes.some((w) => w[0] === 0xda && w[2] === 0) && lit[0].every((c) => c.join() === '0,230,60') && lit[1][2].join() === '254,0,0',
         'a turn signal\'s glow over that side (a bus all of it: one write), the door still red');
     // a blink: on one frame, off the next
     writes.length = 0;
     lights.overlay('turn', (l) => l.name === 'Driver front door line', (t, on) => (on ? { rgb: [0, 230, 60], bright: 100 } : { rgb: [0, 0, 0], bright: 0 }));
-    await sleep(200);
+    await until(() => writes.filter((w) => w[0] === 0xe3 && w[2] === 3).length >= 4);
     const nad3 = writes.filter((w) => w[0] === 0xe3 && w[2] === 3).map((w) => w[4]);
     ok(nad3.length >= 4 && nad3.every((b, i) => i === 0 || b !== nad3[i - 1]), 'a blink: fully on, then dark, write after write (' + nad3.join() + ')');
     lights.overlay('doors', null); lights.overlay('turn', null);
-    await sleep(300);
+    await until(() => lit[0].concat(lit[1]).every((c) => c.join() === '0,0,0'));
     ok(lit[0].concat(lit[1]).every((c) => c.join() === '0,0,0'), 'both taken off with the car\'s colour on: given back');
 
     refuse = true; writes.length = 0;
     lights.show(look('solid', { upper: { rgb: [1, 2, 3], bright: 50 } }));
-    await sleep(400);
+    await until(() => writes.length >= 4 && /refused/.test(lights.error || ''));
+    await sleep(300);                       // (and no fifth write after the pause)
     ok(writes.length === 4 && /refused/.test(lights.error), 'refused writes: paused after 4 (' + writes.length + ', ' + lights.error + ')');
     // giving back to a body module that no longer answers (the car going to sleep): each bus tried 3 times, then left
     refuse = false; lights._pauseTill = 0;
@@ -328,10 +331,12 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     refuse = true; asleep = true; writes.length = 0;
     lights.carColour();
     await sleep(12500);
+    // (a busy machine runs the timers late: wait until the writes have stopped, at most 8 s more, before counting)
+    for (let n = -1, i = 0; n !== writes.length && i < 16; i++) { n = writes.length; await sleep(500); }
     const gb = writes.filter((w) => w[3] === 0);
     ok(gb.length <= 6 && gb.length >= 2, 'a give-back not taken: at most 3 tries a bus, then nothing more (' + gb.length + ')');
-    writes.length = 0; await sleep(300);
-    ok(writes.length === 0, 'and nothing after');
+    writes.length = 0; await sleep(1500);
+    ok(writes.length === 0, 'and nothing after (' + writes.length + ')');
     refuse = false; asleep = false;
     // carOwn (the car's own open-door warning on a door's lights): given back at once, no colour of ours meanwhile
     lights.show(look('solid', { upper: { rgb: [0, 0, 255], bright: 80 }, lower: { rgb: [0, 0, 255], bright: 80 } }));
