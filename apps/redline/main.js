@@ -465,6 +465,11 @@ mgu.run({
         function drawTach(cv, t, d, now) {
             const sp = shiftPoint(d.oil, d.gear);
             background(cv, t);
+            // the cold guard on: the track from the lowered shift point to the redline faded yellow, as an M car's (#194)
+            if (sp.cold && sp.rpm < redline()) {
+                band(cv, sp.rpm, redline(), withAlpha(t.warn, 0.28));
+                for (let r = Math.ceil(sp.rpm / 500) * 500; r < redline(); r += 500) gapAt(cv, r, t.bg);
+            }
             const sx = BAR.x0 + barX(sp.rpm);                                                   // shift point mark
             cv.fillRect(sx + BAR.slant - 2, BAR.y0 - 14, 4, 12, t.warn);
             const rpm = d.rpm;
