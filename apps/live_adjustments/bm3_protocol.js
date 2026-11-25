@@ -3,6 +3,7 @@
 
 const DME = 0x12;
 const MARKER_SIZE = 0xFF;
+const DIRECT_PIECES = [MARKER_SIZE, 0x40, 0x10];   // 0x23 read sizes tried for the marker, largest first
 
 function addressBytes(value) {
     if (typeof value !== 'string' || !/^[0-9A-Fa-f]{8}$/.test(value)) throw new Error('invalid 32-bit address');
@@ -112,14 +113,35 @@ class Bm3Protocol {
             // a DME that refuses the dynamic DID (NRC): the marker read straight from its address (0x23).
             // Only a refusal: no answer, or a marker without a known ROM, stays an error.
             if (!/^DME rejected (2C|22)/.test(e.message)) throw e;
-            const direct = await this.request(0x23, [0x14].concat(addr, [MARKER_SIZE]), []);
-            rom = markerDataRom(Buffer.from(direct.slice(1)), this.profiles);
+            rom = markerDataRom(await this._readMarkerDirect(addr, [e.message.replace(/^DME rejected /, '')]), this.profiles);
         }
         const profile = this.profiles[rom];
         if (!profile || !profile.mapSwActAddr || profile.rom !== rom) throw new Error('BM3 profile unavailable');
         this.rom = rom;
         this.profile = profile;
         return { rom };
+    }
+
+    /** The marker's 255 bytes by 0x23: in one read, else in pieces (a G82 S58 refused the 255-byte read with
+     * NRC 10, issue #170, while S58s take the 1-byte map read). Each refusal is kept for the error. */
+    async _readMarkerDirect(addr, refused) {
+        const base = addr.reduce((a, b) => a * 256 + b, 0);
+        for (const piece of DIRECT_PIECES) {
+            try {
+                const parts = [];
+                for (let at = 0; at < MARKER_SIZE; at += piece) {
+                    const n = Math.min(piece, MARKER_SIZE - at), a = base + at;
+                    const r = await this.request(0x23, [0x14, (a >>> 24) & 0xFF, (a >>> 16) & 0xFF, (a >>> 8) & 0xFF, a & 0xFF, n], []);
+                    if (r.length !== n + 1) throw new Error('marker piece length ' + (r.length - 1) + '/' + n);
+                    parts.push(Buffer.from(r.slice(1)));
+                }
+                return Buffer.concat(parts);
+            } catch (e) {
+                if (!/^DME rejected 23/.test(e.message)) throw e;
+                refused.push('23 (' + piece + ' bytes)' + e.message.replace(/^DME rejected 23/, ''));
+            }
+        }
+        throw new Error('DME rejected the marker reads: ' + refused.join(', '));
     }
 
     ready() {

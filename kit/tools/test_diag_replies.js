@@ -226,6 +226,15 @@ const echo = (sid, data) => [sid + 0x40].concat(data);
     b.sent.length = 0;
     await Mg1ElAgk.oem(b.link);
     assert.deepStrictEqual(b.sent, [[0x2F, 0x60, 0xFD, 0x00], [0x2F, 0x60, 0xFD, 0x00]], 'then only 60FD');
+    // #170 (G82 S58, one unit with the controlled flap): 60FD and 611E both refused, the message names both answers
+    b = bus((sid, data, to) => (to === 0x13 ? assert.fail('0x13 asked on a six') : sid === 0x22
+        ? (data[0] === 0xF1 && data[1] === 0x50 ? [[0x62, 0xF1, 0x50, 0x0F, 0x26, 0xE8]] : (data[0] === 0x62 || data[0] === 0x64 || data[0] === 0x63) ? [[0x62, data[0], data[1], 0, 0]] : [[0x7F, 0x22, 0x31]])
+        : sid === 0x2F && data[2] === 0x03 ? [[0x7F, 0x2F, data[0] === 0x60 ? 0x22 : 0x31]] : [echo(sid, data)]));
+    const idS58 = await b.link.identifyDme();
+    assert.deepStrictEqual(idS58.elAgk.units, ['12 el ger']);
+    r = await Mg1ElAgk.closed(b.link);
+    assert.strictEqual(r.accepted, false);
+    assert.strictEqual(r.detail, '60FD conditions not correct, 611E out of range');
     // a six-cylinder (one unit): 0x13 is never asked, the command goes to 0x12 only as before
     b = bus((sid, data, to) => (to === 0x13 ? assert.fail('0x13 asked on a six') : sid === 0x22
         ? (data[0] === 0xF1 && data[1] === 0x50 ? [[0x62, 0xF1, 0x50, 0x0F, 0x23, 0x00]] : data[0] === 0x62 || data[0] === 0x64 ? [[0x62, data[0], data[1], 0, 0]] : [[0x7F, 0x22, 0x31]])

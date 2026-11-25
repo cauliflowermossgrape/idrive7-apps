@@ -145,8 +145,22 @@ async function markerDetectionChecks() {
         assert.deepStrictEqual(silent, [0x2C]);
         // the direct read refused too, or a short marker: no profile
         const pr = new Bm3Protocol({ available: true, physical: async (target, sid) => (sid === 0x23 ? [0x63, 1, 2, 3] : [0x7F, sid, 0x31]) }, bundled, { bm3MarkerAddress: '807FFE50' });
-        await assert.rejects(() => pr.identify(), /marker length/);
+        await assert.rejects(() => pr.identify(), /marker piece length 3\/255/);
         assert.strictEqual(pr.profile, null);
+        // #170 (G82 S58): the 255-byte read refused (NRC 10), the marker read in 64-byte pieces
+        const marker = hashMarker('F4C9L8J01GGGJM_G82_RWD_EUR_').slice(3), pieces = [];
+        const pp = new Bm3Protocol({ available: true, physical: async (target, sid, data) => {
+            if (sid === 0x2C) return data[0] === 3 ? [0x6C, 3, 0xF3, 1] : [0x7F, 0x2C, 0x33];
+            if (sid !== 0x23) return null;
+            const at = ((data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4]) >>> 0, n = data[5];
+            pieces.push(n);
+            return n > 0x40 ? [0x7F, 0x23, 0x10] : [0x63].concat(marker.slice(at - 0x807FFE50, at - 0x807FFE50 + n));
+        } }, bundled, { bm3MarkerAddress: '807FFE50' });
+        assert.deepStrictEqual(await pp.identify(), { rom: 'F4C9L8J01' });
+        assert.deepStrictEqual(pieces, [255, 64, 64, 64, 63], 'one 255-byte read, then four pieces');
+        // every read refused: the error names each refusal
+        const pn = new Bm3Protocol({ available: true, physical: async (target, sid, data) => (sid === 0x2C && data[0] === 3 ? [0x6C, 3, 0xF3, 1] : [0x7F, sid, sid === 0x2C ? 0x33 : 0x10]) }, bundled, { bm3MarkerAddress: '807FFE50' });
+        await assert.rejects(() => pn.identify(), /^Error: DME rejected the marker reads: 2C: NRC 33, 23 \(255 bytes\): NRC 10, 23 \(64 bytes\): NRC 10, 23 \(16 bytes\): NRC 10$/);
     }
     const damagedPrefix = captured.slice(); damagedPrefix[3] = 0;
     const damagedDelimiter = captured.slice(); damagedDelimiter[3 + 68] = 0;

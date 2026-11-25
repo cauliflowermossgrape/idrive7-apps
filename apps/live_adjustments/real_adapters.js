@@ -107,7 +107,12 @@ const Mg1ElAgk = {
                 u.viaGer = false;
             } else {
                 if (u.el) r = await to(req);
-                if (!(r && r.ok) && u.ger) { r = await to(GER[kind]); how = ' (controlled flap)'; u.viaGer = !!(r && r.ok); }
+                if (!(r && r.ok) && u.ger) {
+                    const first = r;
+                    r = await to(GER[kind]); how = ' (controlled flap)'; u.viaGer = !!(r && r.ok);
+                    // both refused (#170: an S58 said "out of range" for 611E, hiding 60FD's answer): name both
+                    if (!u.viaGer && u.el && first) r = { ok: false, reason: '60FD ' + (first.reason || 'rejected') + ', 611E ' + ((r && r.reason) || 'rejected') };
+                }
             }
             any = any || !!(r && r.ok);
             out.push((units.length > 1 ? hex2(u.addr) + ': ' : '') + (r && r.ok ? 'accepted' + how : (r && r.reason) || 'rejected'));
