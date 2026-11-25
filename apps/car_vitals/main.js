@@ -792,6 +792,14 @@ mgu.run({
             }
         }
 
+        /** The rpm the cold zone starts at while the oil is cold (setting coldZone), or null. */
+        function coldZone(oil, red) {
+            if (settings.get('coldZone') === false || !G.isNum(oil) || oil >= 80 || !G.isNum(red)) return null;
+            const cold = Math.min(engine.value('coldLimit', { diesel: 3000, petrol: 4500 }), red);
+            const z = Math.round((cold + (red - cold) * G.clamp((oil - 30) / 50, 0, 1)) / 50) * 50;
+            return z < red ? z : null;
+        }
+
         function drawEngine(cv, t, d) {
             engineSeen = Date.now();
             if (boostFromDme() || boost2Wanted()) kickFuel();
@@ -808,9 +816,13 @@ mgu.run({
             // The room below the page (on the car, with no bar under it): half to the rpm bar, half to the
             // panel under it, which ends at the page's bottom: G.panel adds the room back to it
             const room = G.pageBottom(cv) - G.BOTTOM, half = Math.round(room / 2);
+            // the oil cold: from the cold limit (Redline's cold guard) to the redline faded yellow, the limit moving up as
+            // the oil warms to 80 °C, as an M car's rev band (#194; setting coldZone)
+            const cz = coldZone(d.oil, red);
             G.segBar(cv, t, 24, G.TOP, 1062, 226 + half, {
                 label: 'Engine speed', value: d.rpm, unit: 'rpm', decimals: 0, min: 0, max, step: 500,
-                scale: { every: 1000, div: 1000 }, ramp: 'hot', limit: red, marks: [{ value: red, color: 'crit' }],
+                scale: { every: 1000, div: 1000 }, ramp: 'hot', limit: red, marks: [{ value: red, color: 'crit' }].concat(cz ? [{ value: cz, color: 'warn' }] : []),
+                zones: cz ? [{ from: cz, to: red, color: 'warn' }] : undefined,
                 peak: showPk ? pk.rpm : null,
             });
             // power: the sport display's % x your car's max power (tuned cars: set the tuned max);

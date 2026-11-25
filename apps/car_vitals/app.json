@@ -2,7 +2,7 @@
   "id": "car_vitals",
   "title": "M Vitals",
   "description": "Live engine, thermal, intake / fuel / ignition, tyre and chassis gauges",
-  "version": "2.27.12",
+  "version": "2.27.13",
   "vendor": "custom",
   "loggingId": "OA93",
   "iconGlyph": "gauge",
@@ -146,6 +146,12 @@
         ["3.0", "3.0 bar / 44 psi"],
         ["3.5", "3.5 bar / 50 psi"]
       ]
+    },
+    {
+      "key": "coldZone",
+      "label": "Cold engine: rpm bar faded yellow from the cold limit to the redline",
+      "type": "bool",
+      "default": true
     },
     {
       "key": "speedUnit",
