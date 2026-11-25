@@ -295,7 +295,10 @@ mgu.run({
             || (settings.get('demo') === 'auto' && !list && !sba && !liveRecords().length);
 
         /* ---------- reading ---------- */
-        sig.watch(KOMBI, '1', {
+        // the cluster's interface watched (and read again each minute) only while the page shows: an app talking to
+        // the cluster unasked disturbed others, and the cluster as it wakes from sleep; CBS read only then too
+        let shownNow = false, kombiSub = null;
+        const watchKombi = () => sig.watch(KOMBI, '1', {
             cbsDataServiceList: (v) => {
                 rawList = brief(v);
                 const arr = Array.isArray(v) ? v : (v && (v.cbsDataServiceList || v.value)) || [];
@@ -320,9 +323,19 @@ mgu.run({
                 changed();
             },
         }, log, { pollMs: 60000 }).then((r) => {
-            kombi = r;
+            if (shownNow) kombi = r;         // (left before it was up: it is shut down by shown(false))
             if (r.error) log.warn('KombiInterface_2: ' + r.error);
+            return r;
         });
+        function shown(on) {
+            shownNow = on;
+            if (on && !kombiSub) { kombiSub = watchKombi(); log.info('page shown: cluster watched'); }
+            if (!on && kombiSub) {
+                const s = kombiSub; kombiSub = null; kombi = null;
+                s.then((r) => r && r.shutdown && r.shutdown()).catch(() => {});
+                log.info('page left: cluster watch shut down');
+            }
+        }
 
         const items = () => mergeCbs(useDemo() ? DEMO.list : list || [], useDemo() ? [] : liveRecords());
         const summary = () => (useDemo() ? DEMO.sba : sba);
@@ -766,7 +779,7 @@ mgu.run({
             if (reset && !reset.busy && Date.now() - reset.at >= CONFIRM_MS) {
                 reset = null; changed();
             }
-            if (settings.get('demo') !== 'on' && !scanBusy && !reset
+            if (shownNow && settings.get('demo') !== 'on' && !scanBusy && !reset
                 && (scanAt === null || Date.now() - scanAt >= CBS_REFRESH_MS)) refreshCbs();
             if (!force && drawn === version) return;
             drawn = version;
@@ -818,7 +831,8 @@ mgu.run({
         ctx.loop('MAIN', 2, () => render(false));
         // back from Settings or a popup: draw again (this app only draws when something changed)
         const redraw = () => { changed(); setTimeout(changed, 600); };
-        ui.onVisible((name, on) => { if (name === 'MAIN' && on) redraw(); });
+        ui.onVisible((name, on) => { if (name === 'MAIN') { shown(on); if (on) redraw(); } });
+        if (ui.isVisible('MAIN')) shown(true);
         if (ui.onFocus) ui.onFocus((name, on) => { if (name === 'MAIN' && on) redraw(); });
         settings.onChange(() => changed());
         setInterval(changed, 2000);         // the diagnostics page shows live status

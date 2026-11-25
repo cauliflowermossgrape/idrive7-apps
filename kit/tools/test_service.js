@@ -49,11 +49,11 @@ async function start(hint, set) {
     SPEC.settings.forEach((s) => { S[s.key] = s.default; });
     S.demo = 'off';
     Object.assign(S, set || {});
-    let texts = [], frame = null, watch = null, tab = null;
-    const clicks = {}, logs = [];
+    let texts = [], frame = null, watch = null, tab = null, visible = !(set && set._hidden);
+    const clicks = {}, logs = [], vis = [], subs = { watched: 0, shut: 0 };
     await app.start({
-        ui: { image: async () => {}, onClick: (n, fn) => { clicks[n] = fn; }, onVisible() {}, onFocus() {} },
-        settings: { get: (k) => S[k], onChange() {} },
+        ui: { image: async () => {}, onClick: (n, fn) => { clicks[n] = fn; }, onVisible: (fn) => vis.push(fn), onFocus() {}, isVisible: () => visible },
+        settings: { get: (k) => (k === '_hidden' ? undefined : S[k]), onChange() {} },
         log: { info: (m) => logs.push(String(m)), warn: (m) => logs.push(String(m)) },
         theme: () => themes.theme('m_tricolour'), loop: (name, fps, fn) => { frame = fn; },
         canvas: (w, h) => {
@@ -63,7 +63,7 @@ async function start(hint, set) {
             return cv;
         },
         signals: {
-            watch: async (iface, inst, handlers) => { watch = handlers; return { iface, available: true, proxy: {} }; },
+            watch: async (iface, inst, handlers) => { watch = handlers; subs.watched++; return { iface, available: true, proxy: {}, shutdown: async () => { subs.shut++; } }; },
             call: async () => hint,
         },
         display: {}, sheet: () => false, hideButton() {}, onLayout() {}, onTab: (fn) => { tab = fn; },
@@ -73,6 +73,8 @@ async function start(hint, set) {
         feed: (field, v) => watch[field](v),
         render: async () => { await frame(); return texts; },
         tab: (i) => tab(i),
+        show: async (on) => { visible = on; vis.forEach((f) => f('MAIN', on)); await new Promise((r) => setTimeout(r, 0)); },
+        subs,
         details: async () => { clicks.BTN_DETAILS(); await new Promise((r) => setTimeout(r, 0)); await frame(); return texts; },
         logs,
     };
@@ -141,6 +143,20 @@ const hasQ = (texts) => texts.some((x) => {
         'counter=3; availability=83%; interval=33000 km/24 months', 'CBS read complete - 4 read(s) failed', 'Next (1/']) assert(has(t, want), want + ' in ' + t.join(' | '));
     assert(sent.length && sent.every((r) => r[1] === 0x22), 'reads only (UDS 22), no writes: ' + JSON.stringify(sent));
     uds = null;
+
+    // the cluster only while the page shows: not watched or read before, the watch shut down when it's left
+    sent.length = 0;
+    s = await start(null, { _hidden: true });
+    await s.render().catch(() => {});
+    await new Promise((r) => setTimeout(r, 10));
+    assert(s.subs.watched === 0 && sent.length === 0, 'page not shown: the cluster neither watched nor read (' + s.subs.watched + ', ' + sent.length + ')');
+    await s.show(true);
+    assert(s.subs.watched === 1, 'page shown: the cluster watched');
+    await s.show(false);
+    await new Promise((r) => setTimeout(r, 10));
+    assert(s.subs.shut === 1, 'page left: the watch shut down');
+    await s.show(true);
+    assert(s.subs.watched === 2, 'shown again: watched again');
 
     global.setInterval = realInterval;
     console.log('service: OK');

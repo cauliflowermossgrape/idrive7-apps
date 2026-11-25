@@ -68,6 +68,7 @@ jobs:
       - run: node kit/tools/test_car_vitals.js
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_vitals_program.js
       - run: node kit/tools/test_twin_dme.js
       - run: node kit/tools/test_redline_hud.js
@@ -119,6 +120,7 @@ jobs:
       - run: node --version
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_hud.js
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
