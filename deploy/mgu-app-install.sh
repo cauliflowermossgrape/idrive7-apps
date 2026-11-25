@@ -177,9 +177,11 @@ custom_list() {    # custom_list add|del <id>  - maintain custom_apps.json
     "$NODE" -e '
         const fs = require("fs"), f = process.argv[1], op = process.argv[2], id = process.argv[3];
         let c = {}; try { c = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) {}
-        if (op === "add") c[id] = c[id] || { "-appStartType": "manually", "-userLoginRequired": "false" };
-        else delete c[id];
-        fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n");' "$CUSTOM" "$1" "$2" || warn "could not update $CUSTOM"
+        if (op === "add") {
+            c[id] = c[id] || { "-appStartType": "manually", "-userLoginRequired": "false" };
+            if (process.argv[4]) c[id]["-appStartType"] = process.argv[4];     // the start type from the package
+        } else delete c[id];
+        fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n");' "$CUSTOM" "$1" "$2" "${3:-}" || warn "could not update $CUSTOM"
     chown 12201:12201 "$CUSTOM" 2>/dev/null; chmod 660 "$CUSTOM" 2>/dev/null
 }
 
@@ -358,6 +360,8 @@ install_one() {
     ver=$("$NODE" -e "process.stdout.write(require('$TMP/meta.json').version)")
     case "$id" in ''|*[!a-zA-Z0-9_-]*) die "bad app id '$id'";; esac
     optional_missing "$TMP" || die "cannot read $pkg or $CATALOG"
+    # app.json "autostart" (build.py: package.json mguAppStartType): the platform starts it with the head unit
+    st=$("$NODE" -e "try { process.stdout.write(require('$TMP/source/package.json').mguAppStartType === 'autostart' ? 'autostart' : 'manually') } catch (e) { process.stdout.write('manually') }")
 
     u=$(uid_of "$id")
     if [ -n "$u" ]; then
@@ -428,9 +432,11 @@ install_one() {
     fi
     # (re)write the registry entry: MainApp resets the flags to false while
     # the provisioning hook is not active, so a reinstall repairs that too
-    printf '{"userId":%s,"provisioningCache":{"-allowed":"true","-appStartType":"manually","-enabled":"true","-userLoginRequired":"false","-updateMechanism":"PLATFORM"},"configStateQueueIndex":null,"installationSource":"PREINSTALLED"}' "$u" > "$REG/$id.json"
+    # (a changed start type takes effect when the app platform restarts)
+    grep -q "\"-appStartType\":\"$st\"" "$REG/$id.json" 2>/dev/null || NEED_RESTART=1
+    printf '{"userId":%s,"provisioningCache":{"-allowed":"true","-appStartType":"%s","-enabled":"true","-userLoginRequired":"false","-updateMechanism":"PLATFORM"},"configStateQueueIndex":null,"installationSource":"PREINSTALLED"}' "$u" "$st" > "$REG/$id.json"
     chown 12201:12201 "$REG/$id.json"; chmod 660 "$REG/$id.json"
-    custom_list add "$id"
+    custom_list add "$id" "$st"
     CHANGED=1
     say "installed $id $ver -> $top"
     rm -rf "$TMP"

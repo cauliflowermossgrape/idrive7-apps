@@ -108,8 +108,34 @@ function migrateSettings(settings, log) {
     } catch (e) { log.warn('settings migration: ' + e); }
 }
 
+/**
+ * Started with the head unit (app.json "autostart", #207): everything runs at once when the HUD is on, so the HUD
+ * is back after a restart or a long sleep without opening the app. With the HUD off it stays idle (nothing watched
+ * or asked) until the page is first shown or the HUD is switched on. Opened from its tile: at once, as before.
+ */
+async function lazyStart(ctx) {
+    const { ui, settings, log } = ctx;
+    const hudOn = () => settings.get('hud') === 'on';
+    const atBoot = ctx.app && String(ctx.app.startReason) === 'AUTOSTART';
+    if (!atBoot || hudOn() || (ui.isVisible && ui.isVisible('MAIN'))) return runRedline(ctx);
+    log.info('started with the head unit, the HUD off: idle until opened or the HUD is switched on');
+    let done = false;
+    const go = (why) => {
+        if (done) return;
+        done = true;
+        log.info('starting now (' + why + ')');
+        runRedline(ctx).catch((e) => log.error('start: ' + (e && e.stack || e)));
+    };
+    if (ui.onVisible) ui.onVisible((name, on) => { if (name === 'MAIN' && on) go('opened'); });
+    settings.onChange((key) => { if (key === 'hud' && hudOn()) go('HUD on'); });
+}
+
 mgu.run({
-    async start(ctx) {
+    start: lazyStart,
+});
+
+async function runRedline(ctx) {
+    {
         // redline.log kept small: the same kind of line at most every 10 minutes (quietlog.js); every part
         // below logs through this
         ctx.log = QuietLog.wrap(ctx.log);
@@ -1183,5 +1209,5 @@ mgu.run({
             })),
         });
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
-    },
-});
+    }
+}
