@@ -906,7 +906,7 @@ function start(ctx, src) {
         const gb = src.gearbox ? src.gearbox.value() : null;
         const mode = src.mode ? src.mode() : null;
         return {
-            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
+            d: isNum(show) && show !== d.rpm ? Object.assign({}, d, { rpm: show }) : d, shift: sp.rpm, cold: !!sp.cold, redline: redline, max: src.maxRpm(), blink: blink, cue: cue,
             down: src.downshift ? src.downshift() : 0,
             peak: o.peak ? (src.peak ? src.peak() : 0) : 0,
             chip: chipNow(o, now),

@@ -44,5 +44,20 @@ const cv = new Canvas(Draw.IW, Draw.IH);
     }
     ok(okAll, 'shake [2, -1]: the frame moved 2 right and 1 up, the uncovered edge transparent');
 }
+// #194: the cold guard's zone (shift point lowered to 4000) tinted over the cached track, the same either way
+{
+    const cold = (st, rpm) => Object.assign(frame(st, rpm, { blink: true }), { shift: 4000, cold: true });
+    let okAll = true;
+    for (const st of ['standard', 'gt3']) {
+        for (const rpm of [0, 2500, 4300, 6000]) {
+            const f = cold(st, rpm), a = new Canvas(Draw.IW, Draw.IH);
+            Draw.drawHud(a, f);
+            if (!same(a, plain(f))) okAll = false;
+        }
+    }
+    ok(okAll, 'cold zone: drawHud the same as drawing everything');
+    const w = plain(Object.assign(frame('standard', 2500, { blink: true }), { shift: 4000 })), c = plain(cold('standard', 2500));
+    ok(!same(w, c), 'cold zone: drawn while the cold guard lowers the shift point');
+}
 console.log('redline HUD caches: ' + tally.checks + ' checks, ' + tally.fails + ' failed');
 process.exit(tally.fails ? 1 : 0);
