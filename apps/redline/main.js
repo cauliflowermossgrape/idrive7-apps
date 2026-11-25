@@ -56,6 +56,7 @@ const HudDraw = require('./hud-draw');
 const GearboxTemp = require('./gearbox');
 const KnockWatch = require('./knock');
 const FuelWatch = require('./fuel');
+const { DmeGear } = require('./dmegear');
 const TwinDme = require('./kit/twin_dme');
 const PowerLog = require('./powerlog');
 const Electrical = require('./electrical');
@@ -204,6 +205,14 @@ mgu.run({
             Object.keys(set).forEach((iface) => { merged[iface] = Object.assign(merged[iface] || {}, set[iface]); });
         });
         car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], merged);
+        // a car that sends no gear (a manual, #209): the engine unit's own, asked only while Redline's page or HUD is
+        // in use, the engine running and the car still sending none (an automatic's gearbox gear is never replaced)
+        const dmeGear = new DmeGear(ctx, () => gearbox.diag());
+        car.gearSource = () => dmeGear.value();
+        setInterval(() => {
+            const d = car.data(), inUse = ui.isVisible('MAIN') || settings.get('hud') === 'on';
+            if (inUse && !d.demo && (d.gearGuessed || d.gearFrom === 'engine') && G.isNum(d.rpm) && d.rpm > 400) dmeGear.start(); else dmeGear.stop();
+        }, 1000);
 
         /* ---------- derived limits ----------
          * Redline, first that has one: the "Redline" setting, the limit learned from the limiter

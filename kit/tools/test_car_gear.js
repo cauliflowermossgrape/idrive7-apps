@@ -78,6 +78,30 @@ check('a gear not used for 5 drives is dropped (a slipping clutch, a changed fin
     g.load([{ k: 'x' }, null, { k: -3 }]);
 });
 
+check('a manual with a gear source (the engine unit\'s own, #209): that gear, not the guess', () => {
+    const c = newCar();
+    let src = 4;
+    c.car.gearSource = () => src;
+    inGear(c.h, 2);
+    let d = c.car.data();
+    assert(d.gear === 4 && d.gearFrom === 'engine' && !d.gearGuessed, JSON.stringify(d));
+    src = null;
+    d = c.car.data();
+    assert(d.gear === 1 && d.gearGuessed, 'source gone: the guess again ' + JSON.stringify(d));
+});
+check('an automatic: the gearbox gear, the source never asked over it', () => {
+    const b = newCar();
+    b.car.gearSource = () => { throw new Error('asked'); };
+    b.h.statusGearboxDrive({ statusActualGearDrive: 'G5', statusActualStageDrive: 'D' });
+    assert(b.car.data().gear === 5, JSON.stringify(b.car.data()));
+});
+check('reverse on a manual stays R, the source not asked', () => {
+    const c = newCar();
+    c.car.gearSource = () => 3;
+    sel(c.h, 'R');
+    assert(c.car.data().gear === -1 && c.car.data().stage === 'R', JSON.stringify(c.car.data()));
+});
+
 fs.rmdirSync(dir, { recursive: true });
 console.log(failed ? 'car gear: ' + failed + ' FAILED' : 'car gear: all ok');
 process.exit(failed ? 1 : 0);

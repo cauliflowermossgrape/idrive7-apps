@@ -213,7 +213,11 @@ class Car {
     data() {
         const src = this.demoActive ? this.simData : this.live;
         const d = Object.assign({}, src, { demo: this.demoActive });
-        if (d.gear === undefined && !this.demoActive) { d.gear = this.guessed; d.gearGuessed = true; }
+        if (d.gear === undefined && !this.demoActive) {
+            // a gear from elsewhere (the app's gearSource(), e.g. the engine unit's own on a manual, #209), else the guess
+            const g = typeof this.gearSource === 'function' ? this.gearSource() : null;
+            if (typeof g === 'number' && g >= 1) { d.gear = g; d.gearFrom = 'engine'; } else { d.gear = this.guessed; d.gearGuessed = true; }
+        }
         return d;
     }
 
