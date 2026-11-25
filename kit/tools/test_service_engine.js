@@ -61,7 +61,7 @@ const flush = async () => { for (let i = 0; i < 40; i++) await new Promise((r) =
         const texts = [];
         let frame = null, tab = null, last = null;
         const ctx = {
-            ui: { onClick() {}, text() {}, image: async () => {}, onVisible() {}, onFocus() {} },
+            ui: { onClick() {}, text() {}, image: async () => {}, onVisible() {}, onFocus() {}, isVisible: () => true },
             settings: { get: (k) => S[k], onChange() {} },
             log: { info() {}, warn() {}, error() {}, debug() {} }, spec: SPEC, dataDir: dir,
             signals: { watch: () => Promise.resolve({}), call: () => Promise.reject(new Error('no')) },
