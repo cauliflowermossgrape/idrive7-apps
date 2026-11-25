@@ -96,7 +96,11 @@ const ecuName = (a) => {
 mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const diag = await new Diag(ctx.signals, log).init();
+        // nothing on the car's buses while nobody is on the page: the diagnostic link is opened when the page is first
+        // shown, the Check Control watches run only while it shows (watching the cluster's interface disturbed
+        // another app), and a scan left half way stops after the request under way
+        let diag = null, diagReady = null, away = true;
+        const getDiag = () => diagReady || (diagReady = new Diag(ctx.signals, log).init().then((d) => { diag = d; changed(); return d; }));
 
         /* ---------- state ---------- */
         const FILE = path.join(ctx.dataDir, 'last_scan.json');
@@ -106,7 +110,7 @@ mgu.run({
         ids = readJson(IDS);
         let phase = 'idle', msg = '', replies = 0, busy = false, version = 0;
         const changed = () => { version++; loop && loop.kick(); };
-        const useDemo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !diag.available);
+        const useDemo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && !(diag && diag.available));
 
         /* ---------- Check Control ---------- */
         const cc = new Map();          // ccmId -> { ecu, reason }
@@ -122,15 +126,29 @@ mgu.run({
             const nm = o.cCShortName || o.cCName;
             if (id !== undefined && nm) { ccNames.set(id, { name: String(nm), color: o.cCColor }); changed(); }
         });
-        ctx.signals.watch('de.bmw.infotainment.checkcontrol.CheckControlMaster', '1', {
-            basicList: (v) => walk(v, (o) => {
-                if (o.ccmId === undefined) return;
-                const on = o.activeState === 'AKTIV' || o.activeState === 0;
-                if (on) cc.set(o.ccmId, { ecu: o.requestorDiagAddr, reason: String(o.reason) }); else cc.delete(o.ccmId);
-                changed();
-            }),
-        }, log);
-        ctx.signals.watch('de.bmw.infotainment.KombiInterface_2', '1', { ccList: names, newCCMessage: names }, log);
+        let subs = null;
+        /** The Check Control watches on (the page showing) or shut down (it isn't). */
+        function listen(on) {
+            if (on && !subs) {
+                cc.clear();                     // (what went out while away wasn't heard: the list is read afresh)
+                subs = Promise.all([
+                    ctx.signals.watch('de.bmw.infotainment.checkcontrol.CheckControlMaster', '1', {
+                        basicList: (v) => walk(v, (o) => {
+                            if (o.ccmId === undefined) return;
+                            const act = o.activeState === 'AKTIV' || o.activeState === 0;
+                            if (act) cc.set(o.ccmId, { ecu: o.requestorDiagAddr, reason: String(o.reason) }); else cc.delete(o.ccmId);
+                            changed();
+                        }),
+                    }, log),
+                    ctx.signals.watch('de.bmw.infotainment.KombiInterface_2', '1', { ccList: names, newCCMessage: names }, log),
+                ]);
+                log.info('page shown: Check Control watched');
+            } else if (!on && subs) {
+                const s = subs; subs = null;
+                s.then((l) => Promise.all(l.map((w) => w && w.shutdown && w.shutdown()))).catch(() => {});
+                log.info('page left: Check Control watches shut down');
+            }
+        }
 
         /* ---------- scan / clear ---------- */
         async function doScan() {
@@ -138,6 +156,7 @@ mgu.run({
             busy = true; phase = 'scanning'; replies = 0; msg = ''; changed();
             ui.text('BTN_SCAN', 'Scanning...');
             try {
+                await getDiag();
                 if (useDemo()) {
                     for (let i = 1; i <= DEMO.ecus.length; i++) { await new Promise((r) => setTimeout(r, 180)); replies = i; changed(); }
                     scan = { at: Date.now(), demo: true, ecus: JSON.parse(JSON.stringify(DEMO.ecus)) };
@@ -157,13 +176,14 @@ mgu.run({
                     await read([0x02, mask], 'fault');
                     // the info memory is extra: if it can't be read, keep the fault memory scan
                     let infoFailed = false;
-                    if (settings.get('info')) {
+                    if (settings.get('info') && !away) {
                         msg = 'Reading info memory...'; changed();
                         try { await read([0x17, mask, 0x01], 'info'); } catch (e) { infoFailed = true; log.warn('info memory: ' + e); }
                     }
                     scan = { at: Date.now(), demo: false, ecus: Array.from(byEcu.values()), infoFailed };
                     try { fs.writeFileSync(FILE, JSON.stringify(scan)); } catch (e) { log.warn('save scan: ' + e); }
-                    await identify(scan.ecus.map((e) => e.addr));
+                    if (!away) await identify(scan.ecus.map((e) => e.addr));
+                    else log.info('scan: page left, info memory and unit names skipped');
                 }
                 scan.ecus.sort((a, b) => b.dtcs.length - a.dtcs.length || a.addr - b.addr);
                 const n = scan.ecus.reduce((s, e) => s + e.dtcs.length, 0);
@@ -189,6 +209,7 @@ mgu.run({
             if (!todo.length) return;
             let i = 0;
             for (const a of todo) {
+                if (away) break;
                 msg = 'Identifying control units... ' + (++i) + '/' + todo.length; changed();
                 try {
                     const r = await diag.physical(a, 0x22, [0xF1, 0x50], 3000,
@@ -242,6 +263,7 @@ mgu.run({
             }
             clearTimeout(clearArmed); clearArmed = null; clearLabel();
             busy = true; phase = 'clearing'; changed();
+            await getDiag();
             let ok = 0;
             const failed = [], cleared = [];
             // first to every unit at once (functional, as the workshop tester clears): the engine, e-motor and brake
@@ -504,9 +526,10 @@ mgu.run({
         // is up - this app only draws when something changed, so the screen would otherwise stay empty
         // until the next change (e.g. Next page)
         const redraw = () => { changed(); setTimeout(changed, 600); };
-        ui.onVisible((name, on) => { if (name === 'MAIN' && on) { maybeAuto(); redraw(); } });
+        const shown = (on) => { away = !on; listen(on); if (on) { getDiag(); maybeAuto(); redraw(); } };
+        ui.onVisible((name, on) => { if (name === 'MAIN') shown(on); });
         if (ui.onFocus) ui.onFocus((name, on) => { if (name === 'MAIN' && on) redraw(); });
-        if (ui.isVisible('MAIN')) maybeAuto();
+        if (ui.isVisible('MAIN')) shown(true);
         settings.onChange(() => changed());
         if (scan) ui.text('BTN_SCAN', 'Scan again');
         render(true).then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
