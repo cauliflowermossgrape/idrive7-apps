@@ -60,6 +60,8 @@ function fakeCar(car, o, clock) {
                 }
                 return [0x7F, sid, 0x31];
             }
+            // fnBusy: the first n light-function reads unanswered or turned away busy (a crowded transport at boot)
+            if ((car === 'fn' || car === 'fnflm') && sid === 0x22 && data[0] === 0xD5 && opt.fnBusy && sent.filter((x) => / 22 D5 42/.test(x)).length <= opt.fnBusy) return opt.fnBusyNrc ? [0x7F, 0x22, opt.fnBusyNrc] : null;
             if ((car === 'fn' || car === 'fnflm') && sid === 0x22) return data[0] === 0xD5 && data[1] === 0x42 ? [0x62, 0xD5, 0x42].concat(new Array(20).fill(0)) : [0x7F, 0x22, 0x31];
             if ((car === 'fn' || car === 'fnflm') && sid === 0x2E) {
                 if (data[0] !== 0xD5 || data[1] !== 0x42 || data.length !== 6) return [0x7F, 0x2E, 0x13];
@@ -428,6 +430,38 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(sets.length >= 4 && sets.every((x) => / 31 01 A5 4B 01 (64|00) 02$/.test(x)), 'FLM02: flashes channel 1 only (100 % / dark, 2 s each): ' + sets.slice(0, 4).join(' | '));
         ok(s.note && !/refused|did not follow/.test(s.note), 'FLM02: the first flash followed (' + s.note + ')');
         ok(sent.slice(-2).join() === '43 10 01,44 10 01' && ch[0x43][2].pwm === 88, 'FLM02: ended by leaving the session, the low beam never written');
+    }
+
+    // #218: the light functions crowded out at the head unit's start: still found, not the body controller's lamp outputs
+    {
+        const { s } = make('fn', { fnBusy: 8 });
+        ok(await s.find() === 'fn', 'light functions unanswered 8 times: still found (' + s.kind + ')');
+    }
+    {
+        const { s } = make('fn', { fnBusy: 8, fnBusyNrc: 0x21 });
+        ok(await s.find() === 'fn', 'light functions turned away busy (7F 22 21) 8 times: still found (' + s.kind + ')');
+    }
+    {
+        const { s, diag } = make('fnflm', { fnBusy: 1000 });
+        const t0 = s._clock.t;
+        ok(await s.find() === 'flm' && s._clock.t - t0 < 90000, 'light functions never answering: the headlights after ~30 s (' + s.kind + ', ' + Math.round((s._clock.t - t0) / 1000) + ' s)');
+        diag.sent.length = 0;
+    }
+    {
+        // they answer only once the headlights have been asked: the last try before settling wins
+        const { s, diag } = make('fnflm', { fnBusy: 1000 });
+        const orig = diag.physical;
+        diag.physical = async (t, sid, d) => {
+            if (t === 0x43 && sid === 0x22 && d[0] === 0xD6 && d[1] === 0x67) s._fnBack = true;
+            if (t === 0x40 && sid === 0x22 && d[0] === 0xD5 && s._fnBack) return [0x62, 0xD5, 0x42].concat(new Array(20).fill(0));
+            return orig(t, sid, d);
+        };
+        ok(await s.find() === 'fn', 'asked once more before settling for the headlights: light functions (' + s.kind + ')');
+    }
+    {
+        const { s, diag } = make('bdc');
+        await s.find();
+        ok(s.kind === 'bdc' && diag.sent.filter((x) => / 22 D5 42/.test(x)).length === 1, 'a car without light functions (7F 22 31): asked once, no waiting');
     }
 
     // the body controller: not allowed / nothing to drive

@@ -57,7 +57,9 @@ const HEAD = {
     fle: { name: 'FLE headlights', read: [0xD6, 0x31], n: 7, high: null },
     flm2: { name: 'FLM02 headlights', read: [0xD6, 0xDB], n: 15, stride: 5, high: null, each: true },
 };
-const FLM2_SECS = 2;                                 // FLM02: a channel set lasts this long, renewed by each flash
+const FLM2_SECS = 2;
+// how long find() keeps asking for the body controller's light functions while the transport is crowded (#218)
+const FN_PATIENCE_MS = 30000;                                 // FLM02: a channel set lasts this long, renewed by each flash
 // a read's length: 3 + per channel 2 bytes (current / 10 mA, PWM %) or the kind's stride
 const readLen = (h) => 3 + (h.stride || 2) * h.n;
 const KINDS = {
@@ -163,6 +165,45 @@ class Strobe extends EventEmitter {
         return null;
     }
 
+    /**
+     * The body controller's light functions (22 D542) for find(). Right after the head unit starts other apps
+     * crowd the transport and this read can go unanswered or be turned away for seconds (#218); the car then fell
+     * through to a way that doesn't drive its lamps. So: asked again for up to FN_PATIENCE_MS while it gets no
+     * answer or a "busy" refusal (7F 22 21 / 78); an answer either way (62, or 7F with another code) ends it.
+     */
+    async _probeFn(patienceMs) {
+        const until = this.now() + patienceMs;
+        let r = null;
+        do {
+            r = await this._probe(BDC, 0x22, FN, 4000);
+            if (r && !(r[0] === 0x7F && (r[2] === 0x21 || r[2] === 0x78))) return r;
+            await this.sleep(1000);
+        } while (this.now() < until);
+        this.log.info('strobe: body controller light functions unanswered for ' + Math.round(patienceMs / 1000) + ' s');
+        return null;
+    }
+
+    _useFn(r) {
+        this.kind = 'fn'; this.sides = [BDC];
+        this.log.info('strobe: body controller light functions (22 D542 ' + hex(r.slice(3, 9)) + ')'
+            + (this.mask ? ', police with the ' + this.mask.head.name : ''));
+        this.emit('change');
+        return 'fn';
+    }
+
+    /** The headlight units, to hold one side while the other flashes (police); reads only. */
+    async _findMask() {
+        this.mask = null;
+        for (const k of ['flm', 'fle']) {
+            const sides = [];
+            for (const a of SIDES) {
+                const h = await this._probe(a, 0x22, HEAD[k].read, 3000);
+                if (h && h[0] === 0x62 && h.length >= 3 + 2 * HEAD[k].n) sides.push(a);
+            }
+            if (sides.length === 2) { this.mask = { head: HEAD[k], sides }; break; }
+        }
+    }
+
     get head() { return HEAD[this.kind] || null; }
     /** The high beam's channels on the headlight units: learned, or the kind's own. */
     get high() { return this.head ? this.learned || this.head.high : null; }
@@ -182,26 +223,17 @@ class Strobe extends EventEmitter {
                 this.diag.on('available', onA);
             });
         }
-        {
-            const r = await this._probe(BDC, 0x22, FN, 4000);
-            if (r && r[0] === 0x62) {
-                this.kind = 'fn'; this.sides = [BDC];
-                // the headlight units, to hold one side while the other flashes (police); reads only
-                this.mask = null;
-                for (const k of ['flm', 'fle']) {
-                    const sides = [];
-                    for (const a of SIDES) {
-                        const h = await this._probe(a, 0x22, HEAD[k].read, 3000);
-                        if (h && h[0] === 0x62 && h.length >= 3 + 2 * HEAD[k].n) sides.push(a);
-                    }
-                    if (sides.length === 2) { this.mask = { head: HEAD[k], sides }; break; }
-                }
-                this.log.info('strobe: body controller light functions (22 D542 ' + hex(r.slice(3, 9)) + ')'
-                    + (this.mask ? ', police with the ' + this.mask.head.name : ''));
-                this.emit('change');
-                return 'fn';
-            }
-        }
+        const first = await this._probeFn(FN_PATIENCE_MS);
+        if (first && first[0] === 0x62) { await this._findMask(); return this._useFn(first); }
+        // unanswered (not "not supported"): asked once more before settling for another way, the bus has
+        // usually cleared by then
+        const again = async () => {
+            if (first) return false;
+            const r = await this._probeFn(0);
+            if (!r || r[0] !== 0x62) return false;
+            await this._findMask(); this._useFn(r);
+            return true;
+        };
         for (const kind of ['flm', 'fle', 'flm2']) {
             const sides = [];
             for (const a of SIDES) {
@@ -209,6 +241,7 @@ class Strobe extends EventEmitter {
                 if (r && r[0] === 0x62 && r.length >= readLen(HEAD[kind])) sides.push(a);
             }
             if (sides.length) {
+                if (await again()) return 'fn';
                 this.kind = kind; this.sides = sides;
                 this.log.info('strobe: ' + HEAD[kind].name + ' at ' + sides.map((a) => hex([a])).join(', ')
                     + (this.high ? ', high beam on channels ' + this.high.map((c) => c.ch).join(', ') : ', high beam channels to learn'));
@@ -219,6 +252,7 @@ class Strobe extends EventEmitter {
         for (const kind of ['bdc', 'g05']) {
             const r = await this._probe(BDC, 0x22, KINDS[kind].status, 4000);
             if (r && r[0] === 0x62) {
+                if (await again()) return 'fn';
                 this.kind = kind; this.sides = [BDC];
                 this.log.info('strobe: body controller ' + KINDS[kind].name + ' (high beam ' + this._lamp(r, FL_L) + ' / ' + this._lamp(r, FL_R) + ')');
                 this.emit('change');
