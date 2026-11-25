@@ -236,7 +236,8 @@ class Lights extends EventEmitter {
         if (this._flash && now < this._flash.until) return { rgb: this._flash.rgb, bright: 100 };
         // the overlay set last wins
         const ov = this._overs ? Array.from(this._overs.values()).reverse().find((o) => o.test(light)) : null;
-        if (ov) { const v = ov.at(now - ov.t0, !!this._phase); return { rgb: v.rgb, bright: Math.round(v.bright * this._dim) }; }
+        // (an overlay, a turn signal's glow or an open door, still shows while the lights are off by day)
+        if (ov) { const v = ov.at(now - ov.t0, !!this._phase); return { rgb: v.rgb, bright: Math.round(v.bright * (this._dim || 1)) }; }
         const sc = scene || this.scene;
         if (!sc) return null;
         const v = S.lightAt(sc, light, t == null ? now - this.t0 : t);

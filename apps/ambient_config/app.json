@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.7.25",
+  "version": "2.7.26",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -114,6 +114,12 @@
       "label": "Dimmer at night",
       "type": "bool",
       "default": true
+    },
+    {
+      "key": "dayOff",
+      "label": "Off by day (on when the car switches to night)",
+      "type": "bool",
+      "default": false
     },
     {
       "key": "keep",

@@ -386,6 +386,18 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
     c.carColour();
     c.night(true); ok(fake.f === 0.5, 'night: dimmer');
     settings.set('nightDim', false); c.night(true); ok(fake.f === 1, 'night dimming off');
+    // #231: off by day, only once the car has said it's day
+    settings.set('nightDim', true); settings.set('dayOff', true);
+    c.night(true); ok(fake.f === 0.5, 'off by day: at night still on (dimmed)');
+    c.night(false); ok(fake.f === 0, 'off by day: dark once the car says day');
+    c.night(true); ok(fake.f === 0.5, 'off by day: back on at night');
+    settings.set('dayOff', false); c.night(false); c.night(null); ok(fake.f === 1, 'off by day switched off: full by day');
+    {
+        const c2 = new Control({ settings, lights: fake, ambient: amb, log });
+        settings.set('dayOff', true); c2.night(null);
+        ok(fake.f === 1, 'off by day, the car not saying day or night yet: the lights stay on');
+        settings.set('dayOff', false);
+    }
 
     for (let i = 0; i < 7; i++) { c.setLook({ upper: { rgb: [i, 0, 0], bright: 50 } }); c.saveFav(); }
     ok(c.favs().length === 6 && c.favs()[0].upper.rgb[0] === 1, 'favourites: six, the oldest goes');

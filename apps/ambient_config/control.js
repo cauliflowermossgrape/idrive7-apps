@@ -181,7 +181,13 @@ class Control {
     /** doorCar switched: the car's warning asked for again. */
     carDoorSetting() { this._carDoorNo = false; this.signals(); }
 
-    night(on) { this._night = !!on; this.lights.dim(on && this.settings.get('nightDim') !== false ? NIGHT : 1); }
+    /** The car's day / night (statusDayNightChangeOver); null: not said yet. Settings nightDim (half at night) and
+     *  dayOff (dark by day, #231: only once the car has said it's day, so a car that never says keeps its lights). */
+    night(on) {
+        if (on != null) { this._night = !!on; this._dayKnown = true; }
+        const day = this._dayKnown && !this._night;
+        this.lights.dim(day && this.settings.get('dayOff') === true ? 0 : this._night && this.settings.get('nightDim') !== false ? NIGHT : 1);
+    }
 
     apply() {
         const t = this.target();
