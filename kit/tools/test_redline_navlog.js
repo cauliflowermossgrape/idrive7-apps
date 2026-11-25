@@ -55,7 +55,8 @@ const tally = TH.counter(), ok = tally.ok, sleep = TH.sleep;
     ok(shape.length === 1 && /maneuver\.intersection\.lanes\[\]\.arrows\[\]/.test(shape[0]) && /maneuver\.intersection\.formattedDistance\.unit/.test(shape[0]), 'the manoeuvre\'s shape once, every key path (lanes would show)');
     const darts = lines.filter((l) => /conclusiveDart = /.test(l));
     ok(darts.length === 2 && /"distance":"400"/.test(darts[0]) && /RIGHT/.test(darts[1]), 'the same turn nearer is held back for 5 s, a new turn logged at once (' + darts.length + ')');
-    ok(!/latitude|longitude|37\.5|127/.test(text), 'no coordinates in the log');
+    // (the lines' timestamps left out first: their digits, e.g. "…:37.512Z", matched now and then)
+    ok(!/latitude|longitude|37\.5|127/.test(text.replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, '')), 'no coordinates in the log');
     ok(/guidance currentLaneGuiding = .*"directionToFollow":"LEFT"/.test(text) && /phone currentLaneGuiding = /.test(text), 'lanes logged, from BMW and the phone');
     ok(/events connected/.test(text) && /events = .*SLIGHT_LEFT.*799/.test(text) && /shape event intersection: /.test(text), 'the route events logged with their shape');
     ok((text.match(/ events = /g) || []).length === 1, 'the same events nearer (distance to the destination changing) not logged again within 5 s (' + calls + ' replies)');
