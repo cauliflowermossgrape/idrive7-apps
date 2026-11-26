@@ -524,7 +524,7 @@ mgu.run({
             version: ctx.spec ? ctx.spec.version : '', open: () => Date.now() - devDrawn < 3000, log });
         if (ctx.settingsRow) {
             ctx.settingsRow({
-                label: 'Developer report as QR', value: 'Units, engine identifiers and faults, for kit/tools/qrlog_decode.py',
+                label: 'Developer report as QR', value: 'Units, engine values and faults, for developers',
                 open: () => {
                     devDrawn = Date.now();
                     dev.o.ids = ids;
