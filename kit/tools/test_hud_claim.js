@@ -113,6 +113,22 @@ const rm = TH.rmTree;   // the head unit (and the node8-runtime CI job) is Node 
     s = settings(); h = start(s);
     await sleep(2500);
     ok(s.v.hud === 'on', 'no standing app: Redline\'s HUD stays on after a start');
+    // #233: after a reinstall (a new user) the old install's claim can't be renamed over (EPERM in the sticky folder):
+    // the claim goes to redline.u<uid>, the others see it, Redline doesn't count it as another app's
+    rm(SHM); fs.mkdirSync(SHM);
+    fs.writeFileSync(path.join(SHM, 'redline'), JSON.stringify({ held: false, at: 1 }) + '\n');
+    const rename = fs.renameSync, warns = [];
+    fs.renameSync = (from, to) => { if (to === path.join(SHM, 'redline')) { const e = new Error('EPERM: operation not permitted, rename'); e.code = 'EPERM'; throw e; } return rename(from, to); };
+    const re = new HudClaim('redline', { info() {}, warn(m) { warns.push(m); }, error() {} });
+    re.hold(true);
+    const alt = fs.readdirSync(SHM).filter((n) => /^redline\.u\d+$/.test(n));
+    ok(alt.length === 1 && JSON.parse(fs.readFileSync(path.join(SHM, alt[0]), 'utf8')).held === true, 'reinstall: claimed under redline.u<uid>');
+    ok(HudClaim.others('robertn_waze_cluster').indexOf(alt[0]) >= 0, 'reinstall: the standing app sees the claim');
+    ok(HudClaim.others('redline').length === 0, 'reinstall: Redline doesn\'t count its own claim as another app\'s');
+    ok(warns.length === 1 && /earlier install/.test(warns[0]) && !fs.readdirSync(SHM).some((n) => n.endsWith('.tmp')), 'reinstall: one warning, no temp file left');
+    re.hold(false);
+    ok(JSON.parse(fs.readFileSync(path.join(SHM, alt[0]), 'utf8')).held === false && HudClaim.others('robertn_waze_cluster').length === 0, 'reinstall: given back');
+    fs.renameSync = rename;
     // a claim folder that cannot be written: no new start
     rm(SHM);
     fs.writeFileSync(SHM, 'not a folder');
