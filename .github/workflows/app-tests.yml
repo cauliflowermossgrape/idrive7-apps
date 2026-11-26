@@ -90,6 +90,7 @@ jobs:
       - run: node kit/tools/test_ambient_config.js
       - run: node kit/tools/test_ambient_rgb.js
       - run: node kit/tools/test_coldstarts.js
+      - run: node kit/tools/test_drivelog.js
       - run: node kit/tools/test_wheelspin.js
       - run: node kit/tools/test_ambient_others.js
       - run: node kit/tools/test_ambient_strobe.js
