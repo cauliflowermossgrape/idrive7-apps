@@ -39,15 +39,18 @@ Module._load = function (req, parent, isMain) {
 };
 
 /** A fresh Warm-Up (a new process); render() draws a frame and returns its texts in order. */
-let render = null;
-async function start() {
+let render = null, tab = null, widgetDraw = null;
+const cells = {};
+async function start(saved) {
     delete require.cache[MAIN];
     require(MAIN);
     const S = {};
     SPEC.settings.forEach((s) => { S[s.key] = s.default; });
+    Object.assign(S, saved || {});
     let texts = [], frame = null;
     await app.start({
-        ui: { image: async () => {}, isVisible: () => true }, settings: { get: (k) => S[k], onChange() {} }, log: { info() {}, warn() {} },
+        ui: { image: async () => {}, isVisible: () => true }, settings: { get: (k) => S[k], set: (k, v) => { S[k] = v; }, onChange() {} }, onTab: (fn) => { tab = fn; }, spec: SPEC,
+        widget: { loop: (fps, fn) => { widgetDraw = fn; }, onChange() {}, set: (id, k, v) => { cells[k] = v; } }, log: { info() {}, warn() {} },
         dataDir: fs.mkdtempSync(path.join(require('os').tmpdir(), 'warmup-')),   // engine.js keeps its profile here
         theme: () => themes.theme('m_tricolour'), loop: (name, fps, fn) => { frame = fn; },
         canvas: (w, h) => {
@@ -117,6 +120,35 @@ const checks = [
         gearC = null;
         t = await render();
         assert(t.indexOf('GEARBOX READY IN') < 0 && t.indexOf('COOLANT READY IN') >= 0 && status(t) === 'READY', 'no gearbox: as before: ' + t.join(' | '));
+    }],
+    ['Drives tab: each drive, its lowest and highest temperatures (issue #235)', async () => {
+        gearC = null;
+        const at = Date.UTC(2026, 10, 26, 7, 5);
+        await start({ drives: [{ at, ms: 25 * 60000, ch: { oil: { min: 18, max: 104 }, coolant: { min: 20, max: 92 }, gearbox: { min: 15, max: 131 } } }] });
+        await tab(2);
+        const t = await render();
+        assert(t.indexOf('GEARBOX OIL') >= 0 && t.indexOf('25 min') >= 0, 'the drive and its length: ' + t.join(' | '));
+        assert(t.indexOf('18 - 104°C') >= 0 && t.indexOf('20 - 92°C') >= 0 && t.indexOf('15 - 131°C') >= 0, 'lowest - highest: ' + t.join(' | '));
+        await tab(0);
+        assert((await render()).indexOf('GEARBOX OIL') < 0, 'back on the Warm-up tab');
+        await start();
+        await tab(2);
+        assert((await render()).indexOf('Recorded from the next engine start') >= 0, 'none yet: says from when');
+    }],
+    ['home-screen widget: the big picture and the small one\'s text lines', async () => {
+        gearC = null;
+        await start();
+        drive({ rpm: 1500, torque: 50, oil: 65, coolant: 75, speed: 40 }, 5);
+        const big = widgetDraw({ spawnId: 1, big: true });
+        assert(big && big.w > 0 && big.d.some((x) => x > 0), 'the big widget draws a picture');
+        if (process.env.WIDGET_PNG) require('fs').writeFileSync(process.env.WIDGET_PNG, big.png());
+        assert.strictEqual(cells.Title, '', 'big: the layout\'s title left empty');
+        widgetDraw({ spawnId: 2, big: false });
+        assert.strictEqual(cells.Title, 'Warm-Up');
+        assert(/^WARMING UP  oil 65°C$/.test(cells.TextRecordings), 'small: state and oil: ' + cells.TextRecordings);
+        assert(/^ready in ~\d+ min$/.test(cells.TextCam), 'small: ready in: ' + cells.TextCam);
+        assert(cells.ProgressbarVisible === true && cells.Progress > 0 && cells.Progress < 1, 'small: the bar part way: ' + cells.Progress);
+        assert.strictEqual(cells.TimeElapsed, 'Coolant 75°C');
     }],
     ['gearbox.js: the unit\'s 6000, else DA12 or the signal once they moved', async () => {
         const { Gearbox, Moving } = require(path.join(__dirname, '..', '..', 'apps', 'warmup', 'gearbox'));
