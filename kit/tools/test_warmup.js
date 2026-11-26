@@ -39,17 +39,17 @@ Module._load = function (req, parent, isMain) {
 };
 
 /** A fresh Warm-Up (a new process); render() draws a frame and returns its texts in order. */
-let render = null, tab = null, widgetDraw = null;
+let render = null, tab = null, widgetDraw = null, clicks = {}, S = null;
 const cells = {};
 async function start(saved) {
     delete require.cache[MAIN];
     require(MAIN);
-    const S = {};
+    S = {}; clicks = {};
     SPEC.settings.forEach((s) => { S[s.key] = s.default; });
     Object.assign(S, saved || {});
     let texts = [], frame = null;
     await app.start({
-        ui: { image: async () => {}, isVisible: () => true }, settings: { get: (k) => S[k], set: (k, v) => { S[k] = v; }, onChange() {} }, onTab: (fn) => { tab = fn; }, spec: SPEC,
+        ui: { image: async () => {}, isVisible: () => true, onClick: (b, fn) => { clicks[b] = fn; } }, settings: { get: (k) => S[k], set: (k, v) => { S[k] = v; }, onChange() {} }, onTab: (fn) => { tab = fn; }, spec: SPEC,
         widget: { loop: (fps, fn) => { widgetDraw = fn; }, onChange() {}, set: (id, k, v) => { cells[k] = v; } }, log: { info() {}, warn() {} },
         dataDir: fs.mkdtempSync(path.join(require('os').tmpdir(), 'warmup-')),   // engine.js keeps its profile here
         theme: () => themes.theme('m_tricolour'), loop: (name, fps, fn) => { frame = fn; },
@@ -125,15 +125,60 @@ const checks = [
         gearC = null;
         const at = Date.UTC(2026, 10, 26, 7, 5);
         await start({ drives: [{ at, ms: 25 * 60000, ch: { oil: { min: 18, max: 104 }, coolant: { min: 20, max: 92 }, gearbox: { min: 15, max: 131 } } }] });
-        await tab(2);
-        const t = await render();
-        assert(t.indexOf('GEARBOX OIL') >= 0 && t.indexOf('25 min') >= 0, 'the drive and its length: ' + t.join(' | '));
-        assert(t.indexOf('18 - 104°C') >= 0 && t.indexOf('20 - 92°C') >= 0 && t.indexOf('15 - 131°C') >= 0, 'lowest - highest: ' + t.join(' | '));
+        await tab(3);
+        let t = await render();
+        assert(t.indexOf('GEARBOX OIL') >= 0 && t.indexOf('18 - 104°C') >= 0 && t.indexOf('20 - 92°C') >= 0 && t.indexOf('15 - 131°C') >= 0, 'Drive view: lowest - highest: ' + t.join(' | '));
+        assert(t.indexOf('Recorded before Warm-Up 1.12: temperatures only') >= 0, 'a drive recorded before the summaries says so: ' + t.join(' | '));
+        await clicks.BTN_VIEW();
+        t = await render();
+        assert(t.indexOf('LIST') >= 0 || t.indexOf('25 min') >= 0, 'List view: ' + t.join(' | '));
+        assert(t.indexOf('25 min') >= 0 && t.indexOf('18 - 104°C') >= 0 && t.indexOf('15 - 131°C') >= 0, 'List view: the drive and its length: ' + t.join(' | '));
         await tab(0);
         assert((await render()).indexOf('GEARBOX OIL') < 0, 'back on the Warm-up tab');
         await start();
-        await tab(2);
+        await tab(3);
         assert((await render()).indexOf('Recorded from the next engine start') >= 0, 'none yet: says from when');
+    }],
+    ['Drives tab (#251): a drive summed up, compared, and before / after a marked change', async () => {
+        gearC = null;
+        const H = 3600000, base = Date.UTC(2026, 10, 1, 8);
+        const drv = (i, kw, oilMax) => ({ at: base + i * 24 * H, ms: 30 * 60000, ch: { oil: { min: 20, max: oilMax }, coolant: { min: 20, max: 90 } },
+            s: { km: 30 + (i % 3), moving: 1600, vAvg: 60 + (i % 2), vMax: 120, gFwd: 0.3, gBrake: 0.5, gSide: 0.4, brakes: 1, kwMax: kw, warm: 420 } });
+        const list = [];
+        for (let i = 0; i < 12; i++) list.unshift(drv(i, i < 6 ? 150 + (i % 2) : 165 + (i % 2), i < 6 ? 104 + (i % 2) : 98 + (i % 2)));
+        await start({ drives: list, drivesMarks: [{ at: base + 5.5 * 24 * H, label: 'Service', odo: 50000 }] });
+        await tab(3);
+        let t = await render();
+        assert(t.indexOf('DISTANCE') >= 0 && t.indexOf('MOST POWER') >= 0 && t.indexOf('HARD BRAKES') >= 0, 'Drive view: the six tiles: ' + t.join(' | '));
+        assert(t.some((x) => /^green line: average while moving, 6[01] km\/h$/.test(x)), 'the average on the speed chart');
+        await clicks.BTN_VIEW(); await clicks.BTN_VIEW();
+        t = await render();
+        assert(t.some((x) => /^This drive \(.*\) against the one before/.test(x)) && t.indexOf('Most power') >= 0, 'Compare view: ' + t.join(' | '));
+        await clicks.BTN_VIEW();
+        t = await render();
+        assert(t.some((x) => /^Most power \+1\d %( after Service)?$/.test(x)), 'Before / After: power up in words: ' + t.join(' | '));
+        assert(t.some((x) => /^Oil runs [56] °C cooler/.test(x)), 'Before / After: the oil cooler: ' + t.join(' | '));
+        assert(t.indexOf('within normal variation') >= 0, 'what did not change is grey: ' + t.join(' | '));
+        await clicks.BTN_MARK();
+        t = await render();
+        assert(t.some((x) => /Press Mark a change again/.test(x)), 'Mark a change asks again first');
+        await clicks.BTN_MARK();
+        assert(S.drivesMarks.length === 2 && S.drivesMarks[1].label === 'Service', 'pressed twice: marked');
+    }],
+    ['Ready? tab (#252): the verdict, the cards, the cool-down next to them', async () => {
+        gearC = null;
+        await start();
+        drive({ rpm: 1500, torque: 50, oil: 45, coolant: 70, speed: 40 }, 5);
+        await tab(1);
+        let t = await render();
+        assert(t.indexOf('NOT YET') >= 0 && t.some((x) => /^The engine oil and coolant are still cold/.test(x)), 'cold: NOT YET and why: ' + t.join(' | '));
+        // six cards (their titles are drawn as panel headers): the two temperatures, and four the stub car does not send
+        assert(t.filter((x) => x === 'COLD').length === 2 && t.filter((x) => x === 'NO DATA').length === 4, 'the cards: ' + t.join(' | '));
+        assert(t.some((x) => /^READY IN ABOUT \d+ MIN$/.test(x)), 'ready in about: ' + t.join(' | '));
+        drive(HARD, 20); drive(GENTLE, 5);
+        t = await render();
+        assert(t.indexOf('READY') >= 0 && t.indexOf('AFTER A HARD DRIVE') >= 0, 'warm, and the cool-down after the pull: ' + t.join(' | '));
+        assert(t.indexOf('s of gentle driving before switching off') >= 0, 'the countdown in words');
     }],
     ['home-screen widget: the big picture and the small one\'s text lines', async () => {
         gearC = null;
