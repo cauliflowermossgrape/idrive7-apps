@@ -695,7 +695,8 @@ async function runInner(impl) {
     const active = () => Promise.resolve().then(() => app.registerActive())
         .then(() => log.info('registered active')).catch((e) => log.warn('registerActive: ' + e));
     app.on('appStatusProxyReady', active);
-    app.on('shutdown', () => { log.info('shutdown requested by MainApp'); setTimeout(() => process.exit(0), 200); });
+    // (a stop MainApp asked for is no failed start for safe boot: CONFIG_STATE starts and quick sleeps end this way)
+    app.on('shutdown', () => { log.info('shutdown requested by MainApp'); if (safeBoot) safeBoot.stopped(); setTimeout(() => process.exit(0), 200); });
     // home-screen widget: MainApp hands it over (now or whenever one is placed)
     const widget = new Widget(SPEC.startWidget);
     if (SPEC.startWidget) {

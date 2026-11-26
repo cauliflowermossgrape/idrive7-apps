@@ -48,8 +48,18 @@ const SCHEMA = [
         st = sb().begin();
         ok(!st.safe && st.fails === 1 && st.last.step === 'background' && /Cannot read/.test(st.last.error), 'a start that failed counts, with its step and error');
         t += 1000;
-        st = sb().begin();       // (the one before never got through: hung or stopped)
-        ok(st.safe && st.fails === 2 && /stopped or hung/.test(st.last.error), 'two in a row: safe mode; a start that never got through counts too');
+        s = sb(); st = s.begin();     // (the one before failed: counted above)
+        t += 1000;
+        st = sb().begin();       // the one before left no error: the car switched off or asleep within the 30 s
+        ok(!st.safe && st.fails === 1, 'a start the car ended (no error) is no failure: no safe mode after a quick sleep');
+        s = sb(); st = s.begin(); s.stopped();
+        ok(sb().begin().fails === 1, 'a start MainApp stopped (shutdown) is no failure either');
+        s = sb(); s.begin(); s.fail(new Error('boom again'));
+        t += 1000;
+        st = sb().begin();
+        ok(st.safe && st.fails === 2 && /boom again/.test(st.last.error), 'two failed starts in a row: safe mode');
+        s = sb(); s.begin(); s.fail('x');
+        ok(!s.stopped(), 'a start with an error keeps its marker at shutdown');
         s = sb(); st = s.begin(); s.retry();
         ok(!s.safe && JSON.parse(fs.readFileSync(path.join(d, 'safeboot.json'), 'utf8')).fails === 0, 'Try normal start again: back to 0');
         ok(s.ok() && sb().begin().fails === 0, 'a start that got through resets the count');

@@ -5,7 +5,8 @@
  *
  * A start leaves a marker in the app's data folder (safeboot.json) and clears it once it got through (ok()): the app's
  * start done and 30 s up without a crash. A marker still there at the next start is a start that crashed, hung or
- * was stopped on the way: one more failure. Two in a row: safe mode. A start that gets through counts from 0 again.
+ * was stopped on the way: one more failure if it left an error (a crash, an error at start; a start the car ended
+ * leaves none). Two in a row: safe mode. A start that gets through counts from 0 again.
  *
  *   const sb = new SafeBoot(dataDir);
  *   const st = sb.begin();     // { safe, fails, last: { step, error, at } }
@@ -43,9 +44,12 @@ class SafeBoot {
     begin() {
         const s = this._read();
         s.fails = s.fails || 0;
-        if (s.starting) {
+        // only a start that left an error counts: a crash (the uncaught handler records it before the exit) or an error
+        // the kit caught. A marker without one is a start the car ended (switched off or asleep again within the 30 s,
+        // killed at power-down, MainApp's CONFIG_STATE start): on a car that is every other start, not a failure (#262)
+        if (s.starting && s.starting.error) {
             s.fails++;
-            s.last = { step: s.starting.step || 'start', error: s.starting.error || 'it stopped or hung before it got through', at: s.starting.at };
+            s.last = { step: s.starting.step || 'start', error: s.starting.error, at: s.starting.at };
         }
         s.starting = { at: this.now(), step: 'start', error: null };
         this.state = s;
@@ -71,6 +75,17 @@ class SafeBoot {
         if (this.failed) return false;
         this.state = { fails: 0, last: null, starting: null };
         this.safe = false;
+        this._write();
+        return true;
+    }
+    /**
+     * MainApp asked the app to stop (its shutdown): a start stopped on purpose is no failure, whenever it comes (a
+     * CONFIG_STATE start without screens, the car asleep again within the 30 s). The marker goes, the count stays as
+     * it was (a start before this one that failed still counts). An error caught in this start keeps it.
+     */
+    stopped() {
+        if (this.failed || !this.state.starting) return false;
+        this.state.starting = null;
         this._write();
         return true;
     }
