@@ -546,7 +546,13 @@ const writes = (diag, a) => diag.sent.filter((x) => x.indexOf(hex([a]) + ' 31 01
         ok(g({ moving: true }, 'learn') === null, 'moving: learning may run');
         ok(g({ setting: false }, 'strobe') === 'switched on in the settings: no', 'off in the settings');
         ok(g({ away: true }, 'strobe') === 'someone in the car: no', 'nobody in the car');
-        ok(gateChecks({ setting: true, away: false, moving: true }).length === 3, 'the Strobe tab lists three checks');
+        ok(gateChecks({ setting: true, away: false, moving: true }).filter((c) => !c[3] || c[3] === 'show').length === 3, 'the Strobe tab lists three checks');
+        // the sequence as the light show; Stealth only with its own setting and the car known to stand still
+        ok(g({ moving: true }, 'sequence') === 'the car standing still (sequence): no' && g({}, 'sequence') === null, 'sequence: standing only');
+        ok(g({}, 'stealth') === 'stealth switched on in the settings: no', 'stealth: off without its setting');
+        ok(g({ stealth: true }, 'stealth') === null, 'stealth: setting on, standing: may run');
+        ok(g({ stealth: true, moving: null }, 'stealth') === 'the car standing still (stealth): no', 'stealth: no speed known yet is no');
+        ok(g({ stealth: true, moving: true }, 'stealth') !== null && g({ stealth: true, away: true }, 'stealth') !== null && g({ stealth: true, setting: false }, 'stealth') !== null, 'stealth: moving, nobody in the car or Strobe off: no');
     }
     // the speed the light show goes by (kit/parked.js): re-read every 2 s, quiet after driving = moving
     {

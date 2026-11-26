@@ -68,8 +68,12 @@ const listApps = () => fs.readdirSync(path.join(ROOT, 'apps')).filter((d) => fs.
 const appTitles = () => listApps().reduce((o, id) => { try { o[id] = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', id, 'app.json'), 'utf8')).title || id; } catch (e) { o[id] = id; } return o; }, {});
 let appId = args[0];
 if (!appId || listApps().indexOf(appId) < 0) { console.error('usage: node kit/tools/emu.js <app> [--port 8077] [--bg file.png] [--no-touch]\napps: ' + listApps().join(' ')); process.exit(2); }
-// (a short path: Unix socket paths are limited to ~104 bytes)
-const SOCK = path.join(os.tmpdir(), 'mgu-emu-' + process.pid + '.sock');
+// The Python on Windows is `python` (python.org) or the `py` launcher; `python3` is often only the Store stub.
+const PYTHON = process.platform === 'win32' ? 'python' : 'python3';
+// (a short path: Unix socket paths are limited to ~104 bytes). On Windows, Node's net server cannot
+// listen on a file path (EACCES): there the same protocol goes over a named pipe.
+const SOCK = process.platform === 'win32' ? '\\\\.\\pipe\\mgu-emu-' + process.pid
+  : path.join(os.tmpdir(), 'mgu-emu-' + process.pid + '.sock');
 const MAX_MSG = 24 << 20;                       // a bigger message ends the connection (PROTOCOL.md "Framing")
 const PAGE_BEHIND = 8 << 20, PAGE_GONE = 64 << 20;   // bytes queued to a page: frames wait for it / it is closed
 
@@ -618,7 +622,7 @@ function build() {
     App.waiting = null;
     setStatus('building');
     let outText = '';
-    const p = App.building = spawn('python3', [path.join(ROOT, 'kit', 'tools', 'build.py'), id], { cwd: ROOT });
+    const p = App.building = spawn(PYTHON, [path.join(ROOT, 'kit', 'tools', 'build.py'), id], { cwd: ROOT });
     p.stdout.on('data', (d) => { outText += d; });
     p.stderr.on('data', (d) => { outText += d; });
     p.on('error', (e) => { outText += String(e); });

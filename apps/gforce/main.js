@@ -16,6 +16,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { qrLogSheet } = require('./kit/qrlog');
 const { t: translate } = require('./kit/i18n');
 const Car = require('./kit/car');
 
@@ -216,6 +217,26 @@ mgu.run({
         ui.onClick('BTN_ACTION', act);
         ctx.hideButton('BTN_ACTION');
         // every screen refresh (60 fps) with the GPU renderer; 10 fps in software (PNG frames)
+        /** Settings > Results as QR: the all-time records and this session as plain text a phone camera reads (kit/qrlog.js). */
+        function resultsText() {
+            const qrDate = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+            const R = car.data().demo ? demoRec : rec, out = ['Records' + (R === rec ? '' : ' (demo data)')];
+            const g = (x) => (x && G.isNum(x.v) ? x.v.toFixed(2) + ' g, ' + qrDate(x.at) : '-');
+            out.push('Accelerating: ' + g(R.acc), 'Braking: ' + g(R.brk), 'Left: ' + g(R.left), 'Right: ' + g(R.right), 'Combined: ' + g(R.comb));
+            if (R.vmax && G.isNum(R.vmax.v)) out.push('Top speed: ' + Math.round(V(R.vmax.v)) + (mph() ? ' mph' : ' km/h') + ', ' + qrDate(R.vmax.at));
+            const p = S.peak;
+            out.push('', 'This session (' + Math.round((Date.now() - S.start) / 60000) + ' min)',
+                'Accelerating ' + p.acc.toFixed(2) + ' g, braking ' + p.brk.toFixed(2) + ' g, left ' + p.left.toFixed(2) + ' g, right ' + p.right.toFixed(2) + ' g',
+                'Combined ' + p.comb.toFixed(2) + ' g, over 0.5 g for ' + Math.round(S.over05) + ' s');
+            return out.join('\n');
+        }
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Results as QR', value: 'For a phone camera, as plain text',
+                open: () => qrLogSheet({ title: 'Results as QR', plain: true, text: resultsText, app: 'G-Force', version: ctx.spec.version,
+                    help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
+            });
+        }
         ctx.loop('MAIN', 10, render);
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },

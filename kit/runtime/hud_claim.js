@@ -68,7 +68,23 @@ class HudClaim {
         } else {
             clearInterval(this.timer);
             this.timer = null;
-            try { writeWhole(this.file, JSON.stringify({ held: false, at: Date.now() }) + '\n'); } catch (e) { /* tmpfs gone */ }
+            try { this._write(JSON.stringify({ held: false, at: Date.now() }) + '\n'); } catch (e) { /* tmpfs gone */ }
+        }
+    }
+
+    /*
+     * The claim written whole. After a reinstall the app runs as a new user, and the claim its old install left can't be
+     * replaced (the sticky folder lets only a file's owner rename over it, EPERM; #233) until the head unit restarts:
+     * the claim then goes to <id>.u<uid>, which the other apps count as this app's (others() reads every name).
+     */
+    _write(text) {
+        if (this.alt) return writeWhole(this.alt, text);
+        try { writeWhole(this.file, text); } catch (e) {
+            try { fs.unlinkSync(this.file + '.' + process.pid + '.tmp'); } catch (e2) { /* not made */ }
+            if (e.code !== 'EPERM' && e.code !== 'EACCES') throw e;
+            this.alt = this.file + '.u' + (process.getuid ? process.getuid() : process.pid);
+            if (this.log) this.log.warn('HUD claim: ' + this.id + ' belongs to an earlier install, claiming as ' + path.basename(this.alt));
+            writeWhole(this.alt, text);
         }
     }
 
@@ -82,7 +98,7 @@ class HudClaim {
     _touch() {
         try {
             folder();
-            writeWhole(this.file, JSON.stringify({ held: true, at: Date.now() }) + '\n');
+            this._write(JSON.stringify({ held: true, at: Date.now() }) + '\n');
             this.failed = false;
         } catch (e) {
             if (!this.failed && this.log) this.log.warn('HUD claim: ' + e.message);
@@ -95,7 +111,8 @@ class HudClaim {
         try { names = fs.readdirSync(DIR); } catch (e) { return []; }
         const now = Date.now();
         return names.filter((n) => {
-            if (n === id || n.endsWith(STANDING) || n.endsWith('.tmp')) return false;     // .tmp: a claim being written
+            // .tmp: a claim being written; <id>.u<uid>: this app's own, under a reinstall's new user
+            if (n === id || n.endsWith(STANDING) || n.endsWith('.tmp') || new RegExp('^' + id.replace(/\W/g, '\\$&') + '\\.u\\d+$').test(n)) return false;
             try {
                 const f = path.join(DIR, n);
                 return now - fs.statSync(f).mtimeMs < FRESH_MS && JSON.parse(fs.readFileSync(f, 'utf8')).held === true;

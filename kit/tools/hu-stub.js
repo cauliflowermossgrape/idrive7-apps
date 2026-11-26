@@ -106,6 +106,30 @@ function headUnit(stage, o) {
             } : null,
     };
 
+    // as mgu.js: Stop all and Settings history at the settings' top and bottom, the red strip while Stop all is on
+    // (kitpages.js kitRows; a kit without them, an older app, gets neither)
+    if (live) {
+        try {
+            const kitpages = require(path.join(kitDir, 'kitpages'));
+            const { Panic } = require(path.join(kitDir, 'panic'));
+            if (kitpages.kitRows) {
+                // (the PC's temp folder: /tmp is the car's, and on Windows it may not exist)
+                if (!process.env.MGU_PANIC_DIR) process.env.MGU_PANIC_DIR = require('os').tmpdir();
+                const panic = hu.panic = new Panic(spec.id), fns = [];
+                const kr = kitpages.kitRows({ panic, saved: () => settings });
+                ctx.kitFirstRows = kr.first;
+                ctx.kitRows = kr.rows;
+                ctx.onPanic = (fn) => { fns.push(fn); if (panic.on) { try { fn(true, panic.by); } catch (e) { log.error('stop all', e); } } };
+                panic.watch((on, by) => fns.forEach((fn) => { try { fn(on, by); } catch (e) { log.error('stop all', e); } }));
+                const image = ui.image;
+                ui.image = (name, cv, cell) => {
+                    if (panic.on && cv && typeof cv.roundRect === 'function') kitpages.banner(cv, themeFn(), { by: panic.by, resume: () => panic.set(false) });
+                    return image(name, cv, cell);
+                };
+            }
+        } catch (e) { log.warn('kit rows: ' + e); }
+    }
+
     hu.start = () => {
         const realLoad = Module._load;
         const run = live ? async (impl) => {

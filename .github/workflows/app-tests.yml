@@ -63,11 +63,13 @@ jobs:
       - run: node kit/tools/test_draggy.js
       - run: node kit/tools/test_brake_test.js
       - run: node kit/tools/test_gforce.js
+      - run: node kit/tools/test_results_qr.js
       - run: node kit/tools/test_service.js
       - run: node kit/tools/test_service_engine.js
       - run: node kit/tools/test_car_vitals.js
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_dtc_texts.js
       - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_vitals_program.js
@@ -90,13 +92,21 @@ jobs:
       - run: node kit/tools/test_ambient_config.js
       - run: node kit/tools/test_ambient_rgb.js
       - run: node kit/tools/test_coldstarts.js
+      - run: node kit/tools/test_drivelog.js
       - run: node kit/tools/test_wheelspin.js
       - run: node kit/tools/test_ambient_others.js
       - run: node kit/tools/test_ambient_strobe.js
+      - run: node kit/tools/test_ambient_lamps.js
       - run: node kit/tools/test_ambient_lever.js
       - run: node kit/tools/test_xdrive_live.js
       - run: node kit/tools/test_zh.js
       - run: node kit/tools/test_widget_unicode.js
+      - run: node kit/tools/test_faults_qr.js
+      - run: node kit/tools/test_scan_compare.js
+      - run: node kit/tools/test_health_report.js
+      - run: node kit/tools/test_fault_context.js
+      - run: node kit/tools/test_safe_boot.js
+      - run: node kit/tools/test_panic.js
       # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
       # that (--preview-only needs no SDK). dtc_scanner has its own run because it ships diagnostic-zh-CN.json as its atlas.
       - run: python3 kit/tools/build.py --language zh-CN --preview-only service
@@ -144,3 +154,5 @@ jobs:
       - run: node kit/tools/test_redline_meter_m.js
       - run: node kit/tools/test_redline_hud_cache.js
       - run: node kit/tools/test_twin_dme.js
+      - run: node kit/tools/test_safe_boot.js
+      - run: node kit/tools/test_panic.js

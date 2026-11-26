@@ -16,6 +16,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { qrLogSheet } = require('./kit/qrlog');
 const Car = require('./kit/car');
 const Engine = require('./kit/engine');
 
@@ -276,6 +277,22 @@ mgu.run({
             return render();
         });
         // every screen refresh (60 fps) with the GPU renderer; 6 fps in software (PNG frames)
+        /** Settings > Results as QR: the runs' peaks as plain text a phone camera reads (kit/qrlog.js plainPages). */
+        function resultsText() {
+            const qrDate = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+            const st = store(), out = ['Dyno runs' + (st === saved ? '' : ' (demo data)'), 'power in ' + pU() + ', torque in ' + tUnit()[1]];
+            if (!st.runs.length) out.push('none yet');
+            st.runs.forEach((r) => out.push(qrDate(r.at) + ': ' + Math.round(pw(r.peakP)) + ' ' + pU() + ' @ ' + r.peakPrpm + ' rpm, '
+                + tq(r.peakT).toFixed(tUnit()[2]) + ' ' + tUnit()[1] + ' @ ' + r.peakTrpm + ' rpm' + (st.baseline && st.baseline.at === r.at ? ' (baseline)' : '')));
+            return out.join('\n');
+        }
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Results as QR', value: 'For a phone camera, as plain text',
+                open: () => qrLogSheet({ title: 'Results as QR', plain: true, text: resultsText, app: 'Virtual Dyno', version: ctx.spec.version,
+                    help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
+            });
+        }
         ctx.loop('MAIN', 6, render);
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },

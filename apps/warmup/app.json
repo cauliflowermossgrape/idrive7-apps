@@ -1,8 +1,8 @@
 {
   "id": "warmup",
   "title": "Warm-Up",
-  "description": "Oil and coolant warm-up calculator (time to ready), safe rev limit, turbo cool-down and a cold start counter",
-  "version": "1.9.3",
+  "description": "Oil and coolant warm-up calculator (time to ready), safe rev limit, turbo cool-down, a cold start counter and each drive's lowest and highest temperatures",
+  "version": "1.11.0",
   "vendor": "custom",
   "loggingId": "OA9A",
   "iconGlyph": "temp",
@@ -29,6 +29,39 @@
       "_instances": "SystemFunctionsInternalTasuInst1",
       "_methods": ["sendTasuRequest"],
       "_broadcasts": ["sendTasuResponse"]
+    }
+  },
+  "startWidget": {
+    "comment": "Home-screen widget, as eDrive's: the layout and cell names of BMW's Drive Recorder widget on this firmware; the picture goes into BackgroundImage1 (384 x 256), scaled up and cropped centred by the HMI (safe), the edges faded: the setting widgetFit keeps the content further in. The small widget gets text lines and the progress bar instead.",
+    "name": "Warm-Up",
+    "layout": "LT_Table_OnlineApps_DriveRecorderWidget",
+    "image": "BackgroundImage1",
+    "scale": 2,
+    "size": [
+      384,
+      256
+    ],
+    "safe": [
+      0.09,
+      0.17
+    ],
+    "cells": {
+      "ErrorInfo": [
+        false,
+        "Bool"
+      ],
+      "background": [
+        true,
+        "Bool"
+      ],
+      "ProgressbarVisible": [
+        false,
+        "Bool"
+      ],
+      "TextRecordings": [
+        "",
+        "Text"
+      ]
     }
   },
   "screens": [
@@ -155,6 +188,13 @@
       "type": "bool",
       "default": true
     },
+    {
+      "key": "driveCsv",
+      "label": "Record a CSV of each drive",
+      "type": "bool",
+      "default": false
+    },
+    {"key": "widgetFit", "label": "Home-screen widget: picture", "type": "choice", "default": "large", "options": [["small", "Small, clear of the edges"], ["medium", "Medium"], ["large", "Fill the widget"]]},
     {
       "key": "tempUnit",
       "label": "Temperature unit",

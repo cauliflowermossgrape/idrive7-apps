@@ -65,13 +65,13 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 5));
     ok(watching.size === 0 && diags === 0 && sent.length === 0, 'started without its page: no watch, no diagnostic link, nothing sent');
 
     await show(true);
-    ok(watching.has('de.bmw.infotainment.KombiInterface_2') && watching.has('de.bmw.infotainment.checkcontrol.CheckControlMaster'), 'page shown: Check Control watched');
+    ok(watching.has('de.bmw.infotainment.KombiInterface_2') && watching.has('de.bmw.infotainment.checkcontrol.CheckControlMaster') && watching.has('de.bmw.infotainment.vehicle.CDS'), 'page shown: Check Control and the health report values watched');
     ok(diags === 1, 'page shown: the diagnostic link opened');
 
     await show(false);
     ok(watching.size === 0, 'page left: the watches shut down (the cluster\'s interface too)');
     await show(true); await show(false); await show(true);
-    ok(watching.size === 2 && diags === 1, 'shown again: watched again, the link opened once (' + watching.size + ', ' + diags + ')');
+    ok(watching.size === 3 && diags === 1, 'shown again: watched again (Check Control, the cluster, the health report CDS), the link opened once (' + watching.size + ', ' + diags + ')');
 
     // a scan, the page left during the fault memory read: no info memory, no identifying
     sent.length = 0; fnHold = [];

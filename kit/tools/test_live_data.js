@@ -195,6 +195,20 @@ async function main() {
         });
     }));
 
+    // per-cylinder entries carry their cylinder (main.js leaves out those past the engine's count): the name's number
+    {
+        const all = [];
+        USEFUL[0x12].concat(USEFUL.BANK2(4)).forEach((g) => g.items.forEach((it) => all.push(it)));
+        all.forEach((it) => {
+            const m = /, cylinder (\d+)$/.exec(it.name);
+            assert.strictEqual(it.cyl, m ? Number(m[1]) : undefined, it.name + ': cyl as in its name');
+        });
+        const over4 = USEFUL[0x12].reduce((n, g) => n + g.items.filter((it) => it.cyl > 4 && it.only !== 'twin').length, 0);
+        assert.strictEqual(over4, 2 * 2 + 2 * 2, 'a 4-cylinder engine leaves out cylinders 5 and 6 of ignition, injectors, misfires, rough running');
+    }
+    // the engine's cylinder count asked through the read-only link (22 F6 A0), never service 06
+    assert.ok(/link\.physical\(0x12, 0x22, \[0xF6, 0xA0\]/.test(fs.readFileSync(path.join(ROOT, 'apps', 'live_data', 'main.js'), 'utf8')), 'cylinder count: 22 F6 A0 on the read-only link');
+
     // fuel quality (KQE 4035, issue #166): 3 counts, then 5 refuellings of mileage (x 8 km) and quality range
     {
         const reply = [0x62, 0x40, 0x35, 0x00, 0x02, 0x00, 0x05, 0x00, 0x1B, 0x07, 0xD0, 0x03, 0x07, 0x9E, 0x02];
@@ -373,6 +387,17 @@ async function main() {
         });
     });
     assert.strictEqual(SCR.layout('nope').id, SCR.LAYOUTS[0].id, 'an unknown layout: the first');
+// 6-gauge screens (Danijel's idea: a dashboard of 4 or 6 values of your own)
+assert.strictEqual(SCR.MAX_SLOTS, 6, 'a screen holds up to 6 gauges');
+['nums6', 'dial5'].forEach((id) => [false, true].forEach((small) => {
+    const L = SCR.layout(id), bs = SCR.boxes(L, 24, 44, 1552, 468, small);
+    assert.strictEqual(L.id, id, id + ': a layout');
+    assert.strictEqual(bs.length, L.slots.length, id + (small ? ' (widget)' : '') + ': a box for every gauge');
+    bs.forEach((b, i) => {
+        assert.ok(b.w > 100 && b.h > 100 && b.x >= 24 && b.y >= 44 && b.x + b.w <= 1576.5 && b.y + b.h <= 512.5, id + ' box ' + i + ' inside the page');
+        bs.forEach((c, k) => { if (k > i) assert.ok(b.x + b.w <= c.x + 0.5 || c.x + c.w <= b.x + 0.5 || b.y + b.h <= c.y + 0.5 || c.y + c.h <= b.y + 0.5, id + ': boxes ' + i + ' and ' + k + ' apart'); });
+    });
+}));
     assert.strictEqual(SCR.nextLayout(SCR.LAYOUTS[SCR.LAYOUTS.length - 1].id), SCR.LAYOUTS[0].id, 'Layout goes round');
     let sc = SCR.scale('sig:rpm', null, 'rpm', null);
     assert.ok(sc.min === 0 && sc.max === 7000 && sc.red === 6500 && sc.zones.some((z) => z.color === 'crit' && z.from === 6500), 'rpm: 0-7000, red from 6500');
