@@ -69,6 +69,8 @@ const FAMILY = {
     '23:D1C604': 'Assist sensors: Unexpected Ethernet communication/link',
     '61:03178A': 'Telematics: Mobile network connection limited',
 };
+// marks a text that may belong to another unit type (see describe)
+const OTHER = 'Other unit type: ';
 function describe(addr, rawCode) {
     const code = String(rawCode).trim().toUpperCase().replace(/^0X/, '').padStart(6, '0');
     const key = hex(addr) + ':' + code;
@@ -78,20 +80,34 @@ function describe(addr, rawCode) {
     // exactly this unit type's text, else the one all unit types at this address agree on
     const iv = (v && DB.get('tables/variant/' + v.toLowerCase() + '.json', code)) || DB.get('tables/addr/' + hex(addr) + '.json', code);
     if (iv) return ascii(iv);
-    const t = (v && DB.get('texts/' + v + '.json', code)) || text('*:' + code);   // "*:<code>": any unit
-    if (t) return ascii(t);
+    const vt = v && DB.get('texts/' + v + '.json', code);
+    if (vt) return ascii(vt);
     const c = DB.get('code_texts.json', code);
-    const ct = (typeof c === 'string' ? c : c && c[hex(addr)]) || DB.get('tables/codes.json', code) || FAMILY[key];
-    if (ct) return ascii(ct);
+    const at = (c && typeof c === 'object' && c[hex(addr)]) || FAMILY[key];   // tied to this address
+    if (at) return ascii(at);
+    // Code-only texts ("*:<code>", code_texts "<code>": text, codes.json) can belong to a different
+    // unit type. With the variant known it is still the best guess the database has; with it unknown
+    // the same code at this address can be a whole other fault (#234: 440021 at 0x44 read as the
+    // dsm_72 parking lock text), so it is shown only as another unit type's text, never as fact.
+    const ct = text('*:' + code) || (typeof c === 'string' && c) || DB.get('tables/codes.json', code);
+    if (ct) return v ? ascii(ct) : OTHER + ascii(ct);
     // several different texts and the unit type unknown: say so rather than guess
     const n = DB.get('tables/ambiguous.json', code);
     return n > 0 ? n + ' possible texts (depends on unit type)' : null;
 }
-// a unit the database identified is named by what it is (same on every model); else the address table
+// a unit the database identified is named by what it is (same on every model); else the address table.
+// ECU gives some names to more than one address (0x43 and 0x44 are both "FLM headlight"), so for an
+// unidentified unit such a name is only a guess and says so (#234).
+const SHARED = {};
+Object.keys(ECU).forEach((a) => { SHARED[ECU[a]] = (SHARED[ECU[a]] || 0) + 1; });
 const ecuName = (a) => {
     const v = variant(a);
-    return (v && UNIT_NAMES[v] && ascii(UNIT_NAMES[v])) || ECU[a] || v || ('ECU 0x' + hex(a));
+    if (v && UNIT_NAMES[v]) return ascii(UNIT_NAMES[v]);
+    if (ECU[a]) return SHARED[ECU[a]] > 1 && !v ? ECU[a] + ' (0x' + hex(a) + '?)' : ECU[a];
+    return v || ('ECU 0x' + hex(a));
 };
+// for kit/tools/test_dtc_texts.js: the text lookup without a car
+module.exports = { describe, ecuName, setIds: (o) => { ids = o; } };
 
 mgu.run({
     async start(ctx) {
@@ -430,7 +446,9 @@ mgu.run({
                 cv.text(fit(cv, ecuName(d.addr), 26, 680 - 420 - 16), 420, y + 27, 26, t.text);
                 // the fault's text when known (cut to fit)
                 const desc = describe(d.addr, d.code);
-                const txt = desc ? (d.mem === 'info' ? translateUI('INFO: ') : '') + diagnosticText(desc) : d.mem === 'info' ? translateUI('INFO MEMORY') : '';
+                const other = desc && desc.startsWith(OTHER);   // the marker is UI text, the rest is the fault's
+                const txt = desc ? (d.mem === 'info' ? translateUI('INFO: ') : '') + (other ? translateUI(OTHER) : '')
+                    + diagnosticText(other ? desc.slice(OTHER.length) : desc) : d.mem === 'info' ? translateUI('INFO MEMORY') : '';
                 // Resolve diagnosis before layout; never reapply UI word substitution.
                 const diagnosticOptions = { literal: true };
                 if (txt) cv.text(fit(cv, txt, 22, 1552 - 680, diagnosticOptions), 680, y + 27, 22, t.dim, diagnosticOptions);
