@@ -564,6 +564,53 @@ ok(Math.round(S.hueOf([0, 0, 255])) === 240 && S.hsv(120, 1, 1).join() === '0,25
         await sleep(50);
     }
 
+    // #264: upper and lower in two colours. Once they're on, a renewal (every 40 s) and the once-more after it never
+    // put one zone's colour on the other's lights (the bus-wide NAD 0 write did: the upper lights flashed the lower
+    // colour until their own writes came); a colour change still goes out with NAD 0 first
+    {
+        let clock = 2e6;
+        const BUS2 = [[0x0f, 0x0c], [0x15, 0x01, 0x05, 0x13]], shown = BUS2.map((b) => b.map(() => null)), log2 = [];
+        let lc = null, wrong = 0, nad0 = 0, after = false;
+        const want = (l) => { const w = lc.at(l); return w ? L.writeFrame(l.bus, l.nad, w.rgb, w.bright, 60).slice(5, 8).join() : null; };
+        const zdiag = { physical: async (t, sid, data) => {
+            await sleep(1);
+            if (t !== L.BDC) return null;
+            const bus = data[0] === 0xda ? 0 : 1;
+            if (sid === 0x22) {
+                const b = [0x62].concat(data);
+                for (let i = 0; i < 26; i++) b.push.apply(b, BUS2[bus][i] ? [BUS2[bus][i], 0, 0, 0, 100, 0, 0, 0, 0, 0] : [0xff, 0xff, 0xff, 0xff, 0x7f, 3, 7, 7, 7, 7]);
+                return b.concat([2]);
+            }
+            const nad = data[2], rgb = data.slice(5, 8).join();
+            if (nad === 0) shown[bus] = shown[bus].map(() => rgb); else shown[bus][nad - 1] = rgb;
+            if (after) {
+                if (nad === 0) nad0++;
+                lc.lights.forEach((l) => { if (shown[l.bus][l.nad - 1] !== null && shown[l.bus][l.nad - 1] !== want(l)) { wrong++; log2.push(l.name); } });
+            }
+            return [0x6e, data[0], data[1]];
+        } };
+        lc = new Lights({ diag: zdiag, log, now: () => clock, checkMs: 40 });
+        await lc.find();
+        const blueGreen = { kind: 'solid', upper: { rgb: [0, 0, 255], bright: 80 }, lower: { rgb: [0, 255, 0], bright: 80 } };
+        const w0 = lc.writes;
+        lc.show(blueGreen);
+        for (let i = 0; i < 20; i++) { await sleep(10); clock += 100; lc._kick(); }
+        ok(lc.writes > w0 && lc.lights.every((l) => shown[l.bus][l.nad - 1] === want(l)), 'two colours: every light shows its own');
+        after = true;
+        const w1 = lc.writes;
+        for (let i = 0; i < 40; i++) { clock += 5000; lc._kick(); await sleep(15); }      // 200 s: five renewals
+        ok(lc.writes > w1 + 4, 'renewed meanwhile (' + (lc.writes - w1) + ' writes)');
+        ok(wrong === 0 && nad0 === 0, 'renewals and once-mores: no light shows the other zone\'s colour, no bus-wide write (' + wrong + ' wrong: ' + log2.slice(0, 3).join(', ') + ')');
+        after = false; nad0 = 0;
+        const n0 = [];
+        const orig = zdiag.physical; zdiag.physical = async (t, sid, data) => { if (sid === 0x2e) n0.push(data[2]); return orig(t, sid, data); };
+        lc.show({ kind: 'solid', upper: { rgb: [255, 0, 0], bright: 80 }, lower: { rgb: [255, 255, 0], bright: 80 } });
+        for (let i = 0; i < 20; i++) { await sleep(10); clock += 100; lc._kick(); }
+        ok(n0.indexOf(0) >= 0 && lc.lights.every((l) => shown[l.bus][l.nad - 1] === want(l)), 'a new colour: still a bus-wide write (NAD 0) where most lights take it, then every light its own');
+        lc.stop();
+        await sleep(30);
+    }
+
     // decorWith (#140): the decor lights with the upper colour (default) or the lower one, as BMW groups them
     {
         const sc = { kind: 'solid', upper: { rgb: [255, 0, 0], bright: 80 }, lower: { rgb: [0, 0, 255], bright: 40 } };
