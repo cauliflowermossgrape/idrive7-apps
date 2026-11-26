@@ -30,6 +30,8 @@ const stubs = { './kit/mgu': { run(a) { app = a; } }, './kit/diag': Object.assig
 const load = Module._load;
 Module._load = function (req, parent, isMain) {
     if (stubs[req]) return stubs[req];
+    // kit/readonly-diag.js (the app's read link) takes its Diag from ./diag beside it: the same stand-in
+    if (req === './diag' && parent && parent.filename && parent.filename.indexOf(KIT) === 0) return stubs['./kit/diag'];
     if (req.startsWith('./kit/')) return load.call(this, path.join(KIT, req.slice(6)), parent, isMain);
     return load.call(this, req, parent, isMain);
 };
@@ -132,12 +134,13 @@ const hasQ = (texts) => texts.some((x) => {
     s = await start(null, { diagPage: true });
     s.feed('cbsDataServiceList', [item(1, 'Engine oil', '12,300 km', '09/2027'), item(3, 'Brake fluid', '', '11/2026', 'YELLOW')]);
     await s.render();
-    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    // (the read-only link paces its requests, 25 ms apart: the scan takes a moment)
+    await new Promise((r) => setTimeout(r, 500));
     t = await s.render();
     assert(has(t, 'Engine oil') && has(t, 'Brake fluid'), 'the HMI items stay: ' + t.join(' | '));
     // UDS-only records (unverified for the car) stay off the list since Service 1.4.21; still on Diagnostics
     assert(!has(t, 'Particulate filter (OPF/DPF) [UDS]') && !t.includes('UDS / UNVERIFIED'), 'a DME-only record is not listed: ' + t.join(' | '));
-    s.tab(2);    // Diagnostics: after Service and Engine
+    s.tab(7);    // Diagnostics: after Service, Engine and the own pages (Intervals, Wheels, Battery, Garage, How it works)
     t = await s.render();
     for (const want of ['KOMBI [0x60] 22 1001: ok', '0x01 Engine oil', 'remaining=27510 km; due=06/2028; status=OK',
         'counter=3; availability=83%; interval=33000 km/24 months', 'CBS read complete - 4 read(s) failed', 'Next (1/']) assert(has(t, want), want + ' in ' + t.join(' | '));
