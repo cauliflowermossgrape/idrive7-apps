@@ -97,6 +97,7 @@ jobs:
       - run: node kit/tools/test_xdrive_live.js
       - run: node kit/tools/test_zh.js
       - run: node kit/tools/test_widget_unicode.js
+      - run: node kit/tools/test_faults_qr.js
       # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
       # that (--preview-only needs no SDK). dtc_scanner has its own run because it ships diagnostic-zh-CN.json as its atlas.
       - run: python3 kit/tools/build.py --language zh-CN --preview-only service
