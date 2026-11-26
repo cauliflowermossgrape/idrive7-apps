@@ -1,0 +1,55 @@
+{
+  "id": "garage_log",
+  "title": "Garage Log",
+  "description": "Refuels and consumption per tank and brand, parts and mods fitted, wash and paint care reminders, a parking timer, a ready-to-go check, odometer milestones and bookmarks",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAB3",
+  "iconGlyph": "wrench",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.15" },
+  "signals": {
+    "de.bmw.infotainment.KombiIF": {
+      "statusRangeTankStatus": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS": {
+      "_optional": "the 12 V charge (Ready? page)",
+      "statusBattery2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Garage Log",
+      "buttons": [
+        ["BTN_PREV", "Previous"],
+        ["BTN_NEXT", "Next"],
+        ["BTN_MARK", "Mark / Start"],
+        ["BTN_BOOKMARK", "Bookmark now"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "fuelBrand", "label": "Fuel brand (next refuel)", "type": "choice", "default": "omv",
+     "options": [["omv", "OMV"], ["nis", "NIS Petrol"], ["mol", "MOL"], ["lukoil", "Lukoil"], ["eko", "EKO"], ["shell", "Shell"], ["other", "Other"]]},
+    {"key": "octane", "label": "Octane (next refuel)", "type": "number", "default": 95, "steps": [95, 98, 100]},
+    {"key": "partType", "label": "Part fitted (Parts > Mark)", "type": "choice", "default": "Oil and filter",
+     "options": [["Oil and filter", "Oil and filter"], ["Spark plugs", "Spark plugs"], ["Brake pads", "Brake pads"], ["Brake discs", "Brake discs"],
+       ["Tyres", "Tyres"], ["Battery", "Battery"], ["Air filter", "Air filter"], ["Cabin filter", "Cabin filter"], ["Intake", "Intake"],
+       ["Exhaust", "Exhaust"], ["Suspension", "Suspension"], ["Tune / map", "Tune / map"], ["Wheels", "Wheels"], ["Other", "Other"]]},
+    {"key": "parkMin", "label": "Parking timer", "type": "number", "unit": "min", "default": 60, "steps": [15, 30, 60, 120]},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}
