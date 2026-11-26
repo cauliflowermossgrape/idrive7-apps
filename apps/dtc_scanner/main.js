@@ -22,7 +22,7 @@
  *           their answer or NRC, and the faults, as JSON lines in the QR log's codes (kit/tools/qrlog_decode.py reads them
  *           back). Read once on request, only while the sheet shows, 22 alone; a VIN in an answer is masked.
  *   Plausibility (plausibility.js, three pages: Checks, History, How it works): values that have to agree, watched
- *           while the app runs: speed against rpm on the learned gears, oil against coolant, the forward g against
+ *           while the page shows (like Check Control: nothing on the car while nobody is on it): speed against rpm on the learned gears, oil against coolant, the forward g against
  *           the speed change, the outside temperature, and whether rpm, speed and g keep arriving on time. OK, ODD,
  *           LATE or NO DATA per check, with why in plain words. Only signals the car sends the head unit anyway,
  *           nothing asked of a control unit; Settings > Plausibility checks off stops those watches. Learned gears
@@ -45,6 +45,7 @@ const { Diag, parseDtcReply, statusInfo, hex, NRC } = require('./kit/diag');
 const DEMO = require('./demo');
 const CTX = require('./context');
 const DEV = require('./devreport');
+const { ReadOnlyDiag } = require('./kit/readonly-diag');
 const { Sanity } = require('./plausibility');
 const PV = require('./plausibility_view');
 
@@ -223,15 +224,24 @@ mgu.run({
         const PL_FILE = path.join(ctx.dataDir, 'plausibility.json');
         const plSaved = readJson(PL_FILE);
         const plLive = new Sanity({ gears: plSaved.gears, events: plSaved.events });
-        const plT0 = Date.now();
-        let plDemoRun = null, plSeen = 0, plSubs = null;
+        let plT0 = Date.now();
+        let plDemoRun = null, plSeen = 0, plSubs = null, plTimer = null;
         const plPut = (name, v) => { plSeen = Date.now(); plLive.feed(name, v, plSeen); };
         const plSc = (raw, f, o, bad) => (typeof raw === 'number' && raw !== bad ? raw * f + o : null);
         const plDemo = () => settings.get('demo') === 'on' || (settings.get('demo') !== 'off' && !plSeen && Date.now() - plT0 > 3000);
         const plCurrent = () => (plDemo() ? (plDemoRun = plDemoRun || makePlausibilityDemo(Date.now())) : plLive);
-        /** The Plausibility watches on (Settings > Plausibility checks, the default) or shut down. */
+        const plSave = () => {
+            if (!plLive.dirty) return;
+            plLive.dirty = false; plLive.savedAt = Date.now();
+            try { fs.writeFileSync(PL_FILE, JSON.stringify(plLive.save())); } catch (e) { log.warn('plausibility save: ' + e); }
+        };
+        /**
+         * The Plausibility watches and its 200 ms checks on (the page showing, with Settings > Plausibility checks on, the
+         * default) or shut down (the page left, or the setting off). shown() and the setting call it, like listen().
+         */
         function plListen(on) {
             if (on && !plSubs) {
+                plT0 = Date.now(); plSeen = 0;
                 const w = (iface, h) => Promise.resolve(ctx.signals.watch(iface, '1', h, log)).catch((e) => { log.warn('plausibility: ' + iface + ': ' + (e && e.message || e)); return null; });
                 plSubs = Promise.all([
                     w('de.bmw.infotainment.vehicle.CDS', {
@@ -244,25 +254,25 @@ mgu.run({
                     }),
                     w('de.bmw.infrastructure.EnvironmentalInformation', { ExteriorTemperature: (x) => plPut('outside', plSc(x && x.temperatureExterior, 0.5, -40, 255)) }),
                 ]);
+                // the checks 5 times a second while watching (a gear learned or an event found: saved, at most every 30 s)
+                plTimer = setInterval(() => {
+                    const now = Date.now();
+                    if (plDemo()) { plCurrent().advance(now); return; }
+                    plLive.tick(now);
+                    if (plLive.dirty && (!plLive.savedAt || now - plLive.savedAt > 30000)) plSave();
+                }, 200);
+                if (plTimer.unref) plTimer.unref();
                 log.info('plausibility: watching');
             } else if (!on && plSubs) {
                 const s = plSubs; plSubs = null;
+                clearInterval(plTimer); plTimer = null;
                 s.then((l) => Promise.all(l.map((x) => x && x.shutdown && x.shutdown()))).catch(() => {});
+                plLive.pause();
+                plSave();
                 log.info('plausibility: watches shut down');
             }
         }
-        // the checks run 5 times a second with or without the page (the page only draws them)
-        const plTimer = setInterval(() => {
-            const now = Date.now();
-            if (plDemo()) { plCurrent().advance(now); return; }
-            plLive.tick(now);
-            if (plLive.dirty && (!plLive.savedAt || now - plLive.savedAt > 30000)) {
-                plLive.dirty = false; plLive.savedAt = now;
-                try { fs.writeFileSync(PL_FILE, JSON.stringify(plLive.save())); } catch (e) { log.warn('plausibility save: ' + e); }
-            }
-        }, 200);
-        if (plTimer.unref) plTimer.unref();
-        plListen(settings.get('plausibility') !== false);
+        const plWanted = () => !away && settings.get('plausibility') !== false;
 
         let subs = null;
         /** The Check Control watches on (the page showing) or shut down (it isn't). */
@@ -520,7 +530,10 @@ mgu.run({
         }
         // Settings > Developer report as QR (#239, devreport.js): what this car answers, read once while the sheet shows
         let devDrawn = 0;
-        const dev = new DEV.DevReport({ getDiag: () => getDiag().catch(() => null), ids, variant, name: ecuName, app: 'Fault Scanner',
+        // its own read-only link (kit/readonly-diag.js: 22 alone, paced), opened the first time the report reads
+        let devLink = null;
+        const getDevLink = () => devLink || (devLink = new ReadOnlyDiag(ctx.signals, log).init().catch((e) => { log.warn('developer report: ' + e); devLink = null; return null; }));
+        const dev = new DEV.DevReport({ getLink: getDevLink, ids, variant, name: ecuName, app: 'Fault Scanner',
             version: ctx.spec ? ctx.spec.version : '', open: () => Date.now() - devDrawn < 3000, log });
         if (ctx.settingsRow) {
             ctx.settingsRow({
@@ -928,11 +941,11 @@ mgu.run({
         // is up - this app only draws when something changed, so the screen would otherwise stay empty
         // until the next change (e.g. Next page)
         const redraw = () => { changed(); setTimeout(changed, 600); };
-        const shown = (on) => { away = !on; listen(on); if (on) { getDiag(); maybeAuto(); redraw(); } };
+        const shown = (on) => { away = !on; listen(on); plListen(plWanted()); if (on) { getDiag(); maybeAuto(); redraw(); } };
         ui.onVisible((name, on) => { if (name === 'MAIN') shown(on); });
         if (ui.onFocus) ui.onFocus((name, on) => { if (name === 'MAIN' && on) redraw(); });
         if (ui.isVisible('MAIN')) shown(true);
-        settings.onChange(() => { plListen(settings.get('plausibility') !== false); changed(); });
+        settings.onChange(() => { plListen(plWanted()); changed(); });
         if (scan) ui.text('BTN_SCAN', 'Scan again');
         render(true).then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },

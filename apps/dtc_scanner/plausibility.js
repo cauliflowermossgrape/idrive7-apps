@@ -6,6 +6,8 @@
  *   const s = new Sanity({ gears });        gears = ratios learned before ([{ k, n }], rpm per km/h)
  *   s.feed(name, value, tMs)                name = rpm | speed | gLong | oil | coolant | outside
  *   s.tick(tMs)                             re-evaluates every check (call 5 to 10 times a second)
+ *   s.pause()                               the watches stopped (page left): the last values are forgotten, so
+ *                                           nothing reads as LATE or as a jump when they start again
  *   s.checks                                { id: { state: 'OK' | 'ODD' | 'LATE' | 'NO DATA', reason, since } }
  *   s.events                                newest last: [{ t, id, state, reason }] (at most MAX_EVENTS)
  *   s.hist[name]                            [[t, value], ...] for the charts (one point a second, 10 min)
@@ -13,9 +15,11 @@
  * The checks:
  *   gear       rpm per km/h sits on one of the learned gears above 30 km/h; off every gear line for 3 s while
  *              the ratio is steady (not shifting) is ODD. Needs two gears learned first: a ratio counts as a gear
- *              after 20 s spent on it, so a few seconds of a slipping clutch never become one.
- *   temps      after 10 min with the engine running, oil far below the coolant (25 C) is ODD; so is a jump of
- *              more than 15 C in one second in either of them.
+ *              after 20 s spent on it, and only seconds at a steady speed with a steady ratio count (low slip: a
+ *              converter or clutch slipping while the car speeds up or slows down never becomes a gear).
+ *   temps      once the coolant has been at 80 C or more for 10 min with the engine running, oil far below the
+ *              coolant (25 C) is ODD (a cold or short winter drive never gets there); so is a jump of more than
+ *              15 C in one second in either of them.
  *   gspeed     the forward g the car sends against the speed change over the same 2 s (an estimate: a hill
  *              adds g the speed does not show): 0.15 g apart in three windows in a row above 20 km/h is ODD.
  *   outside    the outside temperature jumping more than 5 C within 2 s is ODD (kept for a minute).
@@ -25,6 +29,8 @@
 const IDS = ['gear', 'temps', 'gspeed', 'outside', 'late'];
 const NAMES = { gear: 'Speed against rpm', temps: 'Oil against coolant', gspeed: 'G against speed change', outside: 'Outside temperature', late: 'Signals on time' };
 const MAX_EVENTS = 100, HIST_MS = 600000, G0 = 9.80665;
+const WARM_C = 80, WARM_MS = 600000;          // the temperature check: coolant at 80 C or more for 10 min
+const STEADY_RATIO = 0.02, STEADY_KMH_S = 1.5, STEADY_G = 0.05, LEARN_N = 20;
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 
 class Sanity {
@@ -35,9 +41,15 @@ class Sanity {
         this.hist = {}; this.histAt = {};
         this.ratio = [];                                   // [[t, rpm per km/h]] for the last 2 s
         this.offSince = 0; this.gWin = []; this.gBad = 0; this.lastWin = 0;
-        this.runMs = o.runMs || 0; this.lastTick = 0; this.outsideOddUntil = 0; this.tempOddUntil = 0;
+        this.runMs = o.runMs || 0; this.warmMs = o.warmMs || 0; this.lastTick = 0; this.outsideOddUntil = 0; this.tempOddUntil = 0;
         this.checks = {}; IDS.forEach((id) => { this.checks[id] = { state: 'NO DATA', reason: 'Waiting for the car', since: 0 }; });
         this.events = (o.events || []).slice(-MAX_EVENTS);
+    }
+
+    /** The watches stopped: forget the last values (a stale speed would read as LATE, a stale oil as a jump). */
+    pause() {
+        this.v = {}; this.at = {}; this.ratio = []; this.gWin = []; this.offSince = 0; this.gBad = 0; this.lastWin = 0;
+        this.lastTick = 0; this.ptAt = 0;
     }
 
     feed(name, value, t) {
@@ -69,17 +81,26 @@ class Sanity {
         const rpm = this.v.rpm, kmh = this.v.speed;
         if (!(rpm > 1100 && kmh > 8)) return;
         const k = rpm / kmh;
-        this.ratio.push([t, k]);
+        this.ratio.push([t, k, kmh]);
         this.pts = this.pts || [];
         if (!this.ptAt || t - this.ptAt >= 1000) { this.pts.push([kmh, rpm]); this.ptAt = t; if (this.pts.length > 180) this.pts.shift(); }
         while (this.ratio.length && t - this.ratio[0][0] > 1500) this.ratio.shift();
+        // learned only at low slip: the ratio and the speed steady over the last second or more, little forward g
+        // (a torque converter slipping while the car speeds up holds an in-between ratio for many seconds)
+        const r = this.ratio, a = r[0], span = (t - a[0]) / 1000, ks = r.map((x) => x[1]);
+        const steady = r.length > 3 && span >= 1 && (Math.max.apply(null, ks) - Math.min.apply(null, ks)) / k < STEADY_RATIO
+            && Math.abs(kmh - a[2]) / span < STEADY_KMH_S && !(Math.abs(this.v.gLong) > STEADY_G);
+        if (!steady) return;
         let c = this.gears.find((x) => Math.abs(x.k - k) / x.k < 0.04);
         if (!c) { if (this.gears.length > 24) this.gears.sort((a, b) => b.n - a.n).pop(); c = { k, n: 0, at: 0 }; this.gears.push(c); }
         c.k += (k - c.k) / Math.min(c.n + 1, 50);
         // n counts seconds spent on this ratio, so a clutch slipping for a few seconds never becomes a gear
-        if (t - (c.at || 0) >= 1000) { c.n++; c.at = t; }
+        if (t - (c.at || 0) >= 1000) {
+            c.n++; c.at = t;
+            if (c.n === LEARN_N + 1) this.dirty = true;     // a gear just learned: saved (plausibility.json)
+        }
     }
-    learned() { return this.gears.filter((x) => x.n > 20).sort((a, b) => b.k - a.k); }
+    learned() { return this.gears.filter((x) => x.n > LEARN_N).sort((a, b) => b.k - a.k); }
 
     _set(id, state, reason, t) {
         const c = this.checks[id];
@@ -96,7 +117,11 @@ class Sanity {
 
     tick(t) {
         const v = this.v, driving = v.speed > 5;
-        if (this.lastTick && v.rpm > 400) this.runMs += Math.min(2000, t - this.lastTick);
+        if (this.lastTick && v.rpm > 400) {
+            const dt = Math.min(2000, t - this.lastTick);
+            this.runMs += dt;
+            if (v.coolant >= WARM_C) this.warmMs += dt;
+        }
         this.lastTick = t;
 
         // gear: on a learned line, or shifting
@@ -116,8 +141,8 @@ class Sanity {
         // temps
         if (!isNum(v.oil) || !isNum(v.coolant)) this._set('temps', 'NO DATA', 'Waiting for oil and coolant', t);
         else if (t < this.tempOddUntil) this._set('temps', 'ODD', this.tempWhy, t);
-        else if (this.runMs >= 600000 && v.oil < v.coolant - 25) this._set('temps', 'ODD', 'Oil ' + Math.round(v.oil) + ' C is ' + Math.round(v.coolant - v.oil) + ' C below the coolant after ' + Math.round(this.runMs / 60000) + ' min running', t);
-        else this._set('temps', 'OK', this.runMs < 600000 ? 'Warming up: compared after 10 min running (' + Math.round(this.runMs / 60000) + ' so far)' : 'Oil ' + Math.round(v.oil) + ' C, coolant ' + Math.round(v.coolant) + ' C', t);
+        else if (this.warmMs >= WARM_MS && v.coolant >= WARM_C && v.oil < v.coolant - 25) this._set('temps', 'ODD', 'Oil ' + Math.round(v.oil) + ' C is ' + Math.round(v.coolant - v.oil) + ' C below the coolant after ' + Math.round(this.warmMs / 60000) + ' min with the coolant warm', t);
+        else this._set('temps', 'OK', this.warmMs < WARM_MS || v.coolant < WARM_C ? 'Warming up: compared after 10 min with the coolant at 80 C or more (' + Math.round(this.warmMs / 60000) + ' so far)' : 'Oil ' + Math.round(v.oil) + ' C, coolant ' + Math.round(v.coolant) + ' C', t);
 
         // g against speed change, 2 s windows
         while (this.gWin.length && t - this.gWin[0][0] > 2000) this.gWin.shift();

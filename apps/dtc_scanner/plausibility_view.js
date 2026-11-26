@@ -145,7 +145,7 @@ function helpPage(cv, t, s) {
         ['It compares values that have to agree.', 'Speed and rpm must sit on one of your gears; oil and coolant must stay close once warm; the forward g the car sends must match how fast the speed changes; the outside temperature cannot jump.'],
         ['It watches each signal\'s rhythm.', 'rpm, speed and g arrive many times a second while driving. One that goes quiet for five times its usual gap is LATE.'],
         ['It cannot say which one is wrong.', 'ODD means two values disagree: one of the sensors, a wiring fault, a slipping clutch, a steep hill. Use it as a pointer for a closer look next to the faults, not as a verdict.'],
-        ['It learns your car first.', 'The gears are learned from driving (kept between drives); the temperature check waits 10 minutes; nothing is compared while parked. It checks while the Fault Scanner runs.'],
+        ['It learns your car first.', 'The gears are learned from steady driving (kept between drives); oil and coolant are compared after 10 min with the coolant at 80 C; nothing while parked. It checks while the Fault Scanner is on screen.'],
     ].forEach((r, i) => {
         const y = 134 + i * 86;
         cv.circle(70, y - 8, 20, withAlpha(t.accent2, 0.3));

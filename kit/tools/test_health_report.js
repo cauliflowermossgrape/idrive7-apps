@@ -34,11 +34,17 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 20));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'health-'));
     const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
     const S = {}; spec.settings.forEach((s) => { if (s.key) S[s.key] = s.default; }); S.autoScan = false; S.demo = 'off';
-    const noop = () => {}, rows = [], clicks = {}, vis = [], handlers = {};
+    const noop = () => {}, rows = [], clicks = {}, vis = [], handlers = {}, watchers = {};
     await impl.start({
         log: { info: noop, warn: noop, error: noop }, dataDir: dir, spec,
         settings: { get: (k) => S[k], onChange: noop },
-        signals: { watch: async (iface, inst, h) => { handlers[iface] = h; return { shutdown: async () => {} }; } },
+        // (several watches of one interface, as the head unit allows: the health report's CDS and the Plausibility tab's)
+        signals: { watch: async (iface, inst, h) => {
+            const all = (watchers[iface] = watchers[iface] || []); all.push(h);
+            const fan = handlers[iface] = {};
+            all.forEach((x) => Object.keys(x).forEach((k) => { fan[k] = (v) => all.forEach((y) => y[k] && y[k](v)); }));
+            return { shutdown: async () => {} };
+        } },
         ui: { text: noop, image: async () => {}, onClick: (b, fn) => { clicks[b] = fn; }, onVisible: (fn) => vis.push(fn), onFocus: noop, isVisible: () => true },
         theme: () => { throw new Error('no drawing'); }, canvas: () => { throw new Error('no drawing'); },
         hideButton: noop, onLayout: noop, onTab: noop, onScroll: noop, loop: () => ({ kick: noop }),
