@@ -6,7 +6,10 @@
  *
  *   - brightness of the figures in steps down to 15 % (the screen's own backlight stays as the car sets it)
  *   - 24 h or 12 h, seconds or a blinking colon, outside temperature, speed
- * Reads only what the car sends anyway; the outside temperature as Redline reads it (EnvironmentalInformation).
+ *   - a standby status row along the bottom (setting): outside temperature, the 12 V battery's charge and the range,
+ *     small and dim, for waiting in the car without opening anything else
+ * Reads only what the car sends anyway; the outside temperature as Redline reads it (EnvironmentalInformation), the
+ * 12 V charge as Redline reads it (CDS statusBattery2), the range as Live Data reads it (KombiIF statusRangeTankStatus).
  */
 const mgu = require('./kit/mgu');
 const Car = require('./kit/car');
@@ -31,10 +34,16 @@ mgu.run({
     clockText,
     async start(ctx) {
         const { ui, settings, log } = ctx;
-        const outside = { v: null, t: 0 };
+        const outside = { v: null, t: 0 }, soc = { v: null, t: 0 }, range = { v: null, t: 0 };
         const car = new Car(ctx, ['speed'], {
             'de.bmw.infrastructure.EnvironmentalInformation': {
                 ExteriorTemperature: (v) => { const raw = v && v.temperatureExterior; if (typeof raw === 'number' && raw !== 255) { outside.v = raw * 0.5 - 40; outside.t = Date.now(); } },
+            },
+            'de.bmw.infotainment.vehicle.CDS': {
+                statusBattery2: (v) => { const c = v && v.conditionBatteryChargingCondition; if (isNum(c) && c >= 0 && c <= 100) { soc.v = c; soc.t = Date.now(); } },
+            },
+            'de.bmw.infotainment.KombiIF': {
+                statusRangeTankStatus: (v) => { const r = v && v.range; if (isNum(r) && r >= 0 && r < 4095) { range.v = r; range.t = Date.now(); } },
             },
         });
 
@@ -64,8 +73,28 @@ mgu.run({
             }
             if (settings.get('speed') && isNum(d.speed)) line.push(Math.round(settings.get('speedUnit') === 'mph' ? d.speed / 1.609344 : d.speed) + (settings.get('speedUnit') === 'mph' ? ' mph' : ' km/h'));
             if (line.length) cv.text(line.join('     '), x, mid + 140, 40, sub, { align: 'center', font: 'light' });
+            if (settings.get('status')) statusRow(cv, f, bottom, d.demo);
             if (d.demo && settings.get('speed')) cv.text('DEMO', W - 40, H - 30, 18, dim('#8d969f', 0.5), { align: 'right', font: 'bold' });
             return ui.image('MAIN_GFX', cv);
+        }
+        /* The standby row: three quiet readings along the bottom, each at a fixed place, '--' while the car has not
+           said (never a guess); the demo shows made-up ones. */
+        function statusRow(cv, f, bottom, demo) {
+            const fresh = (x) => isNum(x.v) && Date.now() - x.t < 600000;
+            const fv = settings.get('tempUnit') === 'f', mi = settings.get('speedUnit') === 'mph';
+            const o = demo ? 4 : fresh(outside) ? outside.v : null, b = demo ? 82 : fresh(soc) ? soc.v : null, r = demo ? 412 : fresh(range) ? range.v : null;
+            const items = [
+                ['OUTSIDE', isNum(o) ? Math.round(fv ? o * 9 / 5 + 32 : o) + (fv ? ' °F' : ' °C') : '--'],
+                ['12 V BATTERY', isNum(b) ? Math.round(b) + ' %' : '--', isNum(b) && b < 60],
+                ['RANGE', isNum(r) ? Math.round(mi ? r / 1.609344 : r) + (mi ? ' mi' : ' km') : '--', isNum(r) && r < 60],
+            ];
+            const y = bottom - 26, lab = dim('#8d969f', Math.min(1, f * 1.1)), val = dim('#c9d0d6', Math.min(1, f * 1.15)), warn = dim(TINT.amber, f);
+            cv.fillRect(W / 2 - 520, y - 46, 1040, 1, dim('#8d969f', f * 0.35));
+            items.forEach((it, i) => {
+                const cx = W / 2 + (i - 1) * 360;
+                cv.text(it[0], cx, y - 22, 15, lab, { align: 'center', font: 'bold', spacing: 2 });
+                cv.text(it[1], cx, y + 8, 28, it[2] ? warn : val, { align: 'center', font: 'light' });
+            });
         }
         // the figures change once a second (the minutes, the seconds or the colon): 2 frames a second is plenty
         ctx.loop('MAIN', 2, render);

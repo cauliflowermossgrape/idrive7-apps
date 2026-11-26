@@ -50,6 +50,18 @@ ok(impl.clockText(at(0, 30, 0), true).hm === '12:30' && impl.clockText(at(0, 30,
     const all = texts.join(' | ');
     ok(/^\d\d \| : \| \d\d \|/.test(all), 'the time drawn as hours, colon, minutes: ' + all);
     ok(texts.some((x) => /^7 °C {5}88 km\/h$/.test(x)), 'outside temperature and speed under it: ' + all);
+    // the standby row: outside, 12 V charge and range from the car, '--' for what it has not sent
+    ok(texts.includes('12 V BATTERY') && texts.includes('RANGE') && texts.includes('7 °C') && texts.filter((x) => x === '--').length === 2, 'status row: outside known, battery and range not yet: ' + all);
+    const cds = handlers['de.bmw.infotainment.vehicle.CDS'], kombi = handlers['de.bmw.infotainment.KombiIF'];
+    ok(!!cds && !!cds.statusBattery2 && !!kombi && !!kombi.statusRangeTankStatus, 'watches the 12 V charge and the range');
+    cds.statusBattery2({ conditionBatteryChargingCondition: 81 });
+    kombi.statusRangeTankStatus({ range: 47 });
+    await frame();
+    ok(texts.includes('81 %') && texts.includes('47 km'), 'status row: 81 % and 47 km');
+    kombi.statusRangeTankStatus({ range: 4095 });
+    S.status = false;
+    await frame();
+    ok(!texts.includes('RANGE'), 'status row off: not drawn');
     S.outside = false; S.speed = false;
     const RealDate = Date, place = async (sec) => {
         global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [2026, 10, 26, 21, 47, sec])); } static now() { return new RealDate(2026, 10, 26, 21, 47, sec).getTime(); } };

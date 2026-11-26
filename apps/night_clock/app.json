@@ -1,8 +1,8 @@
 {
   "id": "night_clock",
   "title": "Night Clock",
-  "description": "One quiet screen for night driving: the time large and dim on black, the outside temperature and speed if wanted",
-  "version": "0.1.1",
+  "description": "One quiet screen for night driving or waiting: the time large and dim on black, the outside temperature and speed if wanted, and a standby row with the 12 V charge and the range",
+  "version": "0.2.0",
   "vendor": "custom",
   "loggingId": "OAA6",
   "iconGlyph": "24",
@@ -15,6 +15,14 @@
     "de.bmw.infrastructure.EnvironmentalInformation": {
       "_optional": "the outside temperature under the time",
       "ExteriorTemperature": "s"
+    },
+    "de.bmw.infotainment.vehicle.CDS": {
+      "_optional": "the 12 V charge in the status row",
+      "statusBattery2": "rs"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "the range in the status row",
+      "statusRangeTankStatus": "rs"
     }
   },
   "screens": [
@@ -35,6 +43,7 @@
     {"key": "seconds", "label": "Show seconds (else a blinking colon)", "type": "bool", "default": false},
     {"key": "outside", "label": "Outside temperature", "type": "bool", "default": true},
     {"key": "speed", "label": "Speed", "type": "bool", "default": false},
+    {"key": "status", "label": "Status row (outside, 12 V battery, range)", "type": "bool", "default": true},
     {"key": "tempUnit", "label": "Temperature unit", "type": "choice", "default": "c", "options": [["c", "Celsius"], ["f", "Fahrenheit"]]},
     {"key": "speedUnit", "label": "Speed unit", "type": "choice", "default": "kmh", "options": [["kmh", "km/h"], ["mph", "mph"]]},
     {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
