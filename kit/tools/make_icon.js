@@ -111,6 +111,11 @@ if (glyph === 'gauge') {
     c.strokeRoundRect(14, 30, 112, 80, 16, 6, W);
     [[26, '#2a8cff'], [56, '#2fd27a'], [86, A]].forEach(([x, col]) => c.roundRect(x, 58, 28, 10, 5, col));
     c.fillRect(40, 84, 60, 5, W);
+} else if (glyph === 'search') {
+    // magnifier over a signal trace (Signal Hunter)
+    c.arc(60, 60, 32, 40, 0, 360, W);
+    c.line(88, 88, 116, 116, 12, W);
+    c.polyline([[36, 64], [46, 64], [52, 46], [60, 76], [68, 54], [74, 64], [84, 64]], 5, A);
 } else {
     c.strokeRoundRect(14, 14, 112, 112, 22, 6, W);
     c.text(glyph, 70, 88, 56, W, { font: 'bold', align: 'center' });

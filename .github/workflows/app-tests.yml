@@ -72,6 +72,8 @@ jobs:
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_vitals_program.js
       - run: node kit/tools/test_twin_dme.js
+      - run: node kit/tools/test_signal_hunter.js
+      - run: node kit/tools/gen_signal_hunter.js --check
       - run: node kit/tools/test_redline_hud.js
       - run: node kit/tools/test_hud_claim.js
       - run: node kit/tools/test_redline_running.js
