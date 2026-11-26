@@ -71,6 +71,8 @@ jobs:
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
       - run: node kit/tools/test_dtc_texts.js
+      - run: node kit/tools/test_signal_hunter.js
+      - run: node kit/tools/gen_signal_hunter.js --check
       - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_vitals_program.js
@@ -157,3 +159,4 @@ jobs:
       - run: node kit/tools/test_twin_dme.js
       - run: node kit/tools/test_safe_boot.js
       - run: node kit/tools/test_panic.js
+      - run: node kit/tools/test_signal_hunter.js
