@@ -1,8 +1,8 @@
 {
   "id": "blackbox",
   "title": "Blackbox",
-  "description": "The last 60 s of driving kept, saved as CSV on a hard stop, at full power, through a Sport stretch or with one button",
-  "version": "0.2.0",
+  "description": "The last 60 s of driving kept, saved as CSV on a hard stop, at full power, through a Sport stretch or with one button; each one as charts and a slow-motion replay",
+  "version": "0.3.0",
   "vendor": "custom",
   "loggingId": "OAA5",
   "iconGlyph": "flag",
@@ -36,6 +36,9 @@
         ["BTN_MARK", "Save last 60 s"],
         ["BTN_PREV", "Previous"],
         ["BTN_NEXT", "Next"],
+        ["BTN_PLAY", "Play / Pause"],
+        ["BTN_RATE", "Speed"],
+        ["BTN_START", "Back to start"],
         ["BTN_SETTINGS", "Settings"]
       ]
     }

@@ -6,9 +6,12 @@
  *                   a hard stop saves at), and next to them what saves a recording, each with how close it is right now
  *   Recordings      the saved ones as a list; the chosen one as a summary (why it was saved, top speed, hardest braking,
  *                   most g, most power) and its charts, 0 s being the moment it was saved for
+ *   Replay          the chosen recording played back at 0.25x, 1x or 4x: a cursor runs over its charts, a g circle with
+ *                   the last second's trail and the values at that moment
  *   How it works    the same in words and a timeline, for whoever opens it the first time
  *
- *   draw(cv, t, page, s)   s = { v, rows, list, sel, detail, busy, settings, kw, peakKw, demo, now }
+ *   draw(cv, t, page, s)   s = { v, rows, list, sel, detail, replay, busy, settings, kw, peakKw, demo, now }
+ *   rowAt(rows, t)         the row nearest to time t (rows sorted by time)
  *   parseCsv(text)         the recorder's CSV back to [{ t, rpm, speed, gLong, gLat, torque }]
  *   summary(rows, at)      { vmax, brake, gMax, kwMax, secs } of a recording
  */
@@ -28,6 +31,13 @@ const two = (n) => (n < 10 ? '0' : '') + n;
 const when = (ms) => { const d = new Date(ms); return d.getDate() + '.' + two(d.getMonth() + 1) + '. ' + two(d.getHours()) + ':' + two(d.getMinutes()); };
 const kindColor = (t, k) => (k === 'brake' ? t.crit : k === 'power' ? t.warn : k === 'sport' ? t.accent : GO);
 const ceilTo = (v, s) => Math.max(s, Math.ceil(v / s) * s);
+
+function rowAt(rows, tm) {
+    if (!rows.length) return null;
+    let lo = 0, hi = rows.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (rows[m].t <= tm) lo = m; else hi = m; }
+    return Math.abs(rows[hi].t - tm) < Math.abs(rows[lo].t - tm) ? rows[hi] : rows[lo];
+}
 
 function parseCsv(text) {
     const lines = String(text || '').trim().split('\n'), head = (lines.shift() || '').split(',');
@@ -76,6 +86,9 @@ function charts(cv, t, x, y, w, h, rows, o) {
     if (o.marker !== undefined && o.marker >= x0 && o.marker <= x1) {
         [a, b].forEach((c) => { const mx = Math.round(c.X(o.marker)); cv.fillRect(mx - 1, c.py, 3, c.ph, withAlpha(t.crit, 0.85)); });
         cv.text('SAVED FOR THIS', a.X(o.marker) + 8, a.py + 18, 15, t.crit, { font: 'bold', spacing: 1.5 });
+    }
+    if (isNum(o.cursor) && o.cursor >= x0 && o.cursor <= x1) {
+        [a, b].forEach((c) => { const cx = Math.round(c.X(o.cursor)); cv.fillRect(cx - 1, c.py - 4, 3, c.ph + 8, t.text); cv.circle(cx, c.py - 4, 6, t.text); });
     }
     // what the lines are
     const lx = x + 52;
@@ -139,7 +152,7 @@ function recordings(cv, t, s) {
         cv.text(KIND[e.kind] || e.kind, 230, y + 29, 18, kindColor(t, e.kind), { font: 'bold', spacing: 1 });
         cv.text(Math.round(e.ms / 1000) + ' s', 560, y + 29, 18, t.dim, { align: 'right' });
     });
-    if (l.length > per) cv.text((s.sel + 1) + ' of ' + l.length + ': Previous / Next', 48, 500, 16, t.dim);
+    cv.text(l.length > per ? (s.sel + 1) + ' of ' + l.length + ': Previous / Next. Replay plays it back.' : l.length ? 'Replay tab: the chosen one in slow motion' : '', 48, 500, 16, t.dim);
 
     const e = l[s.sel];
     const p = G.panel(cv, t, 600, 44, 976, 468, e ? (KIND[e.kind] || e.kind) + ', ' + when(e.at) : 'The chosen recording');
@@ -159,6 +172,52 @@ function recordings(cv, t, s) {
     cv.text(e.kind === 'sport' ? '0 s: when Sport was chosen' : '0 s: the moment it was saved for. Left of it: the 60 s before', p.x + 24, 500, 16, t.dim);
 }
 
+/* Replay: the chosen recording played back. */
+const sec = (v) => (v >= 0 ? '+' : '-') + Math.abs(v).toFixed(1) + ' s';
+const rateText = (r) => (r === 0.25 ? '0.25x' : r + 'x');
+function replay(cv, t, s) {
+    const r = s.replay, e = r && r.e;
+    const p = G.panel(cv, t, 24, 44, 1000, 468, e ? 'Replay: ' + (KIND[e.kind] || e.kind) + ', ' + when(e.at) : 'Replay');
+    const q = G.panel(cv, t, 1040, 44, 536, 468, 'At this moment');
+    if (!e || !r.rows.length) {
+        const msg = !e ? ['Nothing to replay yet.', 'Saved recordings play here: slowed down to 0.25x,', 'at real speed or four times faster.']
+            : [r.d && r.d.error ? 'Could not read the file: ' + r.d.error : 'Reading the file'];
+        msg.forEach((x, i) => cv.text(x, 48, 130 + i * 34, 22, i ? t.dim : t.text, { font: i ? 'label' : 'bold' }));
+        cv.text('The values at the cursor show here while it plays.', 1064, 130, 18, t.dim);
+        return;
+    }
+    const rows = r.rows, tc = e.at + r.pos * 1000, now = rowAt(rows, tc);
+    charts(cv, t, 40, 112, 968, 292, rows, { x0: Math.floor(r.x0), x1: Math.max(Math.ceil(r.x1), Math.floor(r.x0) + 1), zero: e.at,
+        brakeG: s.settings.get('brakeG') || 0.7, lat: true, marker: e.kind === 'sport' ? undefined : 0, cursor: r.pos });
+    // where it is: the time, how far, and the controls
+    const frac = r.x1 > r.x0 ? (r.pos - r.x0) / (r.x1 - r.x0) : 0;
+    cv.roundRect(84, 420, 924, 6, 3, t.track);
+    cv.roundRect(84, 420, Math.max(6, 924 * G.clamp(frac, 0, 1)), 6, 3, t.text);
+    cv.text(sec(r.pos), 48, 474, 36, t.text, { font: 'num' });
+    G.pill(cv, t, 200, 446, 150, 34, r.playing ? 'PLAYING ' + rateText(r.rate) : 'PAUSED', { color: r.playing ? GO : t.dim, size: 16 });
+    let bx = 380;
+    if (cv.own) {
+        bx += G.button(cv, t, bx, 440, 150, 46, r.playing ? 'Pause' : 'Play', r.play, { primary: true, key: 'bb-play' }) + 12;
+        bx += G.segment(cv, t, bx, 440, 270, 46, r.rates.map((x) => ({ label: rateText(x), on: x === r.rate, run: () => r.setRate(x), key: 'bb-rate-' + x }))) + 12;
+        G.button(cv, t, bx, 440, 170, 46, 'To start', r.start, { key: 'bb-start' });
+    } else cv.text('Play, Speed and Back to start: in the menu. Now at ' + rateText(r.rate) + '.', bx, 470, 18, t.dim);
+    cv.text(e.kind === 'sport' ? '0 s: when Sport was chosen. The white line is where the replay is.'
+        : '0 s: the moment it was saved for (red). The white line is where the replay is.', p.x + 24, 504, 16, t.dim);
+
+    // the g circle with the last second, and the values at the cursor
+    const trail = rows.filter((x) => x.t > tc - 1000 && x.t <= tc).map((x) => [x.gLat, x.gLong]);
+    G.gmeter(cv, t, 1308, 196, 92, { lat: now.gLat, long: now.gLong, trail, max: 1.5, smooth: false });
+    const kw = isNum(now.torque) && isNum(now.rpm) ? now.torque * now.rpm / 9549 : null;
+    const items = [
+        ['SPEED', now.speed, 'km/h', 0], ['ENGINE', now.rpm, 'rpm', 0], ['POWER', isNum(kw) ? Math.max(0, kw) : null, 'kW', 0],
+        ['TORQUE', now.torque, 'Nm', 0], [isNum(now.gLong) && now.gLong < 0 ? 'BRAKING' : 'ACCELERATING', isNum(now.gLong) ? Math.abs(now.gLong) : null, 'g', 2],
+        ['SIDEWAYS', isNum(now.gLat) ? Math.abs(now.gLat) : null, 'g', 2],
+    ];
+    items.forEach((x, i) => G.readout(cv, t, 1064 + (i % 3) * 172, 364 + Math.floor(i / 3) * 72,
+        { label: x[0], value: x[1], unit: x[2], decimals: x[3], size: 32, labelSize: 13, color: i === 4 && isNum(now.gLong) && now.gLong < 0 ? t.crit : undefined }));
+    cv.text('dots: the last second', q.x + q.w - 24, 82, 15, t.dim, { align: 'right' });
+}
+
 /* How it works: a timeline and plain words. */
 function help(cv, t, s) {
     G.panel(cv, t, 24, 44, 1552, 468, 'How Blackbox works');
@@ -173,7 +232,7 @@ function help(cv, t, s) {
     [
         ['1', 'It records all the time.', 'Speed, rpm, braking and sideways g, torque and temperatures, ten times a second. Only the last minute is kept, in memory.'],
         ['2', 'It saves only when it matters.', 'A hard stop, full power, a Sport stretch (each can be turned off in Settings) or the Save last 60 s button.'],
-        ['3', 'You look at it here or on your phone.', 'Recordings shows each one as charts. Settings > Recordings as QR gives the list to a phone camera; the CSV files are in the app\'s blackbox folder.'],
+        ['3', 'You look at it here or on your phone.', 'Recordings shows each one as charts, Replay plays it back in slow motion. Settings > Recordings as QR gives the list to a phone camera.'],
     ].forEach((r, i) => {
         const yy = 250 + i * 82;
         cv.circle(98, yy - 8, 20, withAlpha(t.accent, 0.3));
@@ -186,8 +245,9 @@ function help(cv, t, s) {
 
 function draw(cv, t, page, s) {
     if (page === 1) recordings(cv, t, s);
-    else if (page === 2) help(cv, t, s);
+    else if (page === 2) replay(cv, t, s);
+    else if (page === 3) help(cv, t, s);
     else live(cv, t, s);
 }
 
-module.exports = { draw, parseCsv, summary, KIND, WHY, when };
+module.exports = { draw, parseCsv, summary, rowAt, KIND, WHY, when };

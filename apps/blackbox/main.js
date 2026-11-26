@@ -19,7 +19,8 @@ const { qrLogSheet } = require('./kit/qrlog');
 const { Recorder, RATE_MS } = require('./recorder');
 const { draw, parseCsv, summary, KIND, when } = require('./view');
 
-const TABS = ['Live', 'Recordings', 'How it works'];
+const TABS = ['Live', 'Recordings', 'Replay', 'How it works'];
+const RATES = [0.25, 1, 4];
 
 const W = 1600;
 const G0 = 9.80665;
@@ -101,9 +102,48 @@ mgu.run({
             page = 1; sel = 0;
             return render();
         });
-        ui.onClick('BTN_PREV', () => { sel = Math.max(0, sel - 1); page = 1; return render(); });
-        ui.onClick('BTN_NEXT', () => { sel = Math.min(Math.max(0, list().length - 1), sel + 1); page = 1; return render(); });
-        if (ctx.onTab) ctx.onTab((i) => { page = i; return render(); });
+        ui.onClick('BTN_PREV', () => { sel = Math.max(0, sel - 1); if (page !== 2) page = 1; return render(); });
+        ui.onClick('BTN_NEXT', () => { sel = Math.min(Math.max(0, list().length - 1), sel + 1); if (page !== 2) page = 1; return render(); });
+
+        /* Replay: the chosen recording played back, slower or faster. pos = seconds from the moment it was saved for. */
+        const rp = { key: null, pos: 0, x0: 0, x1: 0, playing: false, rate: 0.25, last: 0 };
+        let fast = null, loop = null;
+        // the time played so far is counted at the speed it played at, before a press changes anything
+        const advance = (now) => {
+            if (rp.playing) { rp.pos += (now - rp.last) / 1000 * rp.rate; if (rp.pos >= rp.x1) { rp.pos = rp.x1; rp.playing = false; } }
+            rp.last = now;
+        };
+        const replayPlay = () => {
+            page = 2; advance(Date.now());
+            if (!rp.playing && rp.pos >= rp.x1 - 0.05) rp.pos = rp.x0;
+            rp.playing = !rp.playing; rp.last = Date.now();
+            return render();
+        };
+        const replayRate = (r) => { advance(Date.now()); rp.rate = r || RATES[(RATES.indexOf(rp.rate) + 1) % RATES.length]; page = 2; return render(); };
+        const replayStart = () => { rp.pos = rp.x0; rp.last = Date.now(); page = 2; return render(); };
+        ui.onClick('BTN_PLAY', replayPlay);
+        ui.onClick('BTN_RATE', () => replayRate());
+        ui.onClick('BTN_START', replayStart);
+        // while it plays, frames come ten times a second (the GPU renderer runs at the screen's rate anyway)
+        const pace = () => {
+            const want = rp.playing && page === 2;
+            if (want && !fast) { fast = setInterval(() => { if (loop && loop.kick) loop.kick(); }, 100); if (fast.unref) fast.unref(); }
+            if (!want && fast) { clearInterval(fast); fast = null; }
+        };
+        function replayState(l, now) {
+            const e = l[sel], d = detail(e), rows = d ? d.rows : [];
+            const key = e ? e.at + ':' + e.kind : null;
+            if (key !== rp.key) {
+                rp.key = key; rp.playing = false;
+                rp.x0 = rows.length ? (rows[0].t - e.at) / 1000 : 0;
+                rp.x1 = rows.length ? (rows[rows.length - 1].t - e.at) / 1000 : 0;
+                rp.pos = rp.x0;
+            }
+            advance(now);
+            return { e, d, rows, pos: rp.pos, x0: rp.x0, x1: rp.x1, playing: rp.playing, rate: rp.rate, rates: RATES,
+                play: replayPlay, setRate: replayRate, start: replayStart };
+        }
+        if (ctx.onTab) ctx.onTab((i) => { page = i; if (i !== 2) rp.playing = false; return render(); });
 
         function list() { return demoOn() ? demoList : rec.list(); }
         function detail(e) {
@@ -142,12 +182,14 @@ mgu.run({
             if (demo) v.mode = 'comfort';
             const kw = demo ? (v.torque * v.rpm / 9549) : st.kw;
             draw(cv, t, page, { v, rows: page === 0 ? liveRows(now) : [], list: l, sel, detail: page === 1 ? detail(l[sel]) : null,
+                replay: page === 2 ? replayState(l, now) : null,
                 busy: demo ? null : rec.busy(), settings, kw, peakKw: demo ? 250 : st.peakKw, demo, now });
+            pace();
             const busy = !demo && rec.busy();
             G.frame(cv, t, TABS, page, [demo && { text: 'DEMO' }, busy && { text: 'SAVING', color: t.crit }]);
             return ui.image('MAIN_GFX', cv);
         }
-        ctx.loop('MAIN', 4, render);
+        loop = ctx.loop('MAIN', 4, render);
         render().then(() => ctx.log.info('first frame done')).catch((e) => ctx.log.warn('first render: ' + e));
     },
 });

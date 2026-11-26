@@ -96,6 +96,7 @@ jobs:
       - run: node kit/tools/test_ambient_lever.js
       - run: node kit/tools/test_xdrive_live.js
       - run: node kit/tools/test_blackbox.js
+      - run: node kit/tools/test_blackbox_view.js
       - run: node kit/tools/test_zh.js
       - run: node kit/tools/test_widget_unicode.js
       # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
