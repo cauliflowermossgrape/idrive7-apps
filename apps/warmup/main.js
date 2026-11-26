@@ -14,6 +14,8 @@
  *     waits for it too, on a car that has it (the gearbox unit, else the car's signal)
  *   - Cold starts tab: the engine's starts, how many with cold oil and how many cold runs went past the safe rev
  *     limit (coldstarts.js, counted in the background: app.json autostart)
+ *   - Drives tab (issue #235): the lowest and highest oil, coolant and gearbox oil of each of the latest drives,
+ *     and on request a CSV of each drive (kit/runtime/drivelog.js, also counted in the background)
  */
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
@@ -22,6 +24,7 @@ const Car = require('./kit/car');
 const Engine = require('./kit/engine');
 const { ColdStarts, COLD_C } = require('./coldstarts');
 const { Gearbox } = require('./gearbox');
+const { DriveLog } = require('./kit/drivelog');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
@@ -33,7 +36,7 @@ const TYPICAL = { oil: { drive: 4, idle: 1.5 }, coolant: { drive: 7, idle: 3 }, 
 const HIST = { oil: 1, coolant: 2, gearbox: 5 };   // a value's place in a hist entry
 const GEAR_HOT = 125;                      // deg C: ease off
 const GEAR_C = '#b98cff';                  // the gearbox's colour in the trend
-const TABS = ['Warm-up', 'Cold starts'];
+const TABS = ['Warm-up', 'Cold starts', 'Drives'];
 const RPM = { factor: 0.25, invalid: 65535 }, TEMP = { offset: -48, invalid: 255 };
 
 /** The safe rev limit for the oil's temperature: the cold limit up to the redline, climbing from 30 deg C to warm. */
@@ -49,20 +52,25 @@ async function background(bg) {
     const { settings, signals, log } = bg;
     const engine = new Engine({ settings, dataDir: bg.dataDir, log });
     const cs = new ColdStarts({ settings, limit: (oil) => limitFor(engine, settings, oil), warm: () => settings.get('warmOil') });
+    const drives = new DriveLog({ settings, key: 'drives', channels: ['oil', 'coolant', 'gearbox'], dataDir: bg.dataDir, csv: () => settings.get('driveCsv') });
     const w = (iface, h) => (signals && signals.watch ? Promise.resolve(signals.watch(iface, '1', h, log)).catch((e) => log.warn('cold starts: ' + (e && e.message || e))) : null);
     w('de.bmw.infotainment.vehicle.CDS', {
-        statusEngineSpeed2: (v) => { const r = v && v.actualValueRPMEngineCrankshaft; if (G.isNum(r) && r !== RPM.invalid) cs.rpm(r * RPM.factor); },
-        statusEngineTemperature: (v) => { const o = v && v.temperatureEngineOilDrive; if (G.isNum(o) && o !== TEMP.invalid) cs.oil(o + TEMP.offset); },
+        statusEngineSpeed2: (v) => { const r = v && v.actualValueRPMEngineCrankshaft; if (G.isNum(r) && r !== RPM.invalid) { cs.rpm(r * RPM.factor); drives.rpm(r * RPM.factor); } },
+        statusEngineTemperature: (v) => {
+            const o = v && v.temperatureEngineOilDrive, c = v && v.temperatureEngineDrive;
+            if (G.isNum(o) && o !== TEMP.invalid) { cs.oil(o + TEMP.offset); drives.value('oil', o + TEMP.offset); }
+            if (G.isNum(c) && c !== TEMP.invalid) drives.value('coolant', c + TEMP.offset);
+        },
     });
     w(Engine.SIGNAL[0], engine.handlers());
-    return { cs };
+    return { cs, drives };
 }
 
 mgu.run({
     background,
     async start(ctx) {
         const { ui, settings } = ctx;
-        const cs = (ctx.background || await background(ctx)).cs;
+        const bgd = ctx.background || await background(ctx), cs = bgd.cs, drives = bgd.drives;
         let page = 0;
         // engine profile (diesel / petrol): the Auto redline and cold limit
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log: ctx.log });
@@ -101,6 +109,7 @@ mgu.run({
                 // "cooled" message stays for 20 s, then all clear
                 if (doneAt && m - doneAt > 20000) { hardS = 0; needS = 0; cool = 0; doneAt = 0; }
             }
+            if (drives && !d.demo) drives.value('gearbox', gearbox.temp());
             if (m - lastHist > 5000 && (G.isNum(d.oil) || G.isNum(d.coolant))) {
                 lastHist = m; hist.push([m, d.oil, d.coolant, d.rpm, d.speed, gearT(d)]);
                 while (hist.length > 240) hist.shift();
@@ -211,6 +220,29 @@ mgu.run({
             G.button(cv, t, 1336, 240 + lp.h - 70, 216, 50, 'Reset', () => { cs.reset(); return render(); }, { key: 'reset', confirm: true });
         }
 
+        /* The Drives tab: the latest drives, each one's lowest and highest temperatures, Reset. */
+        function renderDrives(cv, t) {
+            const two = (n) => (n < 10 ? '0' : '') + n;
+            const list = drives ? drives.drives() : [];
+            const p = G.panel(cv, t, 24, 44, 1552, 468, 'Latest drives');
+            const cols = [[48, 'START'], [330, 'LENGTH'], [520, 'OIL'], [820, 'COOLANT'], [1100, 'GEARBOX OIL']];
+            cols.forEach(([x, l]) => cv.text(l, x, 120, 20, t.dim, { font: 'bold', spacing: 1.5 }));
+            const range = (c) => (c ? Math.round(T(c.min)) + ' - ' + Math.round(T(c.max)) + tU() : '--');
+            if (!list.length) cv.text('Recorded from the next engine start', 48, 180, 24, t.dim);
+            list.slice(0, 6).forEach((r, i) => {
+                const at = new Date(r.at), y = 168 + i * 44, min = Math.round((r.ms || 0) / 60000);
+                cv.text(at.getDate() + '.' + two(at.getMonth() + 1) + '.  ' + at.getHours() + ':' + two(at.getMinutes()), 48, y, 24, t.text);
+                cv.text(r.live ? 'now, ' + min + ' min' : min + ' min', 330, y, 24, r.live ? GO : t.text);
+                const oil = r.ch && r.ch.oil, hotOil = oil && oil.max > 125;
+                cv.text(range(oil), 520, y, 24, hotOil ? t.crit : t.text, { font: 'bold' });
+                cv.text(range(r.ch && r.ch.coolant), 820, y, 24, t.text);
+                const gb = r.ch && r.ch.gearbox;
+                cv.text(range(gb), 1100, y, 24, gb && gb.max > GEAR_HOT ? t.crit : t.text);
+            });
+            cv.text(settings.get('driveCsv') ? 'CSV: drives.csv in the app\'s data folder' : 'A CSV of each drive: Settings', 48, 44 + p.h - 30, 20, t.dim);
+            G.button(cv, t, 1336, 44 + p.h - 70, 216, 50, 'Reset', () => { drives.reset(); return render(); }, { key: 'resetDrives', confirm: true });
+        }
+
         /** The same, on one line (three of them with the gearbox): label and target left, minutes / state right. */
         function etaLine(cv, t, y, label, e, target) {
             cv.text(label, 952, y, 22, t.dim, { font: 'bold', spacing: 1.5 });
@@ -229,6 +261,11 @@ mgu.run({
         function render() {
             const t = ctx.theme(), d = car.data(), now = Date.now();
             const cv = ctx.canvas(W, H).clear(t.bg);
+            if (drives && page === 2) {
+                renderDrives(cv, t);
+                G.frame(cv, t, TABS, 2, [d.demo && { text: 'DEMO' }]);
+                return ui.image('MAIN_GFX', cv);
+            }
             if (cs && page === 1) {
                 renderCold(cv, t);
                 G.frame(cv, t, TABS, 1, [d.demo && { text: 'DEMO' }]);
@@ -282,6 +319,8 @@ mgu.run({
                 cv.text('COOL-DOWN LEFT', 952, 210, 22, t.dim, { font: 'bold', spacing: 1.5 });
                 const lw = cv.text(left > 0 ? String(Math.ceil(left)) : '0', 952, 289, 80, left > 0 ? t.text : GO, { font: 'num' });
                 cv.text('s', 962 + lw, 289, 30, t.dim);
+                // no temperature is read for it: it grows with the time above HARD_RPM / HARD_KW (issue #235)
+                cv.text('estimate from rpm and power', 1552, 210, 20, t.dim, { align: 'right' });
                 cv.text(left > 0 ? (gentleNow ? 'keep it gentle' : 'paused - stay under ' + GENTLE_RPM + ' rpm') : 'done', 1552, 262, 24, left > 0 && !gentleNow ? t.warn : t.text, { align: 'right', font: 'bold' });
                 const f = needS ? G.clamp(cool / needS, 0, 1) : 1;
                 cv.roundRect(952, 303, 600, 12, 6, t.track);

@@ -1,8 +1,8 @@
 {
   "id": "warmup",
   "title": "Warm-Up",
-  "description": "Oil and coolant warm-up calculator (time to ready), safe rev limit, turbo cool-down and a cold start counter",
-  "version": "1.9.3",
+  "description": "Oil and coolant warm-up calculator (time to ready), safe rev limit, turbo cool-down, a cold start counter and each drive's lowest and highest temperatures",
+  "version": "1.10.0",
   "vendor": "custom",
   "loggingId": "OA9A",
   "iconGlyph": "temp",
@@ -154,6 +154,12 @@
       "label": "Turbo cool-down after hard driving",
       "type": "bool",
       "default": true
+    },
+    {
+      "key": "driveCsv",
+      "label": "Record a CSV of each drive",
+      "type": "bool",
+      "default": false
     },
     {
       "key": "tempUnit",
