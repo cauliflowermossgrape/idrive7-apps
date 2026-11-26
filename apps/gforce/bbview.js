@@ -10,7 +10,8 @@
  *                   the last second's trail and the values at that moment
  *   How it works    the same in words and a timeline, for whoever opens it the first time
  *
- *   draw(cv, t, page, s)   s = { v, rows, list, sel, detail, replay, busy, settings, kw, peakKw, demo, now }
+ *   draw(cv, t, page, s)   s = { v, rows, list, sel, detail, replay, busy, settings, kw, peakKw, powerStable, mph, on,
+ *                          demo, now }; mph: speeds in mph (Settings > Speed unit), on: Save the last minute is on
  *   rowAt(rows, t)         the row nearest to time t (rows sorted by time)
  *   parseCsv(text)         the recorder's CSV back to [{ t, rpm, speed, gLong, gLat, torque }]
  *   summary(rows, at)      { vmax, brake, gMax, kwMax, secs } of a recording
@@ -20,11 +21,17 @@ const { withAlpha } = require('./kit/canvas');
 
 const GO = '#2fd27a';
 const KIND = { brake: 'HARD STOP', power: 'FULL POWER', sport: 'SPORT STRETCH', mark: 'SAVED BY HAND' };
+const MPH = 1.609344;
+const isMph = (s) => !!(s && s.mph);
+const spd = (s, kmh) => (typeof kmh === 'number' && isFinite(kmh) && isMph(s) ? kmh / MPH : kmh);
+const unit = (s) => (isMph(s) ? 'mph' : 'km/h');
+/* above 30 km/h (recorder.js BRAKE_KMH), in the unit chosen */
+const above = (s) => 'above ' + Math.round(spd(s, 30)) + ' ' + unit(s);
 const WHY = {
-    brake: 'You braked harder than the hard stop setting, above 30 km/h.',
-    power: 'The engine gave 85 % of the most power it has shown, for a second.',
-    sport: 'Sport mode was on: the whole stretch, from 60 s before it.',
-    mark: 'You pressed Save last 60 s.',
+    brake: (s) => 'You braked harder than the hard stop setting for 0.2 s, ' + above(s) + '.',
+    power: () => 'The engine gave 85 % of the most power it has shown, for a second.',
+    sport: () => 'Sport mode was on: the whole stretch, from 60 s before it.',
+    mark: () => 'You pressed Save last 60 s.',
 };
 const isNum = G.isNum || ((x) => typeof x === 'number' && isFinite(x));
 const two = (n) => (n < 10 ? '0' : '') + n;
@@ -65,16 +72,16 @@ function summary(rows, at) {
 /* Two charts over time: speed (and rpm, on its own scale, faint) and g forward / backward (and sideways). */
 function charts(cv, t, x, y, w, h, rows, o) {
     const x0 = o.x0, x1 = o.x1, rel = (r) => (r.t - o.zero) / 1000;
-    const vmax = rows.reduce((m, r) => (isNum(r.speed) ? Math.max(m, r.speed) : m), 0);
+    const vmax = rows.reduce((m, r) => (isNum(r.speed) ? Math.max(m, spd(o, r.speed)) : m), 0);
     const rmax = rows.reduce((m, r) => (isNum(r.rpm) ? Math.max(m, r.rpm) : m), 0);
     const ytop = ceilTo(vmax * 1.1, 40), step = Math.max(1, Math.floor(rows.length / 400));
     const pick = (f) => rows.filter((r, i) => i % step === 0).map((r) => [rel(r), f(r)]);
     const half = Math.floor((h - 16) / 2), gy = y + half + 16;
     const xf = (v) => (v === 0 ? '0' : (v > 0 ? '+' : '') + Math.round(v));
-    const a = G.chart(cv, t, x, y, w, half, { xMin: x0, xMax: x1, yMin: 0, yMax: ytop, xFmt: xf, xUnit: 's', yUnit: 'km/h',
+    const a = G.chart(cv, t, x, y, w, half, { xMin: x0, xMax: x1, yMin: 0, yMax: ytop, xFmt: xf, xUnit: 's', yUnit: unit(o),
         series: [
             rmax > 0 && { pts: pick((r) => (isNum(r.rpm) ? r.rpm / (ceilTo(rmax, 1000)) * ytop : null)), color: withAlpha(t.dim, 0.7), width: 1.5 },
-            { pts: pick((r) => r.speed), color: t.accent, width: 3, fill: 0.14 },
+            { pts: pick((r) => spd(o, r.speed)), color: t.accent, width: 3, fill: 0.14 },
         ].filter(Boolean), empty: o.empty });
     const lo = Math.min(-1, -(o.brakeG || 0) - 0.2), b = G.chart(cv, t, x, gy, w, half, { xMin: x0, xMax: x1, yMin: lo, yMax: 0.8, yStep: 0.4,
         yFmt: (v) => v.toFixed(1), xFmt: xf, xUnit: 's', yUnit: 'g',
@@ -104,10 +111,11 @@ function live(cv, t, s) {
     const v = s.v, set = s.settings, brakeG = set.get('bbBrakeG') || 0.7;
     const p = G.panel(cv, t, 24, 44, 1000, 468, 'The last 60 seconds, kept in memory');
     const now = s.now;
-    charts(cv, t, 40, 112, 968, 320, s.rows, { x0: -60, x1: 0, zero: now, brakeG, empty: 'Waiting for the car' });
-    cv.text(isNum(v.speed) ? Math.round(v.speed) + ' km/h' : '-- km/h', p.x + p.w - 24, 82, 26, t.text, { align: 'right', font: 'num' });
+    charts(cv, t, 40, 112, 968, 320, s.rows, { x0: -60, x1: 0, zero: now, brakeG, mph: isMph(s), empty: s.on === false ? 'Recording is off' : 'Waiting for the car' });
+    cv.text(isNum(v.speed) ? Math.round(spd(s, v.speed)) + ' ' + unit(s) : '-- ' + unit(s), p.x + p.w - 24, 82, 26, t.text, { align: 'right', font: 'num' });
     cv.text(isNum(v.gLong) ? (v.gLong >= 0 ? '+' : '') + v.gLong.toFixed(2) + ' g' : '-- g', p.x + p.w - 180, 82, 26, GO, { align: 'right', font: 'num' });
-    cv.text('Nothing is written to a file until one of the things on the right happens.', 48, 496, 19, t.dim);
+    cv.text(s.on === false ? 'Off until you switch it on in Settings. Then nothing is written to a file until one of the things on the right happens.'
+        : 'Nothing is written to a file until one of the things on the right happens.', 48, 496, 19, t.dim);
 
     const q = G.panel(cv, t, 1040, 44, 536, 468, 'A recording is saved when');
     const kw = s.kw, peak = s.peakKw || 0, rowY = [100, 194, 288, 382];
@@ -123,13 +131,15 @@ function live(cv, t, s) {
         }
     };
     const braking = isNum(v.gLong) ? Math.max(0, -v.gLong) : null;
-    row(0, 'You brake hard', !!set.get('bbBrake'), 'harder than ' + brakeG.toFixed(1) + ' g, above 30 km/h',
+    const on = s.on !== false;
+    row(0, 'You brake hard', on && !!set.get('bbBrake'), 'harder than ' + brakeG.toFixed(1) + ' g for 0.2 s, ' + above(s),
         isNum(braking) ? braking / brakeG : undefined, isNum(braking) ? 'now ' + braking.toFixed(2) + ' g' : 'now --', t.crit);
-    row(1, 'Full power', !!set.get('bbPower'), peak >= 60 ? '85 % of ' + Math.round(peak) + ' kW, for a second' : 'learns your car\'s power first',
-        isNum(kw) && peak >= 60 ? kw / (0.85 * peak) : undefined, isNum(kw) ? 'now ' + Math.round(Math.max(0, kw)) + ' kW' : 'now --', t.warn);
-    row(2, 'Sport mode', !!set.get('bbSport'), 'the whole stretch, while Sport is on', null);
+    const learned = peak >= 60 && s.powerStable !== false;
+    row(1, 'Full power', on && !!set.get('bbPower'), learned ? '85 % of ' + Math.round(peak) + ' kW, for a second' : 'learns your car\'s power first',
+        isNum(kw) && learned ? kw / (0.85 * peak) : undefined, isNum(kw) ? 'now ' + Math.round(Math.max(0, kw)) + ' kW' : 'now --', t.warn);
+    row(2, 'Sport mode', on && !!set.get('bbSport'), 'the whole stretch, while Sport is on', null);
     cv.text(v.mode === 'sport' ? 'Sport is on now' : 'not in Sport now', 1556, rowY[2] + 50, 17, v.mode === 'sport' ? t.accent : t.text, { align: 'right' });
-    row(3, 'You press the button', true, 'Save last 60 s: any time, for anything', null);
+    row(3, 'You press the button', on, 'Save last 60 s: any time, for anything', null);
     if (s.busy) {
         cv.roundRect(1056, 470, 504, 34, 8, withAlpha(t.crit, 0.2));
         cv.text('SAVING NOW: ' + (KIND[s.busy] || s.busy), 1308, 494, 19, t.crit, { align: 'center', font: 'bold', spacing: 1.5 });
@@ -141,7 +151,8 @@ function recordings(cv, t, s) {
     const l = s.list;
     G.panel(cv, t, 24, 44, 560, 468, 'Saved recordings (' + l.length + ')');
     if (!l.length) {
-        ['Nothing saved yet.', '', 'Just drive: when you brake hard,', 'use full power, drive in Sport', 'or press Save last 60 s,', 'the recording shows up here.']
+        (s.on === false ? ['Nothing saved yet.', '', 'Recording is off until you switch it on:', 'Settings > Save the last minute.', 'Until then nothing is read or saved.']
+            : ['Nothing saved yet.', '', 'Just drive: when you brake hard,', 'drive in Sport (or at full power,', 'when that is on) or press Save last 60 s,', 'the recording shows up here.'])
             .forEach((x, i) => cv.text(x, 48, 120 + i * 32, 21, i ? t.dim : t.text, { font: i ? 'label' : 'bold' }));
     }
     const per = 8, first = Math.max(0, Math.min(s.sel - per + 1, l.length - per)), shown = l.slice(Math.max(0, first), Math.max(0, first) + per);
@@ -159,15 +170,15 @@ function recordings(cv, t, s) {
     if (!e) { cv.text('The chosen one is shown here: why it was saved, its top speed and g, as charts.', 624, 130, 20, t.dim); return; }
     if (e.error) { cv.text('This one could not be saved: ' + e.error, 624, 130, 20, t.crit); return; }
     const d = s.detail, rows = d ? d.rows : [];
-    cv.text(WHY[e.kind] || '', 624, 104, 18, t.dim);
+    cv.text(WHY[e.kind] ? WHY[e.kind](s) : '', 624, 104, 18, t.dim);
     const sm = d ? d.sum : summary([], e.at);
     const tiles = [
-        ['TOP SPEED', sm.vmax, 'km/h', 0], ['HARDEST BRAKING', isNum(sm.brake) ? -sm.brake : null, 'g', 2],
+        ['TOP SPEED', spd(s, sm.vmax), unit(s), 0], ['HARDEST BRAKING', isNum(sm.brake) ? -sm.brake : null, 'g', 2],
         ['MOST G', sm.gMax, 'g', 2], ['MOST POWER', sm.kwMax, 'kW', 0], ['LENGTH', sm.secs || e.ms / 1000, 's', 0],
     ];
     tiles.forEach((x, i) => G.readout(cv, t, 624 + i * 188, 118, { label: x[0], value: x[1], unit: x[2], decimals: x[3], size: 38, labelSize: 14 }));
     const x0 = rows.length ? Math.floor((rows[0].t - e.at) / 1000) : -60, x1 = rows.length ? Math.ceil((rows[rows.length - 1].t - e.at) / 1000) : 15;
-    charts(cv, t, 616, 214, 944, 262, rows, { x0, x1: Math.max(x1, x0 + 1), zero: e.at, brakeG: s.settings.get('bbBrakeG') || 0.7, lat: true,
+    charts(cv, t, 616, 214, 944, 262, rows, { x0, x1: Math.max(x1, x0 + 1), zero: e.at, brakeG: s.settings.get('bbBrakeG') || 0.7, lat: true, mph: isMph(s),
         marker: e.kind === 'sport' ? undefined : 0, empty: d && d.error ? 'Could not read the file: ' + d.error : 'Reading the file' });
     cv.text(e.kind === 'sport' ? '0 s: when Sport was chosen' + (e.thinned ? '. Calm stretches kept once a second, the busy moments in full ('
         + e.rows + ' of ' + e.rowsAll + ' rows)' : '') : '0 s: the moment it was saved for. Left of it: the 60 s before', p.x + 24, 500, 16, t.dim);
@@ -189,7 +200,7 @@ function replay(cv, t, s) {
     }
     const rows = r.rows, tc = e.at + r.pos * 1000, now = rowAt(rows, tc);
     charts(cv, t, 40, 112, 968, 292, rows, { x0: Math.floor(r.x0), x1: Math.max(Math.ceil(r.x1), Math.floor(r.x0) + 1), zero: e.at,
-        brakeG: s.settings.get('bbBrakeG') || 0.7, lat: true, marker: e.kind === 'sport' ? undefined : 0, cursor: r.pos });
+        brakeG: s.settings.get('bbBrakeG') || 0.7, lat: true, mph: isMph(s), marker: e.kind === 'sport' ? undefined : 0, cursor: r.pos });
     // where it is: the time, how far, and the controls
     const frac = r.x1 > r.x0 ? (r.pos - r.x0) / (r.x1 - r.x0) : 0;
     cv.roundRect(84, 420, 924, 6, 3, t.track);
@@ -210,7 +221,7 @@ function replay(cv, t, s) {
     G.gmeter(cv, t, 1308, 196, 92, { lat: now.gLat, long: now.gLong, trail, max: 1.5, smooth: false });
     const kw = isNum(now.torque) && isNum(now.rpm) ? now.torque * now.rpm / 9549 : null;
     const items = [
-        ['SPEED', now.speed, 'km/h', 0], ['ENGINE', now.rpm, 'rpm', 0], ['POWER', isNum(kw) ? Math.max(0, kw) : null, 'kW', 0],
+        ['SPEED', spd(s, now.speed), unit(s), 0], ['ENGINE', now.rpm, 'rpm', 0], ['POWER', isNum(kw) ? Math.max(0, kw) : null, 'kW', 0],
         ['TORQUE', now.torque, 'Nm', 0], [isNum(now.gLong) && now.gLong < 0 ? 'BRAKING' : 'ACCELERATING', isNum(now.gLong) ? Math.abs(now.gLong) : null, 'g', 2],
         ['SIDEWAYS', isNum(now.gLat) ? Math.abs(now.gLat) : null, 'g', 2],
     ];
@@ -231,8 +242,8 @@ function help(cv, t, s) {
     cv.text('something happens', x + mem, y - 20, 17, t.crit, { align: 'center', font: 'bold' });
     cv.text('the 75 s become one file', x + w / 2, y + 74, 17, t.dim, { align: 'center' });
     [
-        ['1', 'It records all the time.', 'Speed, rpm, braking and sideways g, torque and temperatures, ten times a second. Only the last minute is kept, in memory.'],
-        ['2', 'It saves only when it matters.', 'A hard stop, full power, a Sport stretch (each can be turned off in Settings) or the Save last 60 s button.'],
+        ['1', 'It is off until you switch it on.', 'Settings > Save the last minute. Then it records all the time: speed, rpm, g, torque and temperatures, ten times a second. Only the last minute is kept, in memory.'],
+        ['2', 'It saves only when it matters.', 'A hard stop, a Sport stretch, full power (each on or off in Settings; full power starts off) or the Save last 60 s button.'],
         ['3', 'You look at it here or on your phone.', 'Recordings shows each one as charts, Replay plays it back in slow motion. Settings > Recordings as QR gives the list to a phone camera.'],
     ].forEach((r, i) => {
         const yy = 250 + i * 82;

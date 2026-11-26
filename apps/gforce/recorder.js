@@ -4,7 +4,7 @@
  * when something happens (a hard stop, full power, the button), with POST_MS more after it; or a whole Sport stretch,
  * from PRE_MS before Sport was chosen until a little after it was left.
  *
- *   const r = new Recorder({ dir, keep, now, onSaved });
+ *   const r = new Recorder({ dir, keep, now, onSaved });   keep: a number, or a function read at each save (the setting)
  *   r.sample(values)          values = { rpm, speed, gLong, gLat, torque, oil, coolant, mode }: once every 100 ms
  *   r.event(kind)             'brake', 'power', 'mark': saves PRE_MS before and POST_MS after (one at a time)
  *   r.sport(on)               a Sport stretch starts / ends (saved as one file, at most SPORT_MAX_MS)
@@ -12,12 +12,22 @@
  *                             (a Sport stretch is thinned when saved: see thin())
  *
  * Files: <dir>/<YYYYMMDD-HHMMSS>-<kind>.csv, header "time,rpm,speed,gLong,gLat,torque,oil,coolant,mode"; the index in
- * <dir>/index.json; the oldest beyond `keep` are removed (files this app wrote, in its own folder).
+ * <dir>/index.json; the oldest beyond `keep` are removed (files this app wrote, in its own folder). Nothing is written
+ * (not even the folder) before the first recording is saved.
+ *
+ * What saves a recording, from the samples (each fed once every 100 ms):
+ *   const b = new BrakeWatch();  b.step(gLong, speed, fromG)   true on a hard stop: braking at fromG or harder for
+ *                                                                BRAKE_ROWS samples in a row (one pothole spike is not)
+ *   const p = new PowerWatch(savedPeak, now);  p.step(kw, now, on)   { fire, peak, stable, save }: full power (85 % of
+ *                                the car's most power) for a second, only once that peak has stopped climbing for
+ *                                STABLE_MS, at most once every POWER_GAP_MS
+ *   const tr = new Triggers({ rec, settings, now });  tr.step(v, now)   one sample: kept, and each trigger checked
+ *                                against its setting (bbBrake, bbBrakeG, bbPower, bbSport); { brake, power } when one saved
  */
 const fs = require('fs');
 const path = require('path');
 
-const RATE_MS = 100, PRE_MS = 60000, POST_MS = 15000, SPORT_TAIL_MS = 10000, SPORT_MAX_MS = 30 * 60000;
+const RATE_MS = 100, PRE_MS = 60000, POST_MS = 15000, SPORT_TAIL_MS = 10000, SPORT_MAX_MS = 30 * 60000, KEEP = 30;
 const COLS = ['rpm', 'speed', 'gLong', 'gLat', 'torque', 'oil', 'coolant', 'mode'];
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 const two = (n) => (n < 10 ? '0' : '') + n;
@@ -49,17 +59,93 @@ function thin(rows, marks) {
     });
 }
 
+/* A hard stop: braking at fromG or harder, above 30 km/h, for BRAKE_ROWS samples in a row (0.2 s). A single spike from a
+ * pothole or a kerb is one sample and saves nothing. True once per stop: braking has to ease off before the next. */
+const BRAKE_ROWS = 2, BRAKE_KMH = 30;
+class BrakeWatch {
+    constructor() { this.n = 0; }
+    step(gLong, speed, fromG) {
+        const hard = isNum(gLong) && isNum(fromG) && gLong <= -fromG && isNum(speed) && speed > BRAKE_KMH;
+        this.n = hard ? this.n + 1 : 0;
+        return this.n === BRAKE_ROWS;
+    }
+}
+
+/* Full power. The car's most power is learned from what it shows, but only from power held for PEAK_ROWS samples in a
+ * row (the lowest of them), never above MAX_KW: one bad sample cannot raise it. A recording is saved at 85 % of it for a
+ * second, only once the peak is stable (MIN_PEAK or more and not raised for STABLE_MS: while it is still being learned,
+ * every pull would be "full power"), and then at most once every POWER_GAP_MS. A peak saved earlier counts as stable. */
+const PEAK_ROWS = 5, MAX_KW = 1500, MIN_PEAK = 60, STABLE_MS = 60000, POWER_GAP_MS = 5 * 60000, FULL = 0.85;
+class PowerWatch {
+    constructor(peak, now) {
+        this.peak = isNum(peak) && peak > 0 && peak <= MAX_KW ? peak : 0;
+        this.raisedAt = this.peak >= MIN_PEAK ? -Infinity : now;
+        this.saved = Math.round(this.peak);
+        this.recent = []; this.since = 0; this.firedAt = -Infinity;
+    }
+    stable(now) { return this.peak >= MIN_PEAK && now - this.raisedAt >= STABLE_MS; }
+    /** kw now (null: not known), on: the setting. save: the peak to keep in the settings (once it is stable), or null. */
+    step(kw, now, on) {
+        this.recent.push(isNum(kw) ? kw : null);
+        if (this.recent.length > PEAK_ROWS) this.recent.shift();
+        if (this.recent.length === PEAK_ROWS && this.recent.every(isNum)) {
+            const held = Math.min.apply(null, this.recent);
+            if (held > this.peak + 1 && held <= MAX_KW) { this.peak = held; this.raisedAt = now; }
+        }
+        const stable = this.stable(now);
+        const full = stable && isNum(kw) && kw >= FULL * this.peak;
+        this.since = full ? this.since || now : 0;
+        const fire = !!on && full && now - this.since >= 1000 && now - this.firedAt >= POWER_GAP_MS;
+        if (fire) this.firedAt = now;
+        let save = null;
+        if (stable && Math.round(this.peak) !== this.saved) { this.saved = Math.round(this.peak); save = this.saved; }
+        return { fire, peak: this.peak, stable, save };
+    }
+}
+
+/* One sample in, with the settings: what background() runs ten times a second while recording is on. A Sport stretch
+ * ends whenever Sport does, whatever the setting is by then: the setting only decides whether one starts. */
+class Triggers {
+    constructor(o) {
+        this.rec = o.rec; this.settings = o.settings;
+        this.brake = new BrakeWatch();
+        this.power = new PowerWatch(o.settings.get('bbPeakKw'), o.now === undefined ? Date.now() : o.now);
+        this.lastSport = null; this.kw = null;
+    }
+    step(v, now) {
+        const s = this.settings, rec = this.rec, out = {};
+        rec.sample(v);
+        if (this.brake.step(v.gLong, v.speed, s.get('bbBrakeG')) && s.get('bbBrake') && rec.event('brake')) out.brake = v.gLong;
+        const kw = isNum(v.torque) && isNum(v.rpm) ? v.torque * v.rpm / 9549 : null;
+        const p = this.power.step(kw, now, s.get('bbPower'));
+        this.kw = kw;
+        if (p.save !== null) s.set('bbPeakKw', p.save, 'app');
+        if (p.fire && rec.event('power')) out.power = kw;
+        const sport = v.mode === 'sport';
+        if (sport !== this.lastSport) {
+            this.lastSport = sport;
+            if (!sport) rec.sport(false);
+            else if (s.get('bbSport')) rec.sport(true);
+        }
+        return out;
+    }
+}
+
 class Recorder {
     constructor(o) {
-        this.dir = o.dir; this.keep = o.keep || 30; this.now = o.now || Date.now; this.onSaved = o.onSaved || (() => {});
+        this.dir = o.dir; this.keep = o.keep; this.now = o.now || Date.now; this.onSaved = o.onSaved || (() => {});
         this.ring = [];                 // [t, ...COLS]
         this.open = null;               // a recording being taken: { kind, at, until, rows: [] }
         this.index = [];
-        try { fs.mkdirSync(this.dir); } catch (e) { /* there */ }
         try { this.index = JSON.parse(fs.readFileSync(path.join(this.dir, 'index.json'), 'utf8')); } catch (e) { this.index = []; }
     }
 
     list() { return this.index; }
+    /** How many are kept, read at each save (the setting can change while the app runs). */
+    kept() {
+        const k = typeof this.keep === 'function' ? this.keep() : this.keep;
+        return isNum(k) && k >= 1 ? Math.round(k) : KEEP;
+    }
     busy() { return this.open ? this.open.kind : null; }
 
     sample(v) {
@@ -114,10 +200,12 @@ class Recorder {
         });
         const entry = { file, kind: o.kind, at: o.at, ms: o.rows[o.rows.length - 1][0] - o.rows[0][0], rows: o.rows.length, rowsAll, thinned, vmax, gMax };
         try {
+            try { fs.mkdirSync(this.dir); } catch (e) { /* there */ }
             fs.writeFileSync(path.join(this.dir, file), lines.join('\n') + '\n');
+            const keep = this.kept();
             this.index = [entry].concat(this.index);
-            this.index.slice(this.keep).forEach((e) => { try { fs.unlinkSync(path.join(this.dir, e.file)); } catch (err) { /* gone */ } });
-            this.index = this.index.slice(0, this.keep);
+            this.index.slice(keep).forEach((e) => { try { fs.unlinkSync(path.join(this.dir, e.file)); } catch (err) { /* gone */ } });
+            this.index = this.index.slice(0, keep);
             fs.writeFileSync(path.join(this.dir, 'index.json'), JSON.stringify(this.index));
         } catch (e) { entry.error = String(e && e.message || e); }
         this.onSaved(entry);
@@ -127,4 +215,5 @@ class Recorder {
     flush() { if (this.open) this._save(); }
 }
 
-module.exports = { Recorder, thin, RATE_MS, PRE_MS, POST_MS, SPORT_TAIL_MS, COLS };
+module.exports = { Recorder, BrakeWatch, PowerWatch, Triggers, thin, RATE_MS, PRE_MS, POST_MS, SPORT_TAIL_MS, COLS,
+    BRAKE_ROWS, BRAKE_KMH, STABLE_MS, POWER_GAP_MS, MAX_KW };

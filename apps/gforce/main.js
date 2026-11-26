@@ -8,10 +8,12 @@
  *     (the classic g-g diagram shape - fill it out and you're using the car)
  *   - peak accel / brake / left / right, combined peak, top speed, max rpm
  *   - all-time records saved in data/gforce_records.json
- *   - the last minute saved when it matters (the former Blackbox, #248): with the car (app.json autostart), the last
- *     60 s are kept in memory ten times a second and saved, with 15 s after, as a CSV file on a hard stop, at full
- *     power, through a Sport stretch or with Save last 60 s (recorder.js); Last minute, Recordings and Replay show
- *     them (bbview.js). Reads only what the car sends anyway; nothing is asked of or written to any control unit.
+ *   - the last minute saved when it matters (the former Blackbox, #248), off until switched on (Settings > Save the
+ *     last minute): then, with the car (app.json autostart), the last 60 s are kept in memory ten times a second and
+ *     saved, with 15 s after, as a CSV file on a hard stop, through a Sport stretch, at full power (off by default) or
+ *     with Save last 60 s (recorder.js); Last minute, Recordings and Replay show them (bbview.js). While it is off the
+ *     background part watches nothing and writes nothing. Reads only what the car sends anyway; nothing is asked of
+ *     or written to any control unit.
  *
  * Small spikes (kerbs, potholes) are filtered with a 150 ms moving average.
  */
@@ -23,7 +25,7 @@ const G = require('./kit/gauges');
 const { qrLogSheet } = require('./kit/qrlog');
 const { t: translate } = require('./kit/i18n');
 const Car = require('./kit/car');
-const { Recorder, RATE_MS } = require('./recorder');
+const { Recorder, Triggers, RATE_MS } = require('./recorder');
 const BB = require('./bbview');
 
 const W = 1600, H = 520;
@@ -46,53 +48,61 @@ function modeOf(raw) {
     return /SPORT|BOOST/.test(s) ? 'sport' : /HYBRID|ELECTRIC|BATTERY/.test(s) ? 'hybrid' : /ADAPTIV|COMFORT|TRAFFIC/.test(s) ? 'comfort' : /ECO/.test(s) ? 'eco' : null;
 }
 
-/* With or without the screen (autostart): the recordings. Setting "Save the last minute" off: nothing is kept. */
+/* With or without the screen (autostart): the recordings. Setting "Save the last minute" off (the default): nothing
+ * is watched, nothing runs and nothing is written; it starts when the setting is switched on and stops when it is off. */
 async function background(bg) {
     const { settings, signals, log } = bg;
     const v = { rpm: null, speed: null, gLong: null, gLat: null, torque: null, oil: null, coolant: null, mode: null };
     const sc = (raw, f, o, bad) => (typeof raw === 'number' && raw !== bad ? raw * f + o : null);
-    const watch = (iface, h) => (signals && signals.watch ? Promise.resolve(signals.watch(iface, '1', h, log)).catch((e) => log.warn('recordings: ' + iface + ': ' + (e && e.message || e))) : null);
-    watch('de.bmw.infotainment.vehicle.CDS', {
-        statusEngineSpeed2: (x) => { v.rpm = sc(x && x.actualValueRPMEngineCrankshaft, 0.25, 0, 65535); },
-        statusEngineTemperature: (x) => { v.oil = sc(x && x.temperatureEngineOilDrive, 1, -48, 255); v.coolant = sc(x && x.temperatureEngineDrive, 1, -48, 255); },
-    });
-    watch('de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (x) => { v.speed = sc(x && x.speedVehicleCentreOfGravity, 0.015625, 0, 65535); } });
-    watch('de.bmw.infotainment.vehicle.CDS2', {
-        statusLongitudinalAccelerationMassCenter: (x) => { const a = sc(x && x.longitudinalAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLong = a === null ? null : a / G0; },
-        statusLateralAccelerationMassCenter: (x) => { const a = sc(x && x.lateralAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLat = a === null ? null : a / G0; },
-    });
-    watch('de.bmw.infotainment.drivingexcitement.FES', {
-        statusActualValueTorque2: (x) => { const raw = x && x.actualValueTorqueCrankshaft; v.torque = typeof raw === 'number' && raw < 4095 ? raw * 0.5 - 1023.5 : null; },
-        statusFESVehicleDynamicSwitchHMI: (x) => { const m = modeOf(x && x.actualValueModeDrivingExperience); if (m) v.mode = m; },
-    });
-
-    const rec = new Recorder({ dir: path.join(bg.dataDir, 'recordings'), keep: settings.get('bbKeep'),
+    const watch = (iface, h) => (signals && signals.watch ? Promise.resolve(signals.watch(iface, '1', h, log)).catch((e) => { log.warn('recordings: ' + iface + ': ' + (e && e.message || e)); return null; }) : Promise.resolve(null));
+    const rec = new Recorder({ dir: path.join(bg.dataDir, 'recordings'), keep: () => settings.get('bbKeep'),
         onSaved: (e) => log.info('recordings: saved ' + e.file + ' (' + Math.round(e.ms / 1000) + ' s' + (e.error ? ', ' + e.error : '') + ')') });
-    let peakKw = settings.get('bbPeakKw') || 0, powerSince = 0, lastMode = null;
-    const state = { seen: false, kw: null, peakKw };
-    const timer = setInterval(() => {
-        if (!state.seen && (G.isNum(v.speed) || G.isNum(v.rpm))) state.seen = true;
-        if (!settings.get('bbRecord')) { if (rec.busy()) rec.flush(); return; }
-        rec.sample(v);
-        const now = Date.now();
-        // a hard stop: braking harder than the setting from over 30 km/h
-        if (settings.get('bbBrake') && G.isNum(v.gLong) && v.gLong <= -settings.get('bbBrakeG') && G.isNum(v.speed) && v.speed > 30) {
-            if (rec.event('brake')) log.info('recordings: hard stop ' + v.gLong.toFixed(2) + ' g');
-        }
-        // full power for a second: 85 % of the most power this car has shown (learned, kept in the settings)
-        const kw = G.isNum(v.torque) && G.isNum(v.rpm) ? v.torque * v.rpm / 9549 : null;
-        if (G.isNum(kw) && kw > peakKw + 1) { peakKw = kw; if (Math.round(kw) % 5 === 0) settings.set('bbPeakKw', Math.round(peakKw), 'app'); }
-        state.kw = kw; state.peakKw = peakKw;
-        const full = G.isNum(kw) && peakKw >= 60 && kw >= 0.85 * peakKw;
-        powerSince = full ? powerSince || now : 0;
-        if (settings.get('bbPower') && powerSince && now - powerSince >= 1000 && rec.event('power')) log.info('recordings: full power ' + Math.round(kw) + ' kW');
-        // a Sport stretch
-        const sport = v.mode === 'sport';
-        if (sport !== lastMode) { lastMode = sport; if (settings.get('bbSport')) rec.sport(sport); }
-    }, RATE_MS);
-    if (timer.unref) timer.unref();
+    const state = { seen: false, kw: null, peakKw: settings.get('bbPeakKw') || 0, powerStable: false };
+    let timer = null, subs = [], trig = null;
+    const start = () => {
+        if (timer) return;
+        Object.keys(v).forEach((k) => { v[k] = null; });
+        subs = [
+            watch('de.bmw.infotainment.vehicle.CDS', {
+                statusEngineSpeed2: (x) => { v.rpm = sc(x && x.actualValueRPMEngineCrankshaft, 0.25, 0, 65535); },
+                statusEngineTemperature: (x) => { v.oil = sc(x && x.temperatureEngineOilDrive, 1, -48, 255); v.coolant = sc(x && x.temperatureEngineDrive, 1, -48, 255); },
+            }),
+            watch('de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (x) => { v.speed = sc(x && x.speedVehicleCentreOfGravity, 0.015625, 0, 65535); } }),
+            watch('de.bmw.infotainment.vehicle.CDS2', {
+                statusLongitudinalAccelerationMassCenter: (x) => { const a = sc(x && x.longitudinalAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLong = a === null ? null : a / G0; },
+                statusLateralAccelerationMassCenter: (x) => { const a = sc(x && x.lateralAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLat = a === null ? null : a / G0; },
+            }),
+            watch('de.bmw.infotainment.drivingexcitement.FES', {
+                statusActualValueTorque2: (x) => { const raw = x && x.actualValueTorqueCrankshaft; v.torque = typeof raw === 'number' && raw < 4095 ? raw * 0.5 - 1023.5 : null; },
+                statusFESVehicleDynamicSwitchHMI: (x) => { const m = modeOf(x && x.actualValueModeDrivingExperience); if (m) v.mode = m; },
+            }),
+        ];
+        // a hard stop held for 0.2 s, full power once the car's peak is learned, a Sport stretch (recorder.js Triggers)
+        trig = new Triggers({ rec, settings, now: Date.now() });
+        timer = setInterval(() => {
+            if (!state.seen && (G.isNum(v.speed) || G.isNum(v.rpm))) state.seen = true;
+            const now = Date.now(), out = trig.step(v, now);
+            if (G.isNum(out.brake)) log.info('recordings: hard stop ' + out.brake.toFixed(2) + ' g');
+            if (G.isNum(out.power)) log.info('recordings: full power ' + Math.round(out.power) + ' kW');
+            state.kw = trig.kw; state.peakKw = trig.power.peak; state.powerStable = trig.power.stable(now);
+        }, RATE_MS);
+        if (timer.unref) timer.unref();
+        log.info('recordings: on');
+    };
+    const stop = () => {
+        if (!timer) return;
+        clearInterval(timer); timer = null; trig = null;
+        rec.flush();
+        subs.forEach((p) => p.then((w) => w && w.shutdown && w.shutdown()).catch(() => {}));
+        subs = [];
+        Object.keys(v).forEach((k) => { v[k] = null; });
+        state.kw = null;
+        log.info('recordings: off');
+    };
+    if (settings.get('bbRecord')) start();
+    if (settings.onChange) settings.onChange((k, val) => { if (k === 'bbRecord') { if (val) start(); else stop(); } });
     process.on('exit', () => rec.flush());
-    return { rec, v, state };
+    return { rec, v, state, on: () => !!timer };
 }
 
 mgu.run({
@@ -266,7 +276,19 @@ mgu.run({
         /* ---------- the last minute: recordings and replay (the former Blackbox, #248) ---------- */
         const bb = ctx.background || await background(ctx);
         const bbSt = bb.state || { seen: true };
-        let sel = 0;
+        // the chosen recording is held by what it is, not by its place in the list: a new one saved meanwhile (it goes on
+        // top) or the oldest removed leaves it chosen, also during a replay. pinWait: Save last 60 s was pressed, the
+        // newest is shown until that recording is saved, then it is the chosen one.
+        let sel = 0, pin = null, pinWait = false;
+        const keyOf = (e) => (e ? e.at + ':' + e.kind : null);
+        function choose(l) {
+            const i = pin === null ? -1 : l.findIndex((e) => keyOf(e) === pin);
+            if (i >= 0) { sel = i; pinWait = false; return; }
+            if (pinWait && !bbDemo() && bb.rec.busy()) { sel = 0; return; }
+            pinWait = false;
+            sel = Math.min(sel, Math.max(0, l.length - 1));
+            pin = keyOf(l[sel]);
+        }
         const cache = new Map();
         // demo recordings when the car's own data is demo (no car), as the G-force page
         const bbDemo = () => settings.get('demo') === 'on' || (settings.get('demo') !== 'off' && !bbSt.seen && !!car.data().demo);
@@ -320,18 +342,19 @@ mgu.run({
         }
         function drawBlackbox(cv, t) {
             const now = Date.now(), demo = bbDemo(), l = bbList();
-            if (sel >= l.length) sel = Math.max(0, l.length - 1);
+            choose(l);
             const v = demo ? Object.assign(demoAt(now), { mode: 'comfort' }) : bb.v;
             const kw = demo ? (v.torque * v.rpm / 9549) : bbSt.kw;
             BB.draw(cv, t, page - 2, { v, rows: page === 2 ? liveRows(now) : [], list: l, sel, detail: page === 3 ? detail(l[sel]) : null,
-                replay: page === 4 ? replayState(l, now) : null,
-                busy: demo ? null : bb.rec.busy(), settings, kw, peakKw: demo ? 250 : bbSt.peakKw, demo, now });
+                replay: page === 4 ? replayState(l, now) : null, mph: mph(), on: !!settings.get('bbRecord'),
+                busy: demo ? null : bb.rec.busy(), settings, kw, peakKw: demo ? 250 : bbSt.peakKw, powerStable: demo || !!bbSt.powerStable, demo, now });
             // the page's one job as a button where the kit runs the screen (the bar's button is left out there)
             if (page === 2) G.button(cv, t, 1376, 380, 180, 40, 'Save last 60 s', act, { key: 'bb-mark', primary: true });
             else if (page === 3 || page === 4) G.button(cv, t, (page === 3 ? 584 : 1024) - 20 - 220, 56, 220, 40, 'Next recording', act, { key: 'bb-next' });
             if (page === 2 && !settings.get('bbRecord')) {
-                cv.roundRect(40, 210, 968, 60, 10, withAlpha(t.warn, 0.18));
-                cv.text('Saving the last minute is off: Settings > Save the last minute', 524, 248, 22, t.warn, { align: 'center', font: 'bold' });
+                cv.roundRect(40, 196, 968, 88, 10, withAlpha(t.warn, 0.18));
+                cv.text('Recording is off until you switch it on', 524, 232, 24, t.warn, { align: 'center', font: 'bold' });
+                cv.text('Settings > Save the last minute. Until then nothing is read or saved.', 524, 266, 19, t.text, { align: 'center' });
             }
         }
         function recordingsText() {
@@ -362,11 +385,21 @@ mgu.run({
         function act() {
             if (page === 0) { newSession(); return render(); }
             if (page === 2) {
-                if (bbDemo()) demoList.unshift(demoEntry('mark', Date.now() - 15000));
-                else if (settings.get('bbRecord')) bb.rec.event('mark');
+                if (bbDemo()) { demoList.unshift(demoEntry('mark', Date.now() - 15000)); pin = keyOf(demoList[0]); }
+                else if (settings.get('bbRecord')) {
+                    // a recording already being taken goes on and is the one that gets saved
+                    bb.rec.event('mark');
+                    const o = bb.rec.open;
+                    pin = o ? o.at + ':' + o.kind : null; pinWait = !!o;
+                }
                 sel = 0; return go(3);
             }
-            if (page === 3 || page === 4) { const n = bbList().length; sel = n ? (sel + 1) % n : 0; return render(); }
+            if (page === 3 || page === 4) {
+                const l = bbList();
+                choose(l);
+                sel = l.length ? (sel + 1) % l.length : 0; pin = keyOf(l[sel]); pinWait = false;
+                return render();
+            }
             if (page === 5) return go(0);
             if (!clearArmed) { clearArmed = setTimeout(() => { clearArmed = null; actionLabel(); }, 5000); return actionLabel(); }
             clearTimeout(clearArmed); clearArmed = null;
