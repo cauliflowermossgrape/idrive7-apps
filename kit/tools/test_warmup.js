@@ -39,7 +39,8 @@ Module._load = function (req, parent, isMain) {
 };
 
 /** A fresh Warm-Up (a new process); render() draws a frame and returns its texts in order. */
-let render = null, tab = null;
+let render = null, tab = null, widgetDraw = null;
+const cells = {};
 async function start(saved) {
     delete require.cache[MAIN];
     require(MAIN);
@@ -48,7 +49,8 @@ async function start(saved) {
     Object.assign(S, saved || {});
     let texts = [], frame = null;
     await app.start({
-        ui: { image: async () => {}, isVisible: () => true }, settings: { get: (k) => S[k], set: (k, v) => { S[k] = v; }, onChange() {} }, onTab: (fn) => { tab = fn; }, log: { info() {}, warn() {} },
+        ui: { image: async () => {}, isVisible: () => true }, settings: { get: (k) => S[k], set: (k, v) => { S[k] = v; }, onChange() {} }, onTab: (fn) => { tab = fn; }, spec: SPEC,
+        widget: { loop: (fps, fn) => { widgetDraw = fn; }, onChange() {}, set: (id, k, v) => { cells[k] = v; } }, log: { info() {}, warn() {} },
         dataDir: fs.mkdtempSync(path.join(require('os').tmpdir(), 'warmup-')),   // engine.js keeps its profile here
         theme: () => themes.theme('m_tricolour'), loop: (name, fps, fn) => { frame = fn; },
         canvas: (w, h) => {
@@ -132,6 +134,21 @@ const checks = [
         await start();
         await tab(2);
         assert((await render()).indexOf('Recorded from the next engine start') >= 0, 'none yet: says from when');
+    }],
+    ['home-screen widget: the big picture and the small one\'s text lines', async () => {
+        gearC = null;
+        await start();
+        drive({ rpm: 1500, torque: 50, oil: 65, coolant: 75, speed: 40 }, 5);
+        const big = widgetDraw({ spawnId: 1, big: true });
+        assert(big && big.w > 0 && big.d.some((x) => x > 0), 'the big widget draws a picture');
+        if (process.env.WIDGET_PNG) require('fs').writeFileSync(process.env.WIDGET_PNG, big.png());
+        assert.strictEqual(cells.Title, '', 'big: the layout\'s title left empty');
+        widgetDraw({ spawnId: 2, big: false });
+        assert.strictEqual(cells.Title, 'Warm-Up');
+        assert(/^WARMING UP  oil 65°C$/.test(cells.TextRecordings), 'small: state and oil: ' + cells.TextRecordings);
+        assert(/^ready in ~\d+ min$/.test(cells.TextCam), 'small: ready in: ' + cells.TextCam);
+        assert(cells.ProgressbarVisible === true && cells.Progress > 0 && cells.Progress < 1, 'small: the bar part way: ' + cells.Progress);
+        assert.strictEqual(cells.TimeElapsed, 'Coolant 75°C');
     }],
     ['gearbox.js: the unit\'s 6000, else DA12 or the signal once they moved', async () => {
         const { Gearbox, Moving } = require(path.join(__dirname, '..', '..', 'apps', 'warmup', 'gearbox'));

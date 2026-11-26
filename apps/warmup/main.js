@@ -14,11 +14,12 @@
  *     waits for it too, on a car that has it (the gearbox unit, else the car's signal)
  *   - Cold starts tab: the engine's starts, how many with cold oil and how many cold runs went past the safe rev
  *     limit (coldstarts.js, counted in the background: app.json autostart)
+ *   - home-screen widget (app.json startWidget): the state, the oil, "ready in", coolant and gearbox oil at a glance
  *   - Drives tab (issue #235): the lowest and highest oil, coolant and gearbox oil of each of the latest drives,
  *     and on request a CSV of each drive (kit/runtime/drivelog.js, also counted in the background)
  */
 const mgu = require('./kit/mgu');
-const { withAlpha } = require('./kit/canvas');
+const { withAlpha, ScaledCanvas } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const Car = require('./kit/car');
 const Engine = require('./kit/engine');
@@ -372,6 +373,87 @@ mgu.run({
             cv.fillRect(gx, gy + gh, gw, 1, withAlpha(t.tick, 0.5));
             G.frame(cv, t, cs ? TABS : ['Warm-up'], 0, [d.demo && { text: 'DEMO' }]);     // G20-style frame
             return ui.image('MAIN_GFX', cv);
+        }
+
+        /*
+         * Home-screen widget, as eDrive's: the big one is a picture (the HMI crops a share of every edge and fades them:
+         * startWidget.safe, and the setting widgetFit keeps everything further in), the small one shows the layout's text
+         * lines and progress bar (it shows no picture at that size).
+         */
+        const WIDGET_FIT = { large: [0, 0, 0, 0], medium: [0.06, 0.04, 0.06, 0.02], small: [0.11, 0.09, 0.11, 0.05] };
+        const wcan = {}, wtext = {};
+        /** The state in a word or two and its colour, as the page's status line decides it (no gearbox-only states). */
+        function widgetState(t, d) {
+            const warm = settings.get('warmOil');
+            if (!G.isNum(d.oil)) return ['NO OIL TEMP', t.dim];
+            if (d.oil > 125) return ['OIL HOT', t.crit];
+            if (settings.get('cooldown') && needS > 0) return doneAt ? ['COOLED', GO] : ['TURBO COOL-DOWN', t.warn];
+            if (d.oil >= warm) return ['READY', GO];
+            return d.oil >= warm - 20 ? ['WARMING UP', t.warn] : ['COLD', t.cold];
+        }
+        function readyText(d) {
+            const e = eta('oil', d.oil, settings.get('warmOil'), d);
+            return e.state === 'ready' ? 'oil warm' : e.state === 'warming' ? 'ready in ~' + Math.max(1, Math.round(e.min)) + ' min'
+                : e.state === 'off' ? 'engine off' : e.state === 'stalled' ? 'not warming' : '';
+        }
+        function widgetCells(inst) {
+            const t = ctx.theme(), d = car.data(), on = !inst.big, st = widgetState(t, d), warm = settings.get('warmOil');
+            const deg = (c) => (G.isNum(c) ? Math.round(T(c)) + tU() : '--');
+            const cells = {
+                Title: [on ? 'Warm-Up' : '', 'Text'],
+                TextRecordings: [on ? st[0] + '  oil ' + deg(d.oil) : '', 'Text'],
+                TextCam: [on ? readyText(d) : '', 'Text'],
+                ProgressbarVisible: [on, 'Bool'],
+                Progress: [on && G.isNum(d.oil) ? Math.round(G.clamp((d.oil - 20) / Math.max(1, warm - 20), 0, 1) * 100) / 100 : 0, 'Float'],
+                TimeElapsed: [on ? 'Coolant ' + deg(d.coolant) : '', 'Text'],
+                TimeRemaining: [on && G.isNum(gearT(d)) ? 'Gearbox ' + deg(gearT(d)) : '', 'Text'],
+            };
+            const prev = wtext[inst.spawnId] || (wtext[inst.spawnId] = {});
+            Object.keys(cells).forEach((k) => {
+                const v = JSON.stringify(cells[k][0]);
+                if (prev[k] === v) return;
+                prev[k] = v;
+                ctx.widget.set(inst.spawnId, k, cells[k][0], cells[k][1]);
+            });
+        }
+        function renderWidget(inst) {
+            if (inst) widgetCells(inst);
+            const sw0 = ctx.spec.startWidget || {};
+            const [w, h] = sw0.size || [384, 256], key = w + 'x' + h;
+            const cv = (wcan[key] = wcan[key] || new ScaledCanvas(w, h, sw0.scale || 1)).clear([0, 0, 0, 0]);
+            const t = ctx.theme(), d = car.data(), warm = settings.get('warmOil'), st = widgetState(t, d);
+            const safe = sw0.safe || [0.09, 0.1], sf = safe.length === 4 ? safe : [safe[0], safe[1], safe[0], safe[1]];
+            const f = WIDGET_FIT[settings.get('widgetFit')] || WIDGET_FIT.large;
+            const x0 = Math.round(w * (sf[0] + f[0])), x1 = w - Math.round(w * (sf[2] + f[2]));
+            const y0 = Math.round(h * (sf[1] + f[1])), y1 = h - Math.round(h * (sf[3] + f[3])), iw = x1 - x0;
+            // the layout (314 x 168 at full size), scaled into the room and centred
+            const s = Math.min(1, iw / 314, (y1 - y0) / 168), top = y0 + Math.round((y1 - y0 - 168 * s) / 2);
+            const Y = (v) => top + v * s, F = (v) => v * s;
+            cv.text(st[0], x0, Y(18), F(18), st[1], { font: 'bold', spacing: F(1.5) });
+            if (d.demo) cv.text('DEMO', x1, Y(18), F(13), t.warn, { font: 'bold', spacing: F(1), align: 'right' });
+            // the oil, large, and how long until it is warm
+            const ky = Y(88), ov = G.isNum(d.oil) ? String(Math.round(T(d.oil))) : '--';
+            const vw = cv.text(ov, x0, ky, F(66), G.isNum(d.oil) ? (d.oil >= warm ? GO : t.text) : t.dim, { font: 'num' });
+            cv.text(tU() + ' OIL', x0 + F(8) + vw, ky, F(20), t.dim, { font: 'bold' });
+            cv.text(readyText(d), x1, ky, F(20), t.text, { font: 'bold', align: 'right' });
+            // a bar from 20 deg C to warm, the warm mark at its end
+            const by = ky + F(14), bh = F(10);
+            cv.roundRect(x0, by, iw, bh, bh / 2, t.track);
+            if (G.isNum(d.oil)) cv.roundRect(x0, by, Math.max(bh, iw * G.clamp((d.oil - 20) / Math.max(1, warm - 20), 0, 1)), bh, bh / 2, d.oil >= warm ? GO : st[1]);
+            // bottom row: coolant, gearbox oil (where the car has it), safe rev limit
+            const yb = Y(168 - 26), gb = gearT(d), lim = limit(d.oil);
+            const colm = (x, label, v, c, align) => {
+                cv.text(label, x, yb, F(13), t.dim, { font: 'bold', spacing: F(1), align });
+                cv.text(v, x, yb + F(24), F(21), c, { font: 'bold', align });
+            };
+            colm(x0, 'COOLANT', G.isNum(d.coolant) ? Math.round(T(d.coolant)) + tU() : '--', G.isNum(d.coolant) ? t.text : t.dim);
+            if (G.isNum(gb)) colm((x0 + x1) / 2, 'GEARBOX', Math.round(T(gb)) + tU(), gb > GEAR_HOT ? t.crit : t.text, 'center');
+            colm(x1, 'REV LIMIT', lim ? lim + ' rpm' : '--', t.text, 'right');
+            return cv.canvas;
+        }
+        if (ctx.widget) {
+            ctx.widget.loop(4, renderWidget);
+            ctx.widget.onChange((why) => { if (why === 'resized' || why === 'placed') Object.keys(wtext).forEach((k) => delete wtext[k]); });
         }
 
         if (cs && ctx.onTab) ctx.onTab((i) => { page = i; return render(); });
