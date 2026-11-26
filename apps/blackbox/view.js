@@ -169,7 +169,8 @@ function recordings(cv, t, s) {
     const x0 = rows.length ? Math.floor((rows[0].t - e.at) / 1000) : -60, x1 = rows.length ? Math.ceil((rows[rows.length - 1].t - e.at) / 1000) : 15;
     charts(cv, t, 616, 214, 944, 262, rows, { x0, x1: Math.max(x1, x0 + 1), zero: e.at, brakeG: s.settings.get('brakeG') || 0.7, lat: true,
         marker: e.kind === 'sport' ? undefined : 0, empty: d && d.error ? 'Could not read the file: ' + d.error : 'Reading the file' });
-    cv.text(e.kind === 'sport' ? '0 s: when Sport was chosen' : '0 s: the moment it was saved for. Left of it: the 60 s before', p.x + 24, 500, 16, t.dim);
+    cv.text(e.kind === 'sport' ? '0 s: when Sport was chosen' + (e.thinned ? '. Calm stretches kept once a second, the busy moments in full ('
+        + e.rows + ' of ' + e.rowsAll + ' rows)' : '') : '0 s: the moment it was saved for. Left of it: the 60 s before', p.x + 24, 500, 16, t.dim);
 }
 
 /* Replay: the chosen recording played back. */

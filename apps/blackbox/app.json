@@ -2,7 +2,7 @@
   "id": "blackbox",
   "title": "Blackbox",
   "description": "The last 60 s of driving kept, saved as CSV on a hard stop, at full power, through a Sport stretch or with one button; each one as charts and a slow-motion replay",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "vendor": "custom",
   "loggingId": "OAA5",
   "iconGlyph": "flag",

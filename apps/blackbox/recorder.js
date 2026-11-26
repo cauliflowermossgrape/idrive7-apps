@@ -8,7 +8,8 @@
  *   r.sample(values)          values = { rpm, speed, gLong, gLat, torque, oil, coolant, mode }: once every 100 ms
  *   r.event(kind)             'brake', 'power', 'mark': saves PRE_MS before and POST_MS after (one at a time)
  *   r.sport(on)               a Sport stretch starts / ends (saved as one file, at most SPORT_MAX_MS)
- *   r.list()                  the saved recordings, newest first: [{ file, kind, at, ms, rows, vmax, gMax }]
+ *   r.list()                  the saved recordings, newest first: [{ file, kind, at, ms, rows, rowsAll, thinned, vmax, gMax }]
+ *                             (a Sport stretch is thinned when saved: see thin())
  *
  * Files: <dir>/<YYYYMMDD-HHMMSS>-<kind>.csv, header "time,rpm,speed,gLong,gLat,torque,oil,coolant,mode"; the index in
  * <dir>/index.json; the oldest beyond `keep` are removed (files this app wrote, in its own folder).
@@ -22,6 +23,31 @@ const isNum = (v) => typeof v === 'number' && isFinite(v);
 const two = (n) => (n < 10 ? '0' : '') + n;
 const stamp = (ms) => { const d = new Date(ms); return d.getFullYear() + two(d.getMonth() + 1) + two(d.getDate()) + '-' + two(d.getHours()) + two(d.getMinutes()) + two(d.getSeconds()); };
 const cell = (v) => (isNum(v) ? String(Math.round(v * 100) / 100) : v === undefined || v === null ? '' : String(v));
+
+/**
+ * Thins a long recording: every row within KEEP_MS of an interesting moment stays, elsewhere one row a second.
+ * Interesting: |g forward| or |g sideways| above G_BUSY, speed changing faster than 2 km/h per s, rpm faster than
+ * 800 per s, the driving mode changing, or a mark (an event pressed during the stretch). rows: [t, ...COLS].
+ */
+const KEEP_MS = 5000, G_BUSY = 0.3, DV_BUSY = 2, DRPM_BUSY = 800;
+function thin(rows, marks) {
+    if (rows.length < 3) return rows;
+    const busy = [];
+    rows.forEach((r, i) => {
+        const p = rows[Math.max(0, i - 10)], dt = (r[0] - p[0]) / 1000;
+        const rate = (k) => (dt > 0 && isNum(r[k]) && isNum(p[k]) ? Math.abs(r[k] - p[k]) / dt : 0);
+        if ((isNum(r[3]) && Math.abs(r[3]) > G_BUSY) || (isNum(r[4]) && Math.abs(r[4]) > G_BUSY)
+            || rate(2) > DV_BUSY || rate(1) > DRPM_BUSY || (i > 0 && r[8] !== rows[i - 1][8])) busy.push(r[0]);
+    });
+    const near = busy.concat(marks).sort((a, b) => a - b);
+    let j = 0, lastKept = -Infinity;
+    return rows.filter((r, i) => {
+        while (j < near.length && near[j] < r[0] - KEEP_MS) j++;
+        const keep = i === 0 || i === rows.length - 1 || (j < near.length && near[j] <= r[0] + KEEP_MS) || r[0] - lastKept >= 1000;
+        if (keep) lastKept = r[0];
+        return keep;
+    });
+}
 
 class Recorder {
     constructor(o) {
@@ -49,8 +75,10 @@ class Recorder {
     event(kind) {
         const t = this.now();
         if (this.open) {
-            // a second event in an open recording: it just goes on for POST_MS more (not for a Sport stretch: it has its own end)
+            // a second event in an open recording: it just goes on for POST_MS more (not for a Sport stretch: it has its own end);
+            // in a Sport stretch it is remembered, so thinning keeps the seconds around it whole
             if (this.open.until) this.open.until = Math.max(this.open.until, t + POST_MS);
+            (this.open.marks = this.open.marks || []).push(t);
             return false;
         }
         this.open = { kind, at: t, until: t + POST_MS, rows: this.ring.slice() };
@@ -73,13 +101,18 @@ class Recorder {
         this.open = null;
         if (!o || !o.rows.length) return;
         const file = stamp(o.at) + '-' + o.kind + '.csv';
+        const rowsAll = o.rows.length;
+        // a Sport stretch can run 30 min (18 000 rows): calm driving is kept once a second, the moments around anything
+        // happening at full rate. Event recordings (75 s) stay whole.
+        if (o.kind === 'sport') o.rows = thin(o.rows, o.marks || []);
+        const thinned = o.rows.length < rowsAll;
         const lines = ['time,' + COLS.join(',')].concat(o.rows.map((r) => [new Date(r[0]).toISOString()].concat(r.slice(1).map(cell)).join(',')));
         let vmax = null, gMax = null;
         o.rows.forEach((r) => {
             if (isNum(r[2])) vmax = Math.max(vmax || 0, r[2]);
             if (isNum(r[3]) || isNum(r[4])) gMax = Math.max(gMax || 0, Math.sqrt(Math.pow(r[3] || 0, 2) + Math.pow(r[4] || 0, 2)));
         });
-        const entry = { file, kind: o.kind, at: o.at, ms: o.rows[o.rows.length - 1][0] - o.rows[0][0], rows: o.rows.length, vmax, gMax };
+        const entry = { file, kind: o.kind, at: o.at, ms: o.rows[o.rows.length - 1][0] - o.rows[0][0], rows: o.rows.length, rowsAll, thinned, vmax, gMax };
         try {
             fs.writeFileSync(path.join(this.dir, file), lines.join('\n') + '\n');
             this.index = [entry].concat(this.index);
@@ -94,4 +127,4 @@ class Recorder {
     flush() { if (this.open) this._save(); }
 }
 
-module.exports = { Recorder, RATE_MS, PRE_MS, POST_MS, SPORT_TAIL_MS, COLS };
+module.exports = { Recorder, thin, RATE_MS, PRE_MS, POST_MS, SPORT_TAIL_MS, COLS };
