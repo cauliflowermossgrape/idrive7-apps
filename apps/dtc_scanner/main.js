@@ -13,7 +13,12 @@
  *           coolant and the service items (KombiInterface_2 cbsDataServiceList, as the Service app reads them) on
  *           one plain-text report for a phone camera; read while the page shows, like Check Control.
  *
- * Pages: faults (6 per page) -> Check Control -> control units that answered. Where the kit runs the
+ *   Fault details (a fault tapped, or Fault details): what the unit kept about it (context.js): the standard status
+ *           bits in words, its snapshot records (19 03 / 19 04) and extended data (19 06), read for that fault
+ *           alone when it is opened. Read only; the bytes are shown as the unit sent them (no tables for their names).
+ *   Bus page: how fast each unit answers our requests (NRC 78 waits counted) and how many we send a second.
+ *
+ * Pages: faults (6 per page) -> Check Control -> control units that answered -> Bus. Where the kit runs the
  * screen, all the faults are on one page and each list scrolls (a finger, or the controller turned on it).
  * Fault codes are BMW hex codes (as BMW's diagnostic tools show them); the head unit has no
  * text database for them, so look them up by code + control unit.
@@ -28,6 +33,7 @@ const { diagnosticText } = require('./diagnostic-text');
 const { t: translateUI, plural } = require('./kit/i18n');
 const { Diag, parseDtcReply, statusInfo, hex, NRC } = require('./kit/diag');
 const DEMO = require('./demo');
+const CTX = require('./context');
 
 const W = 1600, H = 520, PER_PAGE = 6;
 const GO = '#2fd27a';
@@ -120,7 +126,8 @@ mgu.run({
         // shown, the Check Control watches run only while it shows (watching the cluster's interface disturbed
         // another app), and a scan left half way stops after the request under way
         let diag = null, diagReady = null, away = true;
-        const getDiag = () => diagReady || (diagReady = new Diag(ctx.signals, log).init().then((d) => { diag = d; changed(); return d; }));
+        const timing = new CTX.Timing();
+        const getDiag = () => diagReady || (diagReady = new Diag(ctx.signals, log).init().then((d) => { diag = timing.watch(d); changed(); return d; }));
 
         /* ---------- state ---------- */
         const FILE = path.join(ctx.dataDir, 'last_scan.json');
@@ -452,8 +459,8 @@ mgu.run({
                     help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
             });
         }
-        const pageCount = () => (scrolls ? 1 : Math.max(1, Math.ceil(listed().length / perPage))) + 2;
-        const shownList = () => { const fp = pageCount() - 2; return page < fp ? scroll.faults : page === fp ? scroll.cc : scroll.ecus; };
+        const pageCount = () => (scrolls ? 1 : Math.max(1, Math.ceil(listed().length / perPage))) + 3;
+        const shownList = () => { const fp = pageCount() - 3; return page < fp ? scroll.faults : page === fp ? scroll.cc : scroll.ecus; };
         // a finger dragged on the page or the controller turned on it (cv.scroll): the list shown moves
         ctx.onScroll((dy) => {
             const s = shownList(), y = G.clamp(s.y + dy, 0, s.max), moved = y !== s.y;
@@ -480,8 +487,8 @@ mgu.run({
 
         /** G20-style frame: tab bar with the page names along the top (fault pages share one tab). */
         function header(cv, t) {
-            const fp = pageCount() - 2, sel = page < fp ? 0 : page === fp ? 1 : 2;
-            G.frame(cv, t, ['Faults' + (fp > 1 ? '  ' + (Math.min(page, fp - 1) + 1) + '/' + fp : ''), 'Check Control', 'Control units'], sel,
+            const fp = pageCount() - 3, sel = page < fp ? 0 : page - fp + 1;
+            G.frame(cv, t, ['Faults' + (fp > 1 ? '  ' + (Math.min(page, fp - 1) + 1) + '/' + fp : ''), 'Check Control', 'Control units', 'Bus'], sel,
                 [(scan && scan.demo || (!scan && useDemo())) && { text: 'DEMO' }]);
         }
 
@@ -505,6 +512,7 @@ mgu.run({
                 const c = diff();
                 right = 'Last scan ' + when(scan.at) + (c && (c.fresh.size || c.gone.length) ? ', since ' + when(c.at) + ': ' + c.fresh.size + ' new, ' + c.gone.length + ' gone'
                     : c ? ', nothing changed since ' + when(c.at) : '');
+                if (/^Faults/.test(String(title)) && faults().length) right += cv.own ? '.  Tap a fault for its details' : '.  Fault details: what a unit kept';
             }
             if (phase === 'scanning' || phase === 'clearing') {
                 const w = 300, x = 1552 - w, f = ((Date.now() / 1200) % 1);
@@ -569,6 +577,9 @@ mgu.run({
                 if (y + 41 < from || y > to) return;
                 const s = statusInfo(d.status), col = t[s.sev] || t.dim;
                 if (isNew(d)) cv.roundRect(36, y, 6, 34, 3, t.warn);            // new since the scan before
+                // tapped: what the unit kept about this fault (its details page)
+                const ty = Math.max(y - 4, from || y - 4), th = Math.min(y + 40, to || y + 40) - ty;
+                if (cv.own && th >= 20) cv.target(36, ty, 1528, th, () => openDetail(d), 'fault' + d.addr + d.code + d.mem, 6);
                 cv.roundRect(48, y, 170, 34, 6, withAlpha(col, 0.22));
                 cv.text(s.label, 133, y + 25, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
                 cv.text(d.code, 246, y + 28, 32, t.text, { font: 'bold', spacing: 1 });
@@ -626,6 +637,147 @@ mgu.run({
             }));
         }
 
+        /* ---------- fault details (context.js) ---------- */
+        let detail = null;               // { addr, code, mem, status, ctx: readContext result | null, reading, error }
+        const ctxCache = new Map();      // fault key -> its context (read once a session; Read again asks anew)
+        const dkey = (d) => d.addr + ':' + d.code;
+        async function readDetail(d, again) {
+            const k = dkey(d);
+            if (!again && ctxCache.has(k)) { detail.ctx = ctxCache.get(k); changed(); return; }
+            if (scan && scan.demo) { detail.ctx = CTX.demoContext(d.code); ctxCache.set(k, detail.ctx); changed(); return; }
+            if (busy) { detail.error = 'Busy with a scan: open it again when the scan is done'; changed(); return; }
+            detail.reading = true; detail.error = ''; changed();
+            busy = true;
+            try {
+                await getDiag();
+                const c = await CTX.readContext(diag, d.addr, d.code);
+                ctxCache.set(k, c);
+                if (detail && dkey(detail) === k) detail.ctx = c;
+                log.info('fault ' + hex(d.addr) + ':' + d.code + ' context: ' + (c.ids ? c.ids.length : 'no') + ' snapshot records, '
+                    + c.snapshots.length + ' read, extended ' + (c.extended ? c.extended.data.length + ' bytes' : 'none'));
+            } catch (e) {
+                log.warn('fault context: ' + e);
+                if (detail && dkey(detail) === k) detail.error = 'Could not read it: ' + (e.message || e);
+            }
+            busy = false;
+            if (detail && dkey(detail) === k) detail.reading = false;
+            changed();
+        }
+        function openDetail(d) {
+            detail = { addr: d.addr, code: d.code, mem: d.mem, status: d.status, ctx: null, reading: false, error: '' };
+            changed();
+            readDetail(d, false);
+        }
+
+        const bytesHex = (b) => b.map((x) => hex(x)).join(' ');
+        /** Bytes as lines of n, for a panel. */
+        const hexLines = (b, n) => { const out = []; for (let i = 0; i < b.length; i += n) out.push(bytesHex(b.slice(i, i + n))); return out; };
+
+        function drawDetail(cv, t) {
+            const d = detail, s = statusInfo(d.status), col = t[s.sev] || t.dim, c = d.ctx;
+            // the fault: code, its unit, its text, and Back / Read again where the kit runs the screen
+            G.panel(cv, t, 24, 44, 1552, 120, null);
+            cv.roundRect(48, 62, 170, 34, 6, withAlpha(col, 0.22));
+            cv.text(s.label, 133, 87, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
+            cv.text(d.code, 240, 92, 38, t.text, { font: 'bold', spacing: 1 });
+            cv.text(fit(cv, ecuName(d.addr) + '  (0x' + hex(d.addr) + ')', 24, 560), 420, 90, 24, t.text);
+            const desc = describe(d.addr, d.code);
+            const txt = desc ? (desc.startsWith(OTHER) ? translateUI(OTHER) + diagnosticText(desc.slice(OTHER.length)) : diagnosticText(desc)) : 'No text for this code in the database';
+            cv.text(fit(cv, txt, 21, 1000, { literal: true }), 48, 140, 21, t.dim, { literal: true });
+            let bx = 1552;
+            [{ label: 'Back', run: () => { detail = null; changed(); }, key: 'dback' },
+                { label: d.reading ? 'Reading...' : 'Read again', run: () => readDetail(d, true), key: 'dagain', busy: d.reading || (scan && scan.demo) }]
+                .forEach((b) => { const w = cv.own ? Math.max(40 * 2.4, cv.textWidth(b.label.toUpperCase(), 40 * 0.36, { font: 'bold', spacing: 1.5 }) + 40 * 0.9) : 0; bx -= w; G.button(cv, t, bx, 60, w, 40, b.label, b.run, b); bx -= 12; });
+            if (!cv.own) cv.text('Fault details: the next fault.  Next page: back', 1552, 92, 18, t.dim, { align: 'right' });
+
+            // the status byte, bit by bit (standard, so it can be said in words)
+            G.panel(cv, t, 24, 176, 500, 336, 'Status, in words');
+            CTX.statusBits(d.status).forEach((b, i) => {
+                const y = 250 + i * 33;
+                cv.circle(56, y - 7, 8, b.on ? (i === 0 || i === 7 ? t.crit : i === 3 || i === 2 ? t.warn : t.accent) : withAlpha(t.dim, 0.35));
+                cv.text(b.name, 74, y, 19, b.on ? t.text : t.dim, { font: b.on ? 'bold' : 'label' });
+                cv.text(fit(cv, b.words, 15, 210), 508, y, 15, t.dim, { align: 'right' });
+            });
+
+            // snapshot records: what was measured when the fault was stored
+            const sp = G.panel(cv, t, 540, 176, 560, 336, 'Snapshot records');
+            const busyText = d.reading ? 'Reading from ' + ecuName(d.addr) + '...' : d.error || '';
+            if (!c) {
+                cv.text(busyText || 'Not read yet', 564, 262, 20, d.error ? t.crit : t.dim);
+            } else {
+                const ids = c.ids, nrc = c.refused.snapshots;
+                const head = ids === null ? (nrc !== undefined ? 'The unit does not give snapshots (' + (NRC[nrc] || 'NRC ' + hex(nrc)) + ')' : c.silent.length ? 'No answer to the snapshot list' : 'No snapshot list')
+                    : !ids.length ? 'No snapshot stored for this fault' : ids.length + ' record' + (ids.length > 1 ? 's' : '') + (ids.length > CTX.MAX_RECORDS ? ' (the first ' + CTX.MAX_RECORDS + ' read)' : '');
+                cv.text(head, 564, 248, 19, t.text, { font: 'bold' });
+                const ch = CTX.chartable(c.snapshots), rowsEnd = ch ? 384 : 500;
+                c.snapshots.slice(0, Math.floor((rowsEnd - 274) / 30)).forEach((r, i) => {
+                    const y = 282 + i * 30, n = CTX.asNumber(r.data);
+                    cv.text('Record ' + (r.record === null ? '?' : r.record), 564, y, 18, t.text, { font: 'bold' });
+                    cv.text(r.did === null ? 'empty' : 'ID ' + hex(r.did, 4) + (r.count > 1 ? ' +' + (r.count - 1) : ''), 680, y, 17, t.dim);
+                    cv.text(fit(cv, bytesHex(r.data) || '-', 17, 230), 800, y, 17, t.text);
+                    if (n !== null) cv.text('= ' + n, 1084, y, 17, t.accent, { align: 'right', font: 'bold' });
+                });
+                if (ch) {
+                    const xs = ch.points.map((p) => p[0]), ys = ch.points.map((p) => p[1]);
+                    const lo = Math.min.apply(null, ys), hi = Math.max.apply(null, ys), pad = Math.max(1, (hi - lo) * 0.2);
+                    G.chart(cv, t, 556, 400, 532, 104, { xMin: Math.min.apply(null, xs), xMax: Math.max(Math.max.apply(null, xs), Math.min.apply(null, xs) + 1), xStep: 1,
+                        yMin: Math.floor(lo - pad), yMax: Math.ceil(hi + pad), xFmt: (v) => '#' + v, padLeft: 56,
+                        series: [{ pts: ch.points, color: t.accent, width: 3 }] });
+                    cv.text('ID ' + hex(ch.did, 4) + ' as a number, record by record', 1084, 396, 15, t.dim, { align: 'right' });
+                }
+            }
+
+            // extended data: kept as the unit sent it
+            G.panel(cv, t, 1116, 176, 460, 336, 'Extended data');
+            if (!c) cv.text(d.reading ? 'Reading...' : '', 1140, 262, 20, t.dim);
+            else {
+                const e = c.extended, nrc = c.refused.extended;
+                if (!e) cv.text(nrc !== undefined ? 'Not given (' + (NRC[nrc] || 'NRC ' + hex(nrc)) + ')' : 'No answer', 1140, 248, 19, t.dim);
+                else {
+                    cv.text(e.data.length + ' bytes', 1140, 248, 19, t.text, { font: 'bold' });
+                    hexLines(e.data, 8).slice(0, 5).forEach((l, i) => cv.text(l, 1140, 284 + i * 28, 18, t.text, { font: 'num' }));
+                }
+                ['Counters and mileage live here on', 'most units; which byte is which is', 'in BMW\'s tables, not in this app.'].forEach((l, i) => cv.text(l, 1140, 430 + i * 24, 16, t.dim));
+            }
+        }
+
+        /* ---------- Bus: how fast the units answer us ---------- */
+        function drawBus(cv, t) {
+            const demo = (scan && scan.demo) || (!scan && useDemo());
+            const tm = demo ? (drawBus.demo || (drawBus.demo = CTX.demoTiming((scan ? scan.ecus : DEMO.ecus).map((e) => e.addr)))) : timing;
+            const l = tm.list(), ps = tm.perSecond();
+            const p = G.panel(cv, t, 24, 44, 1000, 468, 'How fast each unit answers us');
+            if (!l.length) {
+                ['No answers timed yet.', '', 'Each scan, fault detail or name lookup is timed:', 'scan once and come back here.']
+                    .forEach((x, i) => cv.text(x, 48, 130 + i * 32, 21, i ? t.dim : t.text, { font: i ? 'label' : 'bold' }));
+            } else {
+                const top = l.slice(0, 9), mx = Math.max.apply(null, top.map((u) => u.max)) || 1, x0 = 330, bw = 520;
+                cv.text('AVERAGE', x0, 114, 14, t.dim, { font: 'bold', spacing: 1.5 });
+                cv.text('slowest', x0 + bw, 114, 14, t.dim, { align: 'right' });
+                cv.text('LAST', 990, 114, 14, t.dim, { align: 'right', font: 'bold', spacing: 1.5 });
+                top.forEach((u, i) => {
+                    const y = 148 + i * 38, col = u.avg > 1000 ? t.crit : u.avg > 250 ? t.warn : GO;
+                    const nm = fit(cv, ecuName(u.addr), 19, u.pending ? 190 : 270);
+                    cv.text(nm, 48, y + 6, 19, t.text);
+                    if (u.pending) cv.text(u.pending + 'x wait', 56 + cv.textWidth(nm, 19), y + 6, 15, t.warn);
+                    cv.roundRect(x0, y - 8, bw, 14, 7, t.track);
+                    cv.roundRect(x0, y - 8, Math.max(10, bw * u.avg / mx), 14, 7, col);
+                    cv.fillRect(Math.round(x0 + bw * u.max / mx) - 1, y - 12, 3, 22, withAlpha(t.text, 0.7));
+                    cv.text(Math.round(u.avg) + ' ms', x0 + bw + 14, y + 6, 18, t.text, { font: 'num' });
+                    cv.text(u.last === null ? '--' : String(Math.round(u.last)), 990, y + 6, 17, t.dim, { align: 'right' });
+                });
+                cv.text('Bar: the average answer time. White tick: the slowest. "wait": the unit said it needs longer (NRC 78).', 48, 500, 16, t.dim);
+            }
+            G.panel(cv, t, 1040, 44, 536, 250, 'Our requests a second');
+            const peak = Math.max(4, Math.max.apply(null, ps));
+            G.chart(cv, t, 1052, 104, 512, 180, { xMin: -60, xMax: 0, yMin: 0, yMax: Math.ceil(peak / 2) * 2, xFmt: (v) => (v ? v + ' s' : 'now'),
+                series: [{ pts: ps.map((n, i) => [i - 59, n]), color: t.accent, width: 2.5, fill: 0.18 }] });
+            cv.text(ps.reduce((a, b) => a + b, 0) + ' in the last minute', 1556, 82, 16, t.dim, { align: 'right' });
+            G.panel(cv, t, 1040, 310, 536, 202, 'What this shows');
+            ['Only how this app\'s own requests are answered:', 'from the moment one goes out until the unit', 'replies. The real load on the car\'s buses is', 'not visible to apps, so it is not shown here.', 'Nothing here sends anything by itself.']
+                .forEach((x, i) => cv.text(x, 1064, 384 + i * 26, 17, i === 4 ? t.text : t.dim));
+        }
+
         let drawn = -1;
         async function render(force) {
             if (!force && drawn === version && !gliding && phase !== 'scanning' && phase !== 'clearing') return;
@@ -633,16 +785,21 @@ mgu.run({
             gliding = false;
             const t = ctx.theme();
             const cv = ctx.canvas(W, H).clear(t.bg);
-            const fp0 = pageCount() - 2;
+            const fp0 = pageCount() - 3;
             scrolls = !!cv.own;
             perPage = PER_PAGE + Math.floor((G.pageBottom(cv) - G.BOTTOM) / 47);     // rows of 47 px (drawCC; drawFaults' are 46)
-            const fp = pageCount() - 2;
+            const fp = pageCount() - 3;
             // fewer or more fault pages now (the room below the page came or went): Check Control and Control
             // units stay the pages shown
             if (fp !== fp0) page = page >= fp0 ? fp + page - fp0 : Math.min(page, fp - 1);
             page = Math.min(page, pageCount() - 1);
-            tiles(cv, t);
-            if (page < fp) drawFaults(cv, t); else if (page === fp) drawCC(cv, t); else drawEcus(cv, t);
+            if (detail && page < fp) drawDetail(cv, t);
+            else if (page === fp + 2) drawBus(cv, t);
+            else {
+                tiles(cv, t);
+                if (page < fp) drawFaults(cv, t); else if (page === fp) drawCC(cv, t); else drawEcus(cv, t);
+            }
+            if (detail && detail.reading) gliding = true;
             header(cv, t);
             await ui.image('MAIN_GFX', cv);
         }
@@ -653,13 +810,23 @@ mgu.run({
         ctx.hideButton('BTN_SCAN');
         ctx.hideButton('BTN_CLEAR');
         ctx.onLayout(changed);           // (it draws only on changes: a new layout is one)
-        ui.onClick('BTN_PAGE', () => { page = (page + 1) % pageCount(); changed(); });
+        ui.onClick('BTN_PAGE', () => { detail = null; page = (page + 1) % pageCount(); changed(); });
         // tabs: Faults (opened again: its next page of faults), Check Control, Control units
         ctx.onTab((i) => {
-            const fp = pageCount() - 2;
-            if (i === 0 && page < fp) page = (page + 1) % fp;
+            const fp = pageCount() - 3;
+            if (i === 0 && detail) detail = null;                 // Faults again: back to the list
+            else if (i === 0 && page < fp) page = (page + 1) % fp;
             else page = i === 0 ? 0 : fp + i - 1;
+            if (i !== 0) detail = null;
             changed();
+        });
+        ui.onClick('BTN_DETAIL', () => {
+            // the first fault on the page, then the next one each press; on another page: the Faults page's first
+            const fp = pageCount() - 3, l = listed();
+            if (!l.length) { msg = scan ? 'No faults to show' : 'Scan first'; changed(); return; }
+            if (page >= fp) page = 0;
+            const i = detail ? (l.findIndex((d) => d.addr === detail.addr && d.code === detail.code && d.mem === detail.mem) + 1) % l.length : (scrolls ? 0 : page * perPage);
+            openDetail(l[Math.min(i, l.length - 1)]);
         });
 
         var loop = ctx.loop('MAIN', 2, () => render(false));

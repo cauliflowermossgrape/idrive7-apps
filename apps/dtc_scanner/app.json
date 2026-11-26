@@ -1,8 +1,8 @@
 {
   "id": "dtc_scanner",
   "title": "Fault Scanner",
-  "description": "Read and clear fault memory of every control unit, plus active Check Control messages",
-  "version": "2.12.0",
+  "description": "Read and clear fault memory of every control unit, what each unit kept about a fault, how fast units answer, plus active Check Control messages",
+  "version": "2.13.0",
   "vendor": "custom",
   "loggingId": "OA95",
   "iconGlyph": "engine",
@@ -36,6 +36,7 @@
       "buttons": [
         ["BTN_SCAN", "Scan now"],
         ["BTN_CLEAR", "Clear all"],
+        ["BTN_DETAIL", "Fault details"],
         ["BTN_PAGE", "Next page"],
         ["BTN_SETTINGS", "Settings"]
       ]
