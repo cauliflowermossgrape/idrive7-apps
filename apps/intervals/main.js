@@ -9,13 +9,17 @@
  *   History        every service marked, newest first, and for the chosen item a chart of the km between its services
  *   Wheels         which set of wheels is on (summer, winter, all-season) since when, km per set this season and in
  *                  all, tread depth against the usual advice, and after a swap the bolts and pressures reminder (wheels.js)
+ *   Driving        how the car was driven since each item's last service (short trips, cold engine, stop and go, hot
+ *                  oil, hard braking, high load) and how much harder that was on it than the km say: an estimate
+ *                  from common guidance (wear.js), shown as a small "wear" chip on Overview; the km stay the main number
  *   How it works   the same in plain words
  *
  *   - the odometer is what the cluster sends (KombiIF statusRangeTankStatus.mileageKilometre, as Live Data reads it)
  *   - nothing is changed in the car: BMW's own service display (the Service app) stays as it is
  *   - Next item picks an item, Done now marks it, pressed again within 5 s to confirm
- *   - kept in the app's data folder (intervals.json: per item the last service and its history); the demo has its own,
- *     never saved
+ *   - kept in the app's data folder (intervals.json: per item the last service and its history; drives.json: the
+ *     drives background() recorded from the car's own signals); the demo has its own, never saved
+ *   - runs with the car (app.json autostart) so every drive is counted, also with the app closed
  */
 const fs = require('fs');
 const path = require('path');
@@ -24,9 +28,11 @@ const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { ITEMS, status } = require('./items');
 const Wheels = require('./wheels');
+const Wear = require('./wear');
 
 const W = 1600, H = 520, GO = '#2fd27a', CONFIRM_MS = 5000, DAY = 86400000;
-const TABS = ['Overview', 'History', 'Wheels', 'How it works'];
+const TABS = ['Overview', 'History', 'Wheels', 'Driving', 'How it works'];
+const KEEP_DRIVES = 600, G0 = 9.80665;
 const two = (n) => (n < 10 ? '0' : '') + n;
 const day = (ms) => { const d = new Date(ms); return two(d.getDate()) + '.' + two(d.getMonth() + 1) + '.' + d.getFullYear(); };
 const km = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -56,7 +62,63 @@ function demoStore() {
     };
 }
 
+/* Demo drives since 1 300 days ago: mostly town, short cold trips in winter, a few motorway runs (never saved). */
+function demoDrives() {
+    const now = Date.now(), out = [];
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let d = 1300; d > 0; d -= 1 + Math.floor(rnd() * 2)) {
+        const kind = rnd(), km = kind < 0.45 ? 2 + rnd() * 6 : kind < 0.85 ? 8 + rnd() * 25 : 60 + rnd() * 140;
+        const movingS = km / (kind < 0.45 ? 24 : kind < 0.85 ? 40 : 95) * 3600;
+        out.push({ at: now - d * 86400000, km: Math.round(km * 10) / 10, maxOil: kind < 0.45 ? 55 + rnd() * 40 : 92 + rnd() * 20,
+            movingS: Math.round(movingS), slowS: Math.round(movingS * (kind < 0.85 ? 0.3 + rnd() * 0.25 : 0.04)),
+            hotS: kind > 0.95 ? Math.round(rnd() * 240) : 0, hardStops: rnd() < 0.18 ? 1 + Math.floor(rnd() * 2) : 0,
+            highS: kind > 0.85 ? Math.round(movingS * rnd() * 0.12) : Math.round(movingS * rnd() * 0.02) });
+    }
+    return out;
+}
+
+/* With or without the screen (autostart): every drive, from the car's own signals only, never the demo. */
+async function background(bg) {
+    const { signals, log } = bg;
+    const FILE = path.join(bg.dataDir, 'drives.json');
+    let drives = [];
+    try { drives = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch (e) { /* none yet */ }
+    const v = { rpm: null, speed: null, oil: null, gLong: null, torque: null, seen: false };
+    const sc = (raw, f, o, bad) => (typeof raw === 'number' && raw !== bad ? raw * f + o : null);
+    const watch = (iface, h) => (signals && signals.watch ? Promise.resolve(signals.watch(iface, '1', h, log)).catch((e) => log.warn('intervals: ' + iface + ': ' + (e && e.message || e))) : null);
+    watch('de.bmw.infotainment.vehicle.CDS', {
+        statusEngineSpeed2: (x) => { v.rpm = sc(x && x.actualValueRPMEngineCrankshaft, 0.25, 0, 65535); v.seen = true; },
+        statusEngineTemperature: (x) => { v.oil = sc(x && x.temperatureEngineOilDrive, 1, -48, 255); },
+    });
+    watch('de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (x) => { v.speed = sc(x && x.speedVehicleCentreOfGravity, 0.015625, 0, 65535); v.seen = true; } });
+    watch('de.bmw.infotainment.vehicle.CDS2', {
+        statusLongitudinalAccelerationMassCenter: (x) => { const a = sc(x && x.longitudinalAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLong = a === null ? null : a / G0; },
+    });
+    watch('de.bmw.infotainment.drivingexcitement.FES', {
+        statusActualValueTorque2: (x) => { const raw = x && x.actualValueTorqueCrankshaft; v.torque = typeof raw === 'number' && raw < 4095 ? raw * 0.5 - 1023.5 : null; },
+    });
+    const rec = new Wear.DriveRecorder({ peakKw: drives.peakKw });
+    const state = { drives, rec, v };
+    rec.onDrive = (d) => {
+        state.drives = state.drives.concat([d]).slice(-KEEP_DRIVES);
+        try { fs.writeFileSync(FILE, JSON.stringify(state.drives)); } catch (e) { log.warn('intervals: drives: ' + e); }
+        log.info('intervals: drive ' + d.km + ' km, oil max ' + d.maxOil);
+    };
+    const tick = () => {
+        if (!v.seen) return;
+        const kw = G.isNum(v.torque) && G.isNum(v.rpm) ? v.torque * v.rpm / 9549 : null;
+        rec.sample({ speed: v.speed, rpm: v.rpm, oil: v.oil, gLong: v.gLong, kw });
+    };
+    const timer = setInterval(tick, 1000);
+    if (timer.unref) timer.unref();
+    process.on('exit', () => rec.flush());
+    state.tick = tick;
+    return state;
+}
+
 mgu.run({
+    background,
     async start(ctx) {
         const { ui, settings, log } = ctx;
         const FILE = path.join(ctx.dataDir, 'intervals.json');
@@ -68,13 +130,17 @@ mgu.run({
                 statusRangeTankStatus: (v) => { const m = v && v.mileageKilometre; if (typeof m === 'number' && m >= 0 && m < 16777215) { odo.v = m; odo.t = Date.now(); } },
             }, log)).catch((e) => log.warn('odometer: ' + (e && e.message || e)));
         }
-        const DEMO_ODO = 49650, demoDone = demoStore();
+        const bgd = ctx.background || await background(ctx);
+        const DEMO_ODO = 49650, demoDone = demoStore(), demoDr = demoDrives();
         const demo = () => settings.get('demo') === 'on' || (settings.get('demo') === 'auto' && odo.v === null);
         const store = () => (demo() ? demoDone : saved);
         const odoNow = () => (demo() ? DEMO_ODO : odo.v);
         const shown = () => ITEMS.filter((it) => settings.get(it.setting) > 0);
         let sel = 0, armed = 0, note = '', noteUntil = 0, page = 0, wheelPick = 0;
-        const WHEELS = 2;
+        const WHEELS = 2, DRIVING = 3, HELP = 4;
+        const drivesNow = () => (demo() ? demoDr : bgd.drives || []);
+        /* The drives since an item's last service (all recorded ones when it was never marked). */
+        const wearOf = (it, done) => Wear.estimate(it, drivesNow().filter((d) => !done || d.at > done.at));
         const say = (s) => { note = s; noteUntil = Date.now() + 4000; };
 
         ui.onClick('BTN_NEXT', () => {
@@ -158,6 +224,12 @@ mgu.run({
                 cv.text('every ' + (x.it.unit === 'km' ? km(x.every) + ' km' : x.every + ' months'), cx + 22, cy + ch - 18, 16, t.dim);
                 cv.text(x.done ? 'last ' + day(x.done.at) : '', cx + cw - 20, cy + ch - 18, 16, t.dim, { align: 'right' });
                 G.pill(cv, t, cx + cw - 128, cy + 12, 110, 26, WORD[x.s.state] || '', { color: c, size: 13 });
+                // the wear chip: how much harder the driving since the last service was than the km say (an estimate)
+                const w = wearOf(x.it, x.done);
+                if (w.applies && w.enough && x.s.state !== 'unknown') {
+                    const wc = w.extra >= 20 ? t.warn : w.extra >= 5 ? t.accent : GO;
+                    G.pill(cv, t, cx + cw - 128, cy + 44, 110, 22, w.extra >= 1 ? 'WEAR +' + Math.round(w.extra) + '%' : 'WEAR NORMAL', { color: wc, size: 11, spacing: 1, filled: 0.15 });
+                }
             });
         }
 
@@ -201,6 +273,56 @@ mgu.run({
             cv.text('Green: done in time. Yellow: later than the interval. The last bar: since the last service.', 704, 496, 16, t.dim);
         }
 
+        /* Driving: since each item's last service, how it was driven and what that means for it (an estimate). */
+        function driving(cv, t, l) {
+            const items = l.filter((x) => Wear.ITEM_RULES[x.it.key]);
+            const x = l[sel], w = x ? wearOf(x.it, x.done) : null;
+            // left: every item's extra wear as a bar, the chosen one outlined
+            G.panel(cv, t, 24, 44, 600, 468, 'Extra wear since each service');
+            if (!items.length) cv.text('No item with a driving factor is followed: Settings', 48, 130, 20, t.dim);
+            items.slice(0, 6).forEach((y, i) => {
+                const e = wearOf(y.it, y.done), yy = 104 + i * 62, on = y === x;
+                if (on) cv.roundRect(36, yy - 8, 576, 56, 8, withAlpha(t.accent, 0.16));
+                cv.text(y.it.name, 52, yy + 14, 20, on ? t.text : t.dim, { font: 'bold' });
+                cv.text(e.enough ? km(e.km) + ' km recorded' : 'not enough driving yet', 596, yy + 14, 15, t.dim, { align: 'right' });
+                cv.roundRect(52, yy + 26, 540, 10, 5, t.track);
+                if (e.enough) cv.roundRect(52, yy + 26, Math.max(8, 540 * e.extra / Wear.CAP), 10, 5, e.extra >= 20 ? t.warn : e.extra >= 5 ? t.accent : GO);
+                if (e.enough) cv.text('+' + Math.round(e.extra) + ' %', 52 + Math.max(8, 540 * e.extra / Wear.CAP) + 8, yy + 36, 15, t.text, { font: 'bold' });
+            });
+            cv.text('Bar: extra wear, up to +' + Wear.CAP + ' %. Next item picks one.', 48, 496, 16, t.dim);
+
+            const p = G.panel(cv, t, 640, 44, 936, 468, x ? x.it.name + ': how it was driven since ' + (x.done ? day(x.done.at) : 'recording began') : 'How it was driven');
+            if (!x) return;
+            if (!w.applies) {
+                cv.text(x.it.name + ' wears with time and km, not with how you drive:', 664, 130, 21, t.text);
+                cv.text('the plain interval is the whole story for it.', 664, 162, 21, t.dim);
+                return;
+            }
+            if (!w.enough) {
+                cv.text('Not enough driving recorded since the last service yet (' + Math.round(w.km) + ' of ' + Wear.MIN_KM + ' km).', 664, 130, 21, t.text);
+                cv.text('The app counts every drive in the background, also with this screen closed.', 664, 162, 20, t.dim);
+                return;
+            }
+            G.readout(cv, t, 664, 94, { label: 'DRIVEN, RECORDED', text: km(w.km), unit: 'km', size: 40, labelSize: 14 });
+            G.readout(cv, t, 920, 94, { label: 'COUNTS AS ABOUT', text: km(w.wearKm), unit: 'km', size: 40, labelSize: 14, color: w.extra >= 20 ? t.warn : t.accent });
+            G.readout(cv, t, 1200, 94, { label: 'EXTRA WEAR', text: '+' + Math.round(w.extra), unit: '%', size: 40, labelSize: 14, color: w.extra >= 20 ? t.warn : w.extra >= 5 ? t.accent : GO });
+            G.readout(cv, t, 1420, 94, { label: 'DRIVES', text: String(w.drives), size: 40, labelSize: 14 });
+            const rh = Math.min(52, Math.floor(260 / w.parts.length));
+            w.parts.forEach((q, i) => {
+                const y = 180 + i * rh, bx = 880, bw = 560, c = q.extra >= q.rule.cap * 0.6 ? t.warn : q.extra > 0 ? t.accent : GO;
+                cv.text(q.rule.name, 664, y + 22, 20, q.extra > 0.5 ? t.text : t.dim, { font: 'bold' });
+                cv.roundRect(bx, y + 8, bw, 12, 6, t.track);
+                cv.roundRect(bx, y + 8, Math.max(10, bw * q.frac), 12, 6, c);
+                cv.fillRect(Math.round(bx + bw * q.normalFrac), y + 2, 2, 24, t.text);
+                cv.text(q.rule.fmt(q.value), bx, y + 40, 15, t.dim);
+                cv.text(q.extra > 0.5 ? '+' + Math.round(q.extra) + ' %' : 'normal', p.x + p.w - 24, y + 22, 20, c, { align: 'right', font: 'bold' });
+            });
+            // why, in words: the factors that raised it most
+            const why = w.parts.filter((q) => q.extra > 0.5).sort((a, b) => b.extra - a.extra).slice(0, 2);
+            cv.text(why.length ? why.map((q) => q.rule.text).join(' ') : 'Nothing unusual: this driving is easy on it.', 664, 462, 17, why.length ? t.text : GO);
+            cv.text('White tick: what counts as normal. An estimate from common maintenance guidance, not BMW data; the km left on Overview do not change.', 664, 496, 15, t.dim);
+        }
+
         function help(cv, t) {
             G.panel(cv, t, 24, 44, 1552, 468, 'How Service Intervals works');
             [
@@ -209,8 +331,9 @@ mgu.run({
                 ['3', 'Watch what is left.', 'Overview shows each item\'s ring and the km or days left: green fine, yellow soon (1 000 km or 30 days), red due.'],
                 ['4', 'See your habits.', 'History lists every service and charts how far you drove between them, against your interval.'],
                 ['5', 'Swap wheels.', 'On Wheels, Next item picks the set and Done now twice marks it on: km per set, tread depth, and a reminder to check the bolts and pressures after 50 to 100 km.'],
+                ['6', 'See how hard your driving was on it.', 'Driving counts every drive in the background: short cold trips, stop and go, hot oil, hard braking and high load add an estimated extra wear to the km.'],
             ].forEach((r, i) => {
-                const yy = 134 + i * 72;
+                const yy = 124 + i * 62;
                 cv.circle(70, yy - 8, 20, withAlpha(t.accent, 0.3));
                 cv.text(r[0], 70, yy, 22, t.text, { align: 'center', font: 'bold' });
                 cv.text(r[1], 108, yy, 23, t.text, { font: 'bold' });
@@ -224,7 +347,8 @@ mgu.run({
             if (sel >= l.length) sel = 0;
             if (page === 1) history(cv, t, l);
             else if (page === WHEELS) Wheels.draw(cv, t, { w: store().wheels, odo: o, sets: Wheels.setsOn(settings), pick: wheelPick, armed: !!armed && now - armed < CONFIRM_MS, settings, note: now < noteUntil ? note : '' });
-            else if (page === 3) help(cv, t);
+            else if (page === DRIVING) driving(cv, t, l);
+            else if (page === HELP) help(cv, t);
             else overview(cv, t, now, o, l);
             G.frame(cv, t, TABS, page, [demo() && { text: 'DEMO' }]);
             return ui.image('MAIN_GFX', cv);

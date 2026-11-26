@@ -75,8 +75,9 @@ Module._load = function (req, parent, isMain) {
     t = await a.draw();
     ok(/Engine oil \| 60 200 km \| 26\.11\.2026 \| Engine oil \| 50 000 km/.test(t) && /60 200 km/.test(t), 'History: both services listed: ' + t);
     ok(/your interval 10 000 km/.test(t) && /10 200/.test(t), 'History: the km between them charted against the interval');
-    await a.tab(3);
+    await a.tab(4);
     t = await a.draw();
+    ok(/See how hard your driving was on it/.test(t), 'How it works: the Driving tab explained');
     ok(/is not changed/.test(t) && /Done now again within 5 s/.test(t) && /Swap wheels/.test(t), 'How it works: in plain words, wheels included');
     // Wheels: nothing marked, then Winter picked and put on with Done now twice
     await a.tab(2);
@@ -103,6 +104,31 @@ Module._load = function (req, parent, isMain) {
     const saved = JSON.parse(fs.readFileSync(path.join(dir, 'intervals.json'), 'utf8'));
     ok(saved.oil.history.length === 2 && saved.oil.km === 60200, 'the file keeps the last service and its history');
     ok(saved.wheels && saved.wheels.swaps.length === 1 && saved.wheels.swaps[0].set === 'winter' && saved.wheels.swaps[0].km === 61000, 'the file keeps the wheel swap');
+    // the wear estimate: a drive recorder fed once a second, the rules, and the Driving tab from drives.json
+    const Wear = require(path.join(APP, 'wear'));
+    let tt = 0, got = null;
+    const rec = new Wear.DriveRecorder({ now: () => tt, onDrive: (d) => { got = d; } });
+    const sec = (n, v) => { for (let i = 0; i < n; i++) { tt += 1000; rec.sample(v); } };
+    sec(600, { speed: 36, rpm: 1500, oil: 70, gLong: 0, kw: 20 });       // 10 min at 36 km/h: 6 km, oil stays cold
+    sec(1, { speed: 50, rpm: 1500, oil: 70, gLong: -0.7, kw: 0 });        // one hard stop
+    sec(2, { speed: 50, rpm: 1500, oil: 70, gLong: -0.7, kw: 0 });        // the same stop, not counted again
+    sec(200, { speed: 0, rpm: 0, oil: 70 });                              // parked, engine off: the drive ends after 3 min
+    ok(got && Math.abs(got.km - 6.0) < 0.2 && got.maxOil === 70 && got.hardStops === 1, 'wear: a drive recorded (6 km, oil max 70, one hard stop): ' + JSON.stringify(got));
+    const shortCold = Array.from({ length: 20 }, (_, i) => ({ at: i, km: 4, maxOil: 60, movingS: 600, slowS: 300, hotS: 0, hardStops: 0, highS: 0 }));
+    const e = Wear.estimate(ITEMS[0], shortCold);
+    ok(e.enough && e.extra > 30 && e.extra <= Wear.CAP && Math.abs(e.wearKm - 80 * (1 + e.extra / 100)) < 1e-6, 'wear: short cold town trips raise the engine oil estimate, capped: +' + e.extra.toFixed(1) + ' %');
+    const easy = Array.from({ length: 5 }, (_, i) => ({ at: i, km: 40, maxOil: 100, movingS: 1800, slowS: 60, hotS: 0, hardStops: 0, highS: 0 }));
+    ok(Wear.estimate(ITEMS[0], easy).extra === 0, 'wear: long warm drives add nothing');
+    ok(!Wear.estimate(fluid, shortCold).applies, 'wear: brake fluid has no driving factor');
+    fs.writeFileSync(path.join(dir, 'drives.json'), JSON.stringify(shortCold.map((d, i) => Object.assign({}, d, { at: Date.now() + i }))));
+    a = await run();
+    a.h['de.bmw.infotainment.KombiIF'].statusRangeTankStatus({ mileageKilometre: 61300 });
+    await a.tab(0);
+    t = await a.draw();
+    ok(/WEAR \+\d+%/.test(t), 'Overview: the engine oil card shows its wear chip');
+    await a.tab(3);
+    t = await a.draw();
+    ok(/COUNTS AS ABOUT/.test(t) && /Short trips/.test(t) && /Cold engine/.test(t) && /not BMW data/.test(t), 'Driving: the factors and the estimate, labelled as such');
     console.log('intervals: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

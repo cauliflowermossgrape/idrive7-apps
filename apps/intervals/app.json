@@ -2,15 +2,33 @@
   "id": "intervals",
   "title": "Service Intervals",
   "description": "Your own service intervals next to BMW's (engine oil, spark plugs, gearbox oil, brake pads, filters, brake fluid) and a wheel swap log, from the odometer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "vendor": "custom",
   "loggingId": "OAA7",
   "iconGlyph": "wrench",
+  "autostart": true,
   "mguHmi": ["ID7", "ID8"],
   "requires": { "idrive7-renderd": "2.1.18" },
   "signals": {
     "de.bmw.infotainment.KombiIF": {
       "statusRangeTankStatus": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS": {
+      "_optional": "the drives counted for the wear estimate (Driving tab)",
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "_optional": "the drives counted for the wear estimate (Driving tab)",
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "_optional": "hard stops for the wear estimate",
+      "statusLongitudinalAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "power, for the high load part of the wear estimate",
+      "statusActualValueTorque2": "rs"
     }
   },
   "screens": [
