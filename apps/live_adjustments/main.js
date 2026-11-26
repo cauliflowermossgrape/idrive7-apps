@@ -79,9 +79,23 @@ mgu.run({
 
         // the four mode presses, each kicks a repaint (used by both the HMI bar and
         // the on-canvas buttons the kit draws when the app owns the screen)
-        const press = (mode) => () => { const p = auto.press(mode); repaint(); return p.then(repaint).catch((e) => log.error('action', e)); };
+        // Stop all (kit/panic.js) from any app: the flap handed back to the DME (the OEM press, as the button), and no
+        // flap, tune or xDrive request goes out until it ends (the tune and xDrive have no hand-back of their own)
+        let panicked = false;
+        const setMode = controller.setMode.bind(controller);
+        controller.setMode = (mode) => (panicked && mode !== 'OEM' ? Promise.resolve(controller.state) : setMode(mode));
+        if (ctx.onPanic) {
+            ctx.onPanic((on) => {
+                panicked = on;
+                if (on && (controller.state.requested !== 'OEM' || ['OPEN', 'CLOSED'].indexOf(controller.state.confirmed) >= 0)) {
+                    setMode('OEM').then(repaint).catch((e) => log.error('stop all', e));
+                }
+                repaint();
+            });
+        }
+        const press = (mode) => () => { if (panicked && mode !== 'OEM') return null; const p = auto.press(mode); repaint(); return p.then(repaint).catch((e) => log.error('action', e)); };
         // a tune action: repaint at once (shows "Sending…"), then again with the DME's answer
-        const tuneAct = (fn) => () => { const p = fn(); repaint(); return p.then(repaint).catch((e) => log.error('tune', e)); };
+        const tuneAct = (fn) => () => { if (panicked) return null; const p = fn(); repaint(); return p.then(repaint).catch((e) => log.error('tune', e)); };
         const acts = {
             oem: press('OEM'), open: press('OPEN'), close: press('CLOSED'), drive: press('DRIVE'),
             map: (n) => tuneAct(() => tune.setMap(n)),

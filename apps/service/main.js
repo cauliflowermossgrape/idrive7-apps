@@ -438,7 +438,11 @@ mgu.run({
         }
         /** "Reset service": the first press asks the cluster and arms the reset of the selected item; a
          *  second press within 5 s confirms it. Anything else (Next item, Details) disarms it. */
+        // Stop all (kit/panic.js) from any app: no reset is sent until it ends (one armed meanwhile is dropped)
+        let panicked = false;
+        if (ctx.onPanic) ctx.onPanic((on) => { panicked = on; if (on) reset = null; });
         async function resetPress() {
+            if (panicked) return showMsg('Stopped by Stop all: nothing is sent to the car until it ends');
             if (settings.get('resetOn') !== true) return showMsg('Reset is off - turn on "Service reset" in Settings');
             if (useDemo()) return showMsg('No reset in demo mode');
             if (scanBusy) return showMsg('CBS read in progress - wait before resetting');
