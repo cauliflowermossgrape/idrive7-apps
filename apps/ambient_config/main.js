@@ -187,7 +187,9 @@ async function background(bg) {
     // step: it stops when the car moves off); why not, or null
     const parked = Parked.watch(bg, log);
     const checks = () => gateChecks({ setting: settings.get('strobe') === true, away: control._away, moving: parked.moving() });
-    const gate = (what) => gateWhy(checks(), what);
+    // Stop all (kit/panic.js) from any app: nothing new starts until it ends
+    let panicked = false;
+    const gate = (what) => (panicked ? 'Stopped by Stop all' : gateWhy(checks(), what));
     // the high beam's channels learned on a headlight unit, kept in the data folder
     const fs = require('fs'), path = require('path');
     const chFile = bg.dataDir ? path.join(bg.dataDir, 'strobe_channels.json') : null;
@@ -232,6 +234,14 @@ async function background(bg) {
         if (key === 'strobe') { if (settings.get('strobe') === true) findStrobe(); else strobe.stop(); }
         if (key === 'strobeLever') watchLever();
     });
+    // Stop all: the strobe or light show stops (its own stop gives the lamps back) and the ambient lights hold their
+    // writes, as for the Strobe tab, until it ends
+    if (bg.onPanic) {
+        bg.onPanic((on) => {
+            panicked = on;
+            if (on) { strobe.stop(); lights.hold('panic', true).catch((e) => log.warn('ambient: hold: ' + e)); } else lights.hold('panic', false);
+        });
+    }
     // (the car locked and left mid-flash: the gate says no at the next step and the strobe stops)
     return { ambient, lights, control, active, others, strobe, checks, lookAgain: () => lights.find({ force: true }).then(counted) };
 }
