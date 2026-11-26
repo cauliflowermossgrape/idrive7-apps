@@ -23,6 +23,13 @@ if (glyph === 'gauge') {
     c.line(70, 76, nx, ny, 6, W);
     c.circle(70, 76, 9, W);
     c.fillRect(44, 112, 52, 6, W);
+} else if (glyph === 'ready') {
+    // a gauge ring with a tick: ready to drive
+    c.arc(70, 72, 42, 50, -135, 135, W, { round: true });
+    c.arc(70, 72, 42, 50, 60, 135, A, { round: true });
+    c.line(50, 74, 64, 88, 9, W);
+    c.line(64, 88, 92, 56, 9, W);
+    c.fillRect(44, 116, 52, 6, W);
 } else if (glyph === 'flag') {
     // stopwatch + launch flag
     c.arc(62, 78, 38, 46, 0, 360, W);

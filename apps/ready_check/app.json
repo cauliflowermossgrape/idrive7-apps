@@ -1,0 +1,69 @@
+{
+  "id": "ready_check",
+  "title": "Ready Check",
+  "description": "Is the car ready for harder driving? Oil, coolant and gearbox oil, 12 V battery, fuel and tyres in one verdict, the warm-up trend, and when to switch off after hard driving",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAA9",
+  "iconGlyph": "check",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.18" },
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs",
+      "statusBattery2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "torque, for the power in the cool-down",
+      "statusActualValueTorque2": "rs"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "range and fuel in the tank",
+      "statusRangeTankStatus": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "the outside temperature",
+      "ExteriorTemperature": "s"
+    },
+    "de.bmw.infrastructure.analytics.BasicDataSet": {
+      "_optional": "gearbox oil temperature",
+      "basicDataSet": "s"
+    },
+    "de.bmw.infotainment.vehicle.TPMS": {
+      "_optional": "tyre pressures and their targets",
+      "statusTyrePressure": "rs",
+      "statusTargetTyrePressure": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Ready Check",
+      "buttons": [
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "warmOil", "label": "Oil is warm at", "type": "number", "unit": "°C", "unitBy": "tempUnit",
+     "units": {"f": {"unit": "°F", "mul": 1.8, "add": 32}}, "default": 80, "steps": [60, 70, 75, 80, 85, 90, 100]},
+    {"key": "warmCoolant", "label": "Coolant is warm at", "type": "number", "unit": "°C", "unitBy": "tempUnit",
+     "units": {"f": {"unit": "°F", "mul": 1.8, "add": 32}}, "default": 80, "steps": [60, 70, 75, 80, 85, 90]},
+    {"key": "warmGearbox", "label": "Gearbox oil is warm at", "type": "number", "unit": "°C", "unitBy": "tempUnit",
+     "units": {"f": {"unit": "°F", "mul": 1.8, "add": 32}}, "default": 60, "steps": [40, 50, 60, 70, 80]},
+    {"key": "tempUnit", "label": "Temperature unit", "type": "choice", "default": "c", "options": [["c", "Celsius"], ["f", "Fahrenheit"]]},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}
