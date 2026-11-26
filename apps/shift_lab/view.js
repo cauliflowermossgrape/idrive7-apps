@@ -6,12 +6,16 @@
  *                  and the last shift measured: how long it took, the rpm drop, the g before, during and after
  *   Shifts         how long each gear change takes (average and best) and how far the rpm drops, the last shifts
  *   Pull           how hard the car pushes in each gear across the revs (g), one line per gear, and each gear's best
+ *   Kickdown       how fast the gearbox drops a gear when the pedal is floored, per driving mode; when it held the
+ *                  gear instead; the newest one as a timeline; the last ones as a table
+ *   Cold vs hot    upshift times against the gearbox oil temperature, and per temperature band with the kickdowns
  *   How it works   the same in plain words
  *
- *   draw(cv, t, page, s)   s = { d (car.data()), shifts, ratios, curves, perGear, minTorque, armed }
+ *   draw(cv, t, page, s)   s = { d (car.data()), shifts, ratios, curves, perGear, minTorque, kicks, pedal, gb }
  */
 const G = require('./kit/gauges');
 const { withAlpha } = require('./kit/canvas');
+const { byMode, byBand, BANDS } = require('./kickdown');
 
 const GEAR_COL = ['#ff5a5a', '#ffa23a', '#ffd84a', '#2fd27a', '#3ac8ff', '#7d8bff', '#c06bff', '#ff6fb5', '#ffffff', '#aaaaaa'];
 const gc = (g) => GEAR_COL[(g - 1) % GEAR_COL.length];
@@ -146,6 +150,111 @@ function pullPage(cv, t, s) {
     cv.text('drives it (bigger = shorter gear)', 1160, 492, 15, t.dim);
 }
 
+
+/* ---------- Kickdown ---------- */
+const MODE_NAME = { sport: 'Sport', comfort: 'Comfort', eco: 'Eco Pro', hybrid: 'Hybrid', other: 'Mode not sent' };
+const MODE_COL = { sport: '#ff5a5a', comfort: '#3ac8ff', eco: '#2fd27a', hybrid: '#c06bff', other: '#aaaaaa' };
+const gearsOf = (k) => (k.kind === 'held' ? 'held ' + k.from : k.from + ' > ' + k.to);
+
+function kickPage(cv, t, s) {
+    const kicks = s.kicks || [], modes = byMode(kicks), est = kicks.some((k) => k.est);
+    G.panel(cv, t, 24, 44, 760, 468, 'How fast it kicks down when you floor it');
+    if (!kicks.length) {
+        [s.pedal ? 'No kickdown seen yet.' : 'No kickdown seen yet, and no pedal signal so far.', '',
+            'Floor the pedal from part throttle above 15 km/h:', 'the time from the pedal to the lower gear shows here,',
+            'per driving mode, and when the gearbox kept the gear.']
+            .forEach((l, i) => cv.text(l, 48, 140 + i * 32, 21, i ? t.dim : t.text, { font: i ? 'label' : 'bold' }));
+    } else {
+        const done = modes.filter((m) => isNum(m.avgMs));
+        const fast = done.slice().sort((a, b) => a.avgMs - b.avgMs);
+        const line = fast.length > 1 ? MODE_NAME[fast[0].mode] + ' drops a gear in ' + fast[0].avgMs + ' ms on average, ' + MODE_NAME[fast[fast.length - 1].mode] + ' in ' + fast[fast.length - 1].avgMs + ' ms.'
+            : fast.length ? MODE_NAME[fast[0].mode] + ': ' + fast[0].avgMs + ' ms from the pedal to the lower gear.' : 'Every kickdown so far kept its gear.';
+        cv.text(line, 48, 126, 20, t.text, { font: 'bold' });
+        const held = kicks.filter((k) => k.kind === 'held').length;
+        cv.text(kicks.length + ' kickdowns, ' + held + ' held the gear' + (est ? '. From engine torque, no pedal signal: an estimate' : ''), 48, 150, 16, est ? t.warn : t.dim);
+        // average and best per mode
+        const n = modes.length, ymax = Math.max(400, Math.ceil(Math.max.apply(null, done.map((m) => m.avgMs).concat([0])) / 100) * 100 + 100);
+        const c = G.chart(cv, t, 40, 166, 728, 180, { padTop: 22, xMin: 0, xMax: n, xStep: n, xFmt: () => '', yMin: 0, yMax: ymax, series: [] });
+        cv.text('ms', c.px - 8, c.py - 12, 14, t.dim, { align: 'right', font: 'bold' });
+        const slot = c.pw / n, bw = Math.min(46, slot * 0.3);
+        modes.forEach((m, i) => {
+            const cx = c.px + slot * (i + 0.5);
+            [[m.avgMs, MODE_COL[m.mode], -1], [m.bestMs, withAlpha(MODE_COL[m.mode], 0.5), 1]].forEach(([v, col, side]) => {
+                if (!isNum(v)) return;
+                const x0 = cx + (side < 0 ? -bw - 3 : 3), y0 = c.Y(v);
+                cv.roundRect(x0, y0, bw, c.py + c.ph - y0, 4, col);
+                cv.text(String(v), x0 + bw / 2, y0 - 6, 15, t.text, { align: 'center', font: 'num' });
+            });
+            cv.text(MODE_NAME[m.mode], cx, c.py + c.ph + 20, 17, t.text, { align: 'center', font: 'bold' });
+            if (m.held) cv.text(m.held + 'x held', cx, c.py + c.ph + 40, 14, t.warn, { align: 'center' });
+        });
+        cv.text('full: average   faded: best', 768, 190, 14, t.dim, { align: 'right' });
+        // the newest downshift as a timeline: pedal floored, rpm starts to rise, the lower gear
+        const k = kicks.find((x) => x.kind === 'down' && isNum(x.doneMs));
+        if (k) {
+            const x0 = 64, w = 680, y = 448, full = Math.max(600, Math.ceil(k.doneMs / 200) * 200 + 200), X = (ms) => x0 + w * ms / full;
+            cv.text('NEWEST: ' + (MODE_NAME[k.mode] || '').toUpperCase() + ', ' + gearsOf(k) + ' AT ' + k.kmh + ' KM/H', 48, 410, 14, t.dim, { font: 'bold', spacing: 1.5 });
+            cv.roundRect(x0, y - 6, w, 12, 6, withAlpha(t.track, 0.7));
+            if (isNum(k.startMs)) cv.roundRect(x0, y - 6, X(k.startMs) - x0, 12, 6, withAlpha(t.warn, 0.7));
+            cv.roundRect(isNum(k.startMs) ? X(k.startMs) : x0, y - 6, X(k.doneMs) - (isNum(k.startMs) ? X(k.startMs) : x0), 12, 6, MODE_COL[k.mode] || t.accent);
+            [[0, 'pedal down'], [k.startMs, 'revs start rising'], [k.doneMs, 'in gear ' + k.to + ': ' + k.doneMs + ' ms']].forEach(([ms, l], i) => {
+                if (!isNum(ms)) return;
+                cv.fillRect(X(ms) - 1, y - 14, 3, 28, t.text);
+                cv.text(l, X(ms), y + 34, 15, i === 2 ? t.text : t.dim, { align: i === 0 ? 'left' : i === 2 ? 'right' : 'center' });
+            });
+        }
+    }
+    G.panel(cv, t, 800, 44, 776, 468, 'Last kickdowns (' + kicks.length + ')');
+    const rows = kicks.slice(0, 8).map((k) => [when(k.at), { text: MODE_NAME[k.mode || 'other'], color: MODE_COL[k.mode || 'other'] },
+        { text: gearsOf(k), color: k.kind === 'held' ? t.warn : t.text }, isNum(k.startMs) ? k.startMs + ' ms' : '--', isNum(k.doneMs) ? k.doneMs + ' ms' : '--',
+        k.kmh + ' km/h', isNum(k.gb) ? k.gb + ' °C' : '--']);
+    G.table(cv, t, 820, 104, 740, [{ label: 'When', w: 130 }, { label: 'Mode', w: 120, font: 'bold' }, { label: 'Gears', w: 90 }, { label: 'Revs up', w: 90, align: 'right' },
+        { label: 'New gear', w: 100, align: 'right' }, { label: 'Speed', w: 100, align: 'right' }, { label: 'Gearbox', w: 110, align: 'right' }], rows,
+    { rowH: 40, size: 18, empty: 'None yet' });
+    cv.text('Revs up: pedal to the revs rising. New gear: pedal to the lower gear engaged.', 820, 496, 15, t.dim);
+}
+
+/* ---------- Cold vs hot ---------- */
+const BAND_COL = { cold: '#3ac8ff', cool: '#7d8bff', warm: '#2fd27a', hot: '#ffa23a' };
+const BAND_TXT = { cold: 'under 40 °C', cool: '40 to 70 °C', warm: '70 to 90 °C', hot: 'over 90 °C' };
+
+function coldPage(cv, t, s) {
+    const shifts = (s.shifts || []).filter((x) => isNum(x.gb) && isNum(x.ms));
+    G.panel(cv, t, 24, 44, 1000, 468, 'Upshift time against the gearbox oil temperature');
+    const tmin = 0, tmax = 120, ymax = Math.max(300, Math.ceil(Math.max.apply(null, shifts.map((x) => x.ms).concat([0])) / 100) * 100 + 100);
+    const c = G.chart(cv, t, 40, 100, 968, 350, { padTop: 22, xMin: tmin, xMax: tmax, xStep: 20, xUnit: '°C', yMin: 0, yMax: ymax, series: [],
+        empty: shifts.length ? null : 'No shift with a gearbox oil temperature yet' });
+    cv.text('ms', c.px - 8, c.py - 12, 14, t.dim, { align: 'right', font: 'bold' });
+    BANDS.forEach((b) => {
+        const a = c.X(Math.max(tmin, b[1])), z = c.X(Math.min(tmax, b[2]));
+        cv.fillRect(a, c.py, z - a, c.ph, withAlpha(BAND_COL[b[0]], 0.07));
+        cv.text(b[0].toUpperCase(), (a + z) / 2, c.py + 14, 13, withAlpha(BAND_COL[b[0]], 0.9), { align: 'center', font: 'bold', spacing: 1.5 });
+    });
+    const bands = byBand(shifts, 'ms');
+    bands.forEach((b) => { if (isNum(b.avgMs)) { const a = c.X(Math.max(tmin, b.lo)), z = c.X(Math.min(tmax, b.hi)); cv.fillRect(a + 4, Math.round(c.Y(b.avgMs)), z - a - 8, 3, BAND_COL[b.band]); } });
+    shifts.forEach((x) => { cv.circle(c.X(Math.max(tmin, Math.min(tmax, x.gb))), c.Y(x.ms), 6, withAlpha(gc(x.to), 0.85)); });
+    cv.text('Each dot is an upshift under load; the line in each band is its average. Colder oil: thicker, slower shifts.', 48, 496, 16, t.dim);
+
+    G.panel(cv, t, 1040, 44, 536, 468, 'Per temperature band');
+    G.readout(cv, t, 1064, 96, { label: 'gearbox oil now', value: s.gb, unit: '°C', size: 40, labelSize: 14 });
+    const kb = byBand((s.kicks || []).filter((k) => k.kind === 'down'), 'doneMs'), warm = bands.find((b) => b.band === 'warm' && isNum(b.avgMs));
+    const cold = bands.find((b) => (b.band === 'cold' || b.band === 'cool') && isNum(b.avgMs));
+    const say = warm && cold ? (BAND_TXT[cold.band] + ': upshifts take ' + Math.round((cold.avgMs / warm.avgMs - 1) * 100) + ' % longer than warm.')
+        : isNum(s.gb) || shifts.length ? 'Needs shifts in more than one band to compare.' : 'The car has not sent a gearbox oil temperature.';
+    cv.text(say, 1064, 192, 17, t.text);
+    const top = Math.max(300, Math.max.apply(null, bands.concat(kb).map((b) => b.avgMs || 0)));
+    BANDS.forEach((b, i) => {
+        const y = 230 + i * 66, u = bands[i], k = kb[i];
+        cv.text(b[0].toUpperCase(), 1064, y + 16, 15, BAND_COL[b[0]], { font: 'bold', spacing: 1.5 });
+        cv.text(BAND_TXT[b[0]], 1064, y + 36, 13, t.dim);
+        [[u, 'up', BAND_COL[b[0]], 0], [k, 'kickdown', withAlpha(BAND_COL[b[0]], 0.5), 22]].forEach(([v, l, col, dy]) => {
+            const w = isNum(v.avgMs) ? Math.max(6, 250 * v.avgMs / top) : 0;
+            if (w) cv.roundRect(1180, y + 4 + dy, w, 16, 4, col);
+            cv.text(isNum(v.avgMs) ? v.avgMs + ' ms ' + l + ' (' + v.n + ')' : l + ': none', 1180 + w + 8, y + 17 + dy, 14, isNum(v.avgMs) ? t.text : t.dim);
+        });
+    });
+}
+
 /* ---------- How it works ---------- */
 function help(cv, t, s) {
     G.panel(cv, t, 24, 44, 1552, 468, 'How Shift Lab works');
@@ -154,20 +263,23 @@ function help(cv, t, s) {
         ['2', 'It times every upshift under load.', 'When the gear steps up while the engine pulls (more than ' + s.minTorque + ' Nm or 0.08 g), it looks at the seconds around it: the shift starts at the highest rpm and ends when the rpm matches the new gear.'],
         ['3', 'It shows what you felt.', 'The push in g before the shift, the lowest during it (the dip you feel) and after it; and the rpm drop. Shifts compares every gear change.'],
         ['4', 'It draws your car\'s pull.', 'Under load it notes the g in each gear for every 250 rpm. Pull shows the curves: where the engine is strongest and how much each gear gives.'],
+        ['5', 'It times kickdowns and compares cold with warm.', 'Floor the pedal and it times how long until the revs rise and the lower gear is in, per driving mode, or notes that the gear was held. Cold vs hot sets the times against the gearbox oil.'],
     ].forEach((r, i) => {
-        const y = 136 + i * 84;
+        const y = 120 + i * 74;
         cv.circle(66, y - 8, 20, withAlpha(t.accent, 0.3));
         cv.text(r[0], 66, y, 22, t.text, { align: 'center', font: 'bold' });
         cv.text(r[1], 104, y, 23, t.text, { font: 'bold' });
         cv.text(r[2], 104, y + 30, 17, t.dim);
     });
-    cv.text('It only reads what the car sends anyway (rpm, speed, g, torque, gear). Times are measured from those signals, ten to fifty a second: a guide, not a lab figure.', 48, 496, 16, t.dim);
+    cv.text('It only reads what the car sends anyway (rpm, speed, g, torque, gear, pedal, driving mode, gearbox oil). Times are measured from those signals, ten to fifty a second: a guide, not a lab figure.', 48, 496, 16, t.dim);
 }
 
 function draw(cv, t, page, s) {
     if (page === 1) shiftsPage(cv, t, s);
     else if (page === 2) pullPage(cv, t, s);
-    else if (page === 3) help(cv, t, s);
+    else if (page === 3) kickPage(cv, t, s);
+    else if (page === 4) coldPage(cv, t, s);
+    else if (page === 5) help(cv, t, s);
     else live(cv, t, s);
 }
 

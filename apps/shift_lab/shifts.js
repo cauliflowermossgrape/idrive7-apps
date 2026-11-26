@@ -3,9 +3,10 @@
  * shifts.js - Shift Lab's measuring: every upshift under load, and how hard the car pulls in each gear across the revs.
  *
  *   const s = new ShiftLog({ minTorque });
- *   s.feed(d, t)          d = car.data() ({ rpm, speed, gLong, torque, gear }), t = ms; on every sample
+ *   s.feed(d, t)          d = car.data() ({ rpm, speed, gLong, torque, gear }, gb = gearbox oil C), t = ms; on every sample
  *   s.shifts              the last MAX upshifts, newest first:
- *                         { at, from, to, ms, rpmBefore, rpmAfter, kmh, gBefore, gDip, gAfter, tqBefore, tqAfter }
+ *                         { at, from, to, ms, rpmBefore, rpmAfter, kmh, gBefore, gDip, gAfter, tqBefore, tqAfter, gb }
+ *                         (gb: the gearbox oil in C when the car sends it)
  *   s.ratios              the learned rpm per km/h of each gear: { 1: 117.2, 2: 77.3, ... }
  *   s.pullCurves()        { gear: [[rpm, g], ...] } the average acceleration under load per 250 rpm, per gear
  *   s.perGear()           [{ from, to, n, avgMs, bestMs, avgDrop }] by gear change
@@ -33,7 +34,7 @@ class ShiftLog {
         if (!d || !isNum(d.rpm) || !isNum(d.speed)) return;
         const gear = isNum(d.gear) && d.gear >= 1 ? d.gear : null;
         const k = d.speed > 8 && d.rpm > 800 ? d.rpm / d.speed : null;
-        const s = { t, rpm: d.rpm, kmh: d.speed, g: isNum(d.gLong) ? d.gLong : null, tq: isNum(d.torque) ? d.torque : null, gear, k };
+        const s = { t, rpm: d.rpm, kmh: d.speed, g: isNum(d.gLong) ? d.gLong : null, tq: isNum(d.torque) ? d.torque : null, gear, k, gb: isNum(d.gb) ? d.gb : null };
         this.hist.push(s);
         while (this.hist.length && t - this.hist[0].t > HIST_MS) this.hist.shift();
 
@@ -79,6 +80,7 @@ class ShiftLog {
             gBefore: r1(avg(num(before, (s) => s.g)), 3), gDip: dip.length ? r1(Math.min.apply(null, dip), 3) : null,
             gAfter: r1(avg(num(after, (s) => s.g)), 3), tqBefore: r1(avg(num(before, (s) => s.tq))), tqAfter: r1(avg(num(after, (s) => s.tq))),
         };
+        if (isNum(start.gb)) sh.gb = Math.round(start.gb);          // the gearbox oil then (Cold vs hot page)
         this.shifts.unshift(sh);
         if (this.shifts.length > MAX) this.shifts.length = MAX;
         this.changed = true;

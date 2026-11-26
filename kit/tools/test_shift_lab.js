@@ -12,6 +12,7 @@ const APP = path.join(ROOT, 'apps', 'shift_lab');
 const { Recorder } = require(path.join(KIT, 'record'));
 const themes = require(path.join(KIT, 'themes'));
 const { ShiftLog, perGear, MAX } = require(path.join(APP, 'shifts'));
+const { KickLog, byMode, byBand, bandOf } = require(path.join(APP, 'kickdown'));
 
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; if (!c) { fails++; console.log('FAIL ' + m); } else console.log('ok   ' + m); };
@@ -46,6 +47,41 @@ many.load({ shifts: new Array(250).fill(0).map((x, i) => ({ ms: i, from: 1, to: 
 ok(many.shifts.length === MAX, 'at most ' + MAX + ' kept');
 const back = new ShiftLog(); back.load(JSON.parse(JSON.stringify(lab.toJSON())));
 ok(back.shifts.length === 1 && Math.abs(back.ratios[3] - 52) < 1 && back.pullCurves()[2], 'kept and read back');
+
+// kickdowns: cruising in 5th (k 36) at part pedal, the pedal floored in 100 ms; the gearbox drops to 3rd (k 61)
+const RAT = { 3: 61, 4: 46, 5: 36 };
+function kickRun(kl, t0, opt) {
+    let t = t0; const v = 80;
+    const step = (rpm, pedal, tq, gear) => { kl.feed({ rpm, speed: v, gear: opt.gear ? gear : null, pedal: opt.pedal ? pedal : undefined, torque: tq, mode: 'sport', gb: 85 }, RAT, t); t += 20; };
+    for (let i = 0; i < 50; i++) step(v * RAT[5], 25, 120, 5);                     // 1 s cruising
+    for (let i = 1; i <= 5; i++) step(v * RAT[5], 25 + i * 15, 120 + i * 50, 5);    // floored in 100 ms
+    for (let i = 0; i < 10; i++) step(v * RAT[5], 100, 380, 5);                     // 200 ms: nothing yet
+    if (opt.held) { for (let i = 0; i < 150; i++) step(v * RAT[5], 100, 400, 5); return t; }
+    for (let i = 1; i <= 10; i++) step(v * (RAT[5] + (RAT[3] - RAT[5]) * i / 10), 100, 380, i < 6 ? 5 : 3);   // 200 ms to 3rd
+    for (let i = 0; i < 100; i++) step(v * RAT[3], 100, 420, 3);
+    return t;
+}
+let kl = new KickLog();
+let tk = kickRun(kl, 1000, { pedal: true, gear: false });
+const kk = kl.kicks[0] || {};
+ok(kl.kicks.length === 1 && kk.kind === 'down' && kk.from === 5 && kk.to === 3, 'a floored pedal: kickdown 5 > 3 seen from the ratios (' + kk.from + ' > ' + kk.to + ')');
+ok(kk.doneMs >= 460 && kk.doneMs <= 500 && kk.startMs >= 280 && kk.startMs <= 320, 'revs start rising 300 ms after the pedal, the lower gear in at 480 ms (' + kk.startMs + ', ' + kk.doneMs + ')');
+ok(kk.mode === 'sport' && kk.gb === 85 && !kk.est, 'mode and gearbox oil kept, not an estimate');
+tk = kickRun(kl, tk + 5000, { pedal: true, gear: true, held: true });
+ok(kl.kicks.length === 2 && kl.kicks[0].kind === 'held' && kl.kicks[0].doneMs === null, 'no lower gear within 2.5 s: held the gear');
+const kt = new KickLog();
+kickRun(kt, 1000, { pedal: false, gear: true });
+ok(kt.kicks.length === 1 && kt.kicks[0].est === true && kt.kicks[0].kind === 'down', 'no pedal signal: the torque rise stands in, marked an estimate');
+const bm = byMode([{ kind: 'down', mode: 'sport', doneMs: 300 }, { kind: 'down', mode: 'sport', doneMs: 400 }, { kind: 'held', mode: 'eco' }]);
+ok(bm[0].mode === 'sport' && bm[0].avgMs === 350 && bm[0].bestMs === 300 && bm[1].held === 1 && bm[1].avgMs === null, 'per mode: average, best, held');
+const bb = byBand([{ gb: 30, ms: 400 }, { gb: 35, ms: 300 }, { gb: 80, ms: 200 }], 'ms');
+ok(bandOf(39) === 'cold' && bandOf(70) === 'warm' && bb[0].avgMs === 350 && bb[0].n === 2 && bb[2].avgMs === 200 && bb[1].n === 0, 'gearbox oil bands');
+const shg = new ShiftLog({ minTorque: 150 });
+(function () { let t2 = 1000, v = 40; const st = (rpm, gear, g, tq) => { shg.feed({ rpm, speed: v, gLong: g, torque: tq, gear, gb: 55 }, t2); t2 += 20; };
+    while (v * 77 < 6500) { st(v * 77, 2, 0.5, 350); v += 0.25; } const r0 = v * 77, r1 = v * 52;
+    for (let i = 1; i <= 10; i++) { st(r0 + (r1 - r0) * i / 10, i < 5 ? 2 : 3, 0.1, 200); v += 0.05; }
+    for (let i = 0; i < 150; i++) { st(v * 52, 3, 0.4, 380); v += 0.2; } })();
+ok(shg.shifts[0] && shg.shifts[0].gb === 55, 'an upshift keeps the gearbox oil temperature');
 
 // the app's pages
 let impl = null;
@@ -82,12 +118,20 @@ Module._load = function (req, parent, isMain) {
     p = await d.page(2);
     ok(/Higher line: the car pushes you harder/.test(p) && /gear 6/.test(p) && /117\.2/.test(p), 'demo Pull: one line per gear and the best of each');
     p = await d.page(3);
-    ok(/It times every upshift under load/.test(p), 'How it works');
+    ok(/drops a gear in \d+ ms on average/.test(p) && /held the gear/.test(p) && /NEWEST: /.test(p) && /pedal down/.test(p) && /REVS UP/.test(p), 'demo Kickdown: per mode, the newest as a timeline, the table');
+    p = await d.page(4);
+    ok(/Each dot is an upshift under load/.test(p) && /upshifts take \d+ % longer than warm/.test(p) && /kickdown \(/.test(p), 'demo Cold vs hot: the scatter and the bands');
+    p = await d.page(5);
+    ok(/It times every upshift under load/.test(p) && /It times kickdowns/.test(p), 'How it works');
     const l = await run('off');
     p = await l.page(0);
     ok(/No shift measured yet/.test(p) && /gears not learned yet/.test(p), 'no car data yet: plain words, no fake numbers');
     p = await l.page(1);
     ok(/No shifts measured yet/.test(p), 'Shifts empty: says what to do');
+    p = await l.page(3);
+    ok(/No kickdown seen yet/.test(p) && /None yet/.test(p), 'Kickdown empty: says what to do');
+    p = await l.page(4);
+    ok(/No shift with a gearbox oil temperature yet/.test(p) && /has not sent a gearbox oil temperature/.test(p), 'Cold vs hot empty: plain words');
     console.log('shift_lab: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

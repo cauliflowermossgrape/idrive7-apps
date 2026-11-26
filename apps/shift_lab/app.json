@@ -1,8 +1,8 @@
 {
   "id": "shift_lab",
   "title": "Shift Lab",
-  "description": "Every upshift under load measured: how long it took, the rpm drop and the g dip; each gear's ratio and how hard the car pulls in each gear across the revs",
-  "version": "0.1.0",
+  "description": "Every upshift under load measured: how long it took, the rpm drop and the g dip; each gear's ratio, how hard the car pulls in each gear, how fast it kicks down when you floor it, and cold against warm gearbox",
+  "version": "0.2.0",
   "vendor": "custom",
   "loggingId": "OAAA",
   "iconGlyph": "rpm",
@@ -25,8 +25,17 @@
       "DataPowerTrain2": "rs"
     },
     "de.bmw.infotainment.drivingexcitement.FES": {
-      "_optional": "engine torque (what counts as under load)",
-      "statusActualValueTorque2": "rs"
+      "_optional": "engine torque (what counts as under load) and the driving mode (kickdowns per mode)",
+      "statusActualValueTorque2": "rs",
+      "statusFESVehicleDynamicSwitchHMI": "rs"
+    },
+    "de.bmw.powertrain.AcceleratorPedal": {
+      "_optional": "the accelerator pedal (kickdowns; without it the engine torque stands in, as an estimate)",
+      "AngleAcceleratorPedal": "s"
+    },
+    "de.bmw.infrastructure.analytics.BasicDataSet": {
+      "_optional": "the gearbox oil temperature (Cold vs hot)",
+      "basicDataSet": "s"
     }
   },
   "screens": [
