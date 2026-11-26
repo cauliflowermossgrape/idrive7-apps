@@ -44,6 +44,7 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 5));
     const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
     const def = {}; spec.settings.forEach((s) => { if (s.key) def[s.key] = s.default; });
     def.autoScan = false; def.demo = 'off'; def.info = true;
+    def.plausibility = false;                 // (its passive watches run while the app runs: test_faults_plausibility.js)
     const noop = () => {};
     const ctx = {
         log: { info: noop, warn: noop, error: noop }, dataDir: dir,
