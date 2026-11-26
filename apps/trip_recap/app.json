@@ -1,0 +1,57 @@
+{
+  "id": "trip_recap",
+  "title": "Trip Recap",
+  "description": "Every drive noted by itself: km, time, average and top speed, most g, hard brakes, most power, oil and coolant, as charts, and any drive compared with the one before",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAA8",
+  "iconGlyph": "km",
+  "autostart": true,
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.18" },
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "torque (the most power)",
+      "statusActualValueTorque2": "rs"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "the odometer (km); without it the speed is added up",
+      "statusRangeTankStatus": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Trip Recap",
+      "buttons": [
+        ["BTN_PREV", "Previous"],
+        ["BTN_NEXT", "Next"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "compareWith", "label": "Compare with", "type": "choice", "default": "prev",
+     "options": [["prev", "The drive before"], ["avg10", "Average of the last 10"]]},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}
