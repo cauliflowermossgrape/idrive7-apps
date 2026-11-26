@@ -1,0 +1,85 @@
+{
+  "id": "watchdog",
+  "title": "Watchdog",
+  "description": "Up to 8 rules that watch the car in the background (oil, coolant, gearbox, outside, speed, rpm, power, g, 12 V, range) and keep every time one fired",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAB0",
+  "iconGlyph": "bell",
+  "autostart": true,
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.18" },
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs",
+      "statusBattery2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "power (torque x rpm)",
+      "statusActualValueTorque2": "rs"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "fuel range",
+      "statusRangeTankStatus": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "the outside temperature",
+      "ExteriorTemperature": "rs"
+    },
+    "de.bmw.infrastructure.analytics.BasicDataSet": {
+      "_optional": "gearbox oil temperature",
+      "basicDataSet": "s"
+    }
+  },
+  "startWidget": {
+    "comment": "Home-screen widget, as Warm-Up's: the layout and cell names of BMW's Drive Recorder widget on this firmware; the picture goes into BackgroundImage1 (384 x 256), the small widget gets text lines. It shows the latest firing.",
+    "name": "Watchdog",
+    "layout": "LT_Table_OnlineApps_DriveRecorderWidget",
+    "image": "BackgroundImage1",
+    "scale": 2,
+    "size": [384, 256],
+    "safe": [0.09, 0.17],
+    "cells": {
+      "ErrorInfo": [false, "Bool"],
+      "background": [true, "Bool"],
+      "ProgressbarVisible": [false, "Bool"],
+      "TextRecordings": ["", "Text"]
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Watchdog",
+      "buttons": [
+        ["BTN_RULE", "Next rule"],
+        ["BTN_VALUE", "Change value"],
+        ["BTN_CMP", "Above / below"],
+        ["BTN_LESS", "Lower"],
+        ["BTN_MORE", "Higher"],
+        ["BTN_HOLD", "Hold time"],
+        ["BTN_ONOFF", "Rule on / off"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "cooldown", "label": "Quiet after a firing", "type": "number", "unit": "s", "default": 60, "steps": [10, 30, 60, 120, 300, 900]},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}

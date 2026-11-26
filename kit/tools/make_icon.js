@@ -111,6 +111,14 @@ if (glyph === 'gauge') {
     c.strokeRoundRect(14, 30, 112, 80, 16, 6, W);
     [[26, '#2a8cff'], [56, '#2fd27a'], [86, A]].forEach(([x, col]) => c.roundRect(x, 58, 28, 10, 5, col));
     c.fillRect(40, 84, 60, 5, W);
+} else if (glyph === 'bell') {
+    // a bell with its clapper, and a red dot: something to look at
+    c.circle(66, 64, 34, W);
+    c.fillRect(32, 64, 68, 34, W);
+    c.roundRect(22, 92, 88, 12, 6, W);
+    c.circle(66, 30, 7, W);
+    c.circle(66, 114, 9, W);
+    c.circle(106, 34, 15, A);
 } else {
     c.strokeRoundRect(14, 14, 112, 112, 22, 6, W);
     c.text(glyph, 70, 88, 56, W, { font: 'bold', align: 'center' });
