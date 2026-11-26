@@ -11,15 +11,17 @@
  *     data folder, blackbox/ (over SSH)
  * Reads only what the car sends anyway (SOME/IP signals); nothing is asked of any control unit, nothing written to one.
  */
+const fs = require('fs');
 const path = require('path');
 const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
 const { qrLogSheet } = require('./kit/qrlog');
 const { Recorder, RATE_MS } = require('./recorder');
+const { draw, parseCsv, summary, KIND, when } = require('./view');
+
+const TABS = ['Live', 'Recordings', 'How it works'];
 
 const W = 1600;
-const GO = '#2fd27a';
-const KIND = { brake: 'HARD STOP', power: 'FULL POWER', sport: 'SPORT', mark: 'SAVED BY HAND' };
 const G0 = 9.80665;
 
 /** The driving mode (FES actualValueModeDrivingExperience, a name or a wire number, as Redline reads it). */
@@ -57,7 +59,9 @@ async function background(bg) {
     const rec = new Recorder({ dir: path.join(bg.dataDir, 'blackbox'), keep: settings.get('keep'),
         onSaved: (e) => log.info('blackbox: saved ' + e.file + ' (' + Math.round(e.ms / 1000) + ' s' + (e.error ? ', ' + e.error : '') + ')') });
     let peakKw = settings.get('peakKw') || 0, powerSince = 0, lastMode = null;
+    const state = { seen: false, kw: null, peakKw };
     const timer = setInterval(() => {
+        if (!state.seen && (G.isNum(v.speed) || G.isNum(v.rpm))) state.seen = true;
         rec.sample(v);
         const now = Date.now();
         // a hard stop: braking harder than the setting from over 30 km/h
@@ -67,6 +71,7 @@ async function background(bg) {
         // full power for a second: 85 % of the most power this car has shown (learned, kept in the settings)
         const kw = G.isNum(v.torque) && G.isNum(v.rpm) ? v.torque * v.rpm / 9549 : null;
         if (G.isNum(kw) && kw > peakKw + 1) { peakKw = kw; if (Math.round(kw) % 5 === 0) settings.set('peakKw', Math.round(peakKw)); }
+        state.kw = kw; state.peakKw = peakKw;
         const full = G.isNum(kw) && peakKw >= 60 && kw >= 0.85 * peakKw;
         powerSince = full ? powerSince || now : 0;
         if (settings.get('power') && powerSince && now - powerSince >= 1000 && rec.event('power')) log.info('blackbox: full power ' + Math.round(kw) + ' kW');
@@ -76,7 +81,7 @@ async function background(bg) {
     }, RATE_MS);
     if (timer.unref) timer.unref();
     process.on('exit', () => rec.flush());
-    return { rec, v };
+    return { rec, v, state };
 }
 
 mgu.run({
@@ -84,16 +89,42 @@ mgu.run({
     async start(ctx) {
         const { ui, settings } = ctx;
         const bgd = ctx.background || await background(ctx);
-        const rec = bgd.rec;
-        const two = (n) => (n < 10 ? '0' : '') + n;
-        const when = (ms) => { const d = new Date(ms); return d.getDate() + '.' + two(d.getMonth() + 1) + '. ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()); };
+        const rec = bgd.rec, st = bgd.state || { seen: true };
+        let page = 0, sel = 0;
+        const cache = new Map();
+        const demoOn = () => settings.get('demo') === 'on' || (settings.get('demo') !== 'off' && !st.seen);
+        const demoList = makeDemo();
 
-        ui.onClick('BTN_MARK', () => { rec.event('mark'); return render(); });
+        ui.onClick('BTN_MARK', () => {
+            if (demoOn()) demoList.unshift(demoEntry('mark', Date.now() - 15000));
+            else rec.event('mark');
+            page = 1; sel = 0;
+            return render();
+        });
+        ui.onClick('BTN_PREV', () => { sel = Math.max(0, sel - 1); page = 1; return render(); });
+        ui.onClick('BTN_NEXT', () => { sel = Math.min(Math.max(0, list().length - 1), sel + 1); page = 1; return render(); });
+        if (ctx.onTab) ctx.onTab((i) => { page = i; return render(); });
 
+        function list() { return demoOn() ? demoList : rec.list(); }
+        function detail(e) {
+            if (!e) return null;
+            if (e.data) return { rows: e.data, sum: summary(e.data, e.at) };
+            if (cache.has(e.file)) return cache.get(e.file);
+            let d;
+            try { const rows = parseCsv(fs.readFileSync(path.join(rec.dir, e.file), 'utf8')); d = { rows, sum: summary(rows, e.at) }; }
+            catch (err) { d = { rows: [], sum: summary([], e.at), error: String(err && err.message || err) }; }
+            cache.set(e.file, d);
+            if (cache.size > 6) cache.delete(cache.keys().next().value);
+            return d;
+        }
+        function liveRows(now) {
+            if (demoOn()) { const out = []; for (let ms = now - 60000; ms <= now; ms += 200) out.push(demoAt(ms)); return out; }
+            return rec.ring.map((r) => ({ t: r[0], rpm: r[1], speed: r[2], gLong: r[3], gLat: r[4], torque: r[5] }));
+        }
         function listText() {
-            const l = rec.list(), out = ['Recordings: ' + l.length];
+            const l = list(), out = ['Recordings: ' + l.length];
             l.forEach((e) => out.push(when(e.at) + '  ' + (KIND[e.kind] || e.kind) + ', ' + Math.round(e.ms / 1000) + ' s'
-                + (G.isNum(e.vmax) ? ', top ' + Math.round(e.vmax) + ' km/h' : '') + (G.isNum(e.gMax) ? ', peak ' + e.gMax.toFixed(2) + ' g' : '') + '  ' + e.file));
+                + (G.isNum(e.vmax) ? ', top ' + Math.round(e.vmax) + ' km/h' : '') + (G.isNum(e.gMax) ? ', peak ' + e.gMax.toFixed(2) + ' g' : '') + '  ' + (e.file || 'demo')));
             out.push('', 'The files: the app\'s data folder, blackbox/');
             return out.join('\n');
         }
@@ -104,30 +135,39 @@ mgu.run({
         }
 
         function render() {
-            const t = ctx.theme(), cv = ctx.canvas(W, 520).clear(t.bg), v = bgd.v;
-            const busy = rec.busy();
-            const p = G.panel(cv, t, 24, 44, 1552, 120, null);
-            cv.text(busy ? 'RECORDING: ' + (KIND[busy] || busy) : 'KEEPING THE LAST 60 S', 48, 96, 26, busy ? t.crit : GO, { font: 'bold', spacing: 2 });
-            const on = ['brake', 'power', 'sport'].filter((k) => settings.get(k)).map((k) => KIND[k].toLowerCase());
-            cv.text(on.length ? 'Saves on: ' + on.join(', ') + ', and the button' : 'Saves only with the button', 48, 136, 22, t.dim);
-            cv.text((G.isNum(v.speed) ? Math.round(v.speed) + ' km/h  ' : '') + (G.isNum(v.rpm) ? Math.round(v.rpm) + ' rpm  ' : '') + (G.isNum(v.gLong) ? v.gLong.toFixed(2) + ' g' : ''),
-                p.x + p.w - 24, 96, 24, t.text, { align: 'right', font: 'bold' });
-            const lp = G.panel(cv, t, 24, 180, 1552, 332, 'Saved recordings');
-            const l = rec.list();
-            if (!l.length) cv.text('Nothing saved yet', 48, 270, 24, t.dim);
-            l.slice(0, 6).forEach((e, i) => {
-                const y = 262 + i * 42;
-                cv.text(when(e.at), 48, y, 24, t.text);
-                cv.text(KIND[e.kind] || e.kind, 330, y, 24, e.kind === 'brake' ? t.crit : e.kind === 'power' ? t.warn : t.accent, { font: 'bold' });
-                cv.text(Math.round(e.ms / 1000) + ' s', 640, y, 24, t.text);
-                cv.text(G.isNum(e.vmax) ? 'top ' + Math.round(e.vmax) + ' km/h' : '', 780, y, 24, t.dim);
-                cv.text(G.isNum(e.gMax) ? 'peak ' + e.gMax.toFixed(2) + ' g' : '', 1040, y, 24, t.dim);
-                cv.text(e.error ? 'not saved: ' + e.error : '', 1552, y, 20, t.crit, { align: 'right' });
-            });
-            G.frame(cv, t, ['Blackbox'], 0, []);
+            const t = ctx.theme(), cv = ctx.canvas(W, 520).clear(t.bg), now = Date.now(), demo = demoOn();
+            const l = list();
+            if (sel >= l.length) sel = Math.max(0, l.length - 1);
+            const v = demo ? demoAt(now) : bgd.v;
+            if (demo) v.mode = 'comfort';
+            const kw = demo ? (v.torque * v.rpm / 9549) : st.kw;
+            draw(cv, t, page, { v, rows: page === 0 ? liveRows(now) : [], list: l, sel, detail: page === 1 ? detail(l[sel]) : null,
+                busy: demo ? null : rec.busy(), settings, kw, peakKw: demo ? 250 : st.peakKw, demo, now });
+            const busy = !demo && rec.busy();
+            G.frame(cv, t, TABS, page, [demo && { text: 'DEMO' }, busy && { text: 'SAVING', color: t.crit }]);
             return ui.image('MAIN_GFX', cv);
         }
         ctx.loop('MAIN', 4, render);
         render().then(() => ctx.log.info('first frame done')).catch((e) => ctx.log.warn('first render: ' + e));
     },
 });
+
+/* Demo (no car, or Settings > Demo data): a made-up drive and three made-up recordings, never saved. */
+function demoAt(ms) {
+    const s = ms / 1000, p = s % 45;
+    let speed = 72 + 30 * Math.sin(s / 11) + 8 * Math.sin(s / 3.7), gLong = 0.12 * Math.cos(s / 11) + 0.06 * Math.cos(s / 3.7);
+    if (p > 20 && p < 26) { const k = Math.sin(Math.PI * (p - 20) / 6); speed -= 34 * Math.sin(Math.PI * (p - 20) / 12); gLong = -0.85 * k; }
+    if (p > 32 && p < 36) gLong = 0.45 * Math.sin(Math.PI * (p - 32) / 4);
+    speed = Math.max(0, speed);
+    return { t: ms, speed, gLong, gLat: 0.3 * Math.sin(s / 5), rpm: 900 + speed * 27 + Math.max(0, gLong) * 2500, torque: 90 + Math.max(0, gLong) * 420, oil: 98, coolant: 92 };
+}
+function demoEntry(kind, at) {
+    const data = [];
+    for (let ms = at - 60000; ms <= at + 15000; ms += 100) data.push(demoAt(ms));
+    const sum = summary(data, at);
+    return { kind, at, ms: 75000, rows: data.length, vmax: sum.vmax, gMax: sum.gMax, data };
+}
+function makeDemo() {
+    const now = Date.now(), base = now - (now / 1000 % 45) * 1000;
+    return [demoEntry('brake', base - 3600000 * 2 + 22000), demoEntry('power', base - 86400000 + 34000), demoEntry('mark', base - 86400000 * 3)];
+}
