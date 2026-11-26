@@ -30,6 +30,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { qrLogSheet } = require('./kit/qrlog');
 const { RunTimer } = require('./kit/run_timer');
 const Demo = require('./demo');
 const { Wheelspin } = require('./wheelspin');
@@ -670,6 +671,34 @@ mgu.run({
         ctx.hideButton('BTN_ACTION');
 
         // every screen refresh (60 fps) with the GPU renderer; 8 fps in software (PNG frames)
+        /**
+         * Settings > Results as QR: the best times and the latest runs as plain text a phone camera reads (kit/qrlog.js
+         * plainPages), to share without SSH. Demo runs say so.
+         */
+        function resultsText() {
+            const qrDate = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+            const lab = (k) => (D[k] && D[k].label) || k.replace(/mph$/, ' mph').replace(/^(\d+-\d+)$/, '$1 km/h');
+            const out = ['Best times' + (store === saved ? '' : ' (demo data)')];
+            const keys = Object.keys(store.best).sort();
+            if (!keys.length) out.push('none yet');
+            keys.forEach((k) => {
+                const b = store.best[k];
+                out.push(lab(k.replace(/@ro$/, '')) + (/@ro$/.test(k) ? ' (rollout)' : '') + ': ' + b.s.toFixed(2) + ' s' + (G.isNum(b.trap) && isDist(k.replace(/@ro$/, '')) ? ', ' + Math.round(V(b.trap)) + ' ' + vU() : '') + ', ' + qrDate(b.at));
+            });
+            (store.runs || []).slice(0, 8).forEach((r, i) => {
+                if (!i) out.push('', 'Latest runs');
+                const res = Object.keys(r.result || {}).map((k) => lab(k) + ' ' + r.result[k].toFixed(2) + ' s').join(', ');
+                out.push(qrDate(r.at) + (r.valid === false ? ' (not valid)' : '') + ': ' + (res || '-'));
+            });
+            return out.join('\n');
+        }
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Results as QR', value: 'For a phone camera, as plain text',
+                open: () => qrLogSheet({ title: 'Results as QR', plain: true, text: resultsText, app: 'Drag Timer', version: ctx.spec.version,
+                    help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
+            });
+        }
         ctx.loop('MAIN', 8, render);
         settings.onChange((k) => {
             if (['speedUnit', 'distance', 'rollout', 'highSpeed', 'custom', 'customFrom', 'customTo'].indexOf(k) >= 0) { newTimer(); peakG = 0; rollPeak = 0; }

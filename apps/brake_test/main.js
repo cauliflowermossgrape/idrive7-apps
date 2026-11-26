@@ -15,6 +15,7 @@ const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
+const { qrLogSheet } = require('./kit/qrlog');
 const Car = require('./kit/car');
 
 const SPEED_MS = 100;   // speed readout: 10 times a second
@@ -274,6 +275,28 @@ mgu.run({
         ui.onClick('BTN_ACTION', act);
         ctx.hideButton('BTN_ACTION');
         // every screen refresh (60 fps) with the GPU renderer; 8 fps in software (PNG frames)
+        /** Settings > Results as QR: best stops and the latest runs as plain text a phone camera reads (kit/qrlog.js plainPages). */
+        function resultsText() {
+            const qrDate = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+            const lab = (k) => ((TESTS.kmh.concat(TESTS.mph)).find((x) => x.key === k) || { label: k }).label;
+            const out = ['Best stops' + (store === saved ? '' : ' (demo data)')];
+            const keys = Object.keys(store.best);
+            if (!keys.length) out.push('none yet');
+            keys.forEach((k) => { const b = store.best[k]; out.push(lab(k) + ': ' + b.m.toFixed(1) + ' m, ' + b.s.toFixed(2) + ' s, ' + qrDate(b.at)); });
+            (store.runs || []).slice(0, 10).forEach((r, i) => {
+                if (!i) out.push('', 'Latest runs');
+                const res = Object.keys(r.result || {}).map((k) => lab(k) + ' ' + r.result[k].m.toFixed(1) + ' m').join(', ');
+                out.push(qrDate(r.at) + ': ' + (res || '-') + (G.isNum(r.peakG) ? ', peak ' + Math.abs(r.peakG).toFixed(2) + ' g' : ''));
+            });
+            return out.join('\n');
+        }
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Results as QR', value: 'For a phone camera, as plain text',
+                open: () => qrLogSheet({ title: 'Results as QR', plain: true, text: resultsText, app: 'Brake Test', version: ctx.spec.version,
+                    help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
+            });
+        }
         ctx.loop('MAIN', 8, render);
         render().then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
