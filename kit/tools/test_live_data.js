@@ -373,6 +373,17 @@ async function main() {
         });
     });
     assert.strictEqual(SCR.layout('nope').id, SCR.LAYOUTS[0].id, 'an unknown layout: the first');
+// 6-gauge screens (Danijel's idea: a dashboard of 4 or 6 values of your own)
+assert.strictEqual(SCR.MAX_SLOTS, 6, 'a screen holds up to 6 gauges');
+['nums6', 'dial5'].forEach((id) => [false, true].forEach((small) => {
+    const L = SCR.layout(id), bs = SCR.boxes(L, 24, 44, 1552, 468, small);
+    assert.strictEqual(L.id, id, id + ': a layout');
+    assert.strictEqual(bs.length, L.slots.length, id + (small ? ' (widget)' : '') + ': a box for every gauge');
+    bs.forEach((b, i) => {
+        assert.ok(b.w > 100 && b.h > 100 && b.x >= 24 && b.y >= 44 && b.x + b.w <= 1576.5 && b.y + b.h <= 512.5, id + ' box ' + i + ' inside the page');
+        bs.forEach((c, k) => { if (k > i) assert.ok(b.x + b.w <= c.x + 0.5 || c.x + c.w <= b.x + 0.5 || b.y + b.h <= c.y + 0.5 || c.y + c.h <= b.y + 0.5, id + ': boxes ' + i + ' and ' + k + ' apart'); });
+    });
+}));
     assert.strictEqual(SCR.nextLayout(SCR.LAYOUTS[SCR.LAYOUTS.length - 1].id), SCR.LAYOUTS[0].id, 'Layout goes round');
     let sc = SCR.scale('sig:rpm', null, 'rpm', null);
     assert.ok(sc.min === 0 && sc.max === 7000 && sc.red === 6500 && sc.zones.some((z) => z.color === 'crit' && z.from === 6500), 'rpm: 0-7000, red from 6500');

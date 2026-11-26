@@ -1,6 +1,6 @@
 'use strict';
 /**
- * screens.js - the Gauges pages: screens of your own, a layout of gauges in the OEM (G20 sport display)
+ * screens.js - the Gauges pages: screens of your own (up to 6 gauges each), a layout of gauges in the OEM (G20 sport display)
  * style from kit/gauges.js, each showing one value (a car signal, the trip computer's or the engine
  * unit's). Drawn full screen in the app and, the one Settings > Home-screen widget names, on the
  * home-screen widget (a picture of about 384 x 256).
@@ -19,8 +19,10 @@ const LAYOUTS = [
     { id: 'bars2', name: '2 bars', slots: ['bar', 'bar'] },
     { id: 'bar3', name: 'Bar + 3 numbers', slots: ['bar', 'num', 'num', 'num'] },
     { id: 'nums4', name: '4 numbers', slots: ['num', 'num', 'num', 'num'] },
+    { id: 'dial5', name: 'Dial + 4 numbers', slots: ['dial', 'num', 'num', 'num', 'num'] },
+    { id: 'nums6', name: '6 numbers', slots: ['num', 'num', 'num', 'num', 'num', 'num'] },
 ];
-const MAX_SLOTS = 4, MAX_SCREENS = 6;
+const MAX_SLOTS = 6, MAX_SCREENS = 6;
 const PEAK_MS = 3000;           // the peak mark stays this long after the last new high (OEM "hang")
 const KINDS = { dial: 'dial', bar: 'bar', num: 'number' };
 
@@ -132,6 +134,12 @@ function boxes(L, x, y, w, h, small) {
         case 'bars2': return [{ x, y, w, h: half }, { x, y: y + half + g, w, h: half }];
         case 'bar3': return [{ x, y, w, h: half }].concat(row(3, y + half + g, half, x, w));
         case 'nums4': return small ? row(2, y, half, x, w).concat(row(2, y + half + g, half, x, w)) : row(4, y, h, x, w);
+        case 'dial5': {
+            // the dial on the left, four numbers two by two next to it
+            const dw = small ? Math.min(h, w * 0.4) : Math.min(520, w * 0.34), rx = x + dw + g, rw = w - dw - g;
+            return [{ x, y, w: dw, h }].concat(row(2, y, half, rx, rw), row(2, y + half + g, half, rx, rw));
+        }
+        case 'nums6': return row(3, y, half, x, w).concat(row(3, y + half + g, half, x, w));
         default: return row(n, y, h, x, w);          // dials side by side
     }
 }
