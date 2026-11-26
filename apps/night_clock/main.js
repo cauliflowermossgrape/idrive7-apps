@@ -43,13 +43,18 @@ mgu.run({
             const f = (settings.get('brightness') || 40) / 100, col = dim(TINT[settings.get('tint')] || TINT.white, f), sub = dim('#8d969f', f);
             const ct = clockText(now, settings.get('format') === '12');
             const secs = settings.get('seconds');
-            // a blinking colon instead of seconds: the colon drawn dim every other second
-            const hm = !secs && now.getSeconds() % 2 ? ct.hm.replace(':', ' ') : ct.hm;
+            // a blinking colon instead of seconds: only its colour fades every other second; the hours, the colon and the
+            // minutes each keep a fixed place (centred on the colon, the groups as wide as '88'), so nothing jumps
+            const colonOn = secs || now.getSeconds() % 2 === 0;
             const bottom = G.pageBottom(cv);
             const mid = Math.round((44 + bottom) / 2);
-            const size = 230, x = W / 2;
-            const w = cv.textWidth(ct.hm, size, { font: 'light' });
-            cv.text(hm, x - w / 2, mid + 60, size, col, { font: 'light' });
+            const size = 230, x = W / 2, opt = { font: 'light' };
+            const parts = ct.hm.split(':'), cw = cv.textWidth(':', size, opt), gw = cv.textWidth('88', size, opt);
+            const hx = x - cw / 2 - cv.textWidth(parts[0], size, opt), mx = x + cw / 2;
+            cv.text(parts[0], hx, mid + 60, size, col, opt);
+            cv.text(':', x - cw / 2, mid + 60, size, colonOn ? col : dim(TINT[settings.get('tint')] || TINT.white, f * 0.18), opt);
+            cv.text(parts[1], mx, mid + 60, size, col, opt);
+            const w = 2 * (cw / 2 + gw);
             if (secs) cv.text(ct.sec, x + w / 2 + 16, mid + 60, 70, sub, { font: 'light' });
             if (ct.ampm) cv.text(ct.ampm, x + w / 2 + 16, mid - 30, 40, sub, { font: 'bold' });
             const line = [];

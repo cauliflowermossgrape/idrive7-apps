@@ -31,14 +31,14 @@ ok(impl.clockText(at(0, 30, 0), true).hm === '12:30' && impl.clockText(at(0, 30,
     const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
     const S = {}; spec.settings.forEach((s) => { if (s.key) S[s.key] = s.default; }); S.demo = 'off'; S.speed = true;
     const noop = () => {}, handlers = {};
-    let frame = null, texts = [];
+    let frame = null, texts = [], pos = [];
     await impl.start({
         log: { info: noop, warn: noop, error: noop }, dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'nc-')), spec,
         settings: { get: (k) => S[k], onChange: noop },
         signals: { watch: async (iface, inst, h) => { handlers[iface] = Object.assign(handlers[iface] || {}, h); return { shutdown: async () => {} }; } },
         ui: { image: async () => {}, isVisible: () => true },
         theme: () => ({}), loop: (n, fps, fn) => { frame = fn; },
-        canvas: (w, h) => { const cv = new Recorder(w, h), text = cv.text.bind(cv); texts = []; cv.text = (s, ...a) => { texts.push(String(s)); return text(s, ...a); }; return cv; },
+        canvas: (w, h) => { const cv = new Recorder(w, h), text = cv.text.bind(cv); texts = []; pos = []; cv.text = (s, ...a) => { texts.push(String(s)); pos.push([String(s), a[0], a[3]]); return text(s, ...a); }; return cv; },
     });
     await new Promise((r) => setTimeout(r, 20));
     const env = handlers['de.bmw.infrastructure.EnvironmentalInformation'];
@@ -48,9 +48,19 @@ ok(impl.clockText(at(0, 30, 0), true).hm === '12:30' && impl.clockText(at(0, 30,
     if (veh && veh.statusCarSpeed2) veh.statusCarSpeed2({ speedVehicleCentreOfGravity: Math.round(88 / 0.015625) });
     await frame();
     const all = texts.join(' | ');
-    ok(texts.some((x) => /^\d\d[: ]\d\d$/.test(x)), 'the time drawn: ' + all);
+    ok(/^\d\d \| : \| \d\d \|/.test(all), 'the time drawn as hours, colon, minutes: ' + all);
     ok(texts.some((x) => /^7 °C {5}88 km\/h$/.test(x)), 'outside temperature and speed under it: ' + all);
     S.outside = false; S.speed = false;
+    const RealDate = Date, place = async (sec) => {
+        global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [2026, 10, 26, 21, 47, sec])); } static now() { return new RealDate(2026, 10, 26, 21, 47, sec).getTime(); } };
+        await frame();
+        global.Date = RealDate;
+        return pos.filter((p) => /^\d+$|^:$/.test(p[0]) && p[0] !== '').map((p) => p[0] + '@' + Math.round(p[1])).join(' ');
+    };
+    const on = await place(10), off = await place(11);
+    ok(on === off && /^21@\S+ :@\S+ 47@\S+$/.test(on), 'the colon blinks in place, the figures do not move: ' + on + ' / ' + off);
+    const colour = async (sec) => { await place(sec); return pos.find((p) => p[0] === ':')[2]; };
+    ok((await colour(10)) !== (await colour(11)), 'the colon fades by colour, it is never taken away');
     await frame();
     ok(!texts.some((x) => /°C|km\/h/.test(x)), 'both off: only the time');
     console.log('night clock: ' + checks + ' checks, ' + fails + ' failed');

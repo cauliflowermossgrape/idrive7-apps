@@ -2,7 +2,7 @@
   "id": "night_clock",
   "title": "Night Clock",
   "description": "One quiet screen for night driving: the time large and dim on black, the outside temperature and speed if wanted",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "vendor": "custom",
   "loggingId": "OAA6",
   "iconGlyph": "24",
