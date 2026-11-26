@@ -2,7 +2,7 @@
   "id": "warmup",
   "title": "Warm-Up",
   "description": "Oil and coolant warm-up calculator (time to ready), ready for harder driving, safe rev limit, turbo cool-down, a cold start counter, and each drive summed up, compared and before / after a change",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "vendor": "custom",
   "loggingId": "OA9A",
   "iconGlyph": "temp",
@@ -218,7 +218,7 @@
       "default": false
     },
     {"key": "compareWith", "label": "Compare a drive with", "type": "choice", "default": "prev",
-     "options": [["prev", "The drive before"], ["avg10", "The average of the last 10"]]},
+     "options": [["prev", "The drive before"], ["avg10", "The average of the 10 before it"]]},
     {"key": "markLabel", "label": "Change to mark", "type": "choice", "default": "Service",
      "options": [["Service", "Service"], ["New part", "New part"], ["Tyres", "Tyres"], ["Setting change", "Setting change"], ["Fuel brand", "Fuel brand"], ["Other", "Other"]]},
     {"key": "compareKind", "label": "Before / After compares", "type": "choice", "default": "all",

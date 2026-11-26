@@ -19,7 +19,8 @@
  * With stats (option stats: true; Warm-Up's Drives tab), each drive also sums itself up from d.sample(v), called about
  * once a second with v = { speed (km/h), odo (km), gLong, gLat (g), kw }, all optional, counted while the engine runs:
  *   drive.s = { km, moving (s), vAvg (km/h while moving), vMax, gFwd, gBrake, gSide, brakes, kwMax, warm }
- *       km: the odometer's difference when the car sends it, else the speed added up; brakes: stops harder than
+ *       km: the odometer's difference when the car sends it and the drive is SHORT_KM or longer (it counts whole km),
+ *       else the speed added up; brakes: stops harder than
  *       HARD_BRAKE from over 20 km/h, each counted once; warm: seconds until the oil reached warmAt() on a drive that
  *       started with it under COLD_C (else null)
  *   d.trace(at) -> the drive's speed every TRACE_MS (km/h, null where none), kept in <dataDir>/<key>-trace.json
@@ -38,6 +39,7 @@ const MAX_CSV = 1024 * 1024;
 const KEEP = 10;
 const TRACE_MS = 10000;          // a speed point every 10 s for the drive's chart
 const HARD_BRAKE = 0.5, REARM = 0.3, COLD_C = 60, MARKS_KEPT = 20;
+const SHORT_KM = 10;               // under this the odometer's whole km are too coarse: the speed added up is used
 
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 const round1 = (v) => Math.round(v * 10) / 10;
@@ -109,8 +111,9 @@ class DriveLog extends EventEmitter {
         }
         if (isNum(v.gLat)) s.gSide = mx2(s.gSide, Math.abs(v.gLat));
         if (isNum(v.kw) && v.kw > 0) s.kwMax = isNum(s.kwMax) ? Math.max(s.kwMax, Math.round(v.kw)) : Math.round(v.kw);
+        // the odometer counts whole km (a 1.4 km drive reads 1 km): on a short drive the speed added up is closer
         const odoKm = isNum(x.odo0) && isNum(x.odo1) && x.odo1 >= x.odo0 && x.odo1 - x.odo0 < 3000 ? x.odo1 - x.odo0 : null;
-        s.km = round1(odoKm !== null && (odoKm > 0 || x.dist < 1) ? odoKm : x.dist);
+        s.km = round1(odoKm !== null && (odoKm >= SHORT_KM || x.dist <= 0) ? odoKm : x.dist);
         s.vAvg = s.moving > 0 ? round1(x.vSum / s.moving) : null;
         if (t >= x.next) {
             const tr = this.traces[d.at] || (this.traces[d.at] = []);

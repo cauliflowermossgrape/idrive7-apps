@@ -52,7 +52,7 @@ for (let i = 0; i < 600; i++) {                     // 10 min at 60 km/h, 1 samp
     s2.value('oil', 20 + i / 6);
 }
 let sr = s2.drives()[0].s;
-ok(Math.abs(sr.km - 10) < 0.2 && sr.vAvg === 60 && sr.vMax === 60, 'km from the odometer, average and top speed: ' + JSON.stringify(sr));
+ok(Math.abs(sr.km - 10) < 0.2 && sr.vAvg === 60 && sr.vMax === 60, 'km (under 10 km: the speed added up), average and top speed: ' + JSON.stringify(sr));
 ok(sr.brakes === 1 && sr.gBrake === 0.7 && sr.gFwd === 0.3 && sr.gSide === 0.4 && sr.kwMax === 120, 'one hard stop counted once, the most g each way, the most power');
 ok(sr.warm === 361, 'oil from cold to 80, timed from the engine start (1 s before the first sample): ' + sr.warm);
 ok(s2.trace(s2.drives()[0].at).length === 61, 'a speed point every 10 s, 0 to 10 min: ' + s2.trace(s2.drives()[0].at).length);
@@ -64,4 +64,15 @@ ok(s2.trace(s2.drives()[0].at).length >= 55 && s2.drives()[0].s.km > 9, 'the sum
 const s3 = new DriveLog({ settings: { get: () => undefined, set() {} }, channels: ['oil'], now: () => t });
 s3.rpm(900); s3.sample({ speed: 50 });
 ok(!s3.drives()[0].s, 'without stats nothing more is kept (as before)');
+// the odometer counts whole km: a short drive takes the speed added up, a long one the odometer
+const kmOf = (secs, kmh, odo0) => {
+    const l = new DriveLog({ settings: { get: () => undefined, set() {} }, channels: ['oil'], stats: true, now: () => t });
+    l.rpm(900);
+    for (let i = 0; i < secs; i++) { t += 1000; l.rpm(2000); l.sample({ speed: kmh, odo: Math.floor(odo0 + i * kmh / 3600) }); }
+    return l.drives()[0].s.km;
+};
+const short = kmOf(84, 60, 1000.7);              // 1.4 km, the odometer going 1000 to 1001
+ok(Math.abs(short - 1.4) < 0.05, 'a 1.4 km drive is 1.4 km, not the odometer\'s 1.0: ' + short);
+const long = kmOf(1800, 66, 2000.9);             // 33 km at a speed reading 10 % high: the odometer wins
+ok(long === 33, 'a long drive: the odometer\'s km: ' + long);
 console.log('drive log: ' + n + ' checks pass');

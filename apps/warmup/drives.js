@@ -6,7 +6,8 @@
  *   Drive          the drive going on now or the one chosen: six numbers, its speed over time, the most g each way,
  *                  and the lowest and highest oil, coolant and gearbox oil
  *   List           the latest drives in a table (start, length, km, average, the temperatures), km of each as bars
- *   Compare        the chosen drive against the one before it, or the average of the last 10 (Settings)
+ *   Compare        the chosen drive against the one before it, or the average of the 10 drives before it (Settings;
+ *                  a drive still going on is never part of it)
  *   Before / After the drives before a marked change (a service, a new part, tyres ...) against the drives after it,
  *                  each metric's change as a bar left or right of 0 over the band of normal variation, and the
  *                  biggest real changes in words on top (diff.js)
@@ -106,7 +107,7 @@ function drive(cv, t, s) {
     cv.text((d.live ? 'NOW: ' : '') + day(d.start) + '  ' + hm(d.start) + ' to ' + (d.live ? 'now' : hm(d.end)), 1576, 82, 20, d.live ? GO : t.text, { align: 'right', font: 'bold' });
     const tw = 250, gap = 10.4, moving = isNum(d.moving) && d.secs ? Math.round(100 * d.moving / d.secs) : null;
     [
-        ['DISTANCE', d.km, 'km', 'odometer, else speed added up', 1],
+        ['DISTANCE', d.km, 'km', 'odometer; short drives: speed added up', 1],
         ['TIME', dur(d.secs), 'min', isNum(moving) ? moving + ' % of it moving' : ''],
         ['AVERAGE', d.vAvg, 'km/h', 'while moving'],
         ['TOP SPEED', d.vMax, 'km/h', ''],
@@ -176,14 +177,28 @@ function average(l) {
     return out;
 }
 
-/* Compare: the chosen drive and the one before it, or the average of the last 10. */
+/**
+ * What the chosen drive (l[sel], newest first) is compared with: the drive before it, or with avg the up to AVG_N
+ * drives before it. Never the chosen drive itself, never one still going on.
+ */
+const AVG_N = 10;
+function reference(l, sel, avg) {
+    const before = l.slice(sel + 1).filter((d) => !d.live);
+    return avg ? before.slice(0, AVG_N) : before.slice(0, 1);
+}
+
+/* Compare: the chosen drive and the one before it, or the average of the 10 before it. */
 function compare(cv, t, s) {
     const l = s.list, d = l[s.sel], avg = s.compareWith === 'avg10';
-    const refList = avg ? l.slice(0, 10) : [l[s.sel + 1]].filter(Boolean);
+    const refList = d ? reference(l, s.sel, avg) : [];
     const p = G.panel(cv, t, 24, Y0, 1552, 408, null);
-    if (!d || !refList.length) { cv.text(l.length < 2 ? 'Needs two drives: after the next one they are compared here side by side.' : 'Choose a drive with Previous / Next.', 48, Y0 + 60, 21, t.dim); return; }
+    if (!d) { cv.text(l.length < 2 ? 'Needs two drives: after the next one they are compared here side by side.' : 'Choose a drive with Previous / Next.', 48, Y0 + 60, 21, t.dim); return; }
+    if (!refList.length) {
+        cv.text('Needs two drives: ' + (l.length < 2 ? 'after the next one they are compared here side by side.' : 'there is none before this one. Choose a newer one with Previous / Next.'), 48, Y0 + 60, 21, t.dim);
+        return;
+    }
     const ref = avg ? average(refList) : null;
-    cv.text('This drive (' + day(d.start) + ' ' + hm(d.start) + ') against ' + (avg ? 'the average of the last ' + refList.length
+    cv.text('This drive (' + day(d.start) + ' ' + hm(d.start) + ') against ' + (avg ? 'the average of the ' + (refList.length > 1 ? refList.length + ' drives' : 'drive') + ' before it'
         : 'the one before (' + day(refList[0].start) + ' ' + hm(refList[0].start) + ')'), 48, Y0 + 34, 19, t.text, { font: 'bold' });
     cv.text('green: calmer or cooler, red: harder on the car. Settings > Compare with', p.x + p.w - 24, Y0 + 34, 15, t.dim, { align: 'right' });
     CMP.forEach((m, i) => {
@@ -218,7 +233,8 @@ function beforeAfter(cv, t, s) {
         ['After a service, a new part, new tyres or a changed setting, press Mark a change twice.',
             'Pick what it was in Settings > Change to mark. Then drive: this view shows what changed.',
             'Each value gets a bar: right of 0 more than before, left less. Green is better, red is worse,',
-            'grey is within the normal variation of your drives.']
+            'grey is within the normal variation of your drives. Speed, time and power only show as changed:',
+            'they follow the traffic and the right foot more than the part that changed.']
             .forEach((x, i) => cv.text(x, 48, Y0 + 96 + i * 32, 19, t.dim));
         return;
     }
@@ -232,7 +248,9 @@ function beforeAfter(cv, t, s) {
         cv.text(!sd.before.length ? 'No ' + KIND_WORDS[sd.kind] + ' before this mark to compare with.'
             : 'No ' + KIND_WORDS[sd.kind] + ' after this mark yet: drive a few times and the change shows here.', 48, Y0 + 62, 18, t.warn);
     } else if (!hl.length) {
-        cv.text('Nothing changed beyond the normal variation of your drives.', 48, Y0 + 62, 18, t.text);
+        const moved = rs.filter((r) => r.state === 'changed').map((r) => r.name.toLowerCase());
+        cv.text(moved.length ? 'Nothing better or worse beyond the normal variation. Changed: ' + moved.join(', ') + ' (traffic and driving, see below).'
+            : 'Nothing changed beyond the normal variation of your drives.', 48, Y0 + 62, 18, t.text);
     } else {
         hl.forEach((h, i) => { const x = 48 + i * 512; cv.circle(x + 7, Y0 + 56, 7, col(h.state)); cv.text(h.text, x + 22, Y0 + 62, 17, t.text, { font: 'bold' }); });
     }
@@ -260,7 +278,7 @@ function beforeAfter(cv, t, s) {
         if (isNum(r.pct)) { const x1 = X(r.pct); cv.roundRect(Math.min(cx, x1), mid - 5, Math.max(4, Math.abs(x1 - cx)), 10, 4, r.state === 'same' ? withAlpha(t.dim, 0.7) : col(r.state)); }
         const word = r.state === 'none' ? 'not recorded on both sides' : r.state === 'same' ? 'within normal variation'
             : (isNum(r.pct) && Math.abs(r.pct) < 1000 ? (r.pct > 0 ? '+' : '') + Math.round(r.pct) + ' %' : (r.change > 0 ? '+' : '') + r.change.toFixed(r.d))
-              + (r.state === 'better' ? '  better' : r.state === 'worse' ? '  worse' : '');
+              + (r.state === 'better' ? '  better' : r.state === 'worse' ? '  worse' : '  changed');
         cv.text(word, 1552, y + 14, 15, r.state === 'same' || r.state === 'none' ? t.dim : col(r.state), { align: 'right', font: r.state === 'same' || r.state === 'none' ? 'label' : 'bold' });
     });
 }
@@ -273,4 +291,4 @@ function draw(cv, t, s) {
     else drive(cv, t, s);
 }
 
-module.exports = { VIEWS, trip, draw, average };
+module.exports = { VIEWS, trip, draw, average, reference, AVG_N };

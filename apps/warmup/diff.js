@@ -12,19 +12,22 @@
  *       state 'better' | 'worse' | 'changed' (no better or worse for it) | 'same' (within the spread of the before
  *       drives: normal variation; with a single drive on either side twice that, as one drive can be off by itself)
  *       | 'none' (not recorded on one side)
- *   headline(rows, label) -> up to 3 plain sentences about the biggest real changes
+ *   headline(rows, label) -> up to 3 plain sentences about the biggest better or worse changes (a metric that is only
+ *       'changed' is not put down to the mark in words: it stays in the table)
  */
 const SIDE = 10;
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 const DEG = '°C';
 
-/* [key, name, unit, value of a drive, decimals, better: +1 more is better, -1 less is better, 0 neither, short name] */
+/* [key, name, unit, value of a drive, decimals, better: +1 more is better, -1 less is better, 0 neither, short name]
+   Average speed, time per 10 km and the most power mostly follow the traffic and the right foot, not the part that
+   changed: they are shown as changed only, never better or worse (as the Compare view does). */
 const METRICS = [
-    ['avgSpeed', 'Average speed', 'km/h', (d) => d.vAvg, 0, 1],
-    ['pace', 'Time per 10 km', 'min', (d) => (isNum(d.km) && d.km >= 1 && isNum(d.secs) ? d.secs / 60 / d.km * 10 : null), 1, -1],
+    ['avgSpeed', 'Average speed', 'km/h', (d) => d.vAvg, 0, 0],
+    ['pace', 'Time per 10 km', 'min', (d) => (isNum(d.km) && d.km >= 1 && isNum(d.secs) ? d.secs / 60 / d.km * 10 : null), 1, 0],
     ['brakeG', 'Hardest braking', 'g', (d) => d.gBrake, 2, -1],
     ['brakes100', 'Hard brakes per 100 km', '', (d) => (isNum(d.km) && d.km >= 1 && isNum(d.brakes) ? d.brakes / d.km * 100 : null), 1, -1],
-    ['kw', 'Most power', 'kW', (d) => d.kwMax, 0, 1],
+    ['kw', 'Most power', 'kW', (d) => d.kwMax, 0, 0],
     ['peakG', 'Peak g, any way', 'g', (d) => { const v = [d.gFwd, d.gBrake, d.gSide].filter(isNum); return v.length ? Math.max.apply(null, v) : null; }, 2, 0],
     ['oil', 'Hottest oil', DEG, (d) => d.oilMax, 0, -1, 'Oil'],
     ['cool', 'Hottest coolant', DEG, (d) => d.coolMax, 0, -1, 'Coolant'],
@@ -91,7 +94,7 @@ function sentence(r, label) {
 }
 
 function headline(rs, label) {
-    return rs.filter((r) => r.state === 'better' || r.state === 'worse' || r.state === 'changed')
+    return rs.filter((r) => r.state === 'better' || r.state === 'worse')
         .sort((x, y) => Math.abs(isNum(y.pct) ? y.pct : 0) - Math.abs(isNum(x.pct) ? x.pct : 0))
         .slice(0, 3).map((r) => ({ text: sentence(r, label), state: r.state }));
 }

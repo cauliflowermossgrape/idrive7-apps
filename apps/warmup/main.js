@@ -116,15 +116,25 @@ mgu.run({
             } },
             [ENV]: { ExteriorTemperature: (v) => { const r = v && v.temperatureExterior; if (G.isNum(r) && r !== 255) x.outside = r * 0.5 - 40; } },
         });
-        if (ctx.signals && ctx.signals.watch) {
-            // tyres as M Vitals reads them, also every 10 s (a car may not notify them); only their ratio to the
-            // car's own target is used, so no unit is needed
-            const tp = (o, pre, k) => { const r = o && o[pre + k + 'H']; return G.isNum(r) && r < 65532 && r > 0 ? r : null; };
-            Promise.resolve(ctx.signals.watch(TPMS, '1', {
-                statusTyrePressure: (v) => TYRES.forEach(([k]) => { x.p[k] = tp(v, 'actualValuePressureTyre', k); }),
-                statusTargetTyrePressure: (v) => TYRES.forEach(([k]) => { x.pt[k] = tp(v, 'targetPressureTyre', k); }),
-            }, ctx.log, { pollMs: 10000 })).catch((e) => ctx.log.warn('tyres: ' + (e && e.message || e)));
+        // tyres as M Vitals reads them, also every 10 s (a car may not notify them), only while the page shows: the
+        // watch and its re-read are shut down when it is hidden (as Service does with the cluster). Only their ratio
+        // to the car's own target is used, so no unit is needed
+        const tp = (o, pre, k) => { const r = o && o[pre + k + 'H']; return G.isNum(r) && r < 65532 && r > 0 ? r : null; };
+        let tyreSub = null;
+        function watchTyres(on) {
+            if (on && !tyreSub && ctx.signals && ctx.signals.watch) {
+                tyreSub = Promise.resolve(ctx.signals.watch(TPMS, '1', {
+                    statusTyrePressure: (v) => TYRES.forEach(([k]) => { x.p[k] = tp(v, 'actualValuePressureTyre', k); }),
+                    statusTargetTyrePressure: (v) => TYRES.forEach(([k]) => { x.pt[k] = tp(v, 'targetPressureTyre', k); }),
+                }, ctx.log, { pollMs: 10000 })).catch((e) => { ctx.log.warn('tyres: ' + (e && e.message || e)); return null; });
+            }
+            if (!on && tyreSub) {
+                const w = tyreSub; tyreSub = null;
+                w.then((r) => r && r.shutdown && r.shutdown()).catch(() => {});
+            }
         }
+        if (ui.onVisible) ui.onVisible((name, on) => { if (name === 'MAIN') watchTyres(on); });
+        if (!ui.isVisible || ui.isVisible('MAIN')) watchTyres(true);
         car.setRedline(engine.redline());
         engine.onChange(() => car.setRedline(engine.redline()));
         const gearbox = new Gearbox(ctx, ctx.log, () => ctx.ui.isVisible('MAIN')).start();
@@ -569,7 +579,8 @@ mgu.run({
 });
 
 /* Demo drives (no car, nothing recorded yet): twenty made-up drives and two marks, never saved. After the Service
-   mark the engine gives a little more power and the oil runs cooler; after the Tyres mark the car corners harder. */
+   mark the oil runs cooler (better) and the most power is a little up (shown as changed only); after the Tyres mark
+   the car corners harder. */
 function makeDemo() {
     const out = [], H = 3600000, now = Date.now();
     const base = new Date(now); base.setHours(18, 10, 0, 0);
