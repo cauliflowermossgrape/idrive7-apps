@@ -9,6 +9,9 @@
  *           (press twice to confirm), then scans again.
  *   Check Control: the active messages from CheckControlMaster, named via the
  *           cluster's KombiInterface_2 lists.
+ *   Health report (Settings > Health report as QR): the faults, Check Control, the 12 V battery's charge, the oil and
+ *           coolant and the service items (KombiInterface_2 cbsDataServiceList, as the Service app reads them) on
+ *           one plain-text report for a phone camera; read while the page shows, like Check Control.
  *
  * Pages: faults (6 per page) -> Check Control -> control units that answered. Where the kit runs the
  * screen, all the faults are on one page and each list scrolls (a finger, or the controller turned on it).
@@ -153,6 +156,32 @@ mgu.run({
             const nm = o.cCShortName || o.cCName;
             if (id !== undefined && nm) { ccNames.set(id, { name: String(nm), color: o.cCColor }); changed(); }
         });
+        // for the health report: the 12 V charge (%), oil and coolant (deg C), the service items { name, colour, way, date }
+        const health = { soc12: null, oil: null, coolant: null, service: null };
+        const CBS_COLOURS = { DEFAULT: 0, RED: 1, YELLOW: 2, GREEN: 3, ORANGE: 4 };
+        const findKey = (v, key) => {
+            if (!v || typeof v !== 'object') return null;
+            if (key in v) return v;
+            for (const k of Object.keys(v)) { const r = findKey(v[k], key); if (r) return r; }
+            return null;
+        };
+        const plain = (x) => String(x === undefined || x === null ? '' : x).replace(/[\x00-\x1f\x7f]/g, '').trim();
+        const cbs = (v) => {
+            const arr = Array.isArray(v) ? v : (v && (v.cbsDataServiceList || v.value)) || [];
+            health.service = arr.map((e) => {
+                const it = findKey(e, 'cBSIdentifier') || {}, c = it.cBSColor;
+                return { id: it.cBSIdentifier, name: plain(it.cBSServcieName || it.cBSServiceName), colour: typeof c === 'number' ? c : CBS_COLOURS[String(c)] || 0,
+                    way: plain(it.cBSServiceWay), date: plain(it.cBSServiceDate) };
+            }).filter((e) => e.id !== undefined && e.name);
+        };
+        const cds = {
+            statusBattery2: (v) => { const c = v && v.conditionBatteryChargingCondition; if (typeof c === 'number' && c >= 0 && c <= 100) health.soc12 = c; },
+            statusEngineTemperature: (v) => {
+                const o = v && v.temperatureEngineOilDrive, c = v && v.temperatureEngineDrive;
+                if (typeof o === 'number' && o !== 255) health.oil = o - 48;
+                if (typeof c === 'number' && c !== 255) health.coolant = c - 48;
+            },
+        };
         let subs = null;
         /** The Check Control watches on (the page showing) or shut down (it isn't). */
         function listen(on) {
@@ -167,7 +196,8 @@ mgu.run({
                             changed();
                         }),
                     }, log),
-                    ctx.signals.watch('de.bmw.infotainment.KombiInterface_2', '1', { ccList: names, newCCMessage: names }, log),
+                    ctx.signals.watch('de.bmw.infotainment.KombiInterface_2', '1', { ccList: names, newCCMessage: names, cbsDataServiceList: cbs }, log),
+                    ctx.signals.watch('de.bmw.infotainment.vehicle.CDS', '1', cds, log),
                 ]);
                 log.info('page shown: Check Control watched');
             } else if (!on && subs) {
@@ -371,6 +401,33 @@ mgu.run({
                 c.gone.forEach((g) => out.push(ecuName(g.addr) + ' (0x' + hex(g.addr) + '): ' + g.code + (g.mem === 'info' ? ' INFO' : '')));
             }
             return out.join('\n');
+        }
+        /** The health report's head: everything but the fault list, which follows it (faultText). */
+        function healthText() {
+            const demo = !!(scan && scan.demo), p = (n) => String(n).padStart(2, '0'), d = new Date();
+            const out = ['Health report ' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + (demo ? ' (demo data)' : '')];
+            const f = faults(), fm = f.filter((x) => x.mem === 'fault'), active = fm.filter((x) => x.status & 1).length, c = diff();
+            out.push(!scan ? 'Faults: no scan yet' : 'Faults: ' + fm.length + ' stored, ' + active + ' active, in ' + scan.ecus.filter((e) => e.dtcs.length).length + ' of '
+                + scan.ecus.length + ' units (scan ' + when(scan.at) + ')' + (c ? ', ' + c.fresh.size + ' new and ' + c.gone.length + ' gone since ' + when(c.at) : ''));
+            const ccl = ccList();
+            out.push('Check Control: ' + (ccl.length ? ccl.map((m) => m.name || 'message ' + m.id).join(', ') : 'none'));
+            const h = demo ? { soc12: 84, oil: 96, coolant: 91, service: [{ name: 'Engine oil', colour: 3, way: '12 300 km', date: '09/2027' }, { name: 'Brake fluid', colour: 2, way: '', date: '03/2027' }] } : health;
+            out.push('12 V battery: ' + (h.soc12 === null ? 'not sent yet' : h.soc12 + ' % charged'));
+            out.push('Engine: oil ' + (h.oil === null ? '--' : Math.round(h.oil) + ' C') + ', coolant ' + (h.coolant === null ? '--' : Math.round(h.coolant) + ' C'));
+            if (!h.service) out.push('Service: not sent yet');
+            else {
+                out.push('Service:');
+                const st = ['', 'due now', 'due soon', 'OK', 'due soon'];
+                h.service.forEach((i) => out.push('  ' + i.name + ': ' + (st[i.colour] || '-') + [i.way, i.date].filter(Boolean).map((x) => ', ' + x).join('')));
+            }
+            return out.join('\n') + '\n\n' + faultText();
+        }
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Health report as QR', value: 'Faults, battery, engine and service, for a phone camera',
+                open: () => qrLogSheet({ title: 'Health report', plain: true, text: healthText, app: 'Fault Scanner', version: ctx.spec.version,
+                    help: ['A car report to share: open the', 'Fault Scanner page for a minute first,', 'so the car has sent its values.'] }),
+            });
         }
         if (ctx.settingsRow) {
             ctx.settingsRow({

@@ -2,7 +2,7 @@
   "id": "dtc_scanner",
   "title": "Fault Scanner",
   "description": "Read and clear fault memory of every control unit, plus active Check Control messages",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "vendor": "custom",
   "loggingId": "OA95",
   "iconGlyph": "engine",
@@ -19,7 +19,13 @@
     },
     "de.bmw.infotainment.KombiInterface_2": {
       "ccList": "rs",
-      "newCCMessage": "rs"
+      "newCCMessage": "rs",
+      "cbsDataServiceList": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS": {
+      "_optional": "the health report's 12 V charge, oil and coolant",
+      "statusBattery2": "rs",
+      "statusEngineTemperature": "rs"
     }
   },
   "screens": [
