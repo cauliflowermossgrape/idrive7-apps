@@ -37,9 +37,13 @@
  * and hours are the master's (the whole engine's); each bank has its own particulate filter, so bank 2's soot comes
  * from the second unit (0x13) too.
  * Your own (more.js, recorded by extras.js with the car, also with the screen closed): your own intervals next to
- * BMW's, listed on the Service page under the car's items as YOUR OWN once one is marked done, and the Intervals,
- * Wheels, Battery (12 V at every start), Fuel and Garage pages, with How it works. They never change the car's
- * own service display; the CBS items, their cards and resets above work as before.
+ * BMW's, listed on the Service page under the car's items as "<name> (own)" once one is marked done (marked with
+ * "Mark done", never Reset: Reset service on the Service page only ever means the car's item), and the Intervals,
+ * Wheels, Battery and Garage (with Fuel) pages, with How it works. They never change the car's own service display;
+ * the CBS items, their cards and resets above work as before.
+ * Diagnostic links: every read (CBS records, the Engine page, the Battery page's 12 V voltage) goes through one
+ * read-only link (kit/readonly-diag.js), made when a page first needs it; a plain link is made only for the cluster's
+ * reset, when Reset service is pressed. The background (extras.js) has none: it only listens to broadcasts.
  * HMI Polish letters use ASCII equivalents because the upstream font atlases lack Polish glyphs.
  * Raw diagnostic JSON preserves Unicode as escaped code units rather than unreadable glyphs.
  */
@@ -48,6 +52,8 @@ const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { Diag, hex, NRC, replyTo } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
+const { ReadOnlyDiag } = require('./kit/readonly-diag');
+const { VoltReader } = require('./battery_read');
 const TwinDme = require('./kit/twin_dme');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
@@ -306,7 +312,7 @@ mgu.run({
         /* ---------- reading ---------- */
         // the cluster's interface watched (and read again each minute) only while the page shows: an app talking to
         // the cluster unasked disturbed others, and the cluster as it wakes from sleep; CBS read only then too
-        let shownNow = false, kombiSub = null;
+        let shownNow = false, kombiSub = null, volt = null;      // volt: the Battery page's 12 V reader (below)
         const watchKombi = () => sig.watch(KOMBI, '1', {
             cbsDataServiceList: (v) => {
                 rawList = brief(v);
@@ -344,6 +350,7 @@ mgu.run({
                 s.then((r) => r && r.shutdown && r.shutdown()).catch(() => {});
                 log.info('page left: cluster watch shut down');
             }
+            if (!on && volt) volt.want(false);
         }
 
         const items = () => mergeCbs(useDemo() ? DEMO.list : list || [], useDemo() ? [] : liveRecords());
@@ -387,6 +394,19 @@ mgu.run({
         let diag = null, reset = null;          // reset: { items: [{id, name}], i, at, busy }
         const showMsg = (s) => { hint = null; msg = s; log.info("msg: " + s); changed(); };
         const nrc = (r) => (r && r[0] === 0x7F ? 'refused: ' + (NRC[r[2]] || '0x' + hex(r[2])) : 'no answer from the instrument cluster');
+        // the reads: one read-only link (kit/readonly-diag.js) for the CBS records, the Engine page and the 12 V voltage
+        let rd = null, rdInit = null;
+        function readLink() {
+            if (!rdInit) {
+                rd = new ReadOnlyDiag(sig, log);
+                rdInit = Promise.resolve(rd.init()).then(() => {
+                    if (!rd.ready) throw new Error(rd.error || 'TASU not available');
+                    return rd;
+                }).catch((e) => { rdInit = null; throw e; });
+            }
+            return rdInit;
+        }
+        // the cluster's reset only (it writes): a plain link, made when Reset service is pressed
         async function link() {
             if (!diagInit) {
                 diag = new Diag(sig, log);
@@ -402,7 +422,8 @@ mgu.run({
             if (scanBusy || reset || settings.get('demo') === 'on') return;
             scanBusy = true; scanMessage = 'Reading CBS (read-only)...'; changed();
             try {
-                const d = await link();
+                const d = await readLink();
+                CBS_SOURCES.forEach((c) => d.wake(c.address));          // each scan asks every source again
                 for (const source of CBS_SOURCES) {
                     for (const did of source.dids) {
                         if (settings.get('demo') === 'on') { scanMessage = 'CBS read stopped (demo enabled)'; return; }
@@ -452,7 +473,7 @@ mgu.run({
          *  second press within 5 s confirms it. Anything else (Next item, Details) disarms it. */
         // Stop all (kit/panic.js) from any app: no reset is sent until it ends (one armed meanwhile is dropped)
         let panicked = false;
-        if (ctx.onPanic) ctx.onPanic((on) => { panicked = on; if (on) reset = null; });
+        if (ctx.onPanic) ctx.onPanic((on) => { panicked = on; if (on) { reset = null; if (volt) volt.want(false); } });
         async function resetPress() {
             if (panicked) return showMsg('Stopped by Stop all: nothing is sent to the car until it ends');
             if (settings.get('resetOn') !== true) return showMsg('Reset is off - turn on "Service reset" in Settings');
@@ -590,7 +611,8 @@ mgu.run({
             if (engine.busy || useDemo() || (!force && engine.at && Date.now() - engine.at < ENGINE_REFRESH_MS)) return;
             engine.busy = true; changed();
             try {
-                const d = await link();
+                const d = await readLink();
+                d.wake(0x12); d.wake(TwinDme.SLAVE);
                 engineReader = engineReader || new DidReader(d, { ecu: 0x12 });
                 if (!engine.kind) engine.kind = await engineKind(d);
                 const set = engine.kind === 'diesel' ? DIESEL : ENGINE;
@@ -795,6 +817,14 @@ mgu.run({
             });
         }
 
+        /* ---------- the 12 V voltage (Battery page): read only while that page shows ---------- */
+        const bgState = ctx.background && ctx.background.volt ? ctx.background : null;
+        volt = new VoltReader({ link: readLink, log, store: bgState,
+            cands: bgState ? ((ctx.spec && ctx.spec.config && ctx.spec.config.battery && ctx.spec.config.battery.v12) || []) : [] });
+        // (the demo shows made-up readings: nothing asked then; Stop all and the setting turn it off too)
+        const voltWanted = () => !!bgState && shownNow && pageName() === 'Battery' && !panicked && !more.extraDemo()
+            && settings.get('batteryRead') !== false;
+
         let drawn = -1;
         async function render(force) {
             if (reset && !reset.busy && Date.now() - reset.at >= CONFIRM_MS) {
@@ -810,6 +840,7 @@ mgu.run({
             sel = Math.min(sel, Math.max(0, its.length - 1));
             page = Math.min(page, pages().length - 1);
             if (pageName() === 'Engine') readEngine(false);
+            volt.want(voltWanted());
             if (pageName() === 'Service') drawMain(cv, t, its); else if (pageName() === 'Engine') drawEngine(cv, t);
             else if (more.has(pageName())) more.draw(cv, t, pageName()); else drawDiag(cv, t);
             const demo = more.has(pageName()) ? more.extraDemo() : useDemo();
@@ -844,7 +875,8 @@ mgu.run({
             if (more.has(pageName())) { more.act(pageName()); return; }
             if (pageName() !== 'Service') { showMsg(pageName() + ' is read-only'); return; }
             const row = rows()[sel];
-            if (row && row.own) { reset = null; more.act('Service', row); msg = ''; return; }
+            // your own row: Reset service never marks it (it is the car's reset); Mark done is on its card and on Intervals
+            if (row && row.own) { reset = null; showMsg(row.name + ': your own item, not the car\'s. Mark it done on the Intervals page'); return; }
             resetPress();
         });
         // where the kit runs the screen the rows open their cards (with Reset): none of these in its bar

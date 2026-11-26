@@ -1,21 +1,25 @@
 'use strict';
 /**
- * battery_log.js - Service's Battery tab memory: from the 12 V readings and the engine's rpm, one entry per start of the car.
+ * battery_log.js - Service's Battery tab memory: from the engine's rpm, the charge the car reports and the 12 V readings,
+ * one entry per start of the car. The rpm and the charge are broadcast (recorded in the background); the voltage is
+ * read only while the Battery page shows, so a start without the page open has its time and charge, no voltages.
  *
  *   resting    the first reading after the car woke up (the app started), engine off: what the battery holds after
  *              standing. Only the first start after a wake counts; auto start / stop restarts are not starts here.
  *   cranking   the lowest reading from CRANK_BEFORE_MS before the engine turned until CRANK_AFTER_MS after it did.
  *              The car is asked about once a second, so this is the lowest SEEN: the real dip is usually lower.
+ *   charge     the battery's charge the car reports (CDS statusBattery2, %), the last value before the engine turned
  *   charging   the middle (median) reading once the engine ran RUN_SETTLE_MS, until RUN_MS (BMW's energy management
  *              charges and rests the battery in turns, so the middle value says more than one reading).
  *
  *   const L = new StartLog({ keep, now, onEntry, entries })
  *   L.volt(v, t)              a reading (V) at time t
  *   L.rpm(rpm, t)             the engine's rpm (0 = off)
+ *   L.soc(pct)                the charge the car reports
  *   L.phase()                 'rest' (engine off, waiting for the start), 'crank', 'run', 'done' (this wake's start done)
  *   L.current()               the entry being made: { at, rest, restAt, crank, crankN, runs: [] }
  *   L.finish(t)               close the entry now (the app is closing): kept if it has anything
- *   L.entries                 the kept ones, oldest first: [{ at, rest, crank, crankN, run }]
+ *   L.entries                 the kept ones, oldest first: [{ at, rest, crank, crankN, run, soc }]
  *   L.trace                   this wake's readings [{ t, v }] (the last TRACE_MS) and L.startAt (when the engine turned)
  */
 const CRANK_BEFORE_MS = 3000, CRANK_AFTER_MS = 8000, RUN_SETTLE_MS = 60000, RUN_MS = 10 * 60000, TRACE_MS = 15 * 60000;
@@ -30,7 +34,7 @@ class StartLog {
         this.entries = Array.isArray(o.entries) ? o.entries.slice(-this.keep) : [];
         this.trace = []; this.startAt = null; this.runAt = null;
         this.state = 'rest'; this.lastRpm = null;
-        this.cur = { at: null, rest: null, restAt: null, crank: null, crankN: 0, runs: [] };
+        this.cur = { at: null, rest: null, restAt: null, crank: null, crankN: 0, runs: [], soc: null };
     }
 
     phase() { return this.state; }
@@ -48,6 +52,11 @@ class StartLog {
         }
         if (this.state === 'run' && t - this.runAt >= RUN_SETTLE_MS) c.runs.push(v);
         if (this.state === 'run' && t - this.runAt >= RUN_MS) this._close(t);
+    }
+
+    soc(p) {
+        // until the engine turns: what the battery held at the start
+        if (isNum(p) && (this.state === 'rest' || this.cur.soc === null)) this.cur.soc = p;
     }
 
     rpm(r, t) {
@@ -76,10 +85,11 @@ class StartLog {
         const c = this.cur, run = median(c.runs);
         this.state = 'done';
         if (c.at === null && c.rest === null) return null;
-        const e = { at: c.at || c.restAt || t, rest: c.rest, crank: c.crank, crankN: c.crankN, run: run === null ? null : Math.round(run * 100) / 100 };
+        const e = { at: c.at || c.restAt || t, rest: c.rest, crank: c.crank, crankN: c.crankN, run: run === null ? null : Math.round(run * 100) / 100,
+            soc: isNum(c.soc) ? Math.round(c.soc) : null };
         this.entries.push(e);
         this.entries = this.entries.slice(-this.keep);
-        this.cur = { at: null, rest: null, restAt: null, crank: null, crankN: 0, runs: [] };
+        this.cur = { at: null, rest: null, restAt: null, crank: null, crankN: 0, runs: [], soc: null };
         this.onEntry(e);
         return e;
     }

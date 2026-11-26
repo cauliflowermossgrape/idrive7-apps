@@ -1,8 +1,8 @@
 {
   "id": "service",
   "title": "Service",
-  "description": "Service requirements from the instrument cluster: oil, brakes, brake fluid, vehicle check, inspection - distance, date, details; brake fluid and vehicle check reset; your own intervals, wheels, the 12 V battery at every start, refuels, parts, care and milestones",
-  "version": "1.7.0",
+  "description": "Service requirements from the instrument cluster: oil, brakes, brake fluid, vehicle check, inspection - distance, date, details; brake fluid and vehicle check reset; your own intervals, wheels, the 12 V battery, refuels, parts and milestones",
+  "version": "1.7.1",
   "vendor": "custom",
   "loggingId": "OA96",
   "iconGlyph": "wrench",
@@ -21,7 +21,7 @@
       "_broadcasts": ["sendTasuResponse"]
     },
     "de.bmw.infotainment.KombiIF": {
-      "_optional": "the odometer, tank and range for your own intervals, Wheels, Fuel and Garage",
+      "_optional": "the odometer, tank and range for your own intervals, Wheels and Garage (Fuel)",
       "statusRangeTankStatus": "rs"
     },
     "de.bmw.infotainment.vehicle.CDS": {
@@ -199,9 +199,9 @@
     {"key": "treadSummer", "label": "Summer tyres tread", "type": "number", "unit": "mm", "default": 0, "labels": {"0": "Not measured"}, "steps": [0, 2, 3, 4, 5, 6, 7, 8]},
     {"key": "treadWinter", "label": "Winter tyres tread", "type": "number", "unit": "mm", "default": 0, "labels": {"0": "Not measured"}, "steps": [0, 2, 3, 4, 5, 6, 7, 8, 9]},
     {"key": "treadAll", "label": "All-season tyres tread", "type": "number", "unit": "mm", "default": 0, "labels": {"0": "Not measured"}, "steps": [0, 2, 3, 4, 5, 6, 7, 8]},
-    {"key": "fuelBrand", "label": "Fuel brand (next refuel)", "type": "choice", "default": "omv", "options": [["omv", "OMV"], ["nis", "NIS Petrol"], ["mol", "MOL"], ["lukoil", "Lukoil"], ["eko", "EKO"], ["shell", "Shell"], ["other", "Other"]]},
-    {"key": "octane", "label": "Octane (next refuel)", "type": "number", "default": 95, "steps": [95, 98, 100]},
-    {"key": "partType", "label": "Part fitted (Garage > Parts)", "type": "choice", "default": "Oil and filter", "options": [["Oil and filter", "Oil and filter"], ["Spark plugs", "Spark plugs"], ["Brake pads", "Brake pads"], ["Brake discs", "Brake discs"], ["Tyres", "Tyres"], ["Battery", "Battery"], ["Air filter", "Air filter"], ["Cabin filter", "Cabin filter"], ["Intake", "Intake"], ["Exhaust", "Exhaust"], ["Suspension", "Suspension"], ["Tune / map", "Tune / map"], ["Wheels", "Wheels"], ["Other", "Other"]]},
+    {"key": "fuelBrand", "label": "Fuel station (next refuel)", "type": "choice", "default": "none", "options": [["none", "Not noted"], ["usual", "My usual station"], ["second", "Another station"], ["other", "Other"]]},
+    {"key": "octane", "label": "Octane (next refuel)", "type": "number", "default": 0, "labels": {"0": "Not noted"}, "steps": [0, 91, 95, 98, 100]},
+    {"key": "partType", "label": "Noted in Garage (a part or care)", "type": "choice", "default": "Oil and filter", "options": [["Oil and filter", "Oil and filter"], ["Spark plugs", "Spark plugs"], ["Brake pads", "Brake pads"], ["Brake discs", "Brake discs"], ["Tyres", "Tyres"], ["Battery", "Battery"], ["Air filter", "Air filter"], ["Cabin filter", "Cabin filter"], ["Intake", "Intake"], ["Exhaust", "Exhaust"], ["Suspension", "Suspension"], ["Tune / map", "Tune / map"], ["Wheels", "Wheels"], ["Care", "Care (wash, wax, ...)"], ["Other", "Other"]]},
     {"key": "batteryRead", "label": "Battery: read the 12 V voltage", "type": "bool", "default": true},
     {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour", "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
     {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full", "options": [["full", "Full screen"], ["standard", "Standard"]]},

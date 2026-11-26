@@ -1,6 +1,6 @@
 'use strict';
 /**
- * battery_view.js - Service's Battery tab, two views:
+ * battery_view.js - Service's Battery tab, two views (the voltage is read while this page shows, battery_read.js):
  *
  *   Today          the three numbers of this wake (resting, lowest seen while starting, charging), each on its own
  *                  scale with good / weak / low bands, and this wake's voltage as a chart with the start marked
@@ -87,7 +87,7 @@ function today(cv, t, s) {
 
 function verdict(entries) {
     const rest = entries.map((e) => e.rest).filter(isNum), crank = entries.map((e) => e.crank).filter(isNum);
-    if (rest.length < 3 && crank.length < 3) return { word: 'NOT ENOUGH STARTS YET', color: 'dim', lines: ['A few starts give a first picture, ten a good one.'] };
+    if (rest.length < 3 && crank.length < 3) return { word: 'NOT ENOUGH STARTS YET', color: 'dim', lines: ['A few starts with this page open give a first picture, ten a good one.'] };
     const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length, last = (a) => a.slice(-5);
     const r = rest.length ? avg(last(rest)) : null, k = crank.length ? avg(last(crank)) : null;
     const tr = trend(entries.map((e) => e.rest)), per10 = tr ? tr.slope * 10 : 0;
@@ -99,6 +99,8 @@ function verdict(entries) {
     if ((isNum(r) && r < 12.2) || (isNum(k) && k < 9.6)) { word = 'HAVE IT TESTED'; color = 'crit'; lines.push('Before winter or a long trip, have the battery tested.'); }
     else if ((isNum(r) && r < 12.5) || (isNum(k) && k < 10.0) || per10 < -0.05) { word = 'WATCH IT'; color = 'warn'; lines.push('Fine for now. Short trips and long standing drain it: a long drive or a charger helps.'); }
     else lines.push('Nothing to do. Cold weather lowers every number a little.');
+    const soc = entries.map((e) => e.soc).filter(isNum);
+    if (soc.length) lines.push('Charge the car reported at the last start: ' + soc[soc.length - 1] + ' %.');
     return { word, color, lines };
 }
 

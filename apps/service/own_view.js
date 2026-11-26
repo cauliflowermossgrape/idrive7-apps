@@ -52,7 +52,7 @@ function overview(cv, t, s) {
         px += 166;
     });
     const next = l.filter((x) => G.isNum(x.s.left)).sort((a, b) => (a.s.frac > b.s.frac ? -1 : 1))[0];
-    const right = s.note ? s.note : next ? 'Next: ' + next.it.name + (next.s.left > 0 ? ' in ' + leftText(next) + ' ' + leftUnit(next) : ', ' + leftText(next) + ' ' + leftUnit(next) + ' overdue') : 'Mark what was done with Done now';
+    const right = s.note ? s.note : next ? 'Next: ' + next.it.name + (next.s.left > 0 ? ' in ' + leftText(next) + ' ' + leftUnit(next) : ', ' + leftText(next) + ' ' + leftUnit(next) + ' overdue') : 'Mark what was done with Mark done';
     cv.text(right, p.x + p.w - 24, 112, s.note ? 19 : 22, s.note ? t.warn : t.text, { align: 'right', font: 'bold' });
     if (!l.length) { G.panel(cv, t, 24, 140, 1552, 372, null); cv.text('No interval set: choose them in Settings', 48, 200, 26, t.dim); return; }
     const cols = 4, gap = 12, cw = (1552 - gap * (cols - 1)) / cols, rows = Math.ceil(l.length / cols), ch = Math.floor((372 - gap * (rows - 1)) / rows);
@@ -68,13 +68,13 @@ function overview(cv, t, s) {
         const tx = rx2 + r + 22;
         if (x.s.state === 'unknown') {
             cv.text(x.done ? 'needs the odometer' : 'not marked yet', tx, ry - 6, 22, t.dim, { font: 'bold' });
-            cv.text(x.done ? '' : (cv.own ? 'tap it, Done now' : 'pick it, Reset service'), tx, ry + 22, 17, t.dim);
+            cv.text(x.done ? '' : (cv.own ? 'tap it, Mark done' : 'pick it, Reset service'), tx, ry + 22, 17, t.dim);
         } else {
             G.readout(cv, t, tx, ry - r - 6, { label: x.s.left > 0 ? 'LEFT' : 'OVERDUE', text: leftText(x), unit: leftUnit(x), size: 40, labelSize: 14, color: c });
         }
         cv.text('every ' + (x.it.unit === 'km' ? km(x.every) + ' km' : x.every + ' months'), cx + 22, cy + ch - 18, 16, t.dim);
-        // the chosen card has Done now (where the kit runs the screen) in place of its last date
-        if (cv.own && s.act && i === s.sel) G.button(cv, t, cx + cw - 156, cy + ch - 62, 140, 42, 'Done now', s.act.done, { confirm: true, primary: true, key: 'own-done-' + x.it.key });
+        // the chosen card has Mark done (where the kit runs the screen) in place of its last date
+        if (cv.own && s.act && i === s.sel) G.button(cv, t, cx + cw - 156, cy + ch - 62, 140, 42, 'Mark done', s.act.done, { confirm: true, primary: true, key: 'own-done-' + x.it.key });
         else cv.text(x.done ? 'last ' + day(x.done.at) : '', cx + cw - 20, cy + ch - 18, 16, t.dim, { align: 'right' });
         G.pill(cv, t, cx + cw - 128, cy + 12, 110, 26, WORD[x.s.state] || '', { color: c, size: 13 });
         // the wear chip: how much harder the driving since the last service was than the km say (an estimate)
@@ -93,7 +93,7 @@ function history(cv, t, s) {
     G.panel(cv, t, 24, 44, 640, 468, 'Every service marked (' + all.length + ')');
     G.table(cv, t, 48, 92, 592, [{ label: 'Date', w: 170 }, { label: 'Item', w: 260 }, { label: 'Odometer', w: 162, align: 'right' }],
         all.slice(0, 9).map((x) => [day(x.h.at), { text: x.it.name, color: x.it === (l[s.sel] && l[s.sel].it) ? 'accent' : null }, G.isNum(x.h.km) ? km(x.h.km) + ' km' : '']),
-        { rowH: 40, size: 20, empty: 'Nothing marked yet: Done now' });
+        { rowH: 40, size: 20, empty: 'Nothing marked yet: Mark done' });
     const x = l[s.sel], it = x && x.it, r = it && record(s.store, it.key), hist = r ? r.history : [];
     G.panel(cv, t, 680, 44, 896, 468, it ? it.name + ': between services' : 'Between services');
     if (!it) return;

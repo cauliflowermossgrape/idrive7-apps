@@ -1,48 +1,45 @@
 'use strict';
 /**
  * extras.js - what Service keeps next to the car's own service items, recorded with the car (app.json autostart),
- * with or without the screen: one background for all of it, from the car's own signals.
+ * with or without the screen: one background for all of it, from the signals the car broadcasts anyway.
  *
  *   My intervals   your own intervals (own_items.js), marked done with the odometer; the drives since each service
  *                  for the wear estimate (own_wear.js); the wheel sets (own_wheels.js)       -> own.json, drives.json
- *   Battery        the 12 V battery at every start (battery_log.js): resting, the dip while starting, charging  -> starts.json
- *   Fuel, Garage   refuels seen by themselves, parts, care, odometer milestones (garage.js)                        -> garage.json
+ *   Battery        the starts (battery_log.js): when the engine turned and the charge the car reports    -> starts.json
+ *   Garage         refuels seen by themselves, parts and care notes, odometer milestones (garage.js)     -> garage.json
  *
- *   background(bg) -> state = { v, odo(), own, drives, garage, L, live, save(), seen() }
+ *   background(bg) -> state = { v, odo(), own, drives, garage, L, battery, volt(v, t), save(), seen() }
  *
  * One set of watches serves all three: the odometer, tank and range (KombiIF statusRangeTankStatus, as Live Data
- * reads it), rpm, oil temperature and 12 V charge (CDS), speed (Vehicle2), braking (CDS2), torque (FES), and whether
- * the car is locked and left (VehicleCondition: no more 12 V reads then, it can sleep).
- * The 12 V voltage itself is read with UDS (22 F442 / OBD 01 42 / the battery sensor's 402B / 5853), eDrive's
- * candidates (app.json config.battery.v12), about once a second from the wake until the start's charging value is in,
- * then only while the Battery page shows, never during Stop all; Settings > "Battery: read the 12 V voltage" turns
- * it off. Read only: nothing is written to any unit.
+ * reads it), rpm, oil temperature and the 12 V charge (CDS), speed (Vehicle2), braking (CDS2), torque (FES), and
+ * whether the car is locked and left (VehicleCondition).
+ * The background asks no control unit anything: no diagnostic link here. The 12 V voltage is read with UDS only
+ * while the Battery page shows (battery_read.js, over the page's read-only link in main.js), and those readings come
+ * in through state.volt(); a start without the page open is kept from the broadcast signals alone.
+ * garage.json is written when something was noted (a refuel, a milestone, a part) and at the end of a drive (the
+ * odometer), not while driving.
  */
 const fs = require('fs');
 const path = require('path');
-const { Diag } = require('./kit/diag');
-const { DidReader } = require('./kit/dids');
 const Car = require('./kit/car');
 const Wear = require('./own_wear');
 const { StartLog } = require('./battery_log');
 const { Garage } = require('./garage');
 
 const KEEP_DRIVES = 600, G0 = 9.80665, DAY = 86400000;
-const FAST_MS = 1000, SHOWN_MS = 4000, VOLT_TIMEOUT_MS = 1500, REST_WINDOW_MS = 15 * 60000;
-const DIAG_OPTS = { retryBaseMs: 150, pendingTimeoutMs: 1500, callTimeoutMs: 2000 };
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 const readJson = (f, dflt) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')) || dflt; } catch (e) { return dflt; } };
 
-/* With or without the screen: the drives, the 12 V at each start, refuels and milestones. Never the demo. */
+/* With or without the screen: the drives, the starts, refuels and milestones. Never the demo. */
 async function background(bg) {
-    const { signals, log, settings } = bg;
+    const { signals, log } = bg;
     const F = (n) => path.join(bg.dataDir, n);
     const state = {
         own: readJson(F('own.json'), {}),
         drives: readJson(F('drives.json'), []),
         garage: new Garage(readJson(F('garage.json'), null)),
         v: { rpm: null, speed: null, oil: null, gLong: null, torque: null, soc: null, odo: null, tank: null, range: null, left: false, at: 0 },
-        battery: { v: null, t: 0, source: null, shownT: 0 },
+        battery: { v: null, t: 0, source: null },
     };
     const v = state.v;
     state.seen = () => v.at > 0;
@@ -74,7 +71,7 @@ async function background(bg) {
     watch('de.bmw.infotainment.vehicle.CDS', {
         statusEngineSpeed2: (x) => { v.rpm = sc(x && x.actualValueRPMEngineCrankshaft, 0.25, 0, 65535); if (v.rpm !== null) { L.rpm(v.rpm, Date.now()); seen(); } },
         statusEngineTemperature: (x) => { v.oil = sc(x && x.temperatureEngineOilDrive, 1, -48, 255); },
-        statusBattery2: (x) => { const s = x && x.conditionBatteryChargingCondition; if (isNum(s) && s >= 0 && s <= 100) v.soc = s; },
+        statusBattery2: (x) => { const s = x && x.conditionBatteryChargingCondition; if (isNum(s) && s >= 0 && s <= 100) { v.soc = s; L.soc(s); } },
     });
     watch('de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (x) => { v.speed = sc(x && x.speedVehicleCentreOfGravity, 0.015625, 0, 65535); if (v.speed !== null) seen(); } });
     watch('de.bmw.infotainment.vehicle.CDS2', {
@@ -93,6 +90,8 @@ async function background(bg) {
         state.drives = state.drives.concat([d]).slice(-KEEP_DRIVES);
         try { fs.writeFileSync(F('drives.json'), JSON.stringify(state.drives)); } catch (e) { log.warn('service: drives: ' + e); }
         log.info('service: drive ' + d.km + ' km, oil max ' + d.maxOil);
+        state.garage.changed = true;          // the odometer is kept at the end of a drive
+        saveGarage();
     };
     let n = 0;
     const tick = () => {
@@ -107,60 +106,17 @@ async function background(bg) {
     state.tick = tick;
     state.rec = rec;
 
-    // the 12 V voltage: asked once a second from the wake until this start's charging value is in, then only with the page open
-    const cands = ((bg.spec.config && bg.spec.config.battery && bg.spec.config.battery.v12) || [])
-        .map((c) => Object.assign({ timeoutMs: VOLT_TIMEOUT_MS, diagOpts: DIAG_OPTS }, c));
-    const wakeT = Date.now();
-    let diag = null, reader = null, lastT = 0, stopped = false;
-    const readOn = () => !settings || settings.get('batteryRead') !== false;
-    if (cands.length && signals && signals.watch && readOn()) {
-        diag = new Diag(signals, log);
-        diag.quiet = true;
-        diag.init();
-        reader = new DidReader(diag, { ecu: 18 });
-    }
-    async function readVolt() {
-        const order = cands.map((c, i) => i);
-        if (Number.isInteger(pick) && cands[pick]) { order.splice(order.indexOf(pick), 1); order.unshift(pick); }
-        for (const i of order) {
-            const x = await reader.read(cands[i]);
-            if (x !== null) {
-                if (pick !== i) { pick = i; log.info('service: 12 V from ' + reader.key(cands[i])); saveStarts(); }
-                state.battery.source = reader.key(cands[i]);
-                return x;
-            }
-            if (i === pick) return null;          // the known source missed once: no search over the others yet
-        }
-        return null;
-    }
-    // Stop all: no UDS asked until it ends (the recording of the car's own signals goes on, it asks nothing)
-    let panicked = false;
-    if (bg.onPanic) bg.onPanic((on) => { panicked = on; });
-    const wanted = () => {
-        if (panicked || v.left || !readOn()) return false;
-        const ph = L.phase(), now = Date.now();
-        if (now - state.battery.shownT < SHOWN_MS) return true;
-        if (ph === 'rest') return now - wakeT < REST_WINDOW_MS;
-        return ph === 'crank' || ph === 'run';
+    // the 12 V voltage: read by the Battery page (battery_read.js), never here; its readings come in through volt()
+    state.volt = (x, t) => {
+        if (!isNum(x)) return;
+        t = isNum(t) ? t : Date.now();
+        state.battery.every = state.battery.t ? t - state.battery.t : null;
+        state.battery.v = x; state.battery.t = t; L.volt(x, t);
     };
-    async function voltTick() {
-        if (stopped) return;
-        let wait = FAST_MS;
-        try {
-            if (reader && diag.available && wanted()) {
-                const x = await readVolt(), now = Date.now();
-                if (x !== null) {
-                    state.battery.every = lastT ? now - lastT : null;
-                    lastT = now; state.battery.v = x; state.battery.t = now; L.volt(x, now);
-                } else wait = 3000;
-            } else if (!wanted()) wait = 2000;
-        } catch (e) { log.warn('service: 12 V: ' + (e && e.message || e)); wait = 3000; }
-        const t = setTimeout(voltTick, wait);
-        if (t.unref) t.unref();
-    }
-    if (reader) { const t = setTimeout(voltTick, 500); if (t.unref) t.unref(); }
-    state.batteryReads = () => !!(reader && diag.available);
-    state.stop = () => { stopped = true; clearInterval(timer); rec.flush(); L.finish(); saveGarage(); };
+    // the candidate that answered last (tried first next time), kept in starts.json
+    state.pick = () => pick;
+    state.setPick = (i, key) => { state.battery.source = key; if (pick !== i) { pick = i; log.info('service: 12 V from ' + key); saveStarts(); } };
+    state.stop = () => { clearInterval(timer); rec.flush(); L.finish(); saveGarage(); };
     process.on('exit', () => { rec.flush(); L.finish(); saveGarage(); });
     return state;
 }
@@ -203,7 +159,7 @@ function demoStarts(now) {
     for (let i = 0; i < 60; i++) {
         const k = i / 59, cold = Math.max(0, Math.sin(i / 9)) * 0.12;
         out.push({ at: now - (60 - i) * 2 * DAY + 7.5 * 3600000, rest: 12.66 - 0.2 * k - cold * 0.6 + 0.03 * Math.sin(i * 1.7),
-            crank: 10.55 - 0.45 * k - cold + 0.08 * Math.sin(i * 2.3), crankN: 6, run: 13.9 + 0.5 * Math.sin(i * 0.8) });
+            crank: 10.55 - 0.45 * k - cold + 0.08 * Math.sin(i * 2.3), crankN: 6, run: 13.9 + 0.5 * Math.sin(i * 0.8), soc: Math.round(84 - 8 * k - cold * 30) });
     }
     return out;
 }
@@ -217,26 +173,24 @@ function demoWake(now) {
     const runs = trace.filter((q) => q.t - start > 60000).map((q) => q.v);
     return { trace, startAt: start, cur: { rest: 12.46, crank: 10.25, crankN: 7, runs, at: start }, v: trace[trace.length - 1].v };
 }
-/* a year of refuels in three brands, parts fitted, care done, odometer milestones, a refuel waiting for its tap */
+/* a year of refuels at two stations, parts and care noted, odometer milestones, a refuel waiting for its tap */
 function demoGarage(now) {
     let seed = 11;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    const odo = DEMO_ODO, fuel = [], brands = ['omv', 'nis', 'mol'];
+    const odo = DEMO_ODO, fuel = [], brands = ['usual', 'second', 'usual'];
     let km = odo - 9800;
     for (let i = 0; i < 14; i++) {
-        const dist = Math.round(560 + rnd() * 160), brand = brands[i % 3], k = brand === 'omv' ? 7.4 : brand === 'nis' ? 7.9 : 7.6;
+        const dist = Math.round(560 + rnd() * 160), brand = brands[i % 3], k = brand === 'usual' ? 7.4 : 7.8;
         km += dist;
         if (km > odo - 120) break;
         const litres = Math.round(dist * (k + (rnd() - 0.5) * 0.8) / 100), before = Math.round(8 + rnd() * 6);
         fuel.push({ at: now - (odo - km) / 52 * DAY, km, before, after: before + litres, litres, brand, octane: i % 4 === 3 ? 98 : 95 });
     }
     const parts = [['Oil and filter', 36200, 290], ['Brake pads', 39800, 220], ['Intake', 41500, 180], ['Tune / map', 41520, 179],
-        ['Tyres', 43900, 120], ['Battery', 45100, 90], ['Cabin filter', 46900, 40], ['Oil and filter', 47800, 15]]
+        ['Tyres', 43900, 120], ['Battery', 45100, 90], ['Care', 46200, 60], ['Cabin filter', 46900, 40], ['Oil and filter', 47800, 15]]
         .map(([type, k, d]) => ({ type, km: k, at: now - d * DAY }));
-    const care = { wash: { at: now - 17 * DAY }, interior: { at: now - 9 * DAY }, wheels: { at: now - 40 * DAY }, wax: { at: now - 95 * DAY },
-        decon: { at: now - 120 * DAY }, polish: { at: now - 300 * DAY } };
     const milestones = [10000, 20000, 30000, 40000].map((k, i) => ({ km: k, at: now - (odo - k) / 48 * DAY + i * DAY }));
-    return new Garage({ fuel, parts, care, milestones, lastOdo: odo, pending: { at: now - 40 * 60000, km: odo, before: 9, after: 55, litres: 46 } });
+    return new Garage({ fuel, parts, milestones, lastOdo: odo, pending: { at: now - 40 * 60000, km: odo, before: 9, after: 55, litres: 46 } });
 }
 function demo(now) {
     const w = demoWake(now);

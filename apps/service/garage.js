@@ -1,15 +1,16 @@
 'use strict';
 /**
- * garage.js - Service's Fuel and Garage records and the arithmetic on them (no drawing, no signals):
+ * garage.js - Service's Garage records (Fuel, Parts, Milestones) and the arithmetic on them (no drawing, no signals):
  *
  *   const g = new Garage(saved);   saved = what toJSON() gave (garage.json in the app's data folder)
  *   g.feed(v, now)                 v = { speed, tank (l), odo (km) }: refuel detection and odometer milestones
+ *   g.changed                      true when something worth writing happened (a refuel seen, a milestone, a note);
+ *                                  the odometer alone (lastOdo) does not count: the background writes it at a drive's end
  *   g.pending                      a refuel seen while parked, waiting for one tap: { at, km, before, after, litres }
  *   g.saveRefuel(brand, octane, now) / g.dropRefuel()
- *   g.markPart(type, km, now), g.markCare(key, km, now), g.bookmark(snapshot, now)
+ *   g.markPart(type, km, now), g.bookmark(snapshot, now)   (a part, or care, from the Settings list)
  *   consumption(fuel)              [{ at, km, litres, perHundred, brand }] per tank, oldest first
  *   byBrand(rows)                  [{ brand, n, avg }]
- *   careState(care, now)           [{ key, name, weeks, since (weeks), frac, state }]
  *   milestoneRate(milestones, odo, now) { perDay, nextKm, nextAt }
  *
  * A refuel: the tank level rises by REFUEL_L or more while the car stands (speed under 2 km/h, or none) and has
@@ -18,10 +19,6 @@
  * time, which the page says.
  */
 const MAX_FUEL = 60, MAX_PARTS = 80, MAX_MARKS = 40, REFUEL_L = 5, SETTLE_MS = 60000, STEP_KM = 10000;
-const CARE = [
-    ['wash', 'Wash', 2], ['interior', 'Interior clean', 4], ['wheels', 'Wheels deep clean', 8], ['wax', 'Wax or sealant', 12],
-    ['decon', 'Decontamination (clay)', 26], ['ceramic', 'Ceramic top-up', 26], ['polish', 'Polish', 52],
-];
 const DAY = 86400000, WEEK = 7 * DAY;
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
@@ -31,7 +28,6 @@ class Garage {
         o = o || {};
         this.fuel = Array.isArray(o.fuel) ? o.fuel.slice(-MAX_FUEL) : [];
         this.parts = Array.isArray(o.parts) ? o.parts.slice(-MAX_PARTS) : [];
-        this.care = o.care && typeof o.care === 'object' ? o.care : {};
         this.milestones = Array.isArray(o.milestones) ? o.milestones : [];
         this.marks = Array.isArray(o.marks) ? o.marks.slice(-MAX_MARKS) : [];
         this.pending = o.pending || null;
@@ -59,7 +55,7 @@ class Garage {
             if (isNum(this.lastOdo) && Math.floor(v.odo / STEP_KM) > Math.floor(this.lastOdo / STEP_KM) && v.odo - this.lastOdo < 500) {
                 this.milestones.push({ km: Math.floor(v.odo / STEP_KM) * STEP_KM, at: now }); this.changed = true;
             }
-            if (this.lastOdo !== Math.round(v.odo)) { this.lastOdo = Math.round(v.odo); this.changed = true; }
+            this.lastOdo = Math.round(v.odo);         // (not "changed": written at a drive's end, not every km)
         }
     }
 
@@ -72,10 +68,9 @@ class Garage {
     }
     dropRefuel() { this.pending = null; this.changed = true; }
     markPart(type, km, now) { const e = { at: now, km: isNum(km) ? Math.round(km) : null, type }; this.parts.push(e); if (this.parts.length > MAX_PARTS) this.parts.shift(); this.changed = true; return e; }
-    markCare(key, km, now) { this.care[key] = { at: now, km: isNum(km) ? Math.round(km) : null }; this.changed = true; }
     bookmark(snap, now) { const e = Object.assign({ at: now }, snap); this.marks.push(e); if (this.marks.length > MAX_MARKS) this.marks.shift(); this.changed = true; return e; }
 
-    toJSON() { return { fuel: this.fuel, parts: this.parts, care: this.care, milestones: this.milestones, marks: this.marks, pending: this.pending, lastOdo: this.lastOdo }; }
+    toJSON() { return { fuel: this.fuel, parts: this.parts, milestones: this.milestones, marks: this.marks, pending: this.pending, lastOdo: this.lastOdo }; }
 }
 
 function consumption(fuel) {
@@ -89,16 +84,8 @@ function consumption(fuel) {
 
 function byBrand(rows) {
     const by = {};
-    rows.filter((r) => isNum(r.perHundred)).forEach((r) => { (by[r.brand || 'other'] = by[r.brand || 'other'] || []).push(r.perHundred); });
+    rows.filter((r) => isNum(r.perHundred)).forEach((r) => { (by[r.brand || 'none'] = by[r.brand || 'none'] || []).push(r.perHundred); });
     return Object.keys(by).map((b) => ({ brand: b, n: by[b].length, avg: Math.round(avg(by[b]) * 10) / 10 })).sort((a, b) => a.avg - b.avg);
-}
-
-function careState(care, now) {
-    return CARE.map(([key, name, weeks]) => {
-        const c = care && care[key], since = c ? (now - c.at) / WEEK : null, frac = isNum(since) ? since / weeks : null;
-        return { key, name, weeks, since, frac, last: c ? c.at : null,
-            state: !c ? 'never' : frac >= 1 ? 'due' : frac >= 0.8 ? 'soon' : 'ok' };
-    });
 }
 
 function milestoneRate(ms, odo, now) {
@@ -111,4 +98,4 @@ function milestoneRate(ms, odo, now) {
     return { perDay: isNum(perDay) && perDay > 0 ? perDay : null, nextKm, nextAt: isNum(perDay) && perDay > 0 ? now + (nextKm - odo) / perDay * DAY : null };
 }
 
-module.exports = { Garage, consumption, byBrand, careState, milestoneRate, CARE, STEP_KM, REFUEL_L, SETTLE_MS, WEEK, DAY };
+module.exports = { Garage, consumption, byBrand, milestoneRate, STEP_KM, REFUEL_L, SETTLE_MS, WEEK, DAY };

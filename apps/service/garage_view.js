@@ -1,30 +1,29 @@
 'use strict';
 /**
- * garage_view.js - Service's Fuel and Garage tabs:
+ * garage_view.js - Service's Garage tab, three views:
  *
- *   Fuel           the tank and range now, a refuel waiting for its tap, consumption per tank and per brand
- *   Parts          the parts and mods fitted on an odometer line, and the latest as a table
- *   Care           wash and paint care, each against its interval in weeks, the chosen one and what is due
+ *   Fuel           the tank and range now, a refuel waiting for its tap, consumption per tank and per station
+ *   Parts          parts, mods and care noted (the kind chosen in Settings) on an odometer line, the latest as a table
  *   Milestones     every 10 000 km with its date, the pace in km a day and when the next comes, and the list
  *
- *   draw(cv, t, view, s)   view 'fuel' | 'parts' | 'care' | 'milestones'
- *                          s = { g (Garage), live, now, careSel, brand, octane, partType, armed, note, spec, act }
- *   s.act = { save, drop, part, care(i), pick(i) }: the on-screen buttons where the kit runs the screen (cv.own);
+ *   draw(cv, t, view, s)   view 'fuel' | 'parts' | 'milestones'
+ *                          s = { g (Garage), live, now, brand, octane, partType, armed, note, spec, act }
+ *   s.act = { save, drop, part }: the on-screen buttons where the kit runs the screen (cv.own);
  *   elsewhere the bar's buttons do the same (main.js). Taken from Garage Log; its parking timer is left out.
  */
 const G = require('./kit/gauges');
 const { withAlpha } = require('./kit/canvas');
-const { consumption, byBrand, careState, milestoneRate, CARE, STEP_KM, DAY } = require('./garage');
+const { consumption, byBrand, milestoneRate, STEP_KM, DAY } = require('./garage');
 
 const GO = '#2fd27a';
-const BRAND_COL = { omv: '#3ac8ff', nis: '#ff5a5a', mol: '#2fd27a', lukoil: '#ffa23a', eko: '#ffd84a', shell: '#c06bff', other: '#aaaaaa' };
+const BRAND_COL = { usual: '#3ac8ff', second: '#ffa23a', third: '#c06bff', other: '#2fd27a', none: '#aaaaaa' };
 const PART_COL = ['#3ac8ff', '#ffa23a', '#2fd27a', '#ff5a5a', '#c06bff', '#ffd84a', '#7d8bff', '#ff6fb5'];
 const isNum = G.isNum;
 const two = (n) => (n < 10 ? '0' : '') + n;
 const date = (ms) => { const d = new Date(ms); return d.getDate() + '.' + two(d.getMonth() + 1) + '.' + d.getFullYear(); };
 const sp = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 const ago = (ms, now) => { const d = Math.round((now - ms) / DAY); return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d < 60 ? d + ' days ago' : Math.round(d / 30) + ' months ago'; };
-const brandName = (spec, b) => { const st = (spec.settings || []).find((x) => x.key === 'fuelBrand'), o = st && st.options.find((x) => x[0] === b); return o ? o[1] : b || 'Other'; };
+const brandName = (spec, b) => { const st = (spec.settings || []).find((x) => x.key === 'fuelBrand'), o = st && st.options.find((x) => x[0] === b); return o ? o[1] : b || 'Not noted'; };
 
 const lines = (cv, t, list, x, y, gap) => list.forEach((l, i) => cv.text(l, x, y + i * gap, i ? 18 : 20, i ? t.dim : t.text, { font: i ? 'label' : 'bold' }));
 
@@ -41,7 +40,8 @@ function fuel(cv, t, s) {
         cv.text('REFUEL SEEN', 64, 230, 15, GO, { font: 'bold', spacing: 2 });
         cv.text('+' + p.litres + ' l', 64, 284, 48, t.text, { font: 'num' });
         cv.text(p.before + ' l > ' + p.after + ' l, ' + ago(p.at, now) + (isNum(p.km) ? ', at ' + sp(p.km) + ' km' : ''), 220, 274, 17, t.dim);
-        cv.text('Saved as ' + brandName(s.spec, s.brand) + ' ' + s.octane + ' (brand and octane: Settings)', 64, 318, 17, t.text, { font: 'bold' });
+        cv.text('Saved as ' + [s.brand && s.brand !== 'none' ? brandName(s.spec, s.brand) : '', s.octane > 0 ? s.octane + ' octane' : ''].filter(Boolean).concat(['refuel']).join(' ')
+            + ' (station and octane: Settings)', 64, 318, 17, t.text, { font: 'bold' });
         if (cv.own && s.act) {
             G.button(cv, t, 64, 334, 230, 44, 'Save refuel', s.act.save, { primary: true, key: 'gl-save' });
             G.button(cv, t, 310, 334, 230, 44, 'Not a refuel', s.act.drop, { confirm: true, key: 'gl-drop' });
@@ -65,7 +65,7 @@ function fuel(cv, t, s) {
     });
     cv.fillRect(c.px, Math.round(c.Y(mean)), c.pw, 2, withAlpha(t.text, 0.6));
     cv.text('white line: average ' + mean.toFixed(1) + ' l/100 km', c.px + c.pw, 92, 15, t.text, { align: 'right' });
-    cv.text('PER BRAND', 1240, 112, 14, t.dim, { font: 'bold', spacing: 1.5 });
+    cv.text('PER STATION', 1240, 112, 14, t.dim, { font: 'bold', spacing: 1.5 });
     const bmax = Math.max.apply(null, brands.map((b) => b.avg));
     brands.slice(0, 6).forEach((b, i) => {
         const y = 128 + i * 52, w = Math.max(8, 200 * b.avg / bmax);
@@ -82,7 +82,7 @@ function parts(cv, t, s) {
     const g = s.g, odo = s.live.odo, list = g.parts.slice().sort((a, b) => a.at - b.at);
     G.panel(cv, t, 24, 44, 1552, 220, 'Parts and mods on the odometer');
     const kms = list.map((p) => p.km).filter(isNum).concat(isNum(odo) ? [odo] : []);
-    if (!list.length) lines(cv, t, ['Nothing noted yet.', 'Pick the part in Settings > Part fitted, then Part fitted (twice) on this page.'], 48, 130, 30);
+    if (!list.length) lines(cv, t, ['Nothing noted yet.', 'Pick the part or care in Settings > Noted in Garage, then Note it (twice) on this page.'], 48, 130, 30);
     else if (kms.length) {
         const lo = Math.floor((Math.min.apply(null, kms) - 500) / 1000) * 1000, hi = Math.ceil((Math.max.apply(null, kms) + 500) / 1000) * 1000;
         const x0 = 64, x1 = 1536, X = (k) => x0 + (x1 - x0) * (k - lo) / (hi - lo), y = 190;
@@ -103,40 +103,12 @@ function parts(cv, t, s) {
     G.panel(cv, t, 24, 280, 1100, 232, 'Latest');
     const rows = list.slice(-4).reverse().map((p) => [date(p.at), p.type, isNum(p.km) ? sp(p.km) + ' km' : '--', isNum(p.km) && isNum(odo) ? sp(odo - p.km) + ' km ago' : ago(p.at, s.now)]);
     G.table(cv, t, 48, 330, 1060, [{ label: 'Date', w: 200 }, { label: 'Part', w: 400, font: 'bold' }, { label: 'Odometer', w: 220, align: 'right' }, { label: 'Since', w: 240, align: 'right' }], rows, { rowH: 38, size: 19, empty: 'None yet' });
-    G.panel(cv, t, 1140, 280, 436, 232, 'Note a part');
+    G.panel(cv, t, 1140, 280, 436, 232, 'Note a part or care');
     cv.text(s.partType, 1164, 360, 26, t.text, { font: 'bold' });
-    cv.text('chosen in Settings > Part fitted', 1164, 388, 15, t.dim);
-    cv.text('fitted today' + (isNum(odo) ? ' at ' + sp(odo) + ' km' : ''), 1164, 418, 17, t.text);
-    if (cv.own && s.act) G.button(cv, t, 1164, 436, 388, 48, 'Part fitted', s.act.part, { confirm: true, primary: true, key: 'gl-part' });
+    cv.text('chosen in Settings > Noted in Garage', 1164, 388, 15, t.dim);
+    cv.text('done today' + (isNum(odo) ? ' at ' + sp(odo) + ' km' : ''), 1164, 418, 17, t.text);
+    if (cv.own && s.act) G.button(cv, t, 1164, 436, 388, 48, 'Note it', s.act.part, { confirm: true, primary: true, key: 'gl-part' });
     else cv.text(s.armed === 'part' ? 'Press Reset service again to note it' : 'Reset service twice: note it', 1164, 470, 17, s.armed === 'part' ? t.warn : t.dim);
-}
-
-/* ---------- Care ---------- */
-function care(cv, t, s) {
-    const st = careState(s.g.care, s.now);
-    G.panel(cv, t, 24, 44, 1000, 468, 'Wash and paint care');
-    st.forEach((c, i) => {
-        const y = 106 + i * 57, col = c.state === 'due' ? t.crit : c.state === 'soon' ? t.warn : c.state === 'ok' ? GO : t.dim;
-        if (i === s.careSel) cv.strokeRoundRect(36, y - 6, 976, 52, 8, 2, s.armed === 'care' + c.key ? t.warn : t.accent);
-        if (cv.own && s.act) cv.target(36, y - 6, 976, 52, () => s.act.pick(i), 'gl-care-' + c.key, 8);
-        cv.text(c.name, 52, y + 18, 19, t.text, { font: 'bold' });
-        cv.text('every ' + c.weeks + ' week' + (c.weeks > 1 ? 's' : ''), 52, y + 38, 14, t.dim);
-        cv.roundRect(360, y + 14, 420, 12, 6, withAlpha(t.track, 0.9));
-        if (isNum(c.frac)) cv.roundRect(360, y + 14, Math.max(8, 420 * Math.min(1, c.frac)), 12, 6, col);
-        cv.text(c.state === 'never' ? 'not marked yet' : c.state === 'due' ? 'due: ' + Math.round(c.since) + ' weeks ago' : Math.round(c.weeks - c.since) + ' weeks left',
-            996, y + 26, 16, col, { align: 'right', font: 'bold' });
-    });
-    G.panel(cv, t, 1040, 44, 536, 468, 'Chosen');
-    const c = st[s.careSel], due = st.filter((x) => x.state === 'due');
-    cv.text(c.name, 1064, 130, 26, t.text, { font: 'bold' });
-    cv.text(c.last ? 'last ' + date(c.last) + ', ' + ago(c.last, s.now) : 'never marked', 1064, 160, 17, t.dim);
-    G.readout(cv, t, 1064, 190, { label: 'weeks since', value: c.since, decimals: 0, size: 48, labelSize: 14 });
-    G.readout(cv, t, 1300, 190, { label: 'every', value: c.weeks, unit: 'weeks', size: 48, labelSize: 14 });
-    if (cv.own && s.act) G.button(cv, t, 1064, 300, 488, 48, 'Done today', () => s.act.care(s.careSel), { confirm: true, primary: true, key: 'gl-care-done-' + c.key });
-    else cv.text(s.armed === 'care' + c.key ? 'Press Reset service again: done today' : 'Reset service twice: done today. Next item: choose.', 1064, 330, 17, s.armed === 'care' + c.key ? t.warn : t.text);
-    cv.text('DUE NOW', 1064, 380, 14, t.dim, { font: 'bold', spacing: 1.5 });
-    cv.text(due.length ? due.map((x) => x.name).join(', ') : 'nothing', 1064, 406, 18, due.length ? t.crit : GO);
-    cv.text(cv.own ? 'Tap a row to choose it. Intervals are common care advice.' : 'Intervals are common care advice, not a rule.', 1064, 494, 14, t.dim);
 }
 
 /* ---------- Milestones ---------- */
@@ -164,7 +136,7 @@ function milestones(cv, t, s) {
         { label: 'Since the one before', w: 600, align: 'right' }], rows, { rowH: 36, size: 18, empty: 'None yet: noted as the odometer passes them' });
 }
 
-const VIEWS = { fuel, parts, care, milestones };
+const VIEWS = { fuel, parts, milestones };
 function draw(cv, t, view, s) {
     (VIEWS[view] || fuel)(cv, t, s);
     if (s.note) {
