@@ -112,6 +112,19 @@ ok(new Windows(path.join(dir, 'windows')).list()[0].at === T && ws.load(ws.list(
     await tab(4); await draw();
     ok(/Not raw CAN/.test(texts.join(' | ')) && /Nothing is sent to the car/.test(texts.join(' | ')), 'How it works says what it can and cannot see');
     ok(!fs.existsSync(path.join(appDir, 'found.json')) && !fs.existsSync(path.join(appDir, 'windows', 'index.json')) || fs.readdirSync(path.join(appDir, 'windows')).length === 0, 'the demo saves nothing');
+    // gen_signal_hunter --check: only an inconsistent or stale list fails; a field another app adds is only reported
+    const gen = require(path.join(ROOT, 'kit', 'tools', 'gen_signal_hunter.js'));
+    const sig = { 'a.I': { _optional: 'x', f1: 'rs', f2: 's' } }, lst = { 'a.I': ['f1', 'f2'] };
+    let r = gen.check(sig, lst, { 'a.I': { f1: 'rs', f2: 's' } });
+    ok(!r.problems.length && !r.added.length, 'check: list up to date');
+    r = gen.check(sig, lst, { 'a.I': { f1: 'rs', f2: 's', f3: 'rs' }, 'b.J': { g: 's' } });
+    ok(!r.problems.length && r.added.length === 2, 'check: fields another app added are reported, not a failure');
+    r = gen.check(sig, lst, { 'a.I': { f1: 'rs' } });
+    ok(r.problems.length === 1 && /no app declares/.test(r.problems[0]), 'check: a listed field no app declares any more fails');
+    r = gen.check(sig, { 'a.I': ['f1'] }, { 'a.I': { f1: 'rs', f2: 's' } });
+    ok(r.problems.some((m) => /list different fields/.test(m)), 'check: app.json and fields.js disagreeing fails');
+    r = gen.check(sig, null, { 'a.I': { f1: 'rs', f2: 's' } });
+    ok(r.problems.some((m) => /fields.js is missing/.test(m)), 'check: a missing fields.js fails');
     Date.now = realNow;
     console.log('signal hunter: ' + checks + ' checks, ' + fails + ' failed');
     process.exit(fails ? 1 : 0);

@@ -6,7 +6,10 @@
  * a method, a broadcast or a write ("w"). Signal Hunter itself only reads; it never calls or sets anything.
  *
  *   node kit/tools/gen_signal_hunter.js            rewrite apps/signal_hunter/app.json "signals" and fields.js
- *   node kit/tools/gen_signal_hunter.js --check    exit 1 when either is not what this would write (CI)
+ *   node kit/tools/gen_signal_hunter.js --check    (CI) exit 1 only when app.json "signals" and fields.js disagree with
+ *                                                  each other, or list a field no other app declares any more; fields
+ *                                                  another app added since are only reported (exit 0), so merging that
+ *                                                  app never turns CI red for Signal Hunter
  * fields.js: the same list as a module the app requires at run time (build.py ships an app's .js files but not its
  * app.json "signals" in the runtime spec, so ctx.spec.signals is empty on the car and in the emulator).
  */
@@ -66,12 +69,17 @@ if (require.main === module) {
     const want = collect();
     const n = count(want), ni = Object.keys(want).length;
     if (process.argv.includes('--check')) {
-        let fsrc = '';
-        try { fsrc = fs.readFileSync(ffile, 'utf8').replace(/\r\n/g, '\n'); } catch (e) { /* missing */ }
-        const same = JSON.stringify(spec.signals || {}) === JSON.stringify(want) && fsrc === fieldsJs(want);
-        console.log(same ? 'signal_hunter signals up to date: ' + n + ' fields on ' + ni + ' interfaces'
-            : 'FAIL apps/signal_hunter/app.json "signals" or fields.js is out of date: run node kit/tools/gen_signal_hunter.js');
-        process.exit(same ? 0 : 1);
+        let listed = null;
+        try { delete require.cache[ffile]; listed = require(ffile); } catch (e) { /* missing or broken */ }
+        const r = check(spec.signals || {}, listed, want);
+        r.problems.forEach((m) => console.log('FAIL ' + m));
+        if (r.added.length) {
+            console.log(r.added.length + ' new field(s) not yet listed (' + r.added.slice(0, 5).join(', ')
+                + (r.added.length > 5 ? ', ...' : '') + '): run node kit/tools/gen_signal_hunter.js');
+        }
+        if (!r.problems.length) console.log('signal_hunter signals consistent: ' + count(spec.signals || {}) + ' fields listed, '
+            + n + ' declared on ' + ni + ' interfaces');
+        process.exit(r.problems.length ? 1 : 0);
     }
     spec.signals = want;
     fs.writeFileSync(file, JSON.stringify(spec, null, 2) + '\n');
@@ -79,4 +87,32 @@ if (require.main === module) {
     console.log('wrote ' + n + ' fields on ' + ni + ' interfaces');
 }
 
-module.exports = { collect, count, fieldsJs };
+/**
+ * check(signals, listed, want): what --check reports. signals = app.json "signals", listed = fields.js (or null),
+ * want = collect(). problems (fail): fields.js missing, or it and app.json list different fields, or a listed field
+ * that no other app declares any more. added (report only): declared by another app, not listed yet.
+ */
+function check(signals, listed, want) {
+    const keys = (sig) => {
+        const out = [];
+        Object.keys(sig || {}).forEach((i) => Object.keys(sig[i] || {}).forEach((k) => { if (!k.startsWith('_')) out.push(i + '.' + k); }));
+        return out.sort();
+    };
+    const fromList = (l) => {
+        const out = [];
+        Object.keys(l || {}).forEach((i) => (l[i] || []).forEach((k) => out.push(i + '.' + k)));
+        return out.sort();
+    };
+    const problems = [];
+    const a = keys(signals), w = new Set(keys(want));
+    if (!listed) problems.push('apps/signal_hunter/fields.js is missing or does not load: run node kit/tools/gen_signal_hunter.js');
+    else if (JSON.stringify(fromList(listed)) !== JSON.stringify(a)) {
+        problems.push('apps/signal_hunter/app.json "signals" and fields.js list different fields: run node kit/tools/gen_signal_hunter.js');
+    }
+    const gone = a.filter((f) => !w.has(f));
+    if (gone.length) problems.push(gone.length + ' listed field(s) no app declares any more (' + gone.slice(0, 5).join(', ') + '): run node kit/tools/gen_signal_hunter.js');
+    const have = new Set(a);
+    return { problems, added: [...w].filter((f) => !have.has(f)).sort() };
+}
+
+module.exports = { collect, count, fieldsJs, check };
