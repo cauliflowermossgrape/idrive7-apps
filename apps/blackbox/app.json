@@ -1,0 +1,55 @@
+{
+  "id": "blackbox",
+  "title": "Blackbox",
+  "description": "The last 60 s of driving kept, saved as CSV on a hard stop, at full power, through a Sport stretch or with one button",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAA5",
+  "iconGlyph": "flag",
+  "autostart": true,
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.18" },
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "torque (full power) and the driving mode (Sport stretches)",
+      "statusActualValueTorque2": "rs",
+      "statusFESVehicleDynamicSwitchHMI": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Blackbox",
+      "buttons": [
+        ["BTN_MARK", "Save last 60 s"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "brake", "label": "Save on a hard stop", "type": "bool", "default": true},
+    {"key": "brakeG", "label": "Hard stop from", "type": "number", "unit": "g", "default": 0.7, "steps": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]},
+    {"key": "power", "label": "Save at full power", "type": "bool", "default": true},
+    {"key": "sport", "label": "Record every Sport stretch", "type": "bool", "default": false},
+    {"key": "keep", "label": "Recordings kept", "type": "number", "default": 30, "steps": [10, 20, 30, 50]},
+    {"key": "peakKw", "label": "Most power seen", "type": "number", "unit": "kW", "default": 0, "hidden": true},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]}
+  ]
+}
