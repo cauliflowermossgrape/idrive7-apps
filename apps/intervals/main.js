@@ -7,6 +7,8 @@
  *   Overview       a summary (how many are due, soon or fine, what is next) and a card per item: a ring of how much of
  *                  its interval is used, what is left in big figures, when it was last done
  *   History        every service marked, newest first, and for the chosen item a chart of the km between its services
+ *   Wheels         which set of wheels is on (summer, winter, all-season) since when, km per set this season and in
+ *                  all, tread depth against the usual advice, and after a swap the bolts and pressures reminder (wheels.js)
  *   How it works   the same in plain words
  *
  *   - the odometer is what the cluster sends (KombiIF statusRangeTankStatus.mileageKilometre, as Live Data reads it)
@@ -21,9 +23,10 @@ const mgu = require('./kit/mgu');
 const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { ITEMS, status } = require('./items');
+const Wheels = require('./wheels');
 
 const W = 1600, H = 520, GO = '#2fd27a', CONFIRM_MS = 5000, DAY = 86400000;
-const TABS = ['Overview', 'History', 'How it works'];
+const TABS = ['Overview', 'History', 'Wheels', 'How it works'];
 const two = (n) => (n < 10 ? '0' : '') + n;
 const day = (ms) => { const d = new Date(ms); return two(d.getDate()) + '.' + two(d.getMonth() + 1) + '.' + d.getFullYear(); };
 const km = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -47,6 +50,9 @@ function demoStore() {
         padsRear: h([[11000, d(1280)]]),
         gearbox: h([[30500, d(900)]]),
         brakeFluid: h([[30000, d(760)]]),
+        // the winter set went on 60 km ago: the bolts reminder shows
+        wheels: { swaps: [['winter', 24000, 1110], ['summer', 30200, 950], ['winter', 36900, 580], ['summer', 43100, 220], ['winter', 49590, 4]]
+            .map((x) => ({ set: x[0], km: x[1], at: d(x[2]) })) },
     };
 }
 
@@ -67,11 +73,17 @@ mgu.run({
         const store = () => (demo() ? demoDone : saved);
         const odoNow = () => (demo() ? DEMO_ODO : odo.v);
         const shown = () => ITEMS.filter((it) => settings.get(it.setting) > 0);
-        let sel = 0, armed = 0, note = '', noteUntil = 0, page = 0;
+        let sel = 0, armed = 0, note = '', noteUntil = 0, page = 0, wheelPick = 0;
+        const WHEELS = 2;
         const say = (s) => { note = s; noteUntil = Date.now() + 4000; };
 
-        ui.onClick('BTN_NEXT', () => { const l = shown(); if (l.length) sel = (sel + 1) % l.length; armed = 0; return render(); });
+        ui.onClick('BTN_NEXT', () => {
+            armed = 0;
+            if (page === WHEELS) { wheelPick = (wheelPick + 1) % Wheels.setsOn(settings).length; return render(); }
+            const l = shown(); if (l.length) sel = (sel + 1) % l.length; return render();
+        });
         ui.onClick('BTN_DONE', () => {
+            if (page === WHEELS) return wheelSwap();
             const it = shown()[sel];
             if (!it) return render();
             if (it.unit === 'km' && !G.isNum(odoNow())) { say('Waiting for the odometer from the car'); return render(); }
@@ -85,7 +97,21 @@ mgu.run({
             say(it.name + ' marked serviced at ' + (G.isNum(odoNow()) ? km(odoNow()) + ' km' : 'today'));
             return render();
         });
-        if (ctx.onTab) ctx.onTab((i) => { page = i; return render(); });
+        if (ctx.onTab) ctx.onTab((i) => { page = i; armed = 0; return render(); });
+
+        /* Wheels: Done now twice puts the picked set on the car at today's odometer. */
+        function wheelSwap() {
+            const set = Wheels.setsOn(settings)[wheelPick % Wheels.setsOn(settings).length];
+            if (!G.isNum(odoNow())) { say('Waiting for the odometer from the car'); return render(); }
+            if (!armed || Date.now() - armed > CONFIRM_MS) { armed = Date.now(); say('Press Done now again: ' + set.name + ' wheels on the car today'); return render(); }
+            armed = 0;
+            const st = store();
+            st.wheels = Wheels.swap(st.wheels, set.key, odoNow(), Date.now());
+            if (!demo()) { try { fs.writeFileSync(FILE, JSON.stringify(saved)); } catch (e) { log.warn('save: ' + e); } }
+            log.info('intervals: ' + set.key + ' wheels on at ' + odoNow() + ' km' + (demo() ? ' (demo)' : ''));
+            say(set.name + ' wheels marked on at ' + km(odoNow()) + ' km');
+            return render();
+        }
 
         function states(now, o) {
             return shown().map((it) => {
@@ -182,8 +208,9 @@ mgu.run({
                 ['2', 'Mark what was done.', 'Pick the item with Next item, press Done now, then Done now again within 5 s. It is saved with today\'s date and odometer.'],
                 ['3', 'Watch what is left.', 'Overview shows each item\'s ring and the km or days left: green fine, yellow soon (1 000 km or 30 days), red due.'],
                 ['4', 'See your habits.', 'History lists every service and charts how far you drove between them, against your interval.'],
+                ['5', 'Swap wheels.', 'On Wheels, Next item picks the set and Done now twice marks it on: km per set, tread depth, and a reminder to check the bolts and pressures after 50 to 100 km.'],
             ].forEach((r, i) => {
-                const yy = 140 + i * 86;
+                const yy = 134 + i * 72;
                 cv.circle(70, yy - 8, 20, withAlpha(t.accent, 0.3));
                 cv.text(r[0], 70, yy, 22, t.text, { align: 'center', font: 'bold' });
                 cv.text(r[1], 108, yy, 23, t.text, { font: 'bold' });
@@ -196,7 +223,8 @@ mgu.run({
             const t = ctx.theme(), cv = ctx.canvas(W, H).clear(t.bg), now = Date.now(), o = odoNow(), l = states(now, o);
             if (sel >= l.length) sel = 0;
             if (page === 1) history(cv, t, l);
-            else if (page === 2) help(cv, t);
+            else if (page === WHEELS) Wheels.draw(cv, t, { w: store().wheels, odo: o, sets: Wheels.setsOn(settings), pick: wheelPick, armed: !!armed && now - armed < CONFIRM_MS, settings, note: now < noteUntil ? note : '' });
+            else if (page === 3) help(cv, t);
             else overview(cv, t, now, o, l);
             G.frame(cv, t, TABS, page, [demo() && { text: 'DEMO' }]);
             return ui.image('MAIN_GFX', cv);
