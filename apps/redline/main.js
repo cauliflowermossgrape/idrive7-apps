@@ -433,7 +433,7 @@ async function runRedline(ctx) {
         /** Static part of the tach page (cached layer; redrawn when the theme / limits change). */
         function background(cv, t) {
             // the shift mark is drawn over it (per gear and cold-oil step: a key each would fill the cache)
-            const key = ['redline-bg', settings.get('theme'), maxRpm(), redline()].join('|');
+            const key = ['redline-bg', t.lookKey || settings.get('theme'), maxRpm(), redline()].join('|');   // (an Auto theme: its look's step)
             cv.blit(G.layer(key, W, H, (c) => drawBackground(c, t), cv.textScale), 0, 0);
         }
         function drawBackground(cv, t) {

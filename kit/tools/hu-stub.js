@@ -67,7 +67,10 @@ function headUnit(stage, o) {
         isVisible: (n) => !!process.env.MGU_RENDERD_FILE && n === shown, onVisible: () => {}, comp: () => ({}),
     };
     if (live) ui._image = (name, cv) => o.image(name, cv);
-    const themeFn = () => require(path.join(kitDir, 'themes')).theme(settings.get('theme'));
+    const sig = live ? liveSignals(hu) : { watch: async (iface) => ({ iface, error: 'preview' }), proxy: async () => { throw new Error('preview'); } };
+    // as mgu.js: a fixed theme, or an Auto one following day / night and speed (autolook.js)
+    const look = require(path.join(kitDir, 'autolook')).attach({ settings, signals: sig, log });
+    const themeFn = () => look.theme();
     const { Display } = require(path.join(kitDir, 'display'));
     settings.onChange = settings.onChange || (() => {});
     display = hu.display = new Display(ui, log, spec, settings, themeFn);
@@ -80,6 +83,7 @@ function headUnit(stage, o) {
     const WIDGETS = hu.WIDGETS = [{ spawnId: 1, big: false, size: 1, visible: true }, { spawnId: 2, big: true, size: 2, visible: true }];
     hu.widgetFn = null;
     hu.settingsRows = [];
+    { const lr = look.row(); if (lr) hu.settingsRows.push(lr); }
     const ctx = hu.ctx = {
         ui, settings, spec, dataDir: out, log, display,
         canvas: (w, h) => display.canvas(w, h),
@@ -94,7 +98,7 @@ function headUnit(stage, o) {
         onScroll(fn) { display.onScroll = fn; },
         onLayout(fn) { display.onLayout(fn); },
         controller: { grab(on) { display.grab(on); }, onInput(fn) { display.onCcu = fn; } },
-        signals: live ? liveSignals(hu) : { watch: async (iface) => ({ iface, error: 'preview' }), proxy: async () => { throw new Error('preview'); } },
+        signals: sig,
         theme: themeFn,
         loop: live ? liveLoop(hu) : (n, fps, fn) => { loops[n] = fn; return { stop() {}, kick() {} }; },
         // home-screen widget (app.json "startWidget"): preview places one small and one big ("render" draws them);

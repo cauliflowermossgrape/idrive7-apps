@@ -578,6 +578,30 @@ def build_start_widget(spec, app_id, icon_src, out, pkg_out=None, language='en')
     return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
 
 
+# The Auto colour themes (kit/runtime/autolook.js): every app with a "theme" choice gets them at build time, so no app
+# needs a change of its own, with the two signals they follow as optional ones (a unit without them builds without).
+AUTO_LOOKS = [['auto', 'Auto (by light)'], ['auto_amber', 'Auto, amber at night']]
+AUTO_LOOK_SIGNALS = [('de.bmw.infotainment.vehicle.Vehicle', 'statusDayNightChangeOver'),
+                     ('de.bmw.infotainment.vehicle.Vehicle2', 'statusCarSpeed2')]
+
+
+def add_auto_look(spec):
+    """Adds the Auto theme choices and their signals to spec (in place) when it has a theme choice. Returns True if so."""
+    th = next((s for s in spec.get('settings', []) if s.get('key') == 'theme' and s.get('type') == 'choice'), None)
+    if not th:
+        return False
+    have = {o[0] for o in th.get('options', [])}
+    th['options'] = th.get('options', []) + [o for o in AUTO_LOOKS if o[0] not in have]
+    signals = spec.setdefault('signals', {})
+    for iface, field in AUTO_LOOK_SIGNALS:
+        fields = signals.get(iface)
+        if fields is None:
+            signals[iface] = {'_optional': 'the Auto colour themes (day / night and speed)', field: 'rs'}
+        elif isinstance(fields, dict) and field not in fields:
+            fields[field] = 'rs'
+    return True
+
+
 def build(app_id, language='en', preview_only=False):
     language = normalize_language(language)
     if not preview_only and not all(os.path.isfile(os.path.join(SDK, name)) for name in ('index.js', 'package.json')):
@@ -585,6 +609,7 @@ def build(app_id, language='en', preview_only=False):
                          'or use --preview-only for an offline preview (no installable package).')
     adir = os.path.join(APPS, app_id)
     spec = json.load(open(os.path.join(adir, 'app.json'), encoding='utf-8'))
+    add_auto_look(spec)
     spec = localize_spec(spec, language)
     spec.setdefault('id', app_id)
     ver = spec['version']
