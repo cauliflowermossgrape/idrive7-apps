@@ -58,7 +58,7 @@ const unpack = (buf) => {
 (async () => {
     // the identifier list is Live Data's catalog's
     const cat = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, 'apps', 'live_data', 'builtin', 'DME8FF_R.json'), 'utf8')));
-    ok(JSON.stringify(cat.slice().sort()) === JSON.stringify(DME_IDS.slice().sort()) && DME_IDS.length > 50, 'dme_ids.json lists the ' + cat.length + ' identifiers of Live Data\'s DME8FF_R catalog');
+    ok(JSON.stringify(cat.slice().sort()) === JSON.stringify(DME_IDS.slice().sort()) && DME_IDS.length > 50, 'dme_ids.js lists the ' + cat.length + ' identifiers of Live Data\'s DME8FF_R catalog');
     let threw = false; try { allowed(0x14); } catch (e) { threw = true; }
     ok(threw && allowed(0x22), 'only 22 passes allowed(); 14 throws');
 

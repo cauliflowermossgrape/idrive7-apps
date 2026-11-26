@@ -5,7 +5,7 @@
  * kit/tools/qrlog_decode.py turns the photos back into these lines.
  *
  *   {"t":"did","u":"12","id":"4035","ans":"0A1B..."} or {"t":"did","u":"12","id":"4205","nrc":"31"} or "none":true
- *                 the engine unit (0x12), each identifier Live Data's built-in catalog lists (dme_ids.json, the keys of
+ *                 the engine unit (0x12), each identifier Live Data's built-in catalog lists (dme_ids.js, the keys of
  *                 apps/live_data/builtin/DME8FF_R.json; kit/tools/test_dev_report.js keeps the two the same)
  *   {"t":"unit","a":"12","idx":"0F26E8","var":"DME8FF_R","name":"Engine","sw":"..."}
  *                 every unit that answered the last scan: its SGBD index and type (the scan's 22 F1 50) and, read here,
@@ -23,7 +23,7 @@ const { hex } = require('./kit/diag');
 
 const DME = 0x12;
 let DME_IDS = [];
-try { DME_IDS = require('./dme_ids.json'); } catch (e) { DME_IDS = []; }
+try { DME_IDS = require('./dme_ids'); } catch (e) { DME_IDS = []; }
 
 /** Only 22 (ReadDataByIdentifier) leaves this module. Throws for anything else. */
 function allowed(sid) {
