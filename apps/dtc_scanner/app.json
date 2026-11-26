@@ -2,7 +2,7 @@
   "id": "dtc_scanner",
   "title": "Fault Scanner",
   "description": "Read and clear fault memory of every control unit, what each unit kept about a fault, how fast units answer, plus active Check Control messages and values that do not fit together or arrive late",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "vendor": "custom",
   "loggingId": "OA95",
   "iconGlyph": "engine",

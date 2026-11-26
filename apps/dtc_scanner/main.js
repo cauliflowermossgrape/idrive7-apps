@@ -17,6 +17,10 @@
  *           bits in words, its snapshot records (19 03 / 19 04) and extended data (19 06), read for that fault
  *           alone when it is opened. Read only; the bytes are shown as the unit sent them (no tables for their names).
  *   Bus page: how fast each unit answers our requests (NRC 78 waits counted) and how many we send a second.
+ *   Developer report (Settings > Developer report as QR, devreport.js, #239): every unit of the last scan with its SGBD
+ *           index and software version (22 F1 89), the engine unit's identifiers from Live Data's built-in catalog with
+ *           their answer or NRC, and the faults, as JSON lines in the QR log's codes (kit/tools/qrlog_decode.py reads them
+ *           back). Read once on request, only while the sheet shows, 22 alone; a VIN in an answer is masked.
  *   Plausibility (plausibility.js, three pages: Checks, History, How it works): values that have to agree, watched
  *           while the app runs: speed against rpm on the learned gears, oil against coolant, the forward g against
  *           the speed change, the outside temperature, and whether rpm, speed and g keep arriving on time. OK, ODD,
@@ -40,6 +44,7 @@ const { t: translateUI, plural } = require('./kit/i18n');
 const { Diag, parseDtcReply, statusInfo, hex, NRC } = require('./kit/diag');
 const DEMO = require('./demo');
 const CTX = require('./context');
+const DEV = require('./devreport');
 const { Sanity } = require('./plausibility');
 const PV = require('./plausibility_view');
 
@@ -511,6 +516,28 @@ mgu.run({
                 label: 'Faults as QR', value: 'The last scan, for a phone camera',
                 open: () => qrLogSheet({ title: 'Faults as QR', plain: true, text: faultText, app: 'Fault Scanner', version: ctx.spec.version,
                     help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
+            });
+        }
+        // Settings > Developer report as QR (#239, devreport.js): what this car answers, read once while the sheet shows
+        let devDrawn = 0;
+        const dev = new DEV.DevReport({ getDiag: () => getDiag().catch(() => null), ids, variant, name: ecuName, app: 'Fault Scanner',
+            version: ctx.spec ? ctx.spec.version : '', open: () => Date.now() - devDrawn < 3000, log });
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Developer report as QR', value: 'Units, engine identifiers and faults, for kit/tools/qrlog_decode.py',
+                open: () => {
+                    devDrawn = Date.now();
+                    dev.o.ids = ids;
+                    dev.start(scan);
+                    // (qrlog reads opts.help on every frame: the first line follows the reading; Refresh shows what was read)
+                    const opts = { title: 'Developer report', text: () => dev.lines().join('\n'), app: 'Fault Scanner', version: ctx.spec.version };
+                    const help = () => [dev.progress(), 'A photo of every page, then', 'kit/tools/qrlog_decode.py.'];
+                    opts.help = help();
+                    const sheet = qrLogSheet(opts);
+                    const draw = sheet.draw.bind(sheet);
+                    sheet.draw = (r, t) => { devDrawn = Date.now(); opts.help = help(); return draw(r, t); };
+                    return sheet;
+                },
             });
         }
         // after the fault pages: Check Control, Control units, Bus, then the three Plausibility pages
