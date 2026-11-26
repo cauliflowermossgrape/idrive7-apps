@@ -195,6 +195,20 @@ async function main() {
         });
     }));
 
+    // per-cylinder entries carry their cylinder (main.js leaves out those past the engine's count): the name's number
+    {
+        const all = [];
+        USEFUL[0x12].concat(USEFUL.BANK2(4)).forEach((g) => g.items.forEach((it) => all.push(it)));
+        all.forEach((it) => {
+            const m = /, cylinder (\d+)$/.exec(it.name);
+            assert.strictEqual(it.cyl, m ? Number(m[1]) : undefined, it.name + ': cyl as in its name');
+        });
+        const over4 = USEFUL[0x12].reduce((n, g) => n + g.items.filter((it) => it.cyl > 4 && it.only !== 'twin').length, 0);
+        assert.strictEqual(over4, 2 * 2 + 2 * 2, 'a 4-cylinder engine leaves out cylinders 5 and 6 of ignition, injectors, misfires, rough running');
+    }
+    // the engine's cylinder count asked through the read-only link (22 F6 A0), never service 06
+    assert.ok(/link\.physical\(0x12, 0x22, \[0xF6, 0xA0\]/.test(fs.readFileSync(path.join(ROOT, 'apps', 'live_data', 'main.js'), 'utf8')), 'cylinder count: 22 F6 A0 on the read-only link');
+
     // fuel quality (KQE 4035, issue #166): 3 counts, then 5 refuellings of mileage (x 8 km) and quality range
     {
         const reply = [0x62, 0x40, 0x35, 0x00, 0x02, 0x00, 0x05, 0x00, 0x1B, 0x07, 0xD0, 0x03, 0x07, 0x9E, 0x02];

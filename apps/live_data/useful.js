@@ -17,10 +17,14 @@
  * and rough-running counters are the whole engine's (DME8FF_R lists them up to 12 cylinders; 8 are used here).
  * BANK2(perBank): the second unit's (0x13) list, its cylinders named perBank + 1 .. (as S63TU_L0's texts have it:
  * "Zuendwinkel Zylinder 1 (Slave 5)"). Not checked on a car yet: the S63's master answered 4035 (issue #166).
+ * The engine units of B38, B48 and B58 share DME8FF_R, and a B48's answers the cylinder 5 and 6 identifiers too,
+ * so with one engine unit the cylinders past the engine's own count (its list of misfire monitors, main.js) are
+ * left out; while that list isn't known all six are listed.
  */
 /* KQE's quality range of a refuelling (Qualitaetsbereich 1 low, 2 medium, 3 high); 0: no refuelling in that place yet */
 const QUALITY = { 0: '-', 1: 'Low', 2: 'Medium', 3: 'High' };
-const cyl = (name, dids, extra, first) => dids.map((did, i) => Object.assign({ name: name + ', cylinder ' + ((first || 1) + i), c: [did] }, extra));
+/** per-cylinder entries; cyl: the cylinder's number, so an engine with fewer cylinders leaves the others out (main.js) */
+const cyl = (name, dids, extra, first) => dids.map((did, i) => Object.assign({ name: name + ', cylinder ' + ((first || 1) + i), c: [did], cyl: (first || 1) + i }, extra));
 /** a bank's per-cylinder list: cylinders 1..4 always, 5 and 6 only with one engine unit (on a twin they are bank 2's) */
 const bank = (name, dids, extra) => cyl(name, dids.slice(0, 4), extra).concat(cyl(name, dids.slice(4), Object.assign({ only: 'single' }, extra), 5));
 const IGN = ['4A49', '4A4A', '4A4C', '4A4D', '4A4E', '4A4F'], INJ = ['55B4', '55B5', '55B6', '55B7', '55B8', '55B9'];
