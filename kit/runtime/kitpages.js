@@ -180,4 +180,27 @@ function banner(cv, t, o) {
     if (o && o.resume && cv.target) cv.target(x, y, w, h, () => o.resume(), 'kit-panic-resume', 12);
 }
 
-module.exports = { safeSheet, safeFrame, historySheet, banner, valueText, changeText };
+/**
+ * The kit's own settings rows, for mgu.js and the emulator alike: Stop all (red, pressed twice) at the top, Settings
+ * history at the bottom. o = { panic (panic.js Panic), saved: () => the Settings whose history is shown }.
+ * Returns { first: () => [stop row], rows: () => [history row] } (ctx.kitFirstRows / ctx.kitRows).
+ */
+function kitRows(o) {
+    let stopArmed = 0;
+    const panic = o.panic;
+    const stopRow = {
+        label: 'Stop all', color: RED,
+        value: () => (panic.on ? 'On (from ' + panic.by + '): press to resume' : Date.now() - stopArmed < 5000 ? 'Press again to stop every app' : 'Stops every app\'s work on the car'),
+        open: () => {
+            if (panic.on) { panic.set(false); return null; }
+            if (Date.now() - stopArmed > 5000) { stopArmed = Date.now(); return null; }
+            stopArmed = 0;
+            panic.set(true);
+            return null;
+        },
+    };
+    const historyRow = { label: 'Settings history', value: () => o.saved().history().length + ' changes kept', open: () => historySheet(o.saved()) };
+    return { first: () => [stopRow], rows: () => [historyRow] };
+}
+
+module.exports = { safeSheet, safeFrame, historySheet, banner, valueText, changeText, kitRows };
