@@ -1,0 +1,46 @@
+{
+  "id": "intervals",
+  "title": "Service Intervals",
+  "description": "Your own service intervals next to BMW's: engine oil, spark plugs, gearbox oil, brake pads, filters, brake fluid, from the odometer",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAA7",
+  "iconGlyph": "wrench",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.18" },
+  "signals": {
+    "de.bmw.infotainment.KombiIF": {
+      "statusRangeTankStatus": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Service Intervals",
+      "buttons": [
+        ["BTN_NEXT", "Next item"],
+        ["BTN_DONE", "Done now"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "oilKm", "label": "Engine oil every", "type": "number", "unit": "km", "default": 10000, "labels": {"0": "Off"}, "steps": [0, 5000, 7000, 8000, 10000, 12000, 15000]},
+    {"key": "plugsKm", "label": "Spark plugs every", "type": "number", "unit": "km", "default": 60000, "labels": {"0": "Off"}, "steps": [0, 20000, 30000, 40000, 60000, 80000, 100000]},
+    {"key": "gearboxKm", "label": "Gearbox oil every", "type": "number", "unit": "km", "default": 80000, "labels": {"0": "Off"}, "steps": [0, 40000, 60000, 80000, 100000, 120000]},
+    {"key": "padsFrontKm", "label": "Brake pads front every", "type": "number", "unit": "km", "default": 40000, "labels": {"0": "Off"}, "steps": [0, 20000, 30000, 40000, 50000, 60000]},
+    {"key": "padsRearKm", "label": "Brake pads rear every", "type": "number", "unit": "km", "default": 50000, "labels": {"0": "Off"}, "steps": [0, 30000, 40000, 50000, 60000, 80000]},
+    {"key": "airFilterKm", "label": "Air filter every", "type": "number", "unit": "km", "default": 0, "labels": {"0": "Off"}, "steps": [0, 20000, 30000, 40000, 60000]},
+    {"key": "cabinFilterKm", "label": "Cabin filter every", "type": "number", "unit": "km", "default": 0, "labels": {"0": "Off"}, "steps": [0, 10000, 15000, 20000, 30000]},
+    {"key": "brakeFluidMonths", "label": "Brake fluid every", "type": "number", "unit": "months", "default": 24, "labels": {"0": "Off"}, "steps": [0, 12, 24, 36]},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}
