@@ -864,26 +864,14 @@ async function runInner(impl) {
         },
     };
 
-    // the kit's own settings rows: Stop all at the top, Settings history at the bottom (kitpages.js)
-    const RED = '#e5332a';
-    let stopArmed = 0;
-    const stopRow = {
-        label: 'Stop all', color: RED,
-        value: () => (panic.on ? 'On (from ' + panic.by + '): press to resume' : Date.now() - stopArmed < 5000 ? 'Press again to stop every app' : 'Stops every app\'s work on the car'),
-        open: () => {
-            if (panic.on) { panic.set(false); return null; }
-            if (Date.now() - stopArmed > 5000) { stopArmed = Date.now(); return null; }
-            stopArmed = 0;
-            panic.set(true);
-            return null;
-        },
-    };
+    // the kit's own settings rows: Stop all at the top, Settings history at the bottom (kitpages.js; the emulator's
+    // hu-stub.js makes the same rows)
     // (in safe mode the history is the saved settings', not the defaults in memory)
     let disk = null;
     const saved = () => (boot.safe ? disk || (disk = new Settings(SPEC.settings)) : settings);
-    const historyRow = { label: 'Settings history', value: () => saved().history().length + ' changes kept', open: () => kitpages.historySheet(saved()) };
-    ctx.kitFirstRows = () => [stopRow];
-    ctx.kitRows = () => [historyRow];
+    const kr = kitpages.kitRows({ panic, saved });
+    ctx.kitFirstRows = kr.first;
+    ctx.kitRows = kr.rows;
     // the red Stop all strip over every frame while it is on (tap: resume)
     const image = ui.image.bind(ui);
     ui.image = (name, cv, cell) => {
