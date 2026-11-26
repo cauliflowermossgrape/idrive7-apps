@@ -1,8 +1,8 @@
 {
   "id": "redline",
   "title": "Redline",
-  "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; HUD by @biscotit",
-  "version": "2.0.57",
+  "description": "Full-screen rev tach with shift lights, gear, shift scoring and cold-engine rev guard; shift times, pull per gear and kickdowns; HUD by @biscotit",
+  "version": "2.1.1",
   "vendor": "custom",
   "autostart": true,
   "loggingId": "OA97",
@@ -174,6 +174,7 @@
     {"key": "coldLimit", "label": "Cold rev limit", "type": "number", "unit": "rpm", "default": 0, "labels": {"0": "Auto"}, "reset": 1, "steps": [0, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], "group": "Engine"},
     {"key": "warmOil", "label": "Oil warm at", "type": "number", "unit": "°C", "default": 80, "labels": {"60": "60 °C (140 °F)", "70": "70 °C (158 °F)", "80": "80 °C (176 °F)", "90": "90 °C (194 °F)"}, "steps": [60, 70, 80, 90], "group": "Engine"},
     {"key": "peakHold", "label": "Peak hold (0 = until reset)", "type": "number", "unit": "s", "default": 15, "steps": [0, 5, 10, 15, 30, 60], "group": "Engine"},
+    {"key": "labMinTorque", "label": "Shift times: under load from", "type": "number", "unit": "Nm", "default": 150, "steps": [80, 100, 150, 200, 300], "group": "Shift point"},
     {"key": "learn", "label": "Learn from driving (redline, shift points, reaction time)", "type": "bool", "default": true, "group": "Learning (experimental)"},
     {"key": "learnRedline", "label": "Learn redline from the limiter", "type": "bool", "default": true, "when": {"learn": true}, "group": "Learning (experimental)"},
     {"key": "speedUnit", "label": "Speed unit", "type": "choice", "default": "kmh", "options": [["kmh", "km/h"], ["mph", "mph"]], "group": "Units"},

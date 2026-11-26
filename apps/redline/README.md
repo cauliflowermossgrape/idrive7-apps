@@ -673,6 +673,32 @@ new best, yellow within 0.1 s, red further off; it goes after knock and a shift 
 in `launch.json` and forgotten with *Reset all* on the Learned page. Times outside 1.8-30 s (1.7-28 s
 for 0-60) aren't counted.
 
+## Shift times, Pull, Kickdown, Cold vs hot
+
+Four pages after *HUD looks* (from Shift Lab, #253), measured from what the car sends anyway. Nothing
+is asked of the gearbox.
+
+- **Shift times**: every upshift under load (more than *Shift times: under load from*, 150 Nm by
+  default, or 0.08 g) is timed: it starts at the highest rpm just before the gear changes and ends
+  when the rpm per km/h matches the new gear (within 3 %). Average and best (the fastest 10 %, not
+  one lucky reading) per gear change, shown to 10 ms, the rpm
+  drop, the last ones with the lowest g during the shift. *Clear* (pressed twice) starts them over;
+  the ratios stay.
+- **Pull**: the g forward under load per gear and 250 rpm, one line per gear, and each gear's
+  strongest pull.
+- **Kickdown**: how long after a kick the revs rise and the lower gear is in, per driving mode, or
+  that the gearbox held the gear. The accelerator pedal is not read (its scaling is unchecked), so a
+  kick is a jump in engine torque of 150 Nm within 0.35 s up to at least 85 % of the full-load torque
+  the shift map learned at that rpm (none learned yet: no kicks), not within 1 s of a gear change, and
+  every time is marked as an estimate. A "held" is only logged when the revs rose.
+- **Cold vs hot**: the upshift times against the gearbox oil temperature (the same reading as the
+  HUD's, EGS or BasicDataSet), per temperature band, with the kickdowns.
+
+The ratios are the shift map's (`shiftmap.json`) for every gear it knows. A gear it doesn't know yet
+is learned here, only under load with the gear held and from readings within 3 %, so a coast with
+the clutch in or the converter open never moves it. The demo drive shows made-up data on these pages and is never measured. Times come from
+signals sent 10 to 50 times a second: a guide, not a lab figure.
+
 ## Files and logs
 
 Everything lives in the app's `data/` folder on the head unit
@@ -689,6 +715,7 @@ Everything lives in the app's `data/` folder on the head unit
 | `hudlead.json` | learned reaction time | < 50 B | when it moves |
 | `engine.json` | detected engine type | tiny | once |
 | `launch.json` | best launch times (0-100 km/h, 0-60 mph) | < 100 B | on a new best |
+| `shiftlab.json` | the shift timing pages: the last 200 timed upshifts, the ratios, the pull per gear, the last 120 kickdowns | about 10 to 60 KB | at most every 30 s after a new shift or kickdown, every 5 min when only the pull or the ratios moved, and when the app stops |
 
 Both logs keep at most two files, so Redline's logs never take more than about 1 MB: the oldest lines are
 dropped as new ones come. A line that would repeat (a unit not answering, knock, a low tyre, a plateau on the
