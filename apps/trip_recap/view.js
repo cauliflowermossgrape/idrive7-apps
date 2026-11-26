@@ -6,12 +6,16 @@
  *                  and how warm oil and coolant got
  *   Drives         km of each drive as bars, the list, the chosen one in numbers
  *   Compare        the chosen drive against the one before it (or the average of the last 10), side by side
+ *   Before / After what changed at a marked moment (a service, a new part, tyres ...): the drives before it against
+ *                  the drives after it, each metric's change as a bar left or right of 0 over the band of normal
+ *                  variation, and the biggest real changes in words on top (diff.js)
  *   How it works   plain words
  *
- *   draw(cv, t, page, s)   s = { last, live, list, sel, compareWith, now }
+ *   draw(cv, t, page, s)   s = { last, live, list, sel, compareWith, marks, markSel, kind, armed, now }
  */
 const G = require('./kit/gauges');
 const { withAlpha } = require('./kit/canvas');
+const D = require('./diff');
 
 const GO = '#2fd27a', BAD = '#ff5a4f';
 const isNum = (x) => typeof x === 'number' && isFinite(x);
@@ -53,9 +57,10 @@ function speedChart(cv, t, x, y, w, h, d) {
     const tr = (d.trace || []).map((v, i) => [i * 10 / 60, v]);
     const mins = Math.max(1, (tr.length - 1) * 10 / 60);
     const top = ceilTo(Math.max(40, (d.vMax || 0) * 1.1), 40);
-    G.chart(cv, t, x, y, w, h, { xMin: 0, xMax: mins, yMin: 0, yMax: top, xUnit: 'min', yUnit: 'km/h',
-        marks: isNum(d.vAvg) ? [{ y: d.vAvg, color: GO, label: 'average while moving ' + Math.round(d.vAvg) + ' km/h' }] : [],
+    G.chart(cv, t, x, y, w, h, { xMin: 0, xMax: mins, yMin: 0, yMax: top, xUnit: 'min', padTop: 20,
+        marks: isNum(d.vAvg) ? [{ y: d.vAvg, color: GO }] : [],
         series: [{ pts: tr, color: t.accent, width: 2.5, fill: 0.16 }], empty: 'The speed line appears after the first minute' });
+    cv.text('km/h', x + 36, y + 8, 14, t.dim, { align: 'right', font: 'bold' });
 }
 
 function range(cv, t, x, y, w, label, lo, hi, col) {
@@ -92,7 +97,11 @@ function lastDrive(cv, t, s) {
         ['HARD BRAKES', d.brakes, '', 'stronger than 0.5 g', 0, d.brakes ? t.warn : GO],
     ].forEach((x, i) => tile(cv, t, 24 + i * (tw + gap), 118, tw, 118, x[0], x[1], x[2], x[3], { d: x[4], color: x[5] }));
     const sp = G.panel(cv, t, 24, 246, 1000, 266, 'Speed over the drive');
-    speedChart(cv, t, 40, 318, 968, 184, d);
+    speedChart(cv, t, 40, 300, 968, 202, d);
+    if (isNum(d.vAvg)) {
+        cv.fillRect(sp.x + sp.w - 330, 276, 22, 3, GO);
+        cv.text('green line: average while moving, ' + Math.round(d.vAvg) + ' km/h', sp.x + sp.w - 24, 282, 15, GO, { align: 'right' });
+    }
     const gp = G.panel(cv, t, 1040, 246, 536, 266, 'Most g, and temperatures');
     const g = gShape(cv, t, 1160, 404, 82, d);
     cv.text('ACCEL ' + g.f.toFixed(2) + ' g', 1160, 312, 14, t.dim, { align: 'center', font: 'bold' });
@@ -203,6 +212,75 @@ function compare(cv, t, s) {
     });
 }
 
+/* Before / After: what changed at a mark. */
+const KIND_WORDS = { all: 'all drives', length: 'drives of a similar length', speed: 'drives of a similar average speed' };
+function beforeAfter(cv, t, s) {
+    const marks = s.marks || [], k = s.markSel, mk = marks[k];
+    const head = G.panel(cv, t, 24, 44, 1552, 108, null);
+    if (!mk) {
+        cv.text('Before / After: nothing marked yet', 48, 84, 24, t.text, { font: 'bold' });
+        cv.text('After a service, a new part, new tyres or a changed setting, press Mark a change twice.', 48, 116, 19, t.dim);
+        cv.text('Pick what it was in Settings > Change to mark. Then drive: this page shows what changed.', 48, 142, 19, t.dim);
+        G.panel(cv, t, 24, 162, 1552, 350, null);
+        cv.text(s.armed ? 'Press Mark a change again to mark it now' : 'Each metric gets a bar: right of 0 more than before, left less.', 48, 220, 21, s.armed ? t.warn : t.dim);
+        cv.text('Green is better, red is worse, grey is within the normal variation of your drives.', 48, 256, 21, t.dim);
+        return;
+    }
+    const sd = D.sides(s.list, marks, k, s.kind || 'all'), rs = D.rows(sd.before, sd.after), hl = D.headline(rs, mk.label);
+    const kmTxt = isNum(mk.odo) ? ', at ' + String(Math.round(mk.odo)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' km' : '';
+    cv.text('Before and after: ' + mk.label, 48, 80, 24, t.text, { font: 'bold' });
+    const tw = cv.textWidth('Before and after: ' + mk.label, 24, { font: 'bold' });
+    cv.text('marked ' + day(mk.at) + ' ' + hm(mk.at) + kmTxt, 60 + tw, 80, 18, t.dim);
+    cv.text((s.armed ? 'Press Mark a change again to mark it now  |  ' : '') + 'Mark ' + (k + 1) + ' of ' + marks.length + ': Previous / Next', head.x + head.w - 24, 80, 16, s.armed ? t.warn : t.dim, { align: 'right' });
+    const col = (st) => (st === 'better' ? GO : st === 'worse' ? BAD : st === 'changed' ? t.accent : t.dim);
+    if (!sd.after.length || !sd.before.length) {
+        cv.text(!sd.before.length ? 'No ' + KIND_WORDS[sd.kind] + ' before this mark to compare with.'
+            : 'No ' + KIND_WORDS[sd.kind] + ' after this mark yet: drive a few times and the change shows here.', 48, 116, 20, t.warn);
+    } else if (!hl.length) {
+        cv.text('Nothing changed beyond the normal variation of your drives.', 48, 116, 20, t.text);
+    } else {
+        hl.forEach((h, i) => {
+            const x = 48 + i * 512;
+            cv.circle(x + 7, 110, 7, col(h.state));
+            cv.text(h.text, x + 22, 117, 19, t.text, { font: 'bold' });
+        });
+    }
+    const few = Math.min(sd.before.length, sd.after.length) < 3;
+    cv.text('From ' + sd.before.length + ' drive' + (sd.before.length === 1 ? '' : 's') + ' before and ' + sd.after.length + ' after (' + KIND_WORDS[sd.kind] + ', Settings > Before / After compares)'
+        + (few ? '. Few drives: it gets clearer with more.' : '.'), 48, 142, 16, few ? t.warn : t.dim);
+
+    G.panel(cv, t, 24, 162, 1552, 350, null);
+    const cx = 900, half = 300, rowH = 31, y0 = 214;
+    const real = rs.filter((r) => isNum(r.pct)).map((r) => Math.abs(r.pct));
+    const scale = Math.max(20, Math.ceil(Math.max.apply(null, real.concat([0])) / 10) * 10);
+    const X = (pct) => cx + G.clamp(pct / scale, -1, 1) * half;
+    [['WHAT', 48, 'left'], ['BEFORE', 470, 'right'], ['AFTER', 570, 'right'], ['CHANGE, % OF BEFORE (GREY BAND: NORMAL VARIATION)', cx, 'center'], ['', 1552, 'right']]
+        .forEach((h) => cv.text(h[0], h[1], 192, 14, t.dim, { align: h[2], font: 'bold', spacing: 1.5 }));
+    for (let p = -scale; p <= scale + 1e-9; p += scale / 2) {
+        cv.fillRect(Math.round(X(p)), y0 - 8, 1, rs.length * rowH, withAlpha(t.tick, p === 0 ? 0.8 : 0.25));
+        cv.text((p > 0 ? '+' : '') + p + ' %', X(p), y0 + rs.length * rowH + 10, 14, t.dim, { align: 'center' });
+    }
+    const f = (v, r) => (isNum(v) ? v.toFixed(r.d) + (r.unit ? ' ' + r.unit : '') : '--');
+    rs.forEach((r, i) => {
+        const y = y0 + i * rowH, mid = y + 10;
+        if (i % 2) cv.fillRect(36, y - 8, 1528, rowH, withAlpha('#ffffff', 0.03));
+        cv.text(r.name, 48, y + 16, 18, r.state === 'none' ? t.dim : t.text, { font: 'bold' });
+        cv.text(f(r.b, r), 470, y + 16, 17, t.dim, { align: 'right' });
+        cv.text(f(r.a, r), 570, y + 16, 17, t.text, { align: 'right', font: 'bold' });
+        if (isNum(r.spreadPct)) { const sw = Math.min(half, r.spreadPct / scale * half); cv.roundRect(cx - sw, mid - 10, sw * 2, 20, 4, withAlpha(t.dim, 0.22)); }
+        if (isNum(r.pct)) {
+            const x1 = X(r.pct), c = col(r.state);
+            cv.roundRect(Math.min(cx, x1), mid - 6, Math.max(4, Math.abs(x1 - cx)), 12, 4, r.state === 'same' ? withAlpha(t.dim, 0.7) : c);
+        }
+        let word;
+        if (r.state === 'none') word = 'not recorded on both sides';
+        else if (r.state === 'same') word = 'within normal variation';
+        else word = (r.change > 0 ? '+' : '') + r.change.toFixed(r.d) + (r.unit ? ' ' + r.unit : '') + (isNum(r.pct) && Math.abs(r.pct) < 1000 ? '  (' + (r.pct > 0 ? '+' : '') + Math.round(r.pct) + ' %)' : '')
+            + (r.state === 'better' ? '  better' : r.state === 'worse' ? '  worse' : '');
+        cv.text(word, 1552, y + 16, 17, r.state === 'same' || r.state === 'none' ? t.dim : col(r.state), { align: 'right', font: r.state === 'same' || r.state === 'none' ? 'label' : 'bold' });
+    });
+}
+
 function help(cv, t, s) {
     G.panel(cv, t, 24, 44, 1552, 468, 'How Trip Recap works');
     [
@@ -210,12 +288,14 @@ function help(cv, t, s) {
         ['2', 'It keeps the numbers that matter.', 'Km (from the odometer), time, average and top speed, the most g each way, hard brakes (over 0.5 g), the most power, oil and coolant.'],
         ['3', 'Last drive shows the one just driven.', 'Six numbers on top, the speed over the whole drive as a chart, and the most g each way as a shape: the bigger it is, the harder the drive.'],
         ['4', 'Drives and Compare look back.', 'Km of each drive as bars, and any drive next to the one before it, or the average of the last 10 (Settings > Compare with).'],
+        ['5', 'Before / After shows what a change did.', 'Press Mark a change twice after a service, a new part, tyres or a setting. The drives before it are set against the drives after it:'
+            + ' only changes bigger than the normal spread of your drives count.'],
     ].forEach((r, i) => {
-        const y = 140 + i * 84;
+        const y = 134 + i * 72;
         cv.circle(80, y - 8, 22, withAlpha(t.accent, 0.3));
         cv.text(r[0], 80, y, 22, t.text, { align: 'center', font: 'bold' });
         cv.text(r[1], 124, y, 24, t.text, { font: 'bold' });
-        cv.text(r[2], 124, y + 32, 18, t.dim);
+        cv.text(r[2], 124, y + 28, 17, t.dim);
     });
     cv.text('It only reads what the car sends anyway, nothing is asked of a control unit. The last ' + (s.keep || 30) + ' drives are kept in the app\'s data folder (trips.json).', 56, 494, 17, t.dim);
 }
@@ -223,7 +303,8 @@ function help(cv, t, s) {
 function draw(cv, t, page, s) {
     if (page === 1) drives(cv, t, s);
     else if (page === 2) compare(cv, t, s);
-    else if (page === 3) help(cv, t, s);
+    else if (page === 3) beforeAfter(cv, t, s);
+    else if (page === 4) help(cv, t, s);
     else lastDrive(cv, t, s);
 }
 
