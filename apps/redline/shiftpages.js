@@ -10,7 +10,8 @@
  *
  *   draw(cv, t, which, s)   which = 'times' | 'pull' | 'kick' | 'cold';
  *                           s = { shifts, ratios, curves, perGear, minTorque, kicks, pedal, gb, armed }
- * Drawn on the kit's Recorder like the Learned page (record.js: quad, no convex).
+ * Drawn on the kit's Recorder like the Learned page (record.js: quad, no convex). Times are shown to 10 ms (the car's
+ * signals come 10 to 50 times a second); 'best' is the 10th percentile (shiftlab.js), not one lucky reading.
  */
 const G = require('./kit/gauges');
 const { withAlpha } = require('./kit/canvas');
@@ -22,6 +23,8 @@ const isNum = G.isNum;
 const two = (n) => (n < 10 ? '0' : '') + n;
 const when = (ms) => { const d = new Date(ms); return d.getDate() + '.' + two(d.getMonth() + 1) + '. ' + two(d.getHours()) + ':' + two(d.getMinutes()); };
 const sp = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+/** A time in ms as shown: to the nearest 10 ms. */
+const ms10 = (v) => String(Math.round(v / 10) * 10);
 const gears = (ratios) => Object.keys(ratios || {}).map(Number).filter((g) => g >= 1 && isNum(ratios[g])).sort((a, b) => a - b);
 
 const GO_COL = '#2fd27a';
@@ -41,12 +44,12 @@ function shiftsPage(cv, t, s) {
             [[p.avgMs, t.accent, -1], [p.bestMs, GO_COL, 1]].forEach(([v, col, side]) => {
                 const x0 = cx + (side < 0 ? -bw - 3 : 3), y0 = c.Y(v);
                 cv.roundRect(x0, y0, bw, c.py + c.ph - y0, 4, col);
-                cv.text(String(v), x0 + bw / 2, y0 - 6, 16, t.text, { align: 'center', font: 'num' });
+                cv.text(ms10(v), x0 + bw / 2, y0 - 6, 16, t.text, { align: 'center', font: 'num' });
             });
             cv.text(p.from + ' > ' + p.to, cx, c.py + c.ph + 22, 18, t.text, { align: 'center', font: 'bold' });
         });
-        cv.roundRect(560, 76, 14, 14, 3, t.accent); cv.text('average', 580, 89, 16, t.dim);
-        cv.roundRect(660, 76, 14, 14, 3, GO_COL); cv.text('best', 680, 89, 16, t.dim);
+        cv.roundRect(500, 76, 14, 14, 3, t.accent); cv.text('average', 520, 89, 16, t.dim);
+        cv.roundRect(600, 76, 14, 14, 3, GO_COL); cv.text('best (fastest 10 %)', 620, 89, 16, t.dim);
         // the rpm drop per change
         cv.text('RPM DROP AT EACH CHANGE', 48, 372, 14, t.dim, { font: 'bold', spacing: 1.5 });
         const dmax = Math.max.apply(null, pg.map((p) => p.avgDrop)) || 1;
@@ -58,7 +61,7 @@ function shiftsPage(cv, t, s) {
         });
     }
     G.panel(cv, t, 800, 44, 776, 468, 'Last shifts (' + s.shifts.length + ')');
-    const rows = s.shifts.slice(0, 8).map((x) => [when(x.at), { text: x.from + ' > ' + x.to, color: gc(x.to) }, x.ms + ' ms',
+    const rows = s.shifts.slice(0, 8).map((x) => [when(x.at), { text: x.from + ' > ' + x.to, color: gc(x.to) }, ms10(x.ms) + ' ms',
         sp(x.rpmBefore) + ' > ' + sp(x.rpmAfter), Math.round(x.kmh || 0) + ' km/h', isNum(x.gDip) ? x.gDip.toFixed(2) + ' g' : '--']);
     G.table(cv, t, 820, 104, 740, [{ label: 'When', w: 150 }, { label: 'Change', w: 90, font: 'bold' }, { label: 'Took', w: 100, align: 'right' },
         { label: 'rpm', w: 190, align: 'right' }, { label: 'Speed', w: 110, align: 'right' }, { label: 'Lowest g', w: 100, align: 'right' }], rows,
@@ -103,14 +106,14 @@ function kickPage(cv, t, s) {
     G.panel(cv, t, 24, 44, 760, 468, 'How fast it kicks down when you floor it');
     if (!kicks.length) {
         ['No kickdown seen yet.', '',
-            'Floor the pedal from part throttle above 15 km/h:', 'the time from the pedal to the lower gear shows here,',
+            'Floor it from part throttle above 15 km/h:', 'the time from the kick to the lower gear shows here,',
             'per driving mode, and when the gearbox kept the gear.']
             .forEach((l, i) => cv.text(l, 48, 140 + i * 32, 21, i ? t.dim : t.text, { font: i ? 'label' : 'bold' }));
     } else {
         const done = modes.filter((m) => isNum(m.avgMs));
         const fast = done.slice().sort((a, b) => a.avgMs - b.avgMs);
         const line = fast.length > 1 ? MODE_NAME[fast[0].mode] + ' drops a gear in ' + fast[0].avgMs + ' ms on average, ' + MODE_NAME[fast[fast.length - 1].mode] + ' in ' + fast[fast.length - 1].avgMs + ' ms.'
-            : fast.length ? MODE_NAME[fast[0].mode] + ': ' + fast[0].avgMs + ' ms from the pedal to the lower gear.' : 'Every kickdown so far kept its gear.';
+            : fast.length ? MODE_NAME[fast[0].mode] + ': ' + fast[0].avgMs + ' ms from the kick to the lower gear.' : 'Every kickdown so far kept its gear.';
         cv.text(line, 48, 126, 20, t.text, { font: 'bold' });
         const held = kicks.filter((k) => k.kind === 'held').length;
         cv.text(kicks.length + ' kickdowns, ' + held + ' held the gear' + (est ? '. Timed from the jump in engine torque: an estimate' : ''), 48, 150, 16, est ? t.warn : t.dim);
@@ -125,13 +128,13 @@ function kickPage(cv, t, s) {
                 if (!isNum(v)) return;
                 const x0 = cx + (side < 0 ? -bw - 3 : 3), y0 = c.Y(v);
                 cv.roundRect(x0, y0, bw, c.py + c.ph - y0, 4, col);
-                cv.text(String(v), x0 + bw / 2, y0 - 6, 15, t.text, { align: 'center', font: 'num' });
+                cv.text(ms10(v), x0 + bw / 2, y0 - 6, 15, t.text, { align: 'center', font: 'num' });
             });
             cv.text(MODE_NAME[m.mode], cx, c.py + c.ph + 20, 17, t.text, { align: 'center', font: 'bold' });
             if (m.held) cv.text(m.held + 'x held', cx, c.py + c.ph + 40, 14, t.warn, { align: 'center' });
         });
-        cv.text('full: average   faded: best', 768, 190, 14, t.dim, { align: 'right' });
-        // the newest downshift as a timeline: pedal floored, rpm starts to rise, the lower gear
+        cv.text('full: average   faded: best (fastest 10 %)', 768, 190, 14, t.dim, { align: 'right' });
+        // the newest downshift as a timeline: the kick, rpm starts to rise, the lower gear
         const k = kicks.find((x) => x.kind === 'down' && isNum(x.doneMs));
         if (k) {
             const x0 = 64, w = 680, y = 448, full = Math.max(600, Math.ceil(k.doneMs / 200) * 200 + 200), X = (ms) => x0 + w * ms / full;
@@ -139,7 +142,7 @@ function kickPage(cv, t, s) {
             cv.roundRect(x0, y - 6, w, 12, 6, withAlpha(t.track, 0.7));
             if (isNum(k.startMs)) cv.roundRect(x0, y - 6, X(k.startMs) - x0, 12, 6, withAlpha(t.warn, 0.7));
             cv.roundRect(isNum(k.startMs) ? X(k.startMs) : x0, y - 6, X(k.doneMs) - (isNum(k.startMs) ? X(k.startMs) : x0), 12, 6, MODE_COL[k.mode] || t.accent);
-            [[0, 'kick'], [k.startMs, 'revs start rising'], [k.doneMs, 'in gear ' + k.to + ': ' + k.doneMs + ' ms']].forEach(([ms, l], i) => {
+            [[0, 'kick'], [k.startMs, 'revs start rising'], [k.doneMs, 'in gear ' + k.to + ': ' + ms10(k.doneMs) + ' ms']].forEach(([ms, l], i) => {
                 if (!isNum(ms)) return;
                 cv.fillRect(X(ms) - 1, y - 14, 3, 28, t.text);
                 cv.text(l, X(ms), y + 34, 15, i === 2 ? t.text : t.dim, { align: i === 0 ? 'left' : i === 2 ? 'right' : 'center' });
@@ -148,7 +151,7 @@ function kickPage(cv, t, s) {
     }
     G.panel(cv, t, 800, 44, 776, 468, 'Last kickdowns (' + kicks.length + ')');
     const rows = kicks.slice(0, 8).map((k) => [when(k.at), { text: MODE_NAME[k.mode || 'other'], color: MODE_COL[k.mode || 'other'] },
-        { text: gearsOf(k), color: k.kind === 'held' ? t.warn : t.text }, isNum(k.startMs) ? k.startMs + ' ms' : '--', isNum(k.doneMs) ? k.doneMs + ' ms' : '--',
+        { text: gearsOf(k), color: k.kind === 'held' ? t.warn : t.text }, isNum(k.startMs) ? ms10(k.startMs) + ' ms' : '--', isNum(k.doneMs) ? ms10(k.doneMs) + ' ms' : '--',
         k.kmh + ' km/h', isNum(k.gb) ? k.gb + ' °C' : '--']);
     G.table(cv, t, 820, 104, 740, [{ label: 'When', w: 130 }, { label: 'Mode', w: 120, font: 'bold' }, { label: 'Gears', w: 90 }, { label: 'Revs up', w: 90, align: 'right' },
         { label: 'New gear', w: 100, align: 'right' }, { label: 'Speed', w: 100, align: 'right' }, { label: 'Gearbox', w: 110, align: 'right' }], rows,
@@ -192,7 +195,7 @@ function coldPage(cv, t, s) {
         [[u, 'up', BAND_COL[b[0]], 0], [k, 'kickdown', withAlpha(BAND_COL[b[0]], 0.5), 22]].forEach(([v, l, col, dy]) => {
             const w = isNum(v.avgMs) ? Math.max(6, 250 * v.avgMs / top) : 0;
             if (w) cv.roundRect(1180, y + 4 + dy, w, 16, 4, col);
-            cv.text(isNum(v.avgMs) ? v.avgMs + ' ms ' + l + ' (' + v.n + ')' : l + ': none', 1180 + w + 8, y + 17 + dy, 14, isNum(v.avgMs) ? t.text : t.dim);
+            cv.text(isNum(v.avgMs) ? ms10(v.avgMs) + ' ms ' + l + ' (' + v.n + ')' : l + ': none', 1180 + w + 8, y + 17 + dy, 14, isNum(v.avgMs) ? t.text : t.dim);
         });
     });
 }

@@ -73,7 +73,7 @@ const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
 const { ShiftShare } = require('./shareshift');
 const { ShiftLog, perGear, pullCurves } = require('./shiftlab');
-const { KickLog } = require('./kickdown');
+const { KickLog, torqueAt } = require('./kickdown');
 const ShiftPages = require('./shiftpages');
 const shiftDemo = require('./shiftdemo');
 const LogView = require('./logview');
@@ -306,23 +306,31 @@ async function runRedline(ctx) {
         /* ---------- shift timing (Shift times / Pull / Kickdown / Cold vs hot pages; from Shift Lab, #253) ----------
          * Fed from Redline's own readings in the sample loop below (rpm, speed, gear, torque, g forward, the driving
          * mode, the gearbox oil), never from the demo drive. The accelerator pedal stays out (its scaling is unchecked,
-         * above): a kickdown is found from the jump in engine torque and marked as an estimate. Kept in
-         * data/shiftlab.json: the last 200 upshifts, the ratios, the pull per gear, the last 120 kickdowns. */
-        const LAB_FILE = path.join(ctx.dataDir, 'shiftlab.json');
-        const lab = new ShiftLog({ minTorque: settings.get('labMinTorque') }), kick = new KickLog();
+         * above): a kickdown is found from the jump in engine torque to near the shift map's full-load torque, and marked
+         * as an estimate. The ratios are the shift map's where it knows the gear. Kept in data/shiftlab.json: the last
+         * 200 upshifts, the ratios, the pull per gear, the last 120 kickdowns. Written (flash wear) at most every 30 s
+         * after a new shift or kickdown, every LAB_PULL_MS when only the pull or the ratios moved, and when the app stops. */
+        const LAB_FILE = path.join(ctx.dataDir, 'shiftlab.json'), LAB_PULL_MS = 5 * 60000;
+        let fullCurve = [], fullAt = 0;
+        const fullTorque = (rpm) => {
+            if (Date.now() - fullAt > 2000) { fullAt = Date.now(); fullCurve = shiftMap.curve(); }
+            return torqueAt(fullCurve, rpm);
+        };
+        const lab = new ShiftLog({ minTorque: settings.get('labMinTorque'), known: (g) => shiftMap.ratio(g) }), kick = new KickLog({ fullTorque });
         try { const o = JSON.parse(fs.readFileSync(LAB_FILE, 'utf8')); lab.load(o); kick.load(o.kicks); } catch (e) { /* first start */ }
-        const saveLab = () => {
-            if (!lab.changed && !kick.changed) return;
-            lab.changed = false; kick.changed = false;
+        let labSavedAt = Date.now();
+        const saveLab = (force) => {
+            if (!lab.unsaved() && !kick.changed) return;
+            // a new shift or kickdown: now; only the pull or a ratio: every few minutes, or when the app stops
+            if (!force && !lab.changed && !kick.changed && Date.now() - labSavedAt < LAB_PULL_MS) return;
+            lab.saved(); kick.changed = false; labSavedAt = Date.now();
             // written to a temp file and renamed, as the other learned files (a power cut can't corrupt it)
             Hud.writeAtomic(LAB_FILE, JSON.stringify(Object.assign(lab.toJSON(), { kicks: kick.toJSON() })), log, 'shift timing: not saved');
         };
-        const labSave = setInterval(saveLab, 30000);
+        const labSave = setInterval(() => saveLab(false), 30000);
         if (labSave.unref) labSave.unref();
-        process.on('exit', saveLab);
+        process.on('exit', () => saveLab(true));
         function feedLab(d, t, tq) {
-            // a gear the shift map already knows seeds the timing's own ratio (it refines it while the gear is held)
-            for (let g = 1; g <= 8; g++) { if (!G.isNum(lab.ratios[g])) { const k = shiftMap.ratio(g); if (G.isNum(k) && k > 0) lab.ratios[g] = k; } }
             const s = { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq, gLong: fresh(extra.gLong, 500), mode: driveMode.v, gb: gearbox.value() };
             lab.minTorque = settings.get('labMinTorque') || 150;
             lab.feed(s, t); kick.feed(s, lab.ratios, t);
@@ -339,7 +347,7 @@ async function runRedline(ctx) {
         }
         function clearLab() {
             if (car.data().demo) return null;
-            lab.clear(); kick.clear(); saveLab(); log.info('shift timing cleared (the ratios kept)');
+            lab.clear(); kick.clear(); saveLab(true); log.info('shift timing cleared (the ratios kept)');
             return render();
         }
 
