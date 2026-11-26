@@ -1,8 +1,8 @@
 {
   "id": "warmup",
   "title": "Warm-Up",
-  "description": "Oil and coolant warm-up calculator (time to ready), safe rev limit, turbo cool-down, a cold start counter and each drive's lowest and highest temperatures",
-  "version": "1.11.1",
+  "description": "Oil and coolant warm-up calculator (time to ready), ready for harder driving, safe rev limit, turbo cool-down, a cold start counter, and each drive summed up, compared and before / after a change",
+  "version": "1.12.1",
   "vendor": "custom",
   "loggingId": "OA9A",
   "iconGlyph": "temp",
@@ -12,7 +12,26 @@
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
-      "statusEngineTemperature": "rs"
+      "statusEngineTemperature": "rs",
+      "statusBattery2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "_optional": "g forward and sideways, for each drive's summary",
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "_optional": "the odometer (each drive's km), range and fuel (Ready?)",
+      "statusRangeTankStatus": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "the outside temperature (Ready?)",
+      "ExteriorTemperature": "s"
+    },
+    "de.bmw.infotainment.vehicle.TPMS": {
+      "_optional": "tyre pressures and their targets (Ready?)",
+      "statusTyrePressure": "rs",
+      "statusTargetTyrePressure": "rs"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs",
@@ -70,6 +89,10 @@
       "kind": "canvas",
       "title": "Warm-Up",
       "buttons": [
+        ["BTN_PREV", "Previous"],
+        ["BTN_NEXT", "Next"],
+        ["BTN_VIEW", "Drives view"],
+        ["BTN_MARK", "Mark a change"],
         [
           "BTN_SETTINGS",
           "Settings"
@@ -194,6 +217,12 @@
       "type": "bool",
       "default": false
     },
+    {"key": "compareWith", "label": "Compare a drive with", "type": "choice", "default": "prev",
+     "options": [["prev", "The drive before"], ["avg10", "The average of the 10 before it"]]},
+    {"key": "markLabel", "label": "Change to mark", "type": "choice", "default": "Service",
+     "options": [["Service", "Service"], ["New part", "New part"], ["Tyres", "Tyres"], ["Setting change", "Setting change"], ["Fuel brand", "Fuel brand"], ["Other", "Other"]]},
+    {"key": "compareKind", "label": "Before / After compares", "type": "choice", "default": "all",
+     "options": [["all", "All drives"], ["length", "Drives of a similar length"], ["speed", "Drives of a similar average speed"]]},
     {"key": "widgetFit", "label": "Home-screen widget: picture", "type": "choice", "default": "large", "options": [["small", "Small, clear of the edges"], ["medium", "Medium"], ["large", "Fill the widget"]]},
     {
       "key": "tempUnit",

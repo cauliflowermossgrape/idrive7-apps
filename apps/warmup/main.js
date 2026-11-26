@@ -16,7 +16,12 @@
  *     limit (coldstarts.js, counted in the background: app.json autostart)
  *   - home-screen widget (app.json startWidget): the state, the oil, "ready in", coolant and gearbox oil at a glance
  *   - Drives tab (issue #235): the lowest and highest oil, coolant and gearbox oil of each of the latest drives,
- *     and on request a CSV of each drive (kit/runtime/drivelog.js, also counted in the background)
+ *     and on request a CSV of each drive (kit/runtime/drivelog.js, also counted in the background); from Trip Recap
+ *     (#251) each drive also sums itself up (km, time, average and top speed, the most g each way, hard brakes, the
+ *     most power, the oil's warm-up), shown as Drive, List, Compare and Before / After a marked change (drives.js)
+ *   - Ready? tab (from Ready Check, #252): READY / NOT YET / TOO HOT for harder driving with the reason, cards for
+ *     the oil, coolant, gearbox oil, 12 V battery, fuel range and tyre pressures with their bands, and this page's
+ *     own turbo cool-down with rpm and power over the last 3 minutes (ready.js)
  */
 const mgu = require('./kit/mgu');
 const { withAlpha, ScaledCanvas } = require('./kit/canvas');
@@ -26,6 +31,8 @@ const Engine = require('./kit/engine');
 const { ColdStarts, COLD_C } = require('./coldstarts');
 const { Gearbox } = require('./gearbox');
 const { DriveLog } = require('./kit/drivelog');
+const Ready = require('./ready');
+const Drives = require('./drives');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
@@ -37,7 +44,12 @@ const TYPICAL = { oil: { drive: 4, idle: 1.5 }, coolant: { drive: 7, idle: 3 }, 
 const HIST = { oil: 1, coolant: 2, gearbox: 5 };   // a value's place in a hist entry
 const GEAR_HOT = 125;                      // deg C: ease off
 const GEAR_C = '#b98cff';                  // the gearbox's colour in the trend
-const TABS = ['Warm-up', 'Cold starts', 'Drives'];
+const TABS = ['Warm-up', 'Ready?', 'Cold starts', 'Drives'];
+const P = { warm: 0, ready: 1, cold: 2, drives: 3 };
+const G0 = 9.80665, CONFIRM_MS = 5000;
+const KOMBI = 'de.bmw.infotainment.KombiIF', TPMS = 'de.bmw.infotainment.vehicle.TPMS';
+const ENV = 'de.bmw.infrastructure.EnvironmentalInformation', CDS = 'de.bmw.infotainment.vehicle.CDS';
+const TYRES = [['FL', 'front left'], ['FR', 'front right'], ['RL', 'rear left'], ['RR', 'rear right']];
 const RPM = { factor: 0.25, invalid: 65535 }, TEMP = { offset: -48, invalid: 255 };
 
 /** The safe rev limit for the oil's temperature: the cold limit up to the redline, climbing from 30 deg C to warm. */
@@ -53,18 +65,36 @@ async function background(bg) {
     const { settings, signals, log } = bg;
     const engine = new Engine({ settings, dataDir: bg.dataDir, log });
     const cs = new ColdStarts({ settings, limit: (oil) => limitFor(engine, settings, oil), warm: () => settings.get('warmOil') });
-    const drives = new DriveLog({ settings, key: 'drives', channels: ['oil', 'coolant', 'gearbox'], dataDir: bg.dataDir, csv: () => settings.get('driveCsv') });
+    // each drive's temperatures, and (#251) its own summary: kept for the latest 30 drives
+    const drives = new DriveLog({ settings, key: 'drives', channels: ['oil', 'coolant', 'gearbox'], dataDir: bg.dataDir, csv: () => settings.get('driveCsv'),
+        stats: true, keep: 30, warmAt: () => settings.get('warmOil') });
+    const v = { speed: null, odo: null, gLong: null, gLat: null, torque: null, rpm: null };
+    const sc = (raw, f, o, bad) => (typeof raw === 'number' && raw !== bad ? raw * f + o : null);
     const w = (iface, h) => (signals && signals.watch ? Promise.resolve(signals.watch(iface, '1', h, log)).catch((e) => log.warn('cold starts: ' + (e && e.message || e))) : null);
     w('de.bmw.infotainment.vehicle.CDS', {
-        statusEngineSpeed2: (v) => { const r = v && v.actualValueRPMEngineCrankshaft; if (G.isNum(r) && r !== RPM.invalid) { cs.rpm(r * RPM.factor); drives.rpm(r * RPM.factor); } },
-        statusEngineTemperature: (v) => {
-            const o = v && v.temperatureEngineOilDrive, c = v && v.temperatureEngineDrive;
+        statusEngineSpeed2: (x) => { const r = x && x.actualValueRPMEngineCrankshaft; if (G.isNum(r) && r !== RPM.invalid) { v.rpm = r * RPM.factor; cs.rpm(r * RPM.factor); drives.rpm(r * RPM.factor); } },
+        statusEngineTemperature: (x) => {
+            const o = x && x.temperatureEngineOilDrive, c = x && x.temperatureEngineDrive;
             if (G.isNum(o) && o !== TEMP.invalid) { cs.oil(o + TEMP.offset); drives.value('oil', o + TEMP.offset); }
             if (G.isNum(c) && c !== TEMP.invalid) drives.value('coolant', c + TEMP.offset);
         },
     });
-    w(Engine.SIGNAL[0], engine.handlers());
-    return { cs, drives };
+    w(Engine.SIGNAL[0], Object.assign({ statusCarSpeed2: (x) => { v.speed = sc(x && x.speedVehicleCentreOfGravity, 0.015625, 0, 65535); } }, engine.handlers()));
+    // for each drive's summary (the scalings Blackbox and G-Force use)
+    w('de.bmw.infotainment.vehicle.CDS2', {
+        statusLongitudinalAccelerationMassCenter: (x) => { const a = sc(x && x.longitudinalAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLong = a === null ? null : a / G0; },
+        statusLateralAccelerationMassCenter: (x) => { const a = sc(x && x.lateralAccelerationCentreOfGravity, 0.002, -65, 65535); v.gLat = a === null ? null : a / G0; },
+    });
+    w('de.bmw.infotainment.drivingexcitement.FES', {
+        statusActualValueTorque2: (x) => { const raw = x && x.actualValueTorqueCrankshaft; v.torque = typeof raw === 'number' && raw < 4095 ? raw * 0.5 - 1023.5 : null; },
+    });
+    w(KOMBI, { statusRangeTankStatus: (x) => { const m = x && x.mileageKilometre; if (typeof m === 'number' && m >= 0 && m < 16777215) v.odo = m; } });
+    const timer = setInterval(() => {
+        const kw = G.isNum(v.torque) && G.isNum(v.rpm) ? v.torque * v.rpm / 9549 : null;
+        drives.sample({ speed: v.speed, odo: v.odo, gLong: v.gLong, gLat: v.gLat, kw });
+    }, 1000);
+    if (timer.unref) timer.unref();
+    return { cs, drives, v };
 }
 
 mgu.run({
@@ -72,10 +102,39 @@ mgu.run({
     async start(ctx) {
         const { ui, settings } = ctx;
         const bgd = ctx.background || await background(ctx), cs = bgd.cs, drives = bgd.drives;
-        let page = 0;
+        let page = 0, dview = 0, sel = 0, markSel = 0, armed = 0;
         // engine profile (diesel / petrol): the Auto redline and cold limit
         const engine = new Engine({ settings, dataDir: ctx.dataDir, log: ctx.log });
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'torque'], { [Engine.SIGNAL[0]]: engine.handlers() });
+        // the Ready? tab's other checks: 12 V charge and range as Live Data reads them, the outside temperature
+        const x = { soc12: null, range: null, fuel: null, outside: null, p: {}, pt: {} };
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'torque'], {
+            [Engine.SIGNAL[0]]: engine.handlers(),
+            [CDS]: { statusBattery2: (v) => { const c = v && v.conditionBatteryChargingCondition; if (G.isNum(c) && c >= 0 && c <= 100) x.soc12 = c; } },
+            [KOMBI]: { statusRangeTankStatus: (v) => {
+                if (v && G.isNum(v.range) && v.range < 4095) x.range = v.range;
+                if (v && G.isNum(v.fluidLevelFuelTank) && v.fluidLevelFuelTank < 255) x.fuel = v.fluidLevelFuelTank;
+            } },
+            [ENV]: { ExteriorTemperature: (v) => { const r = v && v.temperatureExterior; if (G.isNum(r) && r !== 255) x.outside = r * 0.5 - 40; } },
+        });
+        // tyres as M Vitals reads them, also every 10 s (a car may not notify them), only while the page shows: the
+        // watch and its re-read are shut down when it is hidden (as Service does with the cluster). Only their ratio
+        // to the car's own target is used, so no unit is needed
+        const tp = (o, pre, k) => { const r = o && o[pre + k + 'H']; return G.isNum(r) && r < 65532 && r > 0 ? r : null; };
+        let tyreSub = null;
+        function watchTyres(on) {
+            if (on && !tyreSub && ctx.signals && ctx.signals.watch) {
+                tyreSub = Promise.resolve(ctx.signals.watch(TPMS, '1', {
+                    statusTyrePressure: (v) => TYRES.forEach(([k]) => { x.p[k] = tp(v, 'actualValuePressureTyre', k); }),
+                    statusTargetTyrePressure: (v) => TYRES.forEach(([k]) => { x.pt[k] = tp(v, 'targetPressureTyre', k); }),
+                }, ctx.log, { pollMs: 10000 })).catch((e) => { ctx.log.warn('tyres: ' + (e && e.message || e)); return null; });
+            }
+            if (!on && tyreSub) {
+                const w = tyreSub; tyreSub = null;
+                w.then((r) => r && r.shutdown && r.shutdown()).catch(() => {});
+            }
+        }
+        if (ui.onVisible) ui.onVisible((name, on) => { if (name === 'MAIN') watchTyres(on); });
+        if (!ui.isVisible || ui.isVisible('MAIN')) watchTyres(true);
         car.setRedline(engine.redline());
         engine.onChange(() => car.setRedline(engine.redline()));
         const gearbox = new Gearbox(ctx, ctx.log, () => ctx.ui.isVisible('MAIN')).start();
@@ -84,6 +143,8 @@ mgu.run({
 
         /* ---------- tracking ---------- */
         const hist = [];             // [t, oil, coolant, rpm, speed, gearbox] every 5 s, 20 min; t = steady clock (mono)
+        const power = [];            // [wall t, rpm, kW] every second, 3 min: the Ready? tab's cool-down chart
+        let lastPow = 0;
         // the head unit sets its clock after start-up: wall-clock times can jump by hours, which
         // threw the trend lines across the screen. A steady clock only ever moves forward.
         const mono = () => { const h = process.hrtime(); return h[0] * 1000 + h[1] / 1e6; };
@@ -109,13 +170,14 @@ mgu.run({
                 }
                 // "cooled" message stays for 20 s, then all clear
                 if (doneAt && m - doneAt > 20000) { hardS = 0; needS = 0; cool = 0; doneAt = 0; }
+                if (m - lastPow > 1000) { lastPow = m; power.push([t, d.rpm, Math.max(0, kw)]); while (power.length > 190) power.shift(); }
             }
             if (drives && !d.demo) drives.value('gearbox', gearbox.temp());
             if (m - lastHist > 5000 && (G.isNum(d.oil) || G.isNum(d.coolant))) {
                 lastHist = m; hist.push([m, d.oil, d.coolant, d.rpm, d.speed, gearT(d)]);
                 while (hist.length > 240) hist.shift();
             }
-        }, () => { hist.length = 0; hardS = 0; needS = 0; cool = 0; doneAt = 0; });
+        }, () => { hist.length = 0; power.length = 0; hardS = 0; needS = 0; cool = 0; doneAt = 0; });
 
         const F = () => settings.get('tempUnit') === 'f';
         const T = (c) => (G.isNum(c) ? (F() ? c * 9 / 5 + 32 : c) : null);
@@ -221,29 +283,6 @@ mgu.run({
             G.button(cv, t, 1336, 240 + lp.h - 70, 216, 50, 'Reset', () => { cs.reset(); return render(); }, { key: 'reset', confirm: true });
         }
 
-        /* The Drives tab: the latest drives, each one's lowest and highest temperatures, Reset. */
-        function renderDrives(cv, t) {
-            const two = (n) => (n < 10 ? '0' : '') + n;
-            const list = drives ? drives.drives() : [];
-            const p = G.panel(cv, t, 24, 44, 1552, 468, 'Latest drives');
-            const cols = [[48, 'START'], [330, 'LENGTH'], [520, 'OIL'], [820, 'COOLANT'], [1100, 'GEARBOX OIL']];
-            cols.forEach(([x, l]) => cv.text(l, x, 120, 20, t.dim, { font: 'bold', spacing: 1.5 }));
-            const range = (c) => (c ? Math.round(T(c.min)) + ' - ' + Math.round(T(c.max)) + tU() : '--');
-            if (!list.length) cv.text('Recorded from the next engine start', 48, 180, 24, t.dim);
-            list.slice(0, 6).forEach((r, i) => {
-                const at = new Date(r.at), y = 168 + i * 44, min = Math.round((r.ms || 0) / 60000);
-                cv.text(at.getDate() + '.' + two(at.getMonth() + 1) + '.  ' + at.getHours() + ':' + two(at.getMinutes()), 48, y, 24, t.text);
-                cv.text(r.live ? 'now, ' + min + ' min' : min + ' min', 330, y, 24, r.live ? GO : t.text);
-                const oil = r.ch && r.ch.oil, hotOil = oil && oil.max > 125;
-                cv.text(range(oil), 520, y, 24, hotOil ? t.crit : t.text, { font: 'bold' });
-                cv.text(range(r.ch && r.ch.coolant), 820, y, 24, t.text);
-                const gb = r.ch && r.ch.gearbox;
-                cv.text(range(gb), 1100, y, 24, gb && gb.max > GEAR_HOT ? t.crit : t.text);
-            });
-            cv.text(settings.get('driveCsv') ? 'CSV: drives.csv in the app\'s data folder' : 'A CSV of each drive: Settings', 48, 44 + p.h - 30, 20, t.dim);
-            G.button(cv, t, 1336, 44 + p.h - 70, 216, 50, 'Reset', () => { drives.reset(); return render(); }, { key: 'resetDrives', confirm: true });
-        }
-
         /** The same, on one line (three of them with the gearbox): label and target left, minutes / state right. */
         function etaLine(cv, t, y, label, e, target) {
             cv.text(label, 952, y, 22, t.dim, { font: 'bold', spacing: 1.5 });
@@ -262,14 +301,19 @@ mgu.run({
         function render() {
             const t = ctx.theme(), d = car.data(), now = Date.now();
             const cv = ctx.canvas(W, H).clear(t.bg);
-            if (drives && page === 2) {
-                renderDrives(cv, t);
-                G.frame(cv, t, TABS, 2, [d.demo && { text: 'DEMO' }]);
+            if (drives && page === P.drives) {
+                renderDrives(cv, t, d);
+                G.frame(cv, t, TABS, P.drives, [(d.demo && !drives.drives().length) && { text: 'DEMO' }, drives.drives()[0] && drives.drives()[0].live && { text: 'DRIVING', color: GO }]);
                 return ui.image('MAIN_GFX', cv);
             }
-            if (cs && page === 1) {
+            if (cs && page === P.cold) {
                 renderCold(cv, t);
-                G.frame(cv, t, TABS, 1, [d.demo && { text: 'DEMO' }]);
+                G.frame(cv, t, TABS, P.cold, [d.demo && { text: 'DEMO' }]);
+                return ui.image('MAIN_GFX', cv);
+            }
+            if (page === P.ready) {
+                renderReady(cv, t, d, now);
+                G.frame(cv, t, TABS, P.ready, [d.demo && { text: 'DEMO' }]);
                 return ui.image('MAIN_GFX', cv);
             }
             const warm = settings.get('warmOil'), warmC = settings.get('warmCoolant');
@@ -457,8 +501,104 @@ mgu.run({
         }
 
         if (cs && ctx.onTab) ctx.onTab((i) => { page = i; return render(); });
+
+        /* ---------- Drives (drives.js) ---------- */
+        const demoDrives = makeDemo();
+        // the car's own drives, as trips; in the demo (no car, nothing recorded yet) a made-up set, never saved
+        function tripList(d) {
+            const real = drives ? drives.drives() : [];
+            if (!real.length && d.demo) return demoDrives.trips;
+            return real.map((r) => Drives.trip(r, drives.trace(r.at)));
+        }
+        const markList = (d) => (drives && drives.drives().length || !d.demo ? (drives ? drives.marks() : []) : demoDrives.marks);
+        function renderDrives(cv, t, d) {
+            const list = tripList(d), mk = markList(d);
+            if (sel >= list.length) sel = Math.max(0, list.length - 1);
+            if (armed && Date.now() - armed > CONFIRM_MS) armed = 0;
+            Drives.draw(cv, t, { view: dview, list, sel, compareWith: settings.get('compareWith'), kind: settings.get('compareKind') || 'all',
+                marks: mk, markSel: mk.length ? mk.length - 1 - Math.min(markSel, mk.length - 1) : null, armed: !!armed, now: Date.now(),
+                T, tU, csv: settings.get('driveCsv'), own: cv.own, onView: (i) => { dview = i; return render(); } });
+            if (drives && dview === 1 && drives.drives().length) {
+                G.button(cv, t, 1336, 438, 216, 50, 'Reset', () => { drives.reset(); return render(); }, { key: 'resetDrives', confirm: true });
+            }
+        }
+        // Previous / Next: a drive, or on Before / After a mark (newest first); Drives view cycles the four views
+        ui.onClick('BTN_PREV', () => {
+            page = P.drives;
+            if (dview === 3) markSel = Math.min(Math.max(0, markList(car.data()).length - 1), markSel + 1);
+            else sel = Math.max(0, sel - 1);
+            return render();
+        });
+        ui.onClick('BTN_NEXT', () => {
+            page = P.drives;
+            if (dview === 3) markSel = Math.max(0, markSel - 1);
+            else sel = Math.min(Math.max(0, tripList(car.data()).length - 1), sel + 1);
+            return render();
+        });
+        ui.onClick('BTN_VIEW', () => { page = P.drives; dview = (dview + 1) % Drives.VIEWS.length; return render(); });
+        // Mark a change, pressed twice: noted now with the odometer, for Before / After
+        ui.onClick('BTN_MARK', () => {
+            page = P.drives; dview = 3;
+            if (!armed || Date.now() - armed > CONFIRM_MS) { armed = Date.now(); return render(); }
+            armed = 0;
+            const label = settings.get('markLabel') || 'Other', d = car.data();
+            if (!drives.drives().length && d.demo) demoDrives.marks.push({ at: Date.now(), label, odo: null });
+            else { drives.mark(label, bgd.v ? bgd.v.odo : null); ctx.log.info('warm-up: marked ' + label); }
+            markSel = 0;
+            return render();
+        });
+
+        /* ---------- Ready? (ready.js) ---------- */
+        function tyres() {
+            let lowest = null, which = '';
+            TYRES.forEach(([k, name]) => {
+                if (!G.isNum(x.p[k]) || !G.isNum(x.pt[k])) return;
+                const r = x.p[k] / x.pt[k];
+                if (r < 0.3 || r > 1.6) return;                 // not a pair of real values
+                if (lowest === null || r < lowest) { lowest = r; which = name; }
+            });
+            return { lowest, which };
+        }
+        function renderReady(cv, t, d, now) {
+            const set = { warmOil: settings.get('warmOil'), warmCoolant: settings.get('warmCoolant'), warmGearbox: settings.get('warmGearbox') };
+            const s = d.demo ? { oil: d.oil, coolant: d.coolant, gearbox: gearT(d), soc12: 66, range: 412, fuel: 38, tyres: { lowest: 0.96, which: 'rear left' } }
+                : { oil: d.oil, coolant: d.coolant, gearbox: gearT(d), soc12: x.soc12, range: x.range, fuel: x.fuel, tyres: tyres() };
+            const list = Ready.checks(s, set);
+            // ready in: the slowest of the cold ones, each from this page's own warm-up estimate
+            const keys = { oil: [d.oil, set.warmOil], coolant: [d.coolant, set.warmCoolant], gearbox: [gearT(d), set.warmGearbox] };
+            const etas = list.filter((c) => c.temp && c.state === 'cold').map((c) => eta(c.key, keys[c.key][0], keys[c.key][1], d)).filter((e) => e.state === 'warming').map((e) => e.min);
+            const cooling = settings.get('cooldown') && needS > 0;
+            Ready.draw(cv, t, { list, verdict: Ready.verdict(list), eta: etas.length ? Math.max.apply(null, etas) : null,
+                outside: d.demo ? 4 : x.outside, now, T, tU, power,
+                cool: cooling ? { left: Math.max(0, needS - cool), need: needS, done: cool } : null });
+        }
         // every screen refresh (60 fps) with the GPU renderer; 4 fps in software (PNG frames)
         ctx.loop('MAIN', 4, render);
         render().then(() => ctx.log.info('first frame done')).catch((e) => ctx.log.warn('first render: ' + e));
     },
 });
+
+/* Demo drives (no car, nothing recorded yet): twenty made-up drives and two marks, never saved. After the Service
+   mark the oil runs cooler (better) and the most power is a little up (shown as changed only); after the Tyres mark
+   the car corners harder. */
+function makeDemo() {
+    const out = [], H = 3600000, now = Date.now();
+    const base = new Date(now); base.setHours(18, 10, 0, 0);
+    if (base.getTime() > now - H) base.setTime(base.getTime() - 24 * H);     // the newest drive is always in the past
+    const kms = [23.4, 8.1, 41.7, 12.9, 6.3, 87.2, 15.5, 9.8, 33.1, 18.6, 5.2, 27.0, 21.3, 11.4, 36.8, 14.2, 25.5, 9.1, 19.7, 30.4];
+    kms.forEach((km, i) => {
+        const fast = km > 30, vAvg = fast ? 74 + (i % 3) * 6 : 38 + (i % 4) * 5, secs = Math.round(km / vAvg * 3600 * 1.12);
+        const start = base.getTime() - i * 19 * H - (i % 3) * 2 * H, n = Math.max(3, Math.round(secs / 10)), trace = [];
+        for (let k = 0; k < n; k++) {
+            const p = k / n, s = Math.min(1, p * 8, (1 - p) * 8);
+            trace.push(Math.max(0, Math.round(s * (vAvg * 1.1 + (fast ? 28 : 14) * Math.sin(k / 7 + i) + 6 * Math.sin(k / 2.3)))));
+        }
+        const serviced = i <= 7, newTyres = i <= 15;
+        out.push({ start, end: start + secs * 1000, km, secs, moving: Math.round(secs * 0.88), vAvg, vMax: Math.max.apply(null, trace), summed: true,
+            gFwd: 0.28 + (i % 4) * 0.02, gBrake: 0.5 + (i % 5) * 0.03, gSide: (newTyres ? 0.68 : 0.33) + (i % 3) * 0.02, brakes: (i * 7) % 3,
+            kwMax: Math.round((150 + ((i * 7) % 9) - 4) * (serviced ? 1.07 : 1)), oilMin: 18 + (i % 6), oilMax: (serviced ? 100 : 104) + (i % 3) - 1,
+            coolMin: 20 + (i % 6), coolMax: 91 + (i % 2), gbMin: 14 + (i % 5), gbMax: 78 + (i % 4), warm: 400 + (i * 13) % 50, trace });
+    });
+    const between = (a, b) => Math.round((out[a].start + out[b].end) / 2);
+    return { trips: out, marks: [{ at: between(15, 16), label: 'Tyres', odo: 49280 }, { at: between(7, 8), label: 'Service', odo: 49470 }] };
+}
