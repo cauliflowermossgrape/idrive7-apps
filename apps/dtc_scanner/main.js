@@ -31,6 +31,7 @@ const GO = '#2fd27a';
 
 // diagnostic addresses -> control unit (unknown ones show as "ECU 0x..")
 const { ECU } = require('./kit/ecus');
+const { qrLogSheet } = require('./kit/qrlog');
 // Fault texts, first match wins:
 //  1. dtc_texts.js   this car's own coding tool export (kit/tools/dtc_texts.py; not in git)
 //  2. known_texts.js a few hand-written ones (in git)
@@ -312,6 +313,34 @@ mgu.run({
         let only = null;                 // a control unit tapped on the Control units page: the Faults page lists its faults alone
         const faults = () => (scan ? [].concat(...scan.ecus.map((e) => e.dtcs.map((d) => Object.assign({ addr: e.addr }, d)))) : []);
         const listed = () => (only === null ? faults() : faults().filter((d) => d.addr === only));
+        /**
+         * The last scan as plain text, for Settings > Faults as QR: a phone camera reads the codes as they are, so the
+         * list can go to a workshop or a forum without SSH or a decoder. Each unit that answered with faults, then its
+         * faults (code, status, text where known). No VIN: the scan doesn't hold one.
+         */
+        function faultText() {
+            if (!scan) return 'Fault Scanner: no scan yet';
+            const p = (n) => String(n).padStart(2, '0'), d = new Date(scan.at);
+            const date = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+            const all = faults(), units = scan.ecus.filter((e) => e.dtcs.length).sort((a, b) => a.addr - b.addr);
+            const out = ['Scan ' + date + (scan.demo ? ' (demo data)' : ''),     // (the code's header names the app and version)
+                all.length + ' faults in ' + units.length + ' units, ' + scan.ecus.length + ' units answered'];
+            units.forEach((e) => {
+                out.push('', ecuName(e.addr) + ' (0x' + hex(e.addr) + ')');
+                e.dtcs.forEach((f) => {
+                    const desc = describe(e.addr, f.code);
+                    out.push(f.code + ' ' + statusInfo(f.status).label + (f.mem === 'info' ? ' INFO' : '') + (desc ? ' ' + desc : ''));
+                });
+            });
+            return out.join('\n');
+        }
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Faults as QR', value: 'The last scan, for a phone camera',
+                open: () => qrLogSheet({ title: 'Faults as QR', plain: true, text: faultText, app: 'Fault Scanner', version: ctx.spec.version,
+                    help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
+            });
+        }
         const pageCount = () => (scrolls ? 1 : Math.max(1, Math.ceil(listed().length / perPage))) + 2;
         const shownList = () => { const fp = pageCount() - 2; return page < fp ? scroll.faults : page === fp ? scroll.cc : scroll.ecus; };
         // a finger dragged on the page or the controller turned on it (cv.scroll): the list shown moves
