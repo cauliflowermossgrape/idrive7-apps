@@ -1,0 +1,76 @@
+{
+  "id": "diagnose",
+  "title": "Diagnose",
+  "description": "Live anomaly finder: learns how this car usually behaves, shows what went off its line and what moved first, matched-condition comparison, garage tests and a findings screen for the workshop",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAB2",
+  "iconGlyph": "pulse",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.15" },
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs",
+      "statusBattery2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infrastructure.VehicleInformation": {
+      "statusGearboxDrive": "s",
+      "DataPowerTrain2": "s"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "_optional": "engine torque and boost",
+      "statusActualValueTorque2": "rs",
+      "statusSwitchDriveDynamicSport2": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "outside temperature",
+      "ExteriorTemperature": "s"
+    },
+    "de.bmw.chassis.SteeringAngle": {
+      "_optional": "the steering wheel, for steering against sideways g",
+      "ActualSteeringAngleDriver": "s",
+      "actualSteeringAngleDriverNoCRC": "s"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Diagnose",
+      "buttons": [
+        ["BTN_FREEZE", "Freeze"],
+        ["BTN_PREV", "Previous"],
+        ["BTN_NEXT", "Next"],
+        ["BTN_TEST", "Start test"],
+        ["BTN_HEALTHY", "Save as healthy"],
+        ["BTN_PAGE", "Next page"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "testX", "label": "Test: input", "type": "choice", "default": "rpm",
+     "options": [["rpm", "Engine speed"], ["speed", "Speed"], ["torque", "Engine torque"], ["coolant", "Coolant"], ["oil", "Engine oil"]]},
+    {"key": "testY", "label": "Test: response", "type": "choice", "default": "boost",
+     "options": [["boost", "Boost"], ["torque", "Engine torque"], ["gLong", "Forward g"], ["kW", "Power"], ["oil", "Engine oil"], ["rpm", "Engine speed"]]},
+    {"key": "hold", "label": "Test: keep this steady", "type": "choice", "default": "oil",
+     "options": [["none", "Nothing"], ["oil", "Engine oil"], ["coolant", "Coolant"], ["outside", "Outside"], ["soc12", "12 V charge"], ["gear", "Gear"]]},
+    {"key": "holdBand", "label": "Test: steady within", "type": "number", "default": 5, "steps": [1, 2, 5, 10, 20]},
+    {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
+     "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}

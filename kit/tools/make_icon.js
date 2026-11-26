@@ -23,6 +23,12 @@ if (glyph === 'gauge') {
     c.line(70, 76, nx, ny, 6, W);
     c.circle(70, 76, 9, W);
     c.fillRect(44, 112, 52, 6, W);
+} else if (glyph === 'pulse') {
+    // a trace that steps off its line (Diagnose): the line, the off part in the accent, a magnifier ring
+    c.polyline([[14, 78], [44, 78], [54, 62], [64, 94], [74, 40], [84, 78], [96, 78]], 6, W);
+    c.polyline([[64, 94], [74, 40]], 7, A);
+    c.arc(100, 52, 20, 27, 0, 360, W);
+    c.line(115, 67, 128, 80, 8, W);
 } else if (glyph === 'flag') {
     // stopwatch + launch flag
     c.arc(62, 78, 38, 46, 0, 360, W);
