@@ -1,8 +1,8 @@
 {
   "id": "dtc_scanner",
   "title": "Fault Scanner",
-  "description": "Read and clear fault memory of every control unit, what each unit kept about a fault, how fast units answer, plus active Check Control messages",
-  "version": "2.13.1",
+  "description": "Read and clear fault memory of every control unit, what each unit kept about a fault, how fast units answer, plus active Check Control messages and values that do not fit together or arrive late",
+  "version": "2.15.1",
   "vendor": "custom",
   "loggingId": "OA95",
   "iconGlyph": "engine",
@@ -23,9 +23,22 @@
       "cbsDataServiceList": "rs"
     },
     "de.bmw.infotainment.vehicle.CDS": {
-      "_optional": "the health report's 12 V charge, oil and coolant",
+      "_optional": "the health report's 12 V charge, oil and coolant, and the Plausibility tab's rpm and temperatures",
       "statusBattery2": "rs",
+      "statusEngineSpeed2": "rs",
       "statusEngineTemperature": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "_optional": "the Plausibility tab's speed",
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "_optional": "the Plausibility tab's forward g",
+      "statusLongitudinalAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "the Plausibility tab's outside temperature",
+      "ExteriorTemperature": "s"
     }
   },
   "screens": [
@@ -47,6 +60,7 @@
      "options": [["current", "Current"], ["all", "Incl. history"]]},
     {"key": "info", "label": "Also read info memory", "type": "bool", "default": false},
     {"key": "autoScan", "label": "Scan when opened", "type": "bool", "default": true},
+    {"key": "plausibility", "label": "Plausibility checks", "type": "bool", "default": true},
     {"key": "theme", "label": "Colour theme", "type": "choice", "default": "m_tricolour",
      "options": [["m_red", "M Red"], ["m_tricolour", "M Tricolour"], ["ice", "Ice White"], ["amber", "Night Amber"]]},
     {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",

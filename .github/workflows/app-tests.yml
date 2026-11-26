@@ -73,6 +73,8 @@ jobs:
       - run: node kit/tools/test_blend.js
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_faults_plausibility.js
+      - run: node kit/tools/test_dev_report.js
       - run: node kit/tools/test_dtc_texts.js
       - run: node kit/tools/test_signal_hunter.js
       - run: node kit/tools/gen_signal_hunter.js --check
@@ -139,6 +141,8 @@ jobs:
       - run: node --version
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_faults_plausibility.js
+      - run: node kit/tools/test_dev_report.js
       - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_redline_hud.js

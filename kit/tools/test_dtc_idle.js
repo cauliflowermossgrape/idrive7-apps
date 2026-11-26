@@ -1,7 +1,8 @@
 'use strict';
 // Fault Scanner: nothing on the car's buses while nobody is on its page. The diagnostic link opens when the page is
-// first shown, the Check Control watches (CheckControlMaster, the cluster's KombiInterface_2) run only while it
-// shows, and a scan left half way skips what comes after the request under way. No SDK or car needed; Node 8 too:
+// first shown, the Check Control watches (CheckControlMaster, the cluster's KombiInterface_2) and the Plausibility
+// tab's watches and checks (with its setting at the default, on) run only while it shows, and a scan left half way
+// skips what comes after the request under way. No SDK or car needed; Node 8 too:
 //   node kit/tools/test_dtc_idle.js
 const fs = require('fs');
 const os = require('os');
@@ -38,7 +39,12 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 5));
 
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dtc-idle-'));
-    const watching = new Set(), watched = [];
+    const counts = new Map(), watched = [];
+    const watching = { has: (i) => (counts.get(i) || 0) > 0, get size() { return Array.from(counts.values()).filter((n) => n > 0).length; },
+        total: () => Array.from(counts.values()).reduce((a, n) => a + n, 0) };
+    const timers = new Set(), setI = global.setInterval, clearI = global.clearInterval;
+    global.setInterval = function () { const h = setI.apply(this, arguments); timers.add(h); return h; };
+    global.clearInterval = function (h) { timers.delete(h); return clearI.apply(this, arguments); };
     const vis = [], clicks = {};
     let visible = false;
     const spec = JSON.parse(fs.readFileSync(path.join(APP, 'app.json'), 'utf8'));
@@ -49,7 +55,7 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 5));
         log: { info: noop, warn: noop, error: noop }, dataDir: dir,
         settings: { get: (k) => def[k], onChange: noop },
         signals: {
-            watch: async (iface) => { watching.add(iface); watched.push(iface); return { shutdown: async () => { watching.delete(iface); } }; },
+            watch: async (iface) => { counts.set(iface, (counts.get(iface) || 0) + 1); watched.push(iface); return { shutdown: async () => { counts.set(iface, counts.get(iface) - 1); } }; },
         },
         ui: {
             text: noop, image: async () => {}, onClick: (b, fn) => { clicks[b] = fn; }, onVisible: (fn) => vis.push(fn), onFocus: noop,
@@ -62,16 +68,21 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 5));
 
     await impl.start(ctx);
     await tick(20);
+    ok(def.plausibility === true, 'Plausibility checks at their default: on');
     ok(watching.size === 0 && diags === 0 && sent.length === 0, 'started without its page: no watch, no diagnostic link, nothing sent');
+    ok(timers.size === 0, 'started without its page: no Plausibility timer (' + timers.size + ')');
 
     await show(true);
     ok(watching.has('de.bmw.infotainment.KombiInterface_2') && watching.has('de.bmw.infotainment.checkcontrol.CheckControlMaster') && watching.has('de.bmw.infotainment.vehicle.CDS'), 'page shown: Check Control and the health report values watched');
     ok(diags === 1, 'page shown: the diagnostic link opened');
+    const PL = ['de.bmw.infotainment.vehicle.Vehicle2', 'de.bmw.infotainment.vehicle.CDS2', 'de.bmw.infrastructure.EnvironmentalInformation'];
+    ok(PL.every((i) => watching.has(i)) && timers.size === 1, 'page shown: the Plausibility watches and its timer too (' + timers.size + ')');
 
     await show(false);
-    ok(watching.size === 0, 'page left: the watches shut down (the cluster\'s interface too)');
+    ok(watching.size === 0 && watching.total() === 0, 'page left: the watches shut down (the cluster\'s interface and Plausibility\'s too)');
+    ok(timers.size === 0, 'page left: the Plausibility timer stopped');
     await show(true); await show(false); await show(true);
-    ok(watching.size === 3 && diags === 1, 'shown again: watched again (Check Control, the cluster, the health report CDS), the link opened once (' + watching.size + ', ' + diags + ')');
+    ok(watching.size === 6 && watching.total() === 7 && timers.size === 1 && diags === 1, 'shown again: watched again (Check Control, the cluster, CDS for the health report and Plausibility, its other three), one timer, the link opened once (' + watching.size + ', ' + watching.total() + ', ' + timers.size + ', ' + diags + ')');
 
     // a scan, the page left during the fault memory read: no info memory, no identifying
     sent.length = 0; fnHold = [];
@@ -89,6 +100,7 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 5));
     await tick(80);
     ok(sent.some((x) => /functional 19 23,/.test(x)) && sent.some((x) => /physical 12 22/.test(x)), 'page showing: info memory and identifying too (' + sent.join(' | ') + ')');
     await show(false);
+    ok(watching.total() === 0 && timers.size === 0, 'left at the end: nothing watched, no timer');
 
     const rm = (p) => { try { fs.readdirSync(p).forEach((f) => rm(path.join(p, f))); fs.rmdirSync(p); } catch (e) { try { fs.unlinkSync(p); } catch (e2) { /* gone */ } } };
     rm(dir);
