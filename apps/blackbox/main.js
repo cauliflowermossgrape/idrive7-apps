@@ -156,7 +156,9 @@ mgu.run({
 function demoAt(ms) {
     const s = ms / 1000, p = s % 45;
     let speed = 72 + 30 * Math.sin(s / 11) + 8 * Math.sin(s / 3.7), gLong = 0.12 * Math.cos(s / 11) + 0.06 * Math.cos(s / 3.7);
-    if (p > 20 && p < 26) { const k = Math.sin(Math.PI * (p - 20) / 6); speed -= 34 * Math.sin(Math.PI * (p - 20) / 12); gLong = -0.85 * k; }
+    // a hard stop from about 20 s into every 45: speed falls by up to 40 km/h and comes back by 40 s
+    if (p > 20 && p < 40) speed -= 40 * (p < 25 ? (1 - Math.cos(Math.PI * (p - 20) / 5)) / 2 : (1 + Math.cos(Math.PI * (p - 25) / 15)) / 2);
+    if (p > 20 && p < 25) gLong = -0.85 * Math.sin(Math.PI * (p - 20) / 5);
     if (p > 32 && p < 36) gLong = 0.45 * Math.sin(Math.PI * (p - 32) / 4);
     speed = Math.max(0, speed);
     return { t: ms, speed, gLong, gLat: 0.3 * Math.sin(s / 5), rpm: 900 + speed * 27 + Math.max(0, gLong) * 2500, torque: 90 + Math.max(0, gLong) * 420, oil: 98, coolant: 92 };
