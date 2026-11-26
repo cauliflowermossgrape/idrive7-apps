@@ -183,11 +183,41 @@ mgu.run({
             units.concat(soloDme ? [soloDme] : [], soloSlave ? [soloSlave] : []).forEach((u) => { u.useful = undefined; });
             relayout();
         }
+        /*
+         * The engine's cylinder count, from the engine unit's own list of its misfire monitors (OBD monitor ids A2 ..
+         * = cylinders 1 ..; asked as UDS 22 F6 A0, as M Vitals' kit/dids.js supported() does: the read-only link has
+         * no service 06). Its reply 62 F6 A0 b1 b2 b3 b4 is a bit map of A1 .. C0, b1's top bit A1. B38, B48 and B58
+         * share one SGBD, and a B48 answers the cylinder 5 and 6 identifiers too: with one engine unit, the cylinders
+         * past this count are left out of the Useful lists. Asked once a start (at most CYL_TRIES times, CYL_RETRY_MS
+         * apart, while it doesn't answer or refuses; a short or empty list ends it); 0 = not known, all listed as before.
+         */
+        const CYL_TRIES = 3, CYL_RETRY_MS = 30000;
+        let cylinders = 0, cylTries = 0, cylT = 0, cylPending = false;
+        function cylCheck() {
+            if (cylinders || cylPending || cylTries >= CYL_TRIES || Date.now() - cylT < CYL_RETRY_MS || useDemo() || !link.available) return;
+            cylPending = true; cylTries++; cylT = Date.now();
+            const ok = (x) => (x[0] === 0x62 && x[1] === 0xF6 && x[2] === 0xA0) || (x[0] === 0x7F && x[1] === 0x22);
+            link.physical(0x12, 0x22, [0xF6, 0xA0], 1500, ok).then((x) => {
+                cylPending = false;
+                // no answer or a refusal (which may be another read's: it doesn't name the identifier): asked again
+                if (!x || x[0] !== 0x62) return;
+                if (x.length < 7) { cylTries = CYL_TRIES; return; }
+                const has = (mid) => (x[3 + ((mid - 0xA1) >> 3)] & (0x80 >> ((mid - 0xA1) & 7))) !== 0;
+                let n = 0;
+                while (n < 12 && has(0xA2 + n)) n++;
+                if (!n) { cylTries = CYL_TRIES; return; }
+                cylinders = n;
+                log.info('engine: ' + n + ' cylinders (engine unit list)');
+                units.concat(soloDme ? [soloDme] : []).forEach((u) => { if (u.addr === 0x12) u.useful = undefined; });
+                relayout();
+            }, () => { cylPending = false; });
+        }
         let slaveWokenT = 0;
         setInterval(() => {
             try {
                 if (!useDemo() && link.available) twin.detect().then(twinCheck, () => {});
                 twinCheck();
+                cylCheck();
                 // the second unit without a scan, given up on after misses in a row (asleep while the ignition came
                 // on): asked again every 30 s, as a scan would (the master's own unit is woken by a scan)
                 if (soloSlave && soloSlave.silent && Date.now() - slaveWokenT > 30000) { slaveWokenT = Date.now(); soloSlave.silent = false; link.wake(0x13); changed(); }
@@ -258,7 +288,9 @@ mgu.run({
             const two = isTwin();
             const groups = u.addr === 0x13 ? (two ? USEFUL.BANK2(twin.perBank) : null) : USEFUL[u.addr] || USEFUL.bySgbd[u.sgbd];
             if (!groups) return (u.useful = null);
-            const fits = (item) => !item.only || (item.only === 'twin') === two;
+            // and the engine unit's cylinders past the engine's own count (one engine unit, the count known: cylCheck())
+            const fits = (item) => (!item.only || (item.only === 'twin') === two)
+                && !(u.addr === 0x12 && !two && cylinders && item.cyl > cylinders && !u.demo);
             const index = {};
             rowsOf(u, true).forEach((row) => { index[row.key + '/' + row.field] = row; });
             const find = (c) => index[c.indexOf('/') > 0 ? c : c + '/0'];
