@@ -35,12 +35,16 @@ mgu.run({
         const hunter = () => (demoOn() ? demoH : real);
 
         // listening: one watch per interface, every field of it in one go (read only)
-        const sig = spec.signals || {};
-        const ifaces = Object.keys(sig), nFields = ifaces.reduce((n, i) => n + Object.keys(sig[i]).filter((k) => !k.startsWith('_')).length, 0);
+        // (fields.js, written by kit/tools/gen_signal_hunter.js: the runtime spec carries no "signals" block)
+        let sig = {};
+        try { sig = require('./fields'); } catch (e) {
+            Object.keys(spec.signals || {}).forEach((i) => { sig[i] = Object.keys(spec.signals[i]).filter((k) => !k.startsWith('_')); });
+        }
+        const ifaces = Object.keys(sig), nFields = ifaces.reduce((n, i) => n + sig[i].length, 0);
         if (ctx.signals && ctx.signals.watch) {
             ifaces.forEach((iface) => {
                 const h = {};
-                Object.keys(sig[iface]).filter((k) => !k.startsWith('_')).forEach((f) => {
+                sig[iface].forEach((f) => {
                     h[f] = (v) => { if (!seen) { seen = true; log.info('signal hunter: the car answers (' + iface + ')'); } real.update(iface + '|' + f, v); };
                 });
                 Promise.resolve(ctx.signals.watch(iface, '1', h, log)).catch((e) => log.warn('signal hunter: ' + iface + ': ' + (e && e.message || e)));
