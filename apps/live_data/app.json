@@ -2,7 +2,7 @@
   "id": "live_data",
   "title": "Live Data",
   "description": "Read-only live values from the car and its control units, a trip computer with fuel cost, and gauge screens of your own, one of them as the home-screen widget",
-  "version": "1.1.1",
+  "version": "1.2.1",
   "vendor": "custom",
   "loggingId": "OA9D",
   "iconGlyph": "gauge",
@@ -11,7 +11,8 @@
   "signals": {
     "de.bmw.infotainment.vehicle.Vehicle": {
       "_optional": "the car's pressure unit: boost and tyre pressures come in it",
-      "statusNewCurrentUnitsStatusExt": "rs"
+      "statusNewCurrentUnitsStatusExt": "rs",
+      "statusDayNightChangeOver": "rs"
     },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",
@@ -23,7 +24,8 @@
       ]
     },
     "de.bmw.infotainment.controlelements.FrontCCU": {
-      "statusRotaryEncoderState": "rs"
+      "statusRotaryEncoderState": "rs",
+      "statusPushButtonsState": "rs"
     },
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
@@ -53,7 +55,8 @@
     "de.bmw.infotainment.KombiIF": {
       "statusRangeTankStatus": "rs",
       "statusBordcomputerAverage": "rs",
-      "statusBordcomputerTravelData": "rs"
+      "statusBordcomputerTravelData": "rs",
+      "statusDisplayElectricalPowerDistribution": "rs"
     },
     "de.bmw.infrastructure.VehicleInformation": {
       "Range": "s",
@@ -63,14 +66,18 @@
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs",
       "statusOilDipstick2": "rs",
-      "statusVehicleMass": "rs"
+      "statusVehicleMass": "rs",
+      "highVoltageStorageInfoToExternal": "s",
+      "statusLightStatus": "rs",
+      "statusVehiclePartType": "rs"
     },
     "de.bmw.chassis.SteeringAngle": {
       "ActualSteeringAngleDriver": "s",
       "actualSteeringAngleDriverNoCRC": "s"
     },
     "de.bmw.infrastructure.EnvironmentalInformation": {
-      "ExteriorTemperature": "s"
+      "ExteriorTemperature": "s",
+      "UnitBN2020": "rs"
     },
     "de.bmw.infotainment.vehicle.TPMS": {
       "statusTyrePressure": "rs",
@@ -86,6 +93,90 @@
     },
     "de.bmw.chassis.VehicleStabilizationManagement": {
       "StabilizationManagement": "s"
+    },
+    "de.bmw.body.DoorsWindowsRoofMirrors": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "CentralLockingSystemAndPanelStatus": "s"
+    },
+    "de.bmw.body.Light": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "StatusFunctionsIndicators": "s"
+    },
+    "de.bmw.body.steeringwheelcomfort.SteeringWheelClimate": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "heatingState": "rs"
+    },
+    "de.bmw.infotainment.KombiInterface_2": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "cbsDataSBA": "rs",
+      "cbsDataServiceList": "rs",
+      "ccList": "rs",
+      "newCCMessage": "rs"
+    },
+    "de.bmw.infotainment.checkcontrol.CheckControlMaster": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "basicList": "rs"
+    },
+    "de.bmw.infotainment.climate.Climate": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "statusSeatHeatingDR": "rs",
+      "statusSeatHeatingDRR": "rs",
+      "statusSeatHeatingPS": "rs",
+      "statusSeatHeatingPSR": "rs"
+    },
+    "de.bmw.infotainment.climate.Climate2": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "statusACFront": "rs",
+      "statusActualValuePowerACCompressor": "rs",
+      "statusAirConditionDRStatus": "rs"
+    },
+    "de.bmw.infotainment.climate.climatemaster.ClimateMaster": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "statusAirCondAC": "rs",
+      "statusClimateSystemOn": "rs"
+    },
+    "de.bmw.infotainment.connectivity.telephony.ConnectivityAggregator": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "aggregatedCallState": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.Efficiencytainment": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "statusPowerRelativRecuperation": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.Efficiencytainment2": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "displayPowerDrive": "s",
+      "displayPowerDrive2": "s",
+      "statusBatteryTemperature": "rs",
+      "statusChargeOfBatteryHybrid": "rs",
+      "statusPowerRelativHybrid": "rs"
+    },
+    "de.bmw.infotainment.lsc.LSCDataSink": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "statusHighVoltageStorage": "s"
+    },
+    "de.bmw.infotainment.misc.ComfortFunctionIuK": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "statusAmbientLightInteriorColour": "rs"
+    },
+    "de.bmw.infotainment.misc.MDrive": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "dataDisplayGearbox": "s",
+      "statusMSystem": "rs"
+    },
+    "de.bmw.infotainment.resetlogic.ResetLogic": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "averageConsumption": "rs",
+      "currentConsumption": "rs"
+    },
+    "de.bmw.infrastructure.VehicleCondition": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "VehicleCondition": "s",
+      "vehicleConditionNoCrc": "s"
+    },
+    "de.bmw.infrastructure.analytics.BasicDataSet": {
+      "_optional": "read-only listening for the Signal Hunter tab (Settings > Advanced): a car without it just shows less",
+      "basicDataSet": "s"
     }
   },
   "screens": [
@@ -369,6 +460,12 @@
       "default": false
     },
     {"key": "advanced", "label": "Advanced settings", "type": "bool", "default": false},
+    {"key": "hunter", "label": "Signal Hunter tab (developer)", "type": "bool", "default": false, "when": {"advanced": true}},
+    {"key": "hunterLabel", "label": "Signal Hunter: label", "type": "choice", "default": "door", "when": {"advanced": true, "hunter": true},
+     "options": [["door", "Door"], ["window", "Window"], ["climate", "Climate"], ["wiper", "Wiper"], ["light", "Light"], ["button", "Button"], ["mode", "Mode"], ["other", "Other"]]},
+    {"key": "hunterWindow", "label": "Signal Hunter: window length", "type": "number", "unit": "s", "default": 30, "steps": [10, 20, 30], "when": {"advanced": true, "hunter": true}},
+    {"key": "hunterSpeed", "label": "Signal Hunter: play speed", "type": "number", "unit": "x", "default": 0.25, "steps": [0.25, 1], "when": {"advanced": true, "hunter": true}},
+    {"key": "hunterNoisy", "label": "Signal Hunter: show noisy values", "type": "bool", "default": false, "when": {"advanced": true, "hunter": true}},
     {
       "key": "theme",
       "label": "Colour theme",
