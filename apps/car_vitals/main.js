@@ -31,6 +31,7 @@ const TwinDme = require('./kit/twin_dme');
 
 const W = 1600, H = 520;
 const PAGES = ['engine', 'thermal', 'fuel', 'chassis'];
+const { blend } = require('./blend');
 const FUEL = ['iat', 'hpfp', 'lpfp', 'timing', 'boostCtl', 'load'];   // engine unit values read fast on the Fuel & ignition page
 /** Target-vs-actual pairs on the Fuel & ignition page: read together, [target, actual] keys of config.dme. */
 const PAIR = { boostCtl: ['boostTarget', 'boostActual'], load: ['loadTarget', 'loadActual'] };
@@ -284,6 +285,7 @@ mgu.run({
         // S / M from the cluster's programme display, steadied with the setting programSteady (program.js, #193)
         const program = new Program({ steady: () => settings.get('programSteady') === true, onChange: (v) => { live.program = v; } });
         settings.onChange((key) => { if (key === 'programSteady') program.recheck(); });
+        let tankLive = null, tankT = 0, handL = null;     // the Fuel mix page's fuel in the tank (drawMix)
         const watches = [
             ['de.bmw.infotainment.vehicle.CDS', {
                 statusEngineSpeed2: (v) => put('rpm', sc('rpm', v.actualValueRPMEngineCrankshaft)),
@@ -393,6 +395,12 @@ mgu.run({
                 },
             }],
         ];
+        // the fuel in the tank for the Fuel mix page, only with it switched on (issue #203)
+        if (settings.get('flexBlend') === true) {
+            watches.push(['de.bmw.infotainment.KombiIF', {
+                statusRangeTankStatus: (v) => { const l = v && Number(v.fluidLevelFuelTank); if (G.isNum(l) && l > 0 && l < 255) { tankLive = l; tankT = Date.now(); } },
+            }]);
+        }
         log.info('subscribing signals');
         // tyre values: also read every 10 s - BMW's own x_call only ever reads them, so a car may not notify them
         const subs = [], startT = Date.now();
@@ -732,7 +740,7 @@ mgu.run({
 
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t) {
-            G.frame(cv, t, ['Engine', 'Thermals', 'Fuel & ignition', 'Chassis'], page, [usingDemo() && { text: 'DEMO' }]);
+            G.frame(cv, t, ['Engine', 'Thermals', 'Fuel & ignition', 'Chassis'].concat(mixOn() ? ['Fuel mix'] : []), page, [usingDemo() && { text: 'DEMO' }]);
         }
 
         /** Power in kW: { kw, calc } (calc = estimated from torque x rpm, no sport-display data). */
@@ -1036,6 +1044,55 @@ mgu.run({
             ].filter(Boolean));
         }
 
+        /*
+         * Fuel mix (issue #203, with its setting): how much E85 and pump fuel to put in for a target ethanol share. The
+         * fuel in the tank is the cluster's (KombiIF, only watched with the setting on), or set by hand without it.
+         * What is in the tank now and the target are kept in the settings; Filled in remembers the mix it reached.
+         */
+        const mixOn = () => settings.get('flexBlend') === true;
+        const pageCount = () => PAGES.length + (mixOn() ? 1 : 0);
+        const num = (k, d) => (G.isNum(Number(settings.get(k))) ? Number(settings.get(k)) : d);
+        function drawMix(cv, t) {
+            const tank = num('tankSize', 60), liveL = G.isNum(tankLive) && Date.now() - tankT < 120000 && tankLive <= tank + 5 ? Math.min(tankLive, tank) : null;
+            const nowL = liveL !== null ? liveL : handL !== null ? handL : Math.round(tank / 4);
+            const nowE = num('mixNow', 10), target = num('mixTarget', 30), e85 = num('e85Share', 85), pump = num('pumpShare', 10);
+            const r = blend({ tank, now: nowL, nowE, target, e85, pump });
+            const step = (k, by, lo, hi, d) => () => { settings.set(k, Math.max(lo, Math.min(hi, num(k, d) + by))); return render(); };
+            // (the number font has digits only: the unit beside it in the text font)
+            const row = (y, label, value, unit, sub, minus, plus, key) => {
+                cv.text(label, 44, y + 30, 24, t.text, { font: 'bold' });
+                if (sub) cv.text(sub, 44, y + 58, 18, t.dim);
+                cv.text(unit, 572, y + 38, 26, t.dim, { align: 'right' });
+                cv.text(String(value), 536, y + 38, 40, t.text, { font: 'num', align: 'right' });
+                if (minus) G.button(cv, t, 590, y + 4, 64, 52, '-', minus, { key: key + '-' });
+                if (plus) G.button(cv, t, 666, y + 4, 64, 52, '+', plus, { key: key + '+' });
+            };
+            G.panel(cv, t, 24, G.TOP, 744, 468, 'The tank now');
+            row(G.TOP + 56, 'Fuel in the tank', Math.round(nowL), 'l', liveL !== null ? 'from the car, of ' + tank + ' l' : 'set by hand (the car sent none), of ' + tank + ' l',
+                liveL === null ? () => { handL = Math.max(0, nowL - 5); return render(); } : null,
+                liveL === null ? () => { handL = Math.min(tank, nowL + 5); return render(); } : null, 'mix-l');
+            row(G.TOP + 156, 'Ethanol in it now', nowE, '%', 'the mix you last filled', step('mixNow', -5, 0, 100, 10), step('mixNow', 5, 0, 100, 10), 'mix-now');
+            row(G.TOP + 256, 'Target', target, '%', 'E30 = 30 %', step('mixTarget', -5, 0, 100, 30), step('mixTarget', 5, 0, 100, 30), 'mix-target');
+            cv.text('E85 at the pump: ' + e85 + ' % ethanol, pump fuel: ' + pump + ' %, tank ' + tank + ' l (Settings)', 44, G.TOP + 392, 18, t.dim);
+            cv.text('E85 is often 70 - 85 % (less in winter): check the station\'s label.', 44, G.TOP + 420, 18, t.dim);
+            G.panel(cv, t, 784, G.TOP, 792, 468, 'To fill up' + (r.fill > 0 ? ' (' + Math.round(r.fill) + ' l)' : ''));
+            if (r.fill <= 0) cv.text(r.why || 'the tank is full', 808, G.TOP + 120, 28, t.dim, { font: 'bold' });
+            else {
+                cv.text('E85', 808, G.TOP + 110, 26, t.dim, { font: 'bold', spacing: 1.5 });
+                const w1 = cv.text(String(r.e85L.toFixed(1)), 808, G.TOP + 196, 84, t.text, { font: 'num' });
+                cv.text('l', 818 + w1, G.TOP + 196, 32, t.dim);
+                cv.text('PUMP FUEL', 1180, G.TOP + 110, 26, t.dim, { font: 'bold', spacing: 1.5 });
+                const w2 = cv.text(String(r.pumpL.toFixed(1)), 1180, G.TOP + 196, 84, t.text, { font: 'num' });
+                cv.text('l', 1190 + w2, G.TOP + 196, 32, t.dim);
+                cv.text('Ends at ' + r.result + ' % ethanol', 808, G.TOP + 262, 28, r.ok ? t.text : t.warn, { font: 'bold' });
+                if (!r.ok) cv.text(r.why, 808, G.TOP + 296, 20, t.warn);
+                cv.text('Put the E85 in first, it mixes as you fill the rest.', 808, G.TOP + 340, 18, t.dim);
+            }
+            G.button(cv, t, 808, G.TOP + 380, 340, 60, 'Filled in', () => { settings.set('mixNow', Math.round(r.result)); handL = null; return render(); },
+                { primary: true, key: 'mix-filled', busy: r.fill <= 0 });
+            cv.text('sets "in it now" to ' + Math.round(r.result) + ' %', 1164, G.TOP + 418, 18, t.dim);
+        }
+
         function drawChassis(cv, t, d) {
             chassisSeen = Date.now();
             kickFuel();
@@ -1106,14 +1163,15 @@ mgu.run({
         async function render() {
             const t = ctx.theme(), d = data();
             const cv = ctx.canvas(W, H).clear(t.bg);
-            [drawEngine, drawThermal, drawFuel, drawChassis][page](cv, t, d);
+            if (page >= pageCount()) page = 0;
+            [drawEngine, drawThermal, drawFuel, drawChassis, drawMix][page](cv, t, d);
             header(cv, t);
             if (!render.n) { render.n = 1; log.info('first frame drawn'); }
             await ui.image('MAIN_GFX', cv);
         }
 
-        ui.onClick('BTN_PAGE', () => { page = (page + 1) % PAGES.length; return render(); });
-        ui.onClick('BTN_PREV', () => { page = (page + PAGES.length - 1) % PAGES.length; return render(); });
+        ui.onClick('BTN_PAGE', () => { page = (page + 1) % pageCount(); return render(); });
+        ui.onClick('BTN_PREV', () => { page = (page + pageCount() - 1) % pageCount(); return render(); });
         ctx.onTab((i) => { page = i; return render(); });
         // every screen refresh (60 fps) with the GPU renderer; 10 fps in software (PNG frames)
         ctx.loop('MAIN', 10, render);

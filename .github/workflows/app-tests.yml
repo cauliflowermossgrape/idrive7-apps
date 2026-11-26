@@ -67,6 +67,7 @@ jobs:
       - run: node kit/tools/test_service.js
       - run: node kit/tools/test_service_engine.js
       - run: node kit/tools/test_car_vitals.js
+      - run: node kit/tools/test_blend.js
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
       - run: node kit/tools/test_dtc_texts.js

@@ -2,13 +2,16 @@
   "id": "car_vitals",
   "title": "M Vitals",
   "description": "Live engine, thermal, intake / fuel / ignition, tyre and chassis gauges",
-  "version": "2.27.16",
+  "version": "2.28.0",
   "vendor": "custom",
   "loggingId": "OA93",
   "iconGlyph": "gauge",
   "mguHmi": ["ID7", "ID8"],
   "requires": { "idrive7-renderd": "2.1.18", "mgu-inputgate": "1.1.0" },
   "signals": {
+    "de.bmw.infotainment.KombiIF": {
+      "statusRangeTankStatus": "rs"
+    },
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
       "statusEngineTemperature": "rs"
@@ -106,6 +109,54 @@
           "Chassis"
         ]
       ]
+    },
+    {
+      "key": "flexBlend",
+      "label": "Fuel mix page: E85 blend calculator",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "tankSize",
+      "label": "Fuel tank size",
+      "type": "number",
+      "unit": "l",
+      "default": 60,
+      "steps": [40, 42, 45, 50, 52, 55, 57, 59, 60, 63, 65, 68, 70, 74, 78, 80, 85, 90, 100],
+      "when": { "flexBlend": [true] }
+    },
+    {
+      "key": "e85Share",
+      "label": "Ethanol in the station's E85",
+      "type": "number",
+      "unit": "%",
+      "default": 85,
+      "steps": [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100],
+      "when": { "flexBlend": [true] }
+    },
+    {
+      "key": "pumpShare",
+      "label": "Ethanol in the pump fuel",
+      "type": "choice",
+      "default": "10",
+      "options": [["0", "None (E0)"], ["5", "E5"], ["10", "E10"], ["15", "E15"]],
+      "when": { "flexBlend": [true] }
+    },
+    {
+      "key": "mixNow",
+      "label": "Ethanol in the tank now",
+      "type": "number",
+      "unit": "%",
+      "default": 10,
+      "hidden": true
+    },
+    {
+      "key": "mixTarget",
+      "label": "Target ethanol",
+      "type": "number",
+      "unit": "%",
+      "default": 30,
+      "hidden": true
     },
     {
       "key": "tempUnit",
