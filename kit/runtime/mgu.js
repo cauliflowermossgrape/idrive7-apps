@@ -683,7 +683,9 @@ async function run(impl) {
 }
 async function runInner(impl) {
     const app = new OnlineApp();
-    log.info('starting ' + SPEC.id + ' ' + SPEC.version);
+    // start-up timing (#240): ms since Node started, on the lines that say where a start spends its time
+    const upMs = () => Math.round(process.uptime() * 1000);
+    log.info('starting ' + SPEC.id + ' ' + SPEC.version + ' (node up ' + upMs() + ' ms)');
     // interfaces this unit lacks, which the installer left out (app.json "_optional")
     try {
         const missing = JSON.parse(fs.readFileSync(path.join(__dirname, 'missing-interfaces.json'), 'utf8'));
@@ -693,7 +695,7 @@ async function runInner(impl) {
     // status channel is up (otherwise MainApp stops the app right after start),
     // report HMI visibility, and exit when MainApp asks us to shut down
     const active = () => Promise.resolve().then(() => app.registerActive())
-        .then(() => log.info('registered active')).catch((e) => log.warn('registerActive: ' + e));
+        .then(() => log.info('registered active (' + upMs() + ' ms)')).catch((e) => log.warn('registerActive: ' + e));
     app.on('appStatusProxyReady', active);
     // (a stop MainApp asked for is no failed start for safe boot: CONFIG_STATE starts and quick sleeps end this way)
     app.on('shutdown', () => { log.info('shutdown requested by MainApp'); if (safeBoot) safeBoot.stopped(); setTimeout(() => process.exit(0), 200); });
@@ -749,6 +751,9 @@ async function runInner(impl) {
             '(see the SDK_ lines above). Idle until MainApp stops it.');
         return;
     }
+    // resolved by the app's first ctx.loop: it can draw its page (startApp)
+    let canDraw = null;
+    const drawReady = new Promise((res) => { canDraw = res; });
     const ui = new Ui(app);
     const display = new Display(ui, log, SPEC, settings, () => themes.theme(settings.get('theme')));
     ui.display = display;
@@ -814,6 +819,7 @@ async function runInner(impl) {
          * when the GPU renderer shows it, else about `fps` times a second.
          */
         loop(stateName, fps, fn) {
+            canDraw();
             let timer = null, on = false, running = false, frames = 0, spent = 0;
             const gpuOn = () => display.active(stateName);
             const tick = async () => {
@@ -915,17 +921,22 @@ async function runInner(impl) {
         entryUuids = ((appDesc.application && appDesc.application.entryPoints) || []).map((e) => e.uuid);
     } catch (e) { log.warn('no rhmiData/application.json: ' + e); }
     const mainState = ui.comp(mainName);
+    // (asked now, not waited for: the screens and the app start go on meanwhile, a tap waits for its own)
     const mapped = {};
-    await Promise.all(entryUuids.map((uuid) => ui.rhmi.mapEntryState(uuid, mainState)
-        .then(() => { mapped[uuid] = true; log.info('mapped entry ' + uuid + ' -> ' + mainName); })
-        .catch((e) => log.error('map entry state', e))));
+    entryUuids.forEach((uuid) => {
+        mapped[uuid] = ui.rhmi.mapEntryState(uuid, mainState)
+            .then(() => { mapped[uuid] = true; log.info('mapped entry ' + uuid + ' -> ' + mainName + ' (' + upMs() + ' ms)'); })
+            .catch((e) => { mapped[uuid] = false; log.error('map entry state', e); });
+    });
     let opening = null;
     // tries: right after a tap started the app the HMI can still refuse the state (INVALID_UUID /
     // INVALID_COMPONENTID) - then it is asked again, 0.8 s apart, instead of needing a second tap
     const openEntry = (uuid, tries) => {
         if (opening) return opening;   // MainApp can send the same tap twice
         let again = false;
-        const map = mapped[uuid] ? Promise.resolve() : ui.rhmi.mapEntryState(uuid, mainState).then(() => { mapped[uuid] = true; });
+        const m = mapped[uuid];
+        const map = m === true ? Promise.resolve() : m && m.then ? m.then(() => (mapped[uuid] === true ? null : ui.rhmi.mapEntryState(uuid, mainState).then(() => { mapped[uuid] = true; })))
+            : ui.rhmi.mapEntryState(uuid, mainState).then(() => { mapped[uuid] = true; });
         opening = map
             .then(() => (mainState && mainState.updateResources ? mainState.updateResources().catch(() => {}) : null))
             .then(() => ui.rhmi.openEntryState(uuid))
@@ -986,7 +997,7 @@ async function runInner(impl) {
     const step = (what, p, ms) => {
         let timer;
         return Promise.race([
-            Promise.resolve(p).then(() => log.info(what + ' done')),
+            Promise.resolve(p).then(() => log.info(what + ' done (' + upMs() + ' ms)')),
             new Promise((res) => { timer = setTimeout(() => { log.warn(what + ' still pending after ' + ms + ' ms, continuing'); res(); }, ms); }),
         ]).catch((e) => log.error(what, e)).then(() => clearTimeout(timer));
     };
@@ -1000,14 +1011,21 @@ async function runInner(impl) {
         .map((s) => ui.comp(s.name)).filter((st) => st && st.updateResources)
         .map((st) => st.updateResources())), 4000);
     await step('settings screen', wireSettings(ctx), 3000);
+    // MainApp shows "Loading app" until initialized(): an app that can draw (its first ctx.loop) is ready for it then,
+    // what its start still waits for (a car's units found, a first read) goes on while its page shows (#240)
     const startApp = () => {
         safeBoot.step('start');
-        return impl && impl.start ? step('app start', Promise.resolve().then(() => impl.start(ctx)).catch((e) => { safeBoot.fail(e); throw e; }), 5000) : null;
+        if (!(impl && impl.start)) return null;
+        const started = Promise.resolve().then(() => impl.start(ctx)).catch((e) => { safeBoot.fail(e); throw e; });
+        const drawable = drawReady.then(() => new Promise((res) => setTimeout(res, 0)))
+            .then(() => log.info('app can draw (' + upMs() + ' ms): ready, its start goes on'));
+        started.then(() => log.info('app start done (' + upMs() + ' ms)'), (e) => log.error('app start', e));
+        return step('app start (until it can draw)', Promise.race([started.catch(() => {}), drawable]), 5000);
     };
     if (boot.safe) startSafe();
     else { await startApp(); startedOk(); }
     await app.initialized();
-    log.info('initialized (start reason ' + app.startReason + ')');
+    log.info('initialized (start reason ' + app.startReason + ', ' + upMs() + ' ms)');
     // launched by a tile tap / bookmark: the execute event came before we
     // listened, so open the screen ourselves (M Laptimer does the same)
     const lastEntry = app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid();

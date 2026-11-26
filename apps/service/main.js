@@ -36,6 +36,14 @@
  * A V8 with two engine units (N63, S63, S68: kit/twin_dme.js, told by the same SGBD index): the oil, plugs
  * and hours are the master's (the whole engine's); each bank has its own particulate filter, so bank 2's soot comes
  * from the second unit (0x13) too.
+ * Your own (more.js, recorded by extras.js with the car, also with the screen closed): your own intervals next to
+ * BMW's, listed on the Service page under the car's items as "<name> (own)" once one is marked done (marked with
+ * "Mark done", never Reset: Reset service on the Service page only ever means the car's item), and the Intervals,
+ * Wheels, Battery and Garage (with Fuel) pages, with How it works. They never change the car's own service display;
+ * the CBS items, their cards and resets above work as before.
+ * Diagnostic links: every read (CBS records, the Engine page, the Battery page's 12 V voltage) goes through one
+ * read-only link (kit/readonly-diag.js), made when a page first needs it; a plain link is made only for the cluster's
+ * reset, when Reset service is pressed. The background (extras.js) has none: it only listens to broadcasts.
  * HMI Polish letters use ASCII equivalents because the upstream font atlases lack Polish glyphs.
  * Raw diagnostic JSON preserves Unicode as escaped code units rather than unreadable glyphs.
  */
@@ -44,11 +52,15 @@ const { withAlpha } = require('./kit/canvas');
 const G = require('./kit/gauges');
 const { Diag, hex, NRC, replyTo } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
+const { ReadOnlyDiag } = require('./kit/readonly-diag');
+const { VoltReader } = require('./battery_read');
 const TwinDme = require('./kit/twin_dme');
 const { fitText } = require('./kit/text-layout');
 const { cardSheet } = require('./kit/sheet');
 const { t: translate, getLanguage, plural } = require('./kit/i18n');
 const fonts = require('./kit/fonts');
+const More = require('./more');
+const Extras = require('./extras');
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MONTHS_RU_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -276,6 +288,7 @@ const DEMO = {
 };
 
 mgu.run({
+    background: Extras.background,
     async start(ctx) {
         const { ui, settings, log } = ctx;
         const sig = ctx.signals;
@@ -286,6 +299,8 @@ mgu.run({
         const liveRecords = () => Array.from(cbsReads.values())
             .filter((r) => r.did === 0x1001 && r.state === 'ok').reduce((a, r) => a.concat(r.records), []);
         const changed = () => { version++; };
+        const more = More.create(ctx, changed);
+        G.onConfirm(changed);            // (a button that asks to be pressed again is drawn as such at once)
         /** the summary's name: that of the list item the car words the same way (one item, or items of one name) */
         const sbaName = (text) => {
             const names = Array.from(new Set((text ? list || [] : []).filter((i) => i.carName === text).map((i) => i.name)));
@@ -297,7 +312,7 @@ mgu.run({
         /* ---------- reading ---------- */
         // the cluster's interface watched (and read again each minute) only while the page shows: an app talking to
         // the cluster unasked disturbed others, and the cluster as it wakes from sleep; CBS read only then too
-        let shownNow = false, kombiSub = null;
+        let shownNow = false, kombiSub = null, volt = null;      // volt: the Battery page's 12 V reader (below)
         const watchKombi = () => sig.watch(KOMBI, '1', {
             cbsDataServiceList: (v) => {
                 rawList = brief(v);
@@ -335,10 +350,14 @@ mgu.run({
                 s.then((r) => r && r.shutdown && r.shutdown()).catch(() => {});
                 log.info('page left: cluster watch shut down');
             }
+            if (!on && volt) volt.want(false);
         }
 
         const items = () => mergeCbs(useDemo() ? DEMO.list : list || [], useDemo() ? [] : liveRecords());
         const summary = () => (useDemo() ? DEMO.sba : sba);
+        /** The Service page's rows: the car's items, then your own (marked YOUR OWN) */
+        const rows = () => items().concat(more.rows(useDemo()));
+        const openRow = (i) => { const r = rows()[i]; if (r && r.own) { sel = i; return more.openOwn(r, cardSheet); } return openCard(i); };
 
         /* ---------- details (the iDrive's detail view) ---------- */
         async function details() {
@@ -375,6 +394,19 @@ mgu.run({
         let diag = null, reset = null;          // reset: { items: [{id, name}], i, at, busy }
         const showMsg = (s) => { hint = null; msg = s; log.info("msg: " + s); changed(); };
         const nrc = (r) => (r && r[0] === 0x7F ? 'refused: ' + (NRC[r[2]] || '0x' + hex(r[2])) : 'no answer from the instrument cluster');
+        // the reads: one read-only link (kit/readonly-diag.js) for the CBS records, the Engine page and the 12 V voltage
+        let rd = null, rdInit = null;
+        function readLink() {
+            if (!rdInit) {
+                rd = new ReadOnlyDiag(sig, log);
+                rdInit = Promise.resolve(rd.init()).then(() => {
+                    if (!rd.ready) throw new Error(rd.error || 'TASU not available');
+                    return rd;
+                }).catch((e) => { rdInit = null; throw e; });
+            }
+            return rdInit;
+        }
+        // the cluster's reset only (it writes): a plain link, made when Reset service is pressed
         async function link() {
             if (!diagInit) {
                 diag = new Diag(sig, log);
@@ -390,7 +422,8 @@ mgu.run({
             if (scanBusy || reset || settings.get('demo') === 'on') return;
             scanBusy = true; scanMessage = 'Reading CBS (read-only)...'; changed();
             try {
-                const d = await link();
+                const d = await readLink();
+                CBS_SOURCES.forEach((c) => d.wake(c.address));          // each scan asks every source again
                 for (const source of CBS_SOURCES) {
                     for (const did of source.dids) {
                         if (settings.get('demo') === 'on') { scanMessage = 'CBS read stopped (demo enabled)'; return; }
@@ -440,7 +473,7 @@ mgu.run({
          *  second press within 5 s confirms it. Anything else (Next item, Details) disarms it. */
         // Stop all (kit/panic.js) from any app: no reset is sent until it ends (one armed meanwhile is dropped)
         let panicked = false;
-        if (ctx.onPanic) ctx.onPanic((on) => { panicked = on; if (on) reset = null; });
+        if (ctx.onPanic) ctx.onPanic((on) => { panicked = on; if (on) { reset = null; if (volt) volt.want(false); } });
         async function resetPress() {
             if (panicked) return showMsg('Stopped by Stop all: nothing is sent to the car until it ends');
             if (settings.get('resetOn') !== true) return showMsg('Reset is off - turn on "Service reset" in Settings');
@@ -578,7 +611,8 @@ mgu.run({
             if (engine.busy || useDemo() || (!force && engine.at && Date.now() - engine.at < ENGINE_REFRESH_MS)) return;
             engine.busy = true; changed();
             try {
-                const d = await link();
+                const d = await readLink();
+                d.wake(0x12); d.wake(TwinDme.SLAVE);
                 engineReader = engineReader || new DidReader(d, { ecu: 0x12 });
                 if (!engine.kind) engine.kind = await engineKind(d);
                 const set = engine.kind === 'diesel' ? DIESEL : ENGINE;
@@ -594,7 +628,7 @@ mgu.run({
         }
 
         /* ---------- drawing ---------- */
-        const pages = () => ['Service', 'Engine'].concat(settings.get('diagPage') ? ['Diagnostics'] : []);
+        const pages = () => ['Service', 'Engine'].concat(more.TABS, settings.get('diagPage') ? ['Diagnostics'] : []);
         const pageName = () => pages()[page];
         const COL = (t, c) => [t.dim, t.crit, t.warn, GO, t.warn][c] || t.dim;
         const LBL = ['', 'DUE NOW', 'DUE SOON', 'OK', 'DUE SOON'];
@@ -610,8 +644,8 @@ mgu.run({
         }
 
         function drawMain(cv, t, its) {
-            const s = summary();
-            const red = its.filter((i) => i.colour === 1).length, soon = its.filter((i) => i.colour === 2 || i.colour === 4).length;
+            const s = summary(), car = its.filter((i) => !i.own);       // (the tiles are the car's: your own are in the list)
+            const red = car.filter((i) => i.colour === 1).length, soon = car.filter((i) => i.colour === 2 || i.colour === 4).length;
             tile(cv, t, 24, 760, 'Next service', s ? s.way || s.date || '--' : '--', s ? fit(cv, s.text, 22, 380) : 'waiting for the car', s ? COL(t, s.colour) : t.dim);
             tile(cv, t, 804, 374, 'Due soon', String(soon), plural(soon, 'items', 'items'), soon ? t.warn : GO);
             tile(cv, t, 1198, 378, 'Due now', String(red), plural(red, 'items', 'items'), red ? t.crit : GO);
@@ -626,7 +660,7 @@ mgu.run({
                 + ', availability ' + valueText(selectedRecord.avail, '%')
                 + ', interval ' + valueText(selectedRecord.intervalKm, ' km')
                 + ' / ' + valueText(selectedRecord.intervalMonths, ' months') : '';
-            const line = cv.own ? '' : msg || (hint ? hint.name + ':  ' + hint.text : extra);
+            const line = cv.own ? '' : msg || more.note() || (hint ? hint.name + ':  ' + hint.text : extra);
             const per = line ? rows - 1 : rows;                  // the bottom line takes the last row
             G.panel(cv, t, 24, 176, 1552, 336, 'Service requirements' + (its.length > per ? '  ' + (Math.floor(sel / per) + 1) + '/' + Math.ceil(its.length / per) : ''));
             if (line) {
@@ -641,14 +675,19 @@ mgu.run({
             its.slice(first, first + per).forEach((it, i) => {
                 const y = 232 + i * 55, col = COL(t, it.colour);
                 // a row tapped, or pressed with the controller: its card
-                if (cv.own) cv.target(40, y - 4, 1520, 50, () => openCard(first + i),
+                if (cv.own) cv.target(40, y - 4, 1520, 50, () => openRow(first + i),
                     'item' + (it.native ? it.id : it.key), 8);
                 if (!cv.own && first + i === sel) cv.roundRect(40, y - 4, 1520, 50, 8, withAlpha(t.accent, 0.18));   // (the kit rings the row the controller is on)
                 cv.roundRect(48, y + 4, 8, 34, 4, col);
                 cv.text(fit(cv, it.name, 30, 720, { font: 'bold' }), 76, y + 32, 30, t.text, { font: 'bold' });
                 cv.text(it.way || '--', 1040, y + 32, 30, it.way ? t.text : t.dim, { align: 'right', font: 'bold' });
                 cv.text(it.date || '--', 1250, y + 32, 28, it.date ? t.text : t.dim, { align: 'right' });
-                if (LBL[it.colour] || !it.native) {
+                if (it.own) {
+                    // your own interval: a clear marker, outlined (the car's are filled)
+                    cv.roundRect(1310, y + 6, 230, 34, 6, withAlpha(col, 0.12));
+                    cv.strokeRoundRect(1310, y + 6, 230, 34, 6, 2, withAlpha(t.accent, 0.9));
+                    cv.text('YOUR OWN' + (LBL[it.colour] ? ', ' + (it.colour === 1 ? 'DUE' : it.colour === 2 ? 'SOON' : 'OK') : ''), 1425, y + 31, 18, t.text, { align: 'center', font: 'bold', spacing: 0.5 });
+                } else if (LBL[it.colour] || !it.native) {
                     cv.roundRect(1310, y + 6, 230, 34, 6, withAlpha(col, 0.22));
                     cv.text(it.native ? LBL[it.colour] : 'UDS / UNVERIFIED', 1425, y + 31, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
                 }
@@ -778,6 +817,14 @@ mgu.run({
             });
         }
 
+        /* ---------- the 12 V voltage (Battery page): read only while that page shows ---------- */
+        const bgState = ctx.background && ctx.background.volt ? ctx.background : null;
+        volt = new VoltReader({ link: readLink, log, store: bgState,
+            cands: bgState ? ((ctx.spec && ctx.spec.config && ctx.spec.config.battery && ctx.spec.config.battery.v12) || []) : [] });
+        // (the demo shows made-up readings: nothing asked then; Stop all and the setting turn it off too)
+        const voltWanted = () => !!bgState && shownNow && pageName() === 'Battery' && !panicked && !more.extraDemo()
+            && settings.get('batteryRead') !== false;
+
         let drawn = -1;
         async function render(force) {
             if (reset && !reset.busy && Date.now() - reset.at >= CONFIRM_MS) {
@@ -789,18 +836,22 @@ mgu.run({
             drawn = version;
             const t = ctx.theme();
             const cv = ctx.canvas(W, H).clear(t.bg);
-            const its = items();
+            const its = rows();
             sel = Math.min(sel, Math.max(0, its.length - 1));
             page = Math.min(page, pages().length - 1);
             if (pageName() === 'Engine') readEngine(false);
-            if (pageName() === 'Service') drawMain(cv, t, its); else if (pageName() === 'Engine') drawEngine(cv, t); else drawDiag(cv, t);
-            G.frame(cv, t, pages(), page, [useDemo() && { text: 'DEMO' }]);
+            volt.want(voltWanted());
+            if (pageName() === 'Service') drawMain(cv, t, its); else if (pageName() === 'Engine') drawEngine(cv, t);
+            else if (more.has(pageName())) more.draw(cv, t, pageName()); else drawDiag(cv, t);
+            const demo = more.has(pageName()) ? more.extraDemo() : useDemo();
+            G.frame(cv, t, pages(), page, [demo && { text: 'DEMO' }]);
             await ui.image('MAIN_GFX', cv);
         }
 
         // Next item: through the list; after the last item the diagnostics page (when it is on), then back
         ui.onClick('BTN_SELECT', () => {
-            const n = items().length;
+            if (more.has(pageName())) return more.select(pageName());
+            const n = rows().length;
             reset = reset && reset.busy ? reset : null;         // any other button disarms a reset
             hint = null; msg = '';
             if (pageName() === 'Diagnostics') {
@@ -814,11 +865,18 @@ mgu.run({
         ui.onClick('BTN_DETAILS', () => {
             if (pageName() === 'Diagnostics') { refreshCbs(); return; }
             if (pageName() === 'Engine') { readEngine(true); return; }
+            if (more.has(pageName())) { more.nextView(pageName()); return; }
+            const row = rows()[sel];
+            if (row && row.own) { more.openOwn(row, cardSheet); return; }
             if (openCard(sel)) return;
             reset = reset && reset.busy ? reset : null; msg = ''; details();
         });
         ui.onClick('BTN_RESET', () => {
+            if (more.has(pageName())) { more.act(pageName()); return; }
             if (pageName() !== 'Service') { showMsg(pageName() + ' is read-only'); return; }
+            const row = rows()[sel];
+            // your own row: Reset service never marks it (it is the car's reset); Mark done is on its card and on Intervals
+            if (row && row.own) { reset = null; showMsg(row.name + ': your own item, not the car\'s. Mark it done on the Intervals page'); return; }
             resetPress();
         });
         // where the kit runs the screen the rows open their cards (with Reset): none of these in its bar
@@ -828,6 +886,7 @@ mgu.run({
             if (i !== page) {
                 page = i; sel = 0; msg = ''; diagPage = 0;
                 reset = reset && reset.busy ? reset : null;
+                more.reset();
                 changed();
             }
         });

@@ -17,8 +17,18 @@
  *           bits in words, its snapshot records (19 03 / 19 04) and extended data (19 06), read for that fault
  *           alone when it is opened. Read only; the bytes are shown as the unit sent them (no tables for their names).
  *   Bus page: how fast each unit answers our requests (NRC 78 waits counted) and how many we send a second.
+ *   Developer report (Settings > Developer report as QR, devreport.js, #239): every unit of the last scan with its SGBD
+ *           index and software version (22 F1 89), the engine unit's identifiers from Live Data's built-in catalog with
+ *           their answer or NRC, and the faults, as JSON lines in the QR log's codes (kit/tools/qrlog_decode.py reads them
+ *           back). Read once on request, only while the sheet shows, 22 alone; a VIN in an answer is masked.
+ *   Plausibility (plausibility.js, three pages: Checks, History, How it works): values that have to agree, watched
+ *           while the page shows (like Check Control: nothing on the car while nobody is on it): speed against rpm on the learned gears, oil against coolant, the forward g against
+ *           the speed change, the outside temperature, and whether rpm, speed and g keep arriving on time. OK, ODD,
+ *           LATE or NO DATA per check, with why in plain words. Only signals the car sends the head unit anyway,
+ *           nothing asked of a control unit; Settings > Plausibility checks off stops those watches. Learned gears
+ *           and found events are kept in plausibility.json.
  *
- * Pages: faults (6 per page) -> Check Control -> control units that answered -> Bus. Where the kit runs the
+ * Pages: faults (6 per page) -> Check Control -> control units that answered -> Bus -> Plausibility (3). Where the kit runs the
  * screen, all the faults are on one page and each list scrolls (a finger, or the controller turned on it).
  * Fault codes are BMW hex codes (as BMW's diagnostic tools show them); the head unit has no
  * text database for them, so look them up by code + control unit.
@@ -34,8 +44,13 @@ const { t: translateUI, plural } = require('./kit/i18n');
 const { Diag, parseDtcReply, statusInfo, hex, NRC } = require('./kit/diag');
 const DEMO = require('./demo');
 const CTX = require('./context');
+const DEV = require('./devreport');
+const { ReadOnlyDiag } = require('./kit/readonly-diag');
+const { Sanity } = require('./plausibility');
+const PV = require('./plausibility_view');
 
 const W = 1600, H = 520, PER_PAGE = 6;
+const TAIL = 6;                  // pages after the fault pages: Check Control, Control units, Bus, Plausibility x3
 const GO = '#2fd27a';
 
 // diagnostic addresses -> control unit (unknown ones show as "ECU 0x..")
@@ -205,6 +220,60 @@ mgu.run({
                 if (typeof c === 'number' && c !== 255) health.coolant = c - 48;
             },
         };
+        /* ---------- Plausibility: values that have to agree (plausibility.js), checked while the app runs ---------- */
+        const PL_FILE = path.join(ctx.dataDir, 'plausibility.json');
+        const plSaved = readJson(PL_FILE);
+        const plLive = new Sanity({ gears: plSaved.gears, events: plSaved.events });
+        let plT0 = Date.now();
+        let plDemoRun = null, plSeen = 0, plSubs = null, plTimer = null;
+        const plPut = (name, v) => { plSeen = Date.now(); plLive.feed(name, v, plSeen); };
+        const plSc = (raw, f, o, bad) => (typeof raw === 'number' && raw !== bad ? raw * f + o : null);
+        const plDemo = () => settings.get('demo') === 'on' || (settings.get('demo') !== 'off' && !plSeen && Date.now() - plT0 > 3000);
+        const plCurrent = () => (plDemo() ? (plDemoRun = plDemoRun || makePlausibilityDemo(Date.now())) : plLive);
+        const plSave = () => {
+            if (!plLive.dirty) return;
+            plLive.dirty = false; plLive.savedAt = Date.now();
+            try { fs.writeFileSync(PL_FILE, JSON.stringify(plLive.save())); } catch (e) { log.warn('plausibility save: ' + e); }
+        };
+        /**
+         * The Plausibility watches and its 200 ms checks on (the page showing, with Settings > Plausibility checks on, the
+         * default) or shut down (the page left, or the setting off). shown() and the setting call it, like listen().
+         */
+        function plListen(on) {
+            if (on && !plSubs) {
+                plT0 = Date.now(); plSeen = 0;
+                const w = (iface, h) => Promise.resolve(ctx.signals.watch(iface, '1', h, log)).catch((e) => { log.warn('plausibility: ' + iface + ': ' + (e && e.message || e)); return null; });
+                plSubs = Promise.all([
+                    w('de.bmw.infotainment.vehicle.CDS', {
+                        statusEngineSpeed2: (x) => plPut('rpm', plSc(x && x.actualValueRPMEngineCrankshaft, 0.25, 0, 65535)),
+                        statusEngineTemperature: (x) => { plPut('oil', plSc(x && x.temperatureEngineOilDrive, 1, -48, 255)); plPut('coolant', plSc(x && x.temperatureEngineDrive, 1, -48, 255)); },
+                    }),
+                    w('de.bmw.infotainment.vehicle.Vehicle2', { statusCarSpeed2: (x) => plPut('speed', plSc(x && x.speedVehicleCentreOfGravity, 0.015625, 0, 65535)) }),
+                    w('de.bmw.infotainment.vehicle.CDS2', {
+                        statusLongitudinalAccelerationMassCenter: (x) => { const a = plSc(x && x.longitudinalAccelerationCentreOfGravity, 0.002, -65, 65535); plPut('gLong', a === null ? null : a / 9.80665); },
+                    }),
+                    w('de.bmw.infrastructure.EnvironmentalInformation', { ExteriorTemperature: (x) => plPut('outside', plSc(x && x.temperatureExterior, 0.5, -40, 255)) }),
+                ]);
+                // the checks 5 times a second while watching (a gear learned or an event found: saved, at most every 30 s)
+                plTimer = setInterval(() => {
+                    const now = Date.now();
+                    if (plDemo()) { plCurrent().advance(now); return; }
+                    plLive.tick(now);
+                    if (plLive.dirty && (!plLive.savedAt || now - plLive.savedAt > 30000)) plSave();
+                }, 200);
+                if (plTimer.unref) plTimer.unref();
+                log.info('plausibility: watching');
+            } else if (!on && plSubs) {
+                const s = plSubs; plSubs = null;
+                clearInterval(plTimer); plTimer = null;
+                s.then((l) => Promise.all(l.map((x) => x && x.shutdown && x.shutdown()))).catch(() => {});
+                plLive.pause();
+                plSave();
+                log.info('plausibility: watches shut down');
+            }
+        }
+        const plWanted = () => !away && settings.get('plausibility') !== false;
+
         let subs = null;
         /** The Check Control watches on (the page showing) or shut down (it isn't). */
         function listen(on) {
@@ -459,8 +528,35 @@ mgu.run({
                     help: ['Point the phone camera at the code:', 'it reads as plain text, no app needed.', 'Several pages: one photo each.'] }),
             });
         }
-        const pageCount = () => (scrolls ? 1 : Math.max(1, Math.ceil(listed().length / perPage))) + 3;
-        const shownList = () => { const fp = pageCount() - 3; return page < fp ? scroll.faults : page === fp ? scroll.cc : scroll.ecus; };
+        // Settings > Developer report as QR (#239, devreport.js): what this car answers, read once while the sheet shows
+        let devDrawn = 0;
+        // its own read-only link (kit/readonly-diag.js: 22 alone, paced), opened the first time the report reads
+        let devLink = null;
+        const getDevLink = () => devLink || (devLink = new ReadOnlyDiag(ctx.signals, log).init().catch((e) => { log.warn('developer report: ' + e); devLink = null; return null; }));
+        const dev = new DEV.DevReport({ getLink: getDevLink, ids, variant, name: ecuName, app: 'Fault Scanner',
+            version: ctx.spec ? ctx.spec.version : '', open: () => Date.now() - devDrawn < 3000, log });
+        if (ctx.settingsRow) {
+            ctx.settingsRow({
+                label: 'Developer report as QR', value: 'Units, engine values and faults, for developers',
+                open: () => {
+                    devDrawn = Date.now();
+                    dev.o.ids = ids;
+                    dev.start(scan);
+                    // (qrlog reads opts.help on every frame: the first line follows the reading; Refresh shows what was read)
+                    const opts = { title: 'Developer report', text: () => dev.lines().join('\n'), app: 'Fault Scanner', version: ctx.spec.version };
+                    const help = () => [dev.progress(), 'A photo of every page, then', 'kit/tools/qrlog_decode.py.'];
+                    opts.help = help();
+                    const sheet = qrLogSheet(opts);
+                    const draw = sheet.draw.bind(sheet);
+                    sheet.draw = (r, t) => { devDrawn = Date.now(); opts.help = help(); return draw(r, t); };
+                    return sheet;
+                },
+            });
+        }
+        // after the fault pages: Check Control, Control units, Bus, then the three Plausibility pages
+        const pageCount = () => (scrolls ? 1 : Math.max(1, Math.ceil(listed().length / perPage))) + TAIL;
+        const NOSCROLL = { y: 0, max: 0 };
+        const shownList = () => { const fp = pageCount() - TAIL; return page < fp ? scroll.faults : page === fp ? scroll.cc : page === fp + 1 ? scroll.ecus : NOSCROLL; };
         // a finger dragged on the page or the controller turned on it (cv.scroll): the list shown moves
         ctx.onScroll((dy) => {
             const s = shownList(), y = G.clamp(s.y + dy, 0, s.max), moved = y !== s.y;
@@ -487,9 +583,10 @@ mgu.run({
 
         /** G20-style frame: tab bar with the page names along the top (fault pages share one tab). */
         function header(cv, t) {
-            const fp = pageCount() - 3, sel = page < fp ? 0 : page - fp + 1;
-            G.frame(cv, t, ['Faults' + (fp > 1 ? '  ' + (Math.min(page, fp - 1) + 1) + '/' + fp : ''), 'Check Control', 'Control units', 'Bus'], sel,
-                [(scan && scan.demo || (!scan && useDemo())) && { text: 'DEMO' }]);
+            const fp = pageCount() - TAIL, sel = page < fp ? 0 : page <= fp + 2 ? page - fp + 1 : 4, pl = page - fp - 3;
+            const demoBadge = pl >= 0 ? plDemo() : (scan && scan.demo || (!scan && useDemo()));
+            G.frame(cv, t, ['Faults' + (fp > 1 ? '  ' + (Math.min(page, fp - 1) + 1) + '/' + fp : ''), 'Check Control', 'Control units', 'Bus',
+                'Plausibility' + (pl >= 0 ? '  ' + (pl + 1) + '/3' : '')], sel, [demoBadge && { text: 'DEMO' }]);
         }
 
         function tiles(cv, t) {
@@ -780,20 +877,22 @@ mgu.run({
 
         let drawn = -1;
         async function render(force) {
-            if (!force && drawn === version && !gliding && phase !== 'scanning' && phase !== 'clearing') return;
+            const onPl = page >= pageCount() - TAIL + 3;          // (the Plausibility pages move with the car: drawn every loop)
+            if (!force && !onPl && drawn === version && !gliding && phase !== 'scanning' && phase !== 'clearing') return;
             drawn = version;
             gliding = false;
             const t = ctx.theme();
             const cv = ctx.canvas(W, H).clear(t.bg);
-            const fp0 = pageCount() - 3;
+            const fp0 = pageCount() - TAIL;
             scrolls = !!cv.own;
             perPage = PER_PAGE + Math.floor((G.pageBottom(cv) - G.BOTTOM) / 47);     // rows of 47 px (drawCC; drawFaults' are 46)
-            const fp = pageCount() - 3;
+            const fp = pageCount() - TAIL;
             // fewer or more fault pages now (the room below the page came or went): Check Control and Control
             // units stay the pages shown
             if (fp !== fp0) page = page >= fp0 ? fp + page - fp0 : Math.min(page, fp - 1);
             page = Math.min(page, pageCount() - 1);
             if (detail && page < fp) drawDetail(cv, t);
+            else if (page >= fp + 3) { const p = plCurrent(), d = plDemo(); PV.draw(cv, t, page - fp - 3, p, { now: d ? p.now : Date.now(), demo: d }); }
             else if (page === fp + 2) drawBus(cv, t);
             else {
                 tiles(cv, t);
@@ -811,18 +910,20 @@ mgu.run({
         ctx.hideButton('BTN_CLEAR');
         ctx.onLayout(changed);           // (it draws only on changes: a new layout is one)
         ui.onClick('BTN_PAGE', () => { detail = null; page = (page + 1) % pageCount(); changed(); });
-        // tabs: Faults (opened again: its next page of faults), Check Control, Control units
+        // tabs: Faults (opened again: its next page of faults), Check Control, Control units, Bus, Plausibility
+        // (opened again: its next page)
         ctx.onTab((i) => {
-            const fp = pageCount() - 3;
+            const fp = pageCount() - TAIL;
             if (i === 0 && detail) detail = null;                 // Faults again: back to the list
             else if (i === 0 && page < fp) page = (page + 1) % fp;
+            else if (i === 4) page = page >= fp + 3 ? fp + 3 + (page - fp - 2) % 3 : fp + 3;
             else page = i === 0 ? 0 : fp + i - 1;
             if (i !== 0) detail = null;
             changed();
         });
         ui.onClick('BTN_DETAIL', () => {
             // the first fault on the page, then the next one each press; on another page: the Faults page's first
-            const fp = pageCount() - 3, l = listed();
+            const fp = pageCount() - TAIL, l = listed();
             if (!l.length) { msg = scan ? 'No faults to show' : 'Scan first'; changed(); return; }
             if (page >= fp) page = 0;
             const i = detail ? (l.findIndex((d) => d.addr === detail.addr && d.code === detail.code && d.mem === detail.mem) + 1) % l.length : (scrolls ? 0 : page * perPage);
@@ -840,12 +941,54 @@ mgu.run({
         // is up - this app only draws when something changed, so the screen would otherwise stay empty
         // until the next change (e.g. Next page)
         const redraw = () => { changed(); setTimeout(changed, 600); };
-        const shown = (on) => { away = !on; listen(on); if (on) { getDiag(); maybeAuto(); redraw(); } };
+        const shown = (on) => { away = !on; listen(on); plListen(plWanted()); if (on) { getDiag(); maybeAuto(); redraw(); } };
         ui.onVisible((name, on) => { if (name === 'MAIN') shown(on); });
         if (ui.onFocus) ui.onFocus((name, on) => { if (name === 'MAIN' && on) redraw(); });
         if (ui.isVisible('MAIN')) shown(true);
-        settings.onChange(() => changed());
+        settings.onChange(() => { plListen(plWanted()); changed(); });
         if (scan) ui.text('BTN_SCAN', 'Scan again');
         render(true).then(() => log.info('first frame done')).catch((e) => log.warn('first render: ' + e));
     },
 });
+
+/* Plausibility demo: 12 minutes of a made-up drive, replayed into a Sanity of its own: six gears, the oil sensor
+ * reading 40 C low (ODD), the forward g going quiet for half of every minute (LATE) and one outside temperature
+ * jump. Never saved. */
+function makePlausibilityDemo(now) {
+    const s = new Sanity({});
+    s.runMs = 0;
+    const K = [118, 72, 50, 38, 30, 25];
+    const base = now - 50000;                                           // so that now falls in a quiet part
+    let gear = 2, last = null;
+    const at = (ms) => {
+        const x = ms / 1000;
+        const speed = Math.max(0, 75 + 35 * Math.sin(x / 23) + 12 * Math.sin(x / 7));
+        while (gear < 5 && speed * K[gear] > 2600) gear++;
+        while (gear > 0 && speed * K[gear] < 1300) gear--;
+        return { speed, rpm: Math.max(800, speed * K[gear]) };
+    };
+    const step = (ms) => {
+        const d = at(ms), x = ms / 1000;
+        s.feed('speed', d.speed, ms);
+        s.feed('rpm', d.rpm, ms);
+        if (last) {
+            const g = (d.speed - last.speed) / 3.6 / ((ms - last.t) / 1000) / 9.80665;
+            if ((((ms - base) % 60000) + 60000) % 60000 < 32000) s.feed('gLong', g, ms);        // quiet the rest of each minute
+        }
+        last = { t: ms, speed: d.speed };
+        if (ms % 1000 < 100) {
+            s.feed('coolant', 90 + Math.sin(x / 90), ms);
+            s.feed('oil', 52 + Math.sin(x / 70), ms);
+            // one bad reading 6 minutes ago: the outside temperature jumps 7 C for a second
+            s.feed('outside', 4.5 + 0.3 * Math.sin(x / 300) + (Math.abs(ms - (now - 360000)) < 600 ? 7 : 0), ms);
+        }
+        if (ms % 200 < 100) s.tick(ms);
+    };
+    let t = now - 12 * 60000;
+    t -= t % 100;
+    for (; t <= now; t += 100) step(t);
+    s.now = now;
+    s.advance = (n) => { for (; t <= n; t += 100) step(t); s.now = n; };
+    return s;
+}
+module.exports._makePlausibilityDemo = makePlausibilityDemo;

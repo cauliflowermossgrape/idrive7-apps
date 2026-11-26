@@ -14,7 +14,8 @@
  *
  * Pages: tach / shift log / learned (what it learned from this car, with resets) / HUD looks (a live
  * preview of the HUD as set up, layouts to tap, an editor: look, items on / off, effects, place;
- * Play on HUD). The tach's
+ * Play on HUD) / Shift times, Pull, Kickdown, Cold vs hot (shiftpages.js: every upshift under load timed, the pull
+ * per gear, kickdowns per driving mode, against the gearbox oil; from Shift Lab, #253). The tach's
  * peak marker drops back after "Peak hold" seconds; BTN_RESET clears it and the session stats.
  *
  * Experimental parts (README.md in this folder has the whole story):
@@ -25,6 +26,8 @@
  *   limiter.js   learns the real rev limit from the rpm plateau on the limiter
  *   shiftmap.js  learns the full-load torque curve and the gear ratios, and from them the best
  *                upshift rpm for each gear
+ *   shiftlab.js  times each upshift under load (rpm drop, the dip in g), the pull per gear and 250 rpm;
+ *   kickdown.js  how fast the gearbox drops a gear on a kick (from the jump in engine torque), or holds it
  *   gearbox.js   gearbox oil temperature for the HUD (EGS over read-only UDS, or BasicDataSet)
  *   knock.js     knock retard from the engine unit for the HUD's knock warning and readout (read-only UDS)
  *   fuel.js      fuel use from the engine unit for the HUD's fuel readout (read-only UDS / OBD)
@@ -46,6 +49,8 @@
  * methods differ from canvas.js (no convex/triangle: use quad), the HUD on a Canvas; nothing is
  * learned from the demo drive.
  */
+const fs = require('fs');
+const path = require('path');
 const mgu = require('./kit/mgu');
 const { withAlpha, ramp } = require('./kit/canvas');
 const G = require('./kit/gauges');
@@ -67,6 +72,10 @@ const LaunchScore = require('./launch');
 const Limiter = require('./limiter');
 const ShiftMap = require('./shiftmap');
 const { ShiftShare } = require('./shareshift');
+const { ShiftLog, perGear, pullCurves } = require('./shiftlab');
+const { KickLog, torqueAt } = require('./kickdown');
+const ShiftPages = require('./shiftpages');
+const shiftDemo = require('./shiftdemo');
 const LogView = require('./logview');
 const Call = require('./call');
 const Sheet = require('./kit/sheet');
@@ -294,6 +303,54 @@ async function runRedline(ctx) {
             return { rpm: Math.round((cold + (n - cold) * f) / 50) * 50, cold: true };
         }
 
+        /* ---------- shift timing (Shift times / Pull / Kickdown / Cold vs hot pages; from Shift Lab, #253) ----------
+         * Fed from Redline's own readings in the sample loop below (rpm, speed, gear, torque, g forward, the driving
+         * mode, the gearbox oil), never from the demo drive. The accelerator pedal stays out (its scaling is unchecked,
+         * above): a kickdown is found from the jump in engine torque to near the shift map's full-load torque, and marked
+         * as an estimate. The ratios are the shift map's where it knows the gear. Kept in data/shiftlab.json: the last
+         * 200 upshifts, the ratios, the pull per gear, the last 120 kickdowns. Written (flash wear) at most every 30 s
+         * after a new shift or kickdown, every LAB_PULL_MS when only the pull or the ratios moved, and when the app stops. */
+        const LAB_FILE = path.join(ctx.dataDir, 'shiftlab.json'), LAB_PULL_MS = 5 * 60000;
+        let fullCurve = [], fullAt = 0;
+        const fullTorque = (rpm) => {
+            if (Date.now() - fullAt > 2000) { fullAt = Date.now(); fullCurve = shiftMap.curve(); }
+            return torqueAt(fullCurve, rpm);
+        };
+        const lab = new ShiftLog({ minTorque: settings.get('labMinTorque'), known: (g) => shiftMap.ratio(g) }), kick = new KickLog({ fullTorque });
+        try { const o = JSON.parse(fs.readFileSync(LAB_FILE, 'utf8')); lab.load(o); kick.load(o.kicks); } catch (e) { /* first start */ }
+        let labSavedAt = Date.now();
+        const saveLab = (force) => {
+            if (!lab.unsaved() && !kick.changed) return;
+            // a new shift or kickdown: now; only the pull or a ratio: every few minutes, or when the app stops
+            if (!force && !lab.changed && !kick.changed && Date.now() - labSavedAt < LAB_PULL_MS) return;
+            lab.saved(); kick.changed = false; labSavedAt = Date.now();
+            // written to a temp file and renamed, as the other learned files (a power cut can't corrupt it)
+            Hud.writeAtomic(LAB_FILE, JSON.stringify(Object.assign(lab.toJSON(), { kicks: kick.toJSON() })), log, 'shift timing: not saved');
+        };
+        const labSave = setInterval(() => saveLab(false), 30000);
+        if (labSave.unref) labSave.unref();
+        process.on('exit', () => saveLab(true));
+        function feedLab(d, t, tq) {
+            const s = { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq, gLong: fresh(extra.gLong, 500), mode: driveMode.v, gb: gearbox.value() };
+            lab.minTorque = settings.get('labMinTorque') || 150;
+            lab.feed(s, t); kick.feed(s, lab.ratios, t);
+        }
+        let labDemo = null;
+        /** What the shift timing pages draw: the drive so far, or made-up data in the demo. */
+        function labView() {
+            const d = car.data();
+            if (d.demo) {
+                labDemo = labDemo || shiftDemo.make(Date.now());
+                return { shifts: labDemo.shifts, ratios: labDemo.ratios, curves: pullCurves(labDemo.pull), perGear: perGear(labDemo.shifts), kicks: labDemo.kicks, gb: 82 };
+            }
+            return { shifts: lab.shifts, ratios: lab.ratios, curves: lab.pullCurves(), perGear: lab.perGear(), kicks: kick.kicks, gb: gearbox.value() };
+        }
+        function clearLab() {
+            if (car.data().demo) return null;
+            lab.clear(); kick.clear(); saveLab(true); log.info('shift timing cleared (the ratios kept)');
+            return render();
+        }
+
         /* ---------- session state ---------- */
         // peakRpm = the tach's peak marker: drops back to the current rpm "peakHold" s after the last
         // new peak (0 = until Reset); the shift log's session peaks stay until Reset
@@ -396,6 +453,7 @@ async function runRedline(ctx) {
                 if (G.isNum(d.speed)) launch.feed(t, d.speed);
                 const tq = Date.now() - torque.t < 300 ? torque.v : null;
                 if (learning()) shiftMap.feed(t, { rpm: d.rpm, speed: d.speed, gear: d.gear, torque: tq });
+                feedLab(d, t, tq);
                 const pr = profileRedline();
                 if (d.rpm !== lastRpmVal) { lastRpmVal = d.rpm; lastRpmChange = Date.now(); }
                 const rpmFresh = Date.now() - lastRpmChange < 300;
@@ -1126,20 +1184,21 @@ async function runRedline(ctx) {
 
         /** G20-style frame: tab bar with the page names along the top. */
         function header(cv, t, d) {
-            G.frame(cv, t, ['Tach', 'Shift log', 'Learned', 'HUD looks'], page, [d.demo && { text: 'DEMO' }]);
+            G.frame(cv, t, ['Tach', 'Shift log', 'Learned', 'HUD looks'].concat(ShiftPages.PAGES), page, [d.demo && { text: 'DEMO' }]);
         }
 
         async function render() {
             const t = ctx.theme(), d = car.data(), now = Date.now();
             let cv;
             cv = ctx.canvas(W, H).clear(t.bg);
-            if (page === 0) drawTach(cv, t, d, now); else if (page === 1) drawLog(cv, t); else if (page === 2) drawLearned(cv, t); else drawLooks(cv, t);
+            if (page === 0) drawTach(cv, t, d, now); else if (page === 1) drawLog(cv, t); else if (page === 2) drawLearned(cv, t); else if (page === 3) drawLooks(cv, t);
+            else ShiftPages.draw(cv, t, ShiftPages.WHICH[page - 4], Object.assign(labView(), { minTorque: settings.get('labMinTorque') || 150, clear: d.demo ? null : clearLab }));
             header(cv, t, d);
             await ui.image('MAIN_GFX', cv);
         }
 
         /* ---------- buttons ---------- */
-        const PAGES = 4;
+        const PAGES = 4 + ShiftPages.PAGES.length;
         const flip = () => { page = (page + 1) % PAGES; return render(); };
         const flipBack = () => { page = (page + PAGES - 1) % PAGES; return render(); };
         ui.onClick('BTN_PAGE', flip);

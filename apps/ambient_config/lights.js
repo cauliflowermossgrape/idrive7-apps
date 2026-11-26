@@ -376,7 +376,7 @@ class Lights extends EventEmitter {
      * a write for each light that wants another. [{ lights (written), need (the lights it is for), want, nad }]
      */
     _plan(t) {
-        const items = [];
+        const items = [], moving = S.moves(this.scene) || !!(this._flash && this.now() < this._flash.until + 50) || !!(this._overs && this._overs.size);
         for (let bus = 0; bus < BUSES.length; bus++) {
             // (no scene: only the lights an overlay or a flash colours; the others keep the car's own colour)
             const all = this.lights.filter((l) => l.bus === bus).sort((a, b) => a.y - b.y);
@@ -386,7 +386,12 @@ class Lights extends EventEmitter {
             wants.forEach((w) => { count[key(w)] = (count[key(w)] || 0) + 1; });
             const top = Object.keys(count).sort((a, b) => count[b] - count[a])[0];
             // (NAD 0 reaches every light of the bus: only when all of them take a colour of ours)
-            const most = on.length === all.length && count[top] > 1 ? wants.find((w) => key(w) === top) : null;
+            let most = on.length === all.length && count[top] > 1 ? wants.find((w) => key(w) === top) : null;
+            // a still colour with lights of the bus in another one (upper and lower): NAD 0 only when the colour changes.
+            // Its renewal (every 40 s) and the once-more after it went to every light, and the others showed the most
+            // wanted colour until their own writes came (#264: the upper lights flashed the lower colour), so then only
+            // the lights due are written, each its own colour.
+            if (most && !moving && count[top] < on.length && on.every((l, i) => key(wants[i]) !== top || same(wants[i], this._last.get(l)))) most = null;
             if (most) items.push({ lights: on, need: on.filter((l, i) => key(wants[i]) === top), want: most, nad: ALL });
             on.forEach((l, i) => { if (!most || key(wants[i]) !== top) items.push({ lights: [l], need: [l], want: wants[i], nad: l.nad }); });
         }
@@ -396,7 +401,8 @@ class Lights extends EventEmitter {
     /** A still colour's writes once more (a light that missed one takes it now), or the give-back once more. */
     _again() {
         if (this._checkOff) { this._gave.forEach((bus) => this._release.push({ bus, again: true })); this._gave = []; }
-        else this._sentNow.forEach((l) => this._last.delete(l));
+        // (written again as a renewal is, colour unchanged: no NAD 0 over lights of another colour, #264)
+        else this._sentNow.forEach((l) => { const had = this._last.get(l); if (had) this._last.set(l, Object.assign({}, had, { at: -Infinity })); });
         this._sentNow.clear();
         this._frame = null;
     }

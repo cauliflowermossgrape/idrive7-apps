@@ -63,13 +63,21 @@ jobs:
       - run: node kit/tools/test_draggy.js
       - run: node kit/tools/test_brake_test.js
       - run: node kit/tools/test_gforce.js
+      - run: node kit/tools/test_gforce_recorder.js
+      - run: node kit/tools/test_gforce_recordings.js
       - run: node kit/tools/test_results_qr.js
       - run: node kit/tools/test_service.js
       - run: node kit/tools/test_service_engine.js
+      - run: node kit/tools/test_service_more.js
       - run: node kit/tools/test_car_vitals.js
+      - run: node kit/tools/test_blend.js
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_faults_plausibility.js
+      - run: node kit/tools/test_dev_report.js
       - run: node kit/tools/test_dtc_texts.js
+      - run: node kit/tools/test_signal_hunter.js
+      - run: node kit/tools/gen_signal_hunter.js --check
       - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_vitals_program.js
@@ -86,6 +94,7 @@ jobs:
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js
       - run: node kit/tools/test_redline_shareshift.js
+      - run: node kit/tools/test_redline_shiftlab.js
       - run: node kit/tools/test_redline_meter_draw.js
       - run: node kit/tools/test_redline_meter_m.js
       - run: node kit/tools/test_redline_hud_cache.js
@@ -132,6 +141,8 @@ jobs:
       - run: node --version
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_faults_plausibility.js
+      - run: node kit/tools/test_dev_report.js
       - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_redline_hud.js
@@ -150,9 +161,11 @@ jobs:
       - run: node kit/tools/test_redline_powerbar.js
       - run: node kit/tools/test_redline_powerlog.js
       - run: node kit/tools/test_redline_shareshift.js
+      - run: node kit/tools/test_redline_shiftlab.js
       - run: node kit/tools/test_redline_meter_draw.js
       - run: node kit/tools/test_redline_meter_m.js
       - run: node kit/tools/test_redline_hud_cache.js
       - run: node kit/tools/test_twin_dme.js
       - run: node kit/tools/test_safe_boot.js
       - run: node kit/tools/test_panic.js
+      - run: node kit/tools/test_signal_hunter.js
