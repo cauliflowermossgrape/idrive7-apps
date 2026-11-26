@@ -68,6 +68,7 @@ jobs:
       - run: node kit/tools/test_car_vitals.js
       - run: node kit/tools/test_car_gear.js
       - run: node kit/tools/test_dtc_idle.js
+      - run: node kit/tools/test_dtc_texts.js
       - run: node kit/tools/test_signals_poll.js
       - run: node kit/tools/test_redline_dmegear.js
       - run: node kit/tools/test_vitals_program.js
@@ -97,6 +98,10 @@ jobs:
       - run: node kit/tools/test_xdrive_live.js
       - run: node kit/tools/test_zh.js
       - run: node kit/tools/test_widget_unicode.js
+      - run: node kit/tools/test_faults_qr.js
+      - run: node kit/tools/test_scan_compare.js
+      - run: node kit/tools/test_health_report.js
+      - run: node kit/tools/test_fault_context.js
       # The run above loads the English catalog, so it skips the glyph check: test_zh.js has to run on zh-CN stages for
       # that (--preview-only needs no SDK). dtc_scanner has its own run because it ships diagnostic-zh-CN.json as its atlas.
       - run: python3 kit/tools/build.py --language zh-CN --preview-only service

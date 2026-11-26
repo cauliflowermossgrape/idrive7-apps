@@ -11,6 +11,10 @@
  *   pages(text, size, head)  the log cut into codes' worth of whole lines, the newest on page 1: [Buffer]
  *   logText(file)            the log made short: times without the date, stack lines left out, a VIN masked
  *   qrLogSheet(opts)         the sheet (sheet.js): { file, app, version } -> a page with the code, page and size buttons
+ *   plainPages(text, size, head)  text for a phone's own camera: plain lines, in order, no compression (a fault list)
+ *
+ * With opts.text (a function giving the text) and opts.plain, the same sheet shows any text as plain codes: a phone
+ * camera reads each one as it is, with no decoder. opts.title and opts.help change its words.
  *
  * Sizes: the same version for every page of one size, so the code stays the same size while paging.
  */
@@ -116,12 +120,40 @@ function pages(text, size, head) {
     return list.map((z, i) => Buffer.concat([Buffer.from(top(i + 1, list.length), 'utf8'), z]));
 }
 
+/**
+ * Text cut into codes a phone camera reads as they are: the header line "<head> <page>/<pages>", then whole lines in
+ * their order (page 1 has the first ones). A line too long for a code is cut to fit; past MAX_PAGES the rest is
+ * left out and the last line says how many. -> [Buffer]
+ */
+function plainPages(text, size, head) {
+    const cap = qr.capacity(SIZES[size].version, 'L');
+    const top = (n, of) => String(head || 'text').replace(/\s+/g, ' ').trim() + ' ' + n + '/' + of + '\n';
+    const room = cap - Buffer.byteLength(top(MAX_PAGES, MAX_PAGES));
+    const fit = (l) => { let s = l; while (Buffer.byteLength(s) > room) s = s.slice(0, -1); return s; };
+    const lines = String(text || '').split('\n').map(fit);
+    const list = [];
+    let cur = [], used = 0;
+    lines.forEach((l) => {
+        const n = Buffer.byteLength(l) + (cur.length ? 1 : 0);
+        if (cur.length && used + n > room) { list.push(cur); cur = []; used = 0; }
+        cur.push(l); used += Buffer.byteLength(l) + (cur.length > 1 ? 1 : 0);
+    });
+    if (cur.length) list.push(cur);
+    const keep = list.slice(0, MAX_PAGES);
+    if (!keep.length) keep.push(['(nothing to show)']);
+    // more than MAX_PAGES: the last page's last line says how much was left out (it is no longer than the line it replaces)
+    const left = list.slice(MAX_PAGES).reduce((n, ls) => n + ls.length, 0);
+    if (left) { const last = keep[keep.length - 1]; last[last.length - 1] = fit('(' + (left + 1) + ' more lines not shown)'); }
+    return keep.map((ls, i) => Buffer.from(top(i + 1, keep.length) + ls.join('\n'), 'utf8'));
+}
+
 /** The settings' QR log sheet. opts: { file (the app's log), app (its id), version, settings (for the size) } */
 function qrLogSheet(opts) {
     const o = opts || {};
     const st = { size: 'medium', page: 0, list: null, codes: {} };      // Medium each time it opens
     const load = () => {
-        st.list = pages(logText(o.file), st.size, (o.app || 'app') + ' ' + (o.version || ''));
+        const head = (o.app || 'app') + ' ' + (o.version || ''), text = o.text ? o.text() : logText(o.file);
+        st.list = o.plain ? plainPages(text, st.size, head) : pages(text, st.size, head);
         st.page = Math.min(st.page, st.list.length - 1);
         st.codes = {};
     };
@@ -142,7 +174,7 @@ function qrLogSheet(opts) {
     const turn = (d) => { st.page = Math.max(0, Math.min(st.list.length - 1, st.page + d)); };
     load();
     return {
-        title: 'QR log',
+        title: o.title || 'QR log',
         draw(r, t) {
             r.clear(t.bg);
             const targets = [], bottom = 512 + (r.extra || 0) - 6;
@@ -165,9 +197,9 @@ function qrLogSheet(opts) {
             }
             // the text and the buttons on the right
             const tx = x0 + box + 50, tw = 1600 - 40 - tx;
-            r.text('QR log', tx, TOP + 46, 34, t.text, { font: 'bold' });
+            r.text(o.title || 'QR log', tx, TOP + 46, 34, t.text, { font: 'bold' });
             r.text('Page ' + (st.page + 1) + ' of ' + st.list.length, tx, TOP + 92, 26, t.text);
-            const help = ['Take a photo of every page and add', 'the photos to your issue on GitHub.', 'The newest lines are on page 1.'];
+            const help = o.help || ['Take a photo of every page and add', 'the photos to your issue on GitHub.', 'The newest lines are on page 1.'];
             // (a phone's QR reader shows gibberish after the first line: the log is compressed, we decode the photos)
             help.forEach((h, i) => r.text(h, tx, TOP + 138 + i * 32, 22, t.dim));
             // the buttons: the controller's one lit (Next until the controller moves it)
@@ -188,7 +220,9 @@ function qrLogSheet(opts) {
         press() { return BUTTONS[st.focus].run(); },
         back() { return 'close'; },
         top() { return st.focus === 0; },
+        /** The codes' contents as they are now (kit/tools/test_faults_qr.js). */
+        contents() { return st.list.slice(); },
     };
 }
 
-module.exports = { qrLogSheet, pages, logText, SIZES };
+module.exports = { qrLogSheet, pages, plainPages, logText, SIZES };
