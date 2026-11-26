@@ -1,0 +1,47 @@
+{
+  "id": "night_clock",
+  "title": "Night Clock",
+  "description": "One quiet screen for night driving: the time large and dim on black, the outside temperature and speed if wanted",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAA6",
+  "iconGlyph": "24",
+  "mguHmi": ["ID7", "ID8"],
+  "requires": { "idrive7-renderd": "2.1.18" },
+  "signals": {
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "_optional": "the outside temperature under the time",
+      "ExteriorTemperature": "s"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Night Clock",
+      "buttons": [
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "brightness", "label": "Brightness of the figures", "type": "number", "unit": "%", "default": 40, "steps": [15, 25, 40, 60, 80, 100]},
+    {"key": "tint", "label": "Colour", "type": "choice", "default": "white",
+     "options": [["white", "White"], ["red", "Red (keeps night vision)"], ["amber", "Amber"], ["blue", "Blue"]]},
+    {"key": "format", "label": "Clock", "type": "choice", "default": "24", "options": [["24", "24 hours"], ["12", "12 hours"]]},
+    {"key": "seconds", "label": "Show seconds (else a blinking colon)", "type": "bool", "default": false},
+    {"key": "outside", "label": "Outside temperature", "type": "bool", "default": true},
+    {"key": "speed", "label": "Speed", "type": "bool", "default": false},
+    {"key": "tempUnit", "label": "Temperature unit", "type": "choice", "default": "c", "options": [["c", "Celsius"], ["f", "Fahrenheit"]]},
+    {"key": "speedUnit", "label": "Speed unit", "type": "choice", "default": "kmh", "options": [["kmh", "km/h"], ["mph", "mph"]]},
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo data", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Always"], ["off", "Never"]]}
+  ]
+}
