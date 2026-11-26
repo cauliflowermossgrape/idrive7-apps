@@ -787,6 +787,10 @@ function gateChecks(o) {
         ['Switched on in the settings', o.setting === true],
         ['Someone in the car', !o.away],
         ['The car standing still (light show)', !o.moving, null, 'show'],
+        ['The car standing still (sequence)', !o.moving, null, 'sequence'],
+        // Stealth (lamps.js): its own setting, and the car known to stand still (no speed yet is no)
+        ['Stealth switched on in the settings', o.stealth === true, null, 'stealth'],
+        ['The car standing still (Stealth)', o.moving === false, null, 'stealth'],
     ];
 }
 const gateWhy = (checks, what) => { const c = checks.find((x) => !x[1] && (!x[3] || x[3] === what)); return c ? c[0].toLowerCase() + ': no' : null; };

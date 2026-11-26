@@ -2,7 +2,7 @@
   "id": "ambient_config",
   "title": "Ambient config",
   "description": "Any colour on the ambient light, animations, and a look for each driving mode",
-  "version": "2.7.27",
+  "version": "2.8.0",
   "vendor": "custom",
   "loggingId": "OAA4",
   "iconGlyph": "ambient",
@@ -172,6 +172,21 @@
       "label": "High beam strobe and light show (only for use on private property)",
       "type": "bool",
       "default": false
+    },
+    {
+      "key": "stealth",
+      "label": "Stealth: headlights dark while parked (only for use on private property)",
+      "type": "bool",
+      "default": false,
+      "when": { "strobe": [true] }
+    },
+    {
+      "key": "stealthMin",
+      "label": "Stealth minutes",
+      "type": "choice",
+      "default": "5",
+      "hidden": true,
+      "options": [["1", "1 min"], ["5", "5 min"], ["10", "10 min"]]
     },
     {
       "key": "strobeLeverDriving",
