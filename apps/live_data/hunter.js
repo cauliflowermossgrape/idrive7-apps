@@ -7,7 +7,8 @@
  *   h.update(key, value)      key = "<interface>.<field>"; value = the field's struct as the signal hands it
  *   h.mark()                  "Mark before": from now on changed() lists what moved
  *   h.changed()               [{ key, old, val, back, n, t, hist }] each member that moved since the mark, newest
- *                             change first (back: it is as it was again), noise left out (opt { noisy: true })
+ *                             change first (back: it is as it was again; n: how often since the mark, a running
+ *                             count kept by update), noise left out (opt { noisy: true })
  *   h.recent(ms)              the members that changed in the last ms, newest first (the Live page)
  *   h.perSecond(n)            changes in each of the last n seconds (oldest first)
  *   h.busiest(ms, n)          [[interface, changes], ...] in the last ms
@@ -70,14 +71,14 @@ class Hunter {
             let e = this.vals.get(k);
             if (!e) {
                 if (this.vals.size >= MAX_KEYS) { this.full = true; continue; }
-                e = { val: v, old: undefined, n: 0, t: 0, hist: isNum(v) ? [v] : [], base: v, iface, quietN: 0,
+                e = { val: v, old: undefined, n: 0, sinceN: 0, t: 0, hist: isNum(v) ? [v] : [], base: v, iface, quietN: 0,
                     noisy: NOISY_NAME.test(k.split('|')[1] || k) };
                 this.vals.set(k, e);
                 continue;
             }
             if (e.val === v) continue;
             this.buffer.push([t, k, e.val, v]);
-            e.old = e.val; e.val = v; e.t = t; e.n++;
+            e.old = e.val; e.val = v; e.t = t; e.n++; e.sinceN++;
             this.total++;
             if (isNum(v)) { e.hist.push(v); if (e.hist.length > HIST) e.hist.shift(); }
             if (t - this.firstAt <= QUIET_MS && ++e.quietN >= 3) e.noisy = true;
@@ -108,16 +109,10 @@ class Hunter {
             if (e.t < from || e.t === 0) return;
             if (e.noisy && !opt.noisy) return;
             // a value that moved and came back (a button pressed and let go) is listed too, marked "back"
-            out.push({ key: k, name: shortName(k), old: e.base, val: e.val, back: e.val === e.base, n: this.countSince(k, from), t: e.t, hist: e.hist, noisy: e.noisy });
+            out.push({ key: k, name: shortName(k), old: e.base, val: e.val, back: e.val === e.base, n: this.markAt ? e.sinceN : e.n, t: e.t, hist: e.hist, noisy: e.noisy });
         });
         out.sort((a, b) => b.t - a.t);
         return out;
-    }
-
-    countSince(k, from) {
-        // from the buffer while it reaches back that far, else the member's own count
-        if (this.buffer.length && this.buffer[0][0] <= from) return this.buffer.filter((c) => c[1] === k && c[0] >= from).length;
-        return this.vals.get(k).n;
     }
 
     recent(ms, opt) {
@@ -135,17 +130,22 @@ class Hunter {
     }
 
     perSecond(n) {
+        // newest first, stopping at the first change older than n seconds (the buffer is in time order)
         const t = this.now(), out = new Array(n).fill(0);
-        for (const c of this.buffer) {
-            const s = Math.floor((t - c[0]) / 1000);
-            if (s < n) out[n - 1 - s]++;
+        for (let i = this.buffer.length - 1; i >= 0; i--) {
+            const s = Math.floor((t - this.buffer[i][0]) / 1000);
+            if (s >= n) break;
+            if (s >= 0) out[n - 1 - s]++;
         }
         return out;
     }
 
     busiest(ms, n) {
         const t = this.now(), by = {};
-        for (const c of this.buffer) if (t - c[0] <= ms) { const i = c[1].split('|')[0]; by[i] = (by[i] || 0) + 1; }
+        for (let k = this.buffer.length - 1; k >= 0 && t - this.buffer[k][0] <= ms; k--) {
+            const e = this.vals.get(this.buffer[k][1]), i = e ? e.iface : this.buffer[k][1].split('|')[0];
+            by[i] = (by[i] || 0) + 1;
+        }
         return Object.keys(by).map((i) => [i, by[i]]).sort((a, b) => b[1] - a[1]).slice(0, n);
     }
 

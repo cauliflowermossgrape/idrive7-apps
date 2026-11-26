@@ -7,16 +7,20 @@
  *
  *   const tab = HunterTab.create(ctx, { native })
  *   tab.on()                      the setting is on (Live Data adds the tab's five pages)
- *   tab.sync()                    starts listening when turned on, stops (and lets go of every watch) when turned off
+ *   tab.sync(shown)               listens only while the setting is on and shown is true (Live Data: its MAIN screen
+ *                                 is visible and a Hunter page is the current one); otherwise lets go of every watch
  *   tab.draw(cv, t, p)            page p (0 What changed, 1 Live, 2 Found, 3 Playback, 4 How it works); where the
  *                                 kit runs the screen (cv.own) the page's buttons are drawn on it
+ *   tab.animated(p)               page p changes on its own (redrawn every frame); How it works and Found do not
  *   tab.actionLabel(p) / tab.action(p)   the bar's main button on that page (elsewhere the page has it)
  *   tab.move(p, d) / tab.press(p)        the controller while browsing: previous / next, and the page's second job
  *   tab.demo()                    the made-up car is shown (no car, or Settings > Demo data)
  *
  *   - listens, read only, to every status field the apps here declare (hunter_fields.js, written by
  *     kit/tools/gen_signal_hunter.js): what the car already sends the head unit, not raw CAN; only while the setting
- *     is on and the app runs
+ *     is on and a Hunter page is on screen (no subscription in the background: some interfaces, KombiInterface_2
+ *     among them, have disturbed other apps when subscribed with nobody looking)
+ *   - What changed is worked out at most 4 times a second (LIST_MS), with running counts, never per frame
  *   - nothing is sent to the car: no method is called, no field is set, no control unit is asked anything
  *   - labels in <dataDir>/hunter/found.json, also written to the app's log (Settings > QR log carries them)
  *   - saved windows in <dataDir>/hunter/windows/, the newest 20 kept
@@ -30,6 +34,7 @@ const { Windows } = require('./hunter_windows');
 const { demoAt } = require('./hunter_demo');
 const { draw, LABELS, val } = require('./hunter_view');
 
+const LIST_MS = 250;                                              // What changed: worked out again at most this often
 const SPLIT = { 10: [7, 3], 20: [14, 6], 30: [20, 10] };          // window length -> [s before, s after]
 const ACTION = ['Mark before', 'Save window', 'Mark before', 'Next window', 'Mark before'];
 
@@ -45,6 +50,7 @@ function create(ctx, opts) {
     const on = () => !!(settings.get('advanced') && settings.get('hunter'));
     let real = new Hunter(), demoH = new Hunter({ now: () => Date.now() }), demoStart = Date.now();
     let seen = false, subs = [], listening = false, demoTimer = null, saveTimer = null;
+    let gen = 0;                                            // one per start: a watch from an earlier start is let go
     const demoOn = () => settings.get('demo') === 'on' || (settings.get('demo') !== 'off' && !seen && !native());
     const hunter = () => (demoOn() ? demoH : real);
 
@@ -61,7 +67,15 @@ function create(ctx, opts) {
     const split = () => SPLIT[settings.get('hunterWindow')] || SPLIT[30];
     const noisyHidden = () => !settings.get('hunterNoisy');
     const speed = () => (settings.get('hunterSpeed') === 1 ? 1 : 0.25);
-    const changed = () => hunter().changed({ noisy: !noisyHidden() });
+    // What changed, kept for LIST_MS: the list is worked out at most 4 times a second, not once a frame
+    let cache = null;
+    const changed = () => {
+        const h = hunter(), noisy = !noisyHidden(), now = Date.now();
+        if (!cache || cache.h !== h || cache.noisy !== noisy || now - cache.at >= LIST_MS || now < cache.at) {
+            cache = { h, noisy, at: now, list: h.changed({ noisy }) };
+        }
+        return cache.list;
+    };
 
     let sel = 0, fsel = 0, wsel = 0, step = 0, cursor = 0, playing = false, lastPlay = 0;
     let win = null, winFile = null;
@@ -78,44 +92,57 @@ function create(ctx, opts) {
         cursor = step ? w.changes[step - 1][0] : w.from;
     };
 
-    function sync() {
-        if (on() && !listening) {
-            listening = true;
-            real = new Hunter(); seen = false; demoH = new Hunter({ now: () => Date.now() }); demoStart = Date.now();
-            if (ctx.signals && ctx.signals.watch) {
-                ifaces.forEach((iface) => {
-                    const h = {};
-                    fields[iface].forEach((f) => {
-                        h[f] = (v) => { if (!seen) { seen = true; log.info('signal hunter: the car answers (' + iface + ')'); } real.update(iface + '|' + f, v); };
-                    });
-                    Promise.resolve(ctx.signals.watch(iface, '1', h, log)).then((s) => {
-                        if (!s) return;
-                        if (listening) subs.push(s); else if (s.shutdown) s.shutdown();
-                    }).catch((e) => log.warn('signal hunter: ' + iface + ': ' + (e && e.message || e)));
+    function savePending(until) {
+        const p = pending; pending = null;
+        const e = p.wins.save(p.h.window(p.from, until), p.mark);
+        log.info('signal hunter: window saved ' + e.file + ', ' + e.n + ' changes' + (e.error ? ', not written: ' + e.error : ''));
+        wsel = 0; winFile = null;
+    }
+    function start() {
+        listening = true;
+        const g = ++gen;
+        real = new Hunter(); seen = false; demoH = new Hunter({ now: () => Date.now() }); demoStart = Date.now(); cache = null;
+        if (ctx.signals && ctx.signals.watch) {
+            ifaces.forEach((iface) => {
+                const h = {};
+                fields[iface].forEach((f) => {
+                    h[f] = (v) => {
+                        if (g !== gen) return;                      // a watch from an earlier start, still being let go
+                        if (!seen) { seen = true; log.info('signal hunter: the car answers (' + iface + ')'); }
+                        real.update(iface + '|' + f, v);
+                    };
                 });
-            }
-            demoTimer = setInterval(() => { if (demoOn()) demoAt(Date.now() - demoStart).forEach((kv) => demoH.update(kv[0], kv[1])); }, 100);
-            if (demoTimer.unref) demoTimer.unref();
-            // a window waiting for its "after" part, saved once that is in (also with the tab not shown)
-            saveTimer = setInterval(() => {
-                if (!pending || Date.now() < pending.until) return;
-                const p = pending; pending = null;
-                const e = p.wins.save(p.h.window(p.from, p.until), p.mark);
-                log.info('signal hunter: window saved ' + e.file + ', ' + e.n + ' changes' + (e.error ? ', not written: ' + e.error : ''));
-                wsel = 0; winFile = null;
-            }, 250);
-            if (saveTimer.unref) saveTimer.unref();
-            log.info('signal hunter: listening to ' + nFields + ' fields on ' + ifaces.length + ' interfaces');
-        } else if (!on() && listening) {
-            listening = false;
-            subs.forEach((s) => { try { if (s.shutdown) s.shutdown(); } catch (e) { /* gone */ } });
-            subs = [];
-            clearInterval(demoTimer); clearInterval(saveTimer); demoTimer = saveTimer = null; pending = null;
-            log.info('signal hunter: stopped listening');
+                Promise.resolve(ctx.signals.watch(iface, '1', h, log)).then((s) => {
+                    if (!s) return;
+                    // stopped, or stopped and started again, while this watch was being set up: let it go
+                    if (listening && g === gen) subs.push(s); else if (s.shutdown) Promise.resolve(s.shutdown()).catch(() => {});
+                }).catch((e) => log.warn('signal hunter: ' + iface + ': ' + (e && e.message || e)));
+            });
         }
+        demoTimer = setInterval(() => { if (demoOn()) demoAt(Date.now() - demoStart).forEach((kv) => demoH.update(kv[0], kv[1])); }, 100);
+        if (demoTimer.unref) demoTimer.unref();
+        // a window waiting for its "after" part, saved once that is in
+        saveTimer = setInterval(() => { if (pending && Date.now() >= pending.until) savePending(pending.until); }, 250);
+        if (saveTimer.unref) saveTimer.unref();
+        log.info('signal hunter: listening to ' + nFields + ' fields on ' + ifaces.length + ' interfaces');
+    }
+    function stop() {
+        listening = false;
+        gen++;
+        subs.forEach((s) => { try { if (s.shutdown) Promise.resolve(s.shutdown()).catch(() => {}); } catch (e) { /* gone */ } });
+        subs = [];
+        clearInterval(demoTimer); clearInterval(saveTimer); demoTimer = saveTimer = null;
+        if (pending) savePending(Math.min(pending.until, Date.now()));     // the page left early: kept up to now
+        log.info('signal hunter: stopped listening');
+    }
+    /** Listening only while the setting is on and a Hunter page is on screen (shown). */
+    function sync(shown) {
+        const want = on() && !!shown;
+        if (want && !listening) start();
+        else if (!want && listening) stop();
     }
 
-    function mark() { hunter().mark(); sel = 0; log.info('signal hunter: Mark before at ' + new Date().toISOString()); }
+    function mark() { hunter().mark(); cache = null; sel = 0; log.info('signal hunter: Mark before at ' + new Date().toISOString()); }
     function label(p) {
         const list = p === 1 ? hunter().recent(8000, { noisy: !noisyHidden() }) : changed();
         const r = list[Math.min(p === 1 ? 0 : sel, list.length - 1)];
@@ -174,8 +201,9 @@ function create(ctx, opts) {
             while (step < win.changes.length && win.changes[step][0] <= cursor) step++;
             if (cursor >= win.to) { cursor = win.to; playing = false; }
         }
-        const h = hunter(), [before, after] = split(), list = changed();
-        if (sel >= list.length) sel = Math.max(0, list.length - 1);
+        // only What changed needs the list (and it is kept for LIST_MS); the other pages never work it out
+        const h = hunter(), [before, after] = split(), list = p === 0 ? changed() : [];
+        if (p === 0 && sel >= list.length) sel = Math.max(0, list.length - 1);
         const wl = wins().list();
         if (wsel >= wl.length) wsel = Math.max(0, wl.length - 1);
         draw(cv, t, p, {
@@ -188,10 +216,11 @@ function create(ctx, opts) {
 
     return {
         on, sync, draw: drawPage, move, press, action, demo: demoOn,
+        animated: (p) => p === 0 || p === 1 || (p === 3 && (playing || !!pending)),
         actionLabel: (p) => (p === 1 && pending ? 'Saving...' : ACTION[p] || 'Mark before'),
         busy: () => playing || !!pending,
         // for the tests
-        _state: () => ({ real, demoH, listening, subs: subs.length, pending, sel, step, playing }),
+        _state: () => ({ real, demoH, listening, subs: subs.length, pending, sel, step, playing, gen }),
     };
 }
 

@@ -26,7 +26,8 @@
  *   Hunter   (Settings > Advanced settings > "Signal Hunter tab (developer)" only, hunter_tab.js): which value
  *            moves when you do something in the car: Mark before, do it, What changed lists every value the car sent
  *            differently since; Live, Found (your labels), Playback (a saved window step by step), How it works.
- *            Listens read only to every status field the apps here declare (hunter_fields.js), nothing is sent.
+ *            Listens read only to every status field the apps here declare (hunter_fields.js), nothing is sent,
+ *            and only while this screen is shown on a Hunter page (never in the background, never for the widget).
  *   Widget   the home-screen widget (app.json startWidget): the big one a picture of that screen's gauges,
  *            redrawn up to "Widget redraws" a second, as far from the edges as "Widget picture" says (the
  *            HMI enlarges it, crops and fades its edges); the small one its values as text lines.
@@ -882,9 +883,9 @@ mgu.run({
         if (ctx.settingsRow) ctx.settingsRow({ label: 'Fuel price', value: () => (tc.price ? tc.price.toFixed(2) + ' ' + currency() + ' a litre' : 'Not set'), open: priceSheet });
         // a sheet the kit doesn't draw (no renderer that runs the screen): on the page, the knob drives it
         let inline = null, picker = null;
-        // the Signal Hunter tab (a developer tool, Settings > Advanced settings): listening only while it is turned on
+        // the Signal Hunter tab (a developer tool, Settings > Advanced settings): listening only while it is turned on,
+        // the MAIN screen is visible and a Hunter page is the current one (see hunterSync)
         const hunterTab = HunterTab.create(ctx, { native });
-        hunterTab.sync();
         const pickerItems = () => (picker ? picker.listed().map((it) => item(it.key, it.fav)) : []);
         function openSheet(sh) {
             sh.onClose = () => { if (picker === sh) picker = null; };
@@ -1270,8 +1271,15 @@ mgu.run({
 
         /* ---------- the bar's buttons (where the kit runs the screen, the page has them instead) ---------- */
         const readAll = (u) => { if (sweep && sweep.u === u) endSweep('stopped'); else startSweep(u); buttons(); };
+        /** The Signal Hunter listens only while MAIN shows a Hunter page: called on every page change and on visibility. */
+        function hunterSync() {
+            let shown = false;
+            try { shown = !!(ui.isVisible && ui.isVisible('MAIN')) && current().group === 'hunter'; } catch (e) { shown = false; }
+            hunterTab.sync(shown);
+        }
         function buttons() {
             const pg = current();
+            hunterSync();
             ui.text('BTN_ACTION', inline ? 'Done' : pg.group === 'hunter' ? hunterTab.actionLabel(pg.p) : pg.screen ? 'Layout: ' + SCR.layout(pg.screen.layout).name
                 : pg.group === 'trips' ? (tc.price ? 'Fuel price: ' + tc.price.toFixed(2) + ' ' + currency() : 'Set the fuel price')
                     : pg.group === 'units' && pg.unit ? (sweep && sweep.u === pg.unit ? 'Stop reading' : 'Read all') : busy ? 'Scanning...' : 'Scan units');
@@ -1530,7 +1538,7 @@ mgu.run({
         async function render(force) {
             // a screen of your own every frame (its gauges glide), the rest when something changed (busy: the scan's moving bar)
             const pg0 = current();
-            if (!force && drawn === version && !busy && !gliding && !pg0.screen && pg0.group !== 'hunter' && !(sweep && pg0.unit === sweep.u)) return;
+            if (!force && drawn === version && !busy && !gliding && !pg0.screen && !(pg0.group === 'hunter' && hunterTab.animated(pg0.p)) && !(sweep && pg0.unit === sweep.u)) return;
             drawn = version;
             gliding = false;
             const t = ctx.theme();
@@ -1640,14 +1648,14 @@ mgu.run({
         const redraw = () => { changed(); setTimeout(changed, 600); };
         ui.onVisible((name, on) => {
             if (name !== 'MAIN') return;
-            if (on) { maybeAuto(); redraw(); buttons(); } else { link.cancel(); browse(false); }
+            if (on) { maybeAuto(); redraw(); buttons(); } else { link.cancel(); browse(false); hunterSync(); }
         });
         if (ui.onFocus) ui.onFocus((name, on) => { if (name === 'MAIN' && on) redraw(); });
         if (ui.isVisible('MAIN')) maybeAuto();
         settings.onChange((key) => {
             // the ranges, peaks and traces so far are in the unit shown before
             if (key === 'tempUnit') { ranges.clear(); peaks.clear(); traces.clear(); }
-            if (key === 'hunter' || key === 'advanced') { hunterTab.sync(); pagesCache = null; }
+            if (key === 'hunter' || key === 'advanced') { pagesCache = null; hunterSync(); }
             relayout();
         });
         buttons();

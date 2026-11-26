@@ -9,10 +9,11 @@
  *                                                  "signals" the fields other apps declare that Live Data does not (an
  *                                                  interface new to Live Data is marked "_optional": a car without it
  *                                                  still installs; Live Data's own entries are never changed or removed)
- *   node kit/tools/gen_signal_hunter.js --check    (CI) exit 1 only when hunter_fields.js is missing, lists a field Live
- *                                                  Data's app.json does not declare, or one that only the hunter added and
- *                                                  no other app declares any more; fields another app added since are only
- *                                                  reported (exit 0), so merging that app never turns CI red here
+ *   node kit/tools/gen_signal_hunter.js --check    (CI) checks Live Data's own files only: exit 1 only when
+ *                                                  hunter_fields.js is missing or lists a field Live Data's app.json does
+ *                                                  not declare. What other apps do (a field one adds, or drops while the
+ *                                                  hunter still lists it) is only reported as a warning (exit 0), so a PR
+ *                                                  on another app never turns CI red here
  * hunter_fields.js: { fields: { <interface>: [field, ...] }, added: ['<interface>.<field>', ...] } - the list as a module
  * the app requires at run time (build.py ships an app's .js files, not its app.json "signals"), and which of Live Data's
  * declarations exist only for the hunter (so a later run can tell them from Live Data's own).
@@ -131,22 +132,22 @@ function replaceSignals(text, signals) {
 function count(fields) { return Object.keys(fields).reduce((n, i) => n + fields[i].length, 0); }
 
 /**
- * check(ld, listed): what --check reports. problems (fail): hunter_fields.js missing; a listed field Live Data does not
- * declare; a field only the hunter added that no other app declares any more. added (report only): declared by another
- * app, not listed yet.
+ * check(ld, listed): what --check reports. problems (fail), Live Data's own files only: hunter_fields.js missing; a
+ * listed field Live Data's app.json does not declare. Warnings only (other apps): added, declared by another app and not
+ * listed yet; gone, added for the hunter but no other app declares it any more (Live Data still declares it, marked
+ * _optional, so it still installs and runs).
  */
 function check(ld, listed) {
     const problems = [];
-    if (!listed || !listed.fields) return { problems: ['apps/live_data/hunter_fields.js is missing or does not load: run node kit/tools/gen_signal_hunter.js'], added: [] };
+    if (!listed || !listed.fields) return { problems: ['apps/live_data/hunter_fields.js is missing or does not load: run node kit/tools/gen_signal_hunter.js'], added: [], gone: [] };
     const declared = new Set(keysOf(statusOf(ld).out)), list = listKeys(listed.fields), have = new Set(list);
     const undeclared = list.filter((k) => !declared.has(k));
     if (undeclared.length) problems.push(undeclared.length + ' listed field(s) Live Data\'s app.json does not declare (' + undeclared.slice(0, 5).join(', ') + '): run node kit/tools/gen_signal_hunter.js');
     const o = others();
-    const gone = (listed.added || []).filter((key) => { const i = key.slice(0, key.lastIndexOf('.')), k = key.slice(key.lastIndexOf('.') + 1); return !(o.all[i] && o.all[i][k]); });
-    if (gone.length) problems.push(gone.length + ' field(s) added for the hunter that no app declares any more (' + gone.slice(0, 5).join(', ') + '): run node kit/tools/gen_signal_hunter.js');
+    const gone = (listed.added || []).filter((key) => { const i = key.slice(0, key.lastIndexOf('.')), k = key.slice(key.lastIndexOf('.') + 1); return !(o.all[i] && o.all[i][k]); }).sort();
     const want = [];
     Object.keys(o.all).forEach((i) => { if (!o.skip.has(i)) Object.keys(o.all[i]).forEach((k) => want.push(i + '.' + k)); });
-    return { problems, added: want.filter((k) => !have.has(k)).sort() };
+    return { problems, added: want.filter((k) => !have.has(k)).sort(), gone };
 }
 
 if (require.main === module) {
@@ -158,10 +159,9 @@ if (require.main === module) {
     if (process.argv.includes('--check')) {
         const r = check(ld, prev);
         r.problems.forEach((m) => console.log('FAIL ' + m));
-        if (r.added.length) {
-            console.log(r.added.length + ' new field(s) not yet listed (' + r.added.slice(0, 5).join(', ')
-                + (r.added.length > 5 ? ', ...' : '') + '): run node kit/tools/gen_signal_hunter.js');
-        }
+        const some = (l) => l.slice(0, 5).join(', ') + (l.length > 5 ? ', ...' : '');
+        if (r.added.length) console.log('warning: ' + r.added.length + ' new field(s) not yet listed (' + some(r.added) + '): run node kit/tools/gen_signal_hunter.js');
+        if (r.gone.length) console.log('warning: ' + r.gone.length + ' field(s) added for the hunter that no other app declares any more (' + some(r.gone) + '): run node kit/tools/gen_signal_hunter.js');
         if (!r.problems.length) console.log('Signal Hunter fields consistent: ' + count(prev.fields) + ' fields on ' + Object.keys(prev.fields).length + ' interfaces');
         process.exit(r.problems.length ? 1 : 0);
     }
