@@ -107,6 +107,32 @@ mgu.run({
         const FILE = path.join(ctx.dataDir, 'last_scan.json');
         let scan = null;              // { at, demo, ecus: [{ addr, dtcs: [{code,status,mem}], nrc }] }
         try { scan = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch (e) { /* none yet */ }
+        // the scan before the last one, to say what is new and what has gone since (a demo scan only against a demo one)
+        const PREV = path.join(ctx.dataDir, 'prev_scan.json');
+        let prev = null;
+        try { prev = JSON.parse(fs.readFileSync(PREV, 'utf8')); } catch (e) { /* none yet */ }
+        let demoPrev = null, demoScans = 0;
+        const fkey = (addr, d) => addr + ':' + String(d.code).toUpperCase() + ':' + (d.mem || 'fault');
+        /**
+         * What changed since the scan before: { at, fresh: Set of keys, gone: [{ addr, code, status, mem }] }, or null when
+         * there is no scan before of the same kind. Only units that answered both times count: a unit that was silent
+         * before has no "new" faults, and one silent now has none "gone".
+         */
+        function compare() {
+            const before = scan && scan.demo ? demoPrev : prev;
+            if (!scan || !before || !!before.demo !== !!scan.demo) return null;
+            const both = new Set(before.ecus.map((e) => e.addr).filter((a) => scan.ecus.some((e) => e.addr === a)));
+            const was = new Set(), now = new Set(), gone = [];
+            before.ecus.forEach((e) => e.dtcs.forEach((d) => was.add(fkey(e.addr, d))));
+            scan.ecus.forEach((e) => e.dtcs.forEach((d) => now.add(fkey(e.addr, d))));
+            const fresh = new Set();
+            scan.ecus.forEach((e) => { if (both.has(e.addr)) e.dtcs.forEach((d) => { if (!was.has(fkey(e.addr, d))) fresh.add(fkey(e.addr, d)); }); });
+            before.ecus.forEach((e) => { if (both.has(e.addr)) e.dtcs.forEach((d) => { if (!now.has(fkey(e.addr, d))) gone.push(Object.assign({ addr: e.addr }, d)); }); });
+            return { at: before.at, fresh, gone };
+        }
+        let diffCache = null, diffFor = null;
+        const diff = () => { if (diffFor !== scan) { diffFor = scan; diffCache = compare(); } return diffCache; };
+        const isNew = (d) => { const c = diff(); return !!(c && c.fresh.has(fkey(d.addr, d))); };
         const IDS = path.join(ctx.dataDir, 'ecu_ids.json');
         ids = readJson(IDS);
         let phase = 'idle', msg = '', replies = 0, busy = false, version = 0;
@@ -160,7 +186,9 @@ mgu.run({
                 await getDiag();
                 if (useDemo()) {
                     for (let i = 1; i <= DEMO.ecus.length; i++) { await new Promise((r) => setTimeout(r, 180)); replies = i; changed(); }
+                    if (scan && scan.demo) demoPrev = scan;
                     scan = { at: Date.now(), demo: true, ecus: JSON.parse(JSON.stringify(DEMO.ecus)) };
+                    if (++demoScans % 2 === 0) { const e = scan.ecus.find((x) => x.dtcs.length > 1); if (e) e.dtcs.pop(); }
                 } else {
                     const mask = settings.get('scope') === 'all' ? 0xFF : 0x0C;
                     const byEcu = new Map();
@@ -181,6 +209,10 @@ mgu.run({
                         msg = 'Reading info memory...'; changed();
                         try { await read([0x17, mask, 0x01], 'info'); } catch (e) { infoFailed = true; log.warn('info memory: ' + e); }
                     }
+                    if (scan && !scan.demo) {
+                        prev = scan;
+                        try { fs.writeFileSync(PREV, JSON.stringify(prev)); } catch (e) { log.warn('save previous scan: ' + e); }
+                    }
                     scan = { at: Date.now(), demo: false, ecus: Array.from(byEcu.values()), infoFailed };
                     try { fs.writeFileSync(FILE, JSON.stringify(scan)); } catch (e) { log.warn('save scan: ' + e); }
                     if (!away) await identify(scan.ecus.map((e) => e.addr));
@@ -188,7 +220,8 @@ mgu.run({
                 }
                 scan.ecus.sort((a, b) => b.dtcs.length - a.dtcs.length || a.addr - b.addr);
                 const n = scan.ecus.reduce((s, e) => s + e.dtcs.length, 0);
-                log.info('scan: ' + scan.ecus.length + ' control units, ' + n + ' faults');
+                const c = diff();
+                log.info('scan: ' + scan.ecus.length + ' control units, ' + n + ' faults' + (c ? ', ' + c.fresh.size + ' new and ' + c.gone.length + ' gone since ' + when(c.at) : ''));
                 msg = !scan.ecus.length ? 'No control unit answered - ignition on?' : scan.infoFailed ? 'Info memory not read this time (unit busy) - scan again for it' : '';
                 phase = 'done';
             } catch (e) {
@@ -329,9 +362,14 @@ mgu.run({
                 out.push('', ecuName(e.addr) + ' (0x' + hex(e.addr) + ')');
                 e.dtcs.forEach((f) => {
                     const desc = describe(e.addr, f.code);
-                    out.push(f.code + ' ' + statusInfo(f.status).label + (f.mem === 'info' ? ' INFO' : '') + (desc ? ' ' + desc : ''));
+                    out.push(f.code + ' ' + statusInfo(f.status).label + (f.mem === 'info' ? ' INFO' : '') + (isNew(Object.assign({ addr: e.addr }, f)) ? ' NEW' : '') + (desc ? ' ' + desc : ''));
                 });
             });
+            const c = diff();
+            if (c && c.gone.length) {
+                out.push('', 'Gone since the scan of ' + when(c.at));
+                c.gone.forEach((g) => out.push(ecuName(g.addr) + ' (0x' + hex(g.addr) + '): ' + g.code + (g.mem === 'info' ? ' INFO' : '')));
+            }
             return out.join('\n');
         }
         if (ctx.settingsRow) {
@@ -390,7 +428,11 @@ mgu.run({
             let bx = 42 + cv.textWidth(String(title), 26, { font: 'bold' }) + 28;
             (buttons || []).forEach((b) => { bx += G.button(cv, t, bx, 189, 0, 40, b.label, b.run, b) + 12; });
             let right = msg;
-            if (!right && scan) right = 'Last scan ' + when(scan.at);
+            if (!right && scan) {
+                const c = diff();
+                right = 'Last scan ' + when(scan.at) + (c && (c.fresh.size || c.gone.length) ? ', since ' + when(c.at) + ': ' + c.fresh.size + ' new, ' + c.gone.length + ' gone'
+                    : c ? ', nothing changed since ' + when(c.at) : '');
+            }
             if (phase === 'scanning' || phase === 'clearing') {
                 const w = 300, x = 1552 - w, f = ((Date.now() / 1200) % 1);
                 cv.roundRect(x, 195, w, 8, 4, t.track);
@@ -453,6 +495,7 @@ mgu.run({
                 const y = 239 + i * 46 - sy;    // (room under the title's buttons: 10 px, as over them)
                 if (y + 41 < from || y > to) return;
                 const s = statusInfo(d.status), col = t[s.sev] || t.dim;
+                if (isNew(d)) cv.roundRect(36, y, 6, 34, 3, t.warn);            // new since the scan before
                 cv.roundRect(48, y, 170, 34, 6, withAlpha(col, 0.22));
                 cv.text(s.label, 133, y + 25, 20, col, { align: 'center', font: 'bold', spacing: 0.5 });
                 cv.text(d.code, 246, y + 28, 32, t.text, { font: 'bold', spacing: 1 });
