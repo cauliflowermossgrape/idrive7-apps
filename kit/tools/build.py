@@ -35,6 +35,7 @@ NATIVE = ['certmgr', 'codings', 'ecu', 'nare_logging', 'necemapaths', 'personali
           'smrf-native-cpp', 'someip', 'wscpp-client']
 
 # Platform proxies every OAP app needs (same set BMW's apps declare).
+CLOCK_IFACE, CLOCK_FIELD = 'de.bmw.infotainment.KombiIF', 'timeDateUTC'
 PLATFORM_PROXIES = {
     "de.bmw.infotainment.hmi.entrypoint.EntryPoint": "*",
     "de.bmw.infotainment.hmi.entrypoint.EntryPointManager": "*",
@@ -387,6 +388,12 @@ def manifest_for(spec):
         else:
             entry = '*'
         proxies[iface] = entry
+    # the car's time zone for every app (kit/runtime/carclock.js), beside the app's own KombiIF fields
+    k = proxies.get(CLOCK_IFACE)
+    if k is None:
+        proxies[CLOCK_IFACE] = {'instances': '1', 'attributes': {CLOCK_FIELD: 'rs'}}
+    elif isinstance(k, dict):
+        k.setdefault('attributes', {}).setdefault(CLOCK_FIELD, 'rs')
     return {'proxies': proxies, 'services': PLATFORM_SERVICES}
 
 

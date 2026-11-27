@@ -39,6 +39,9 @@ const SPEC = JSON.parse(fs.readFileSync(path.join(__dirname, 'app-spec.json'), '
 const APP_ROOT = path.resolve(__dirname, '..', '..', '..');
 const DATA_DIR = fs.existsSync(path.join(APP_ROOT, 'data')) ? path.join(APP_ROOT, 'data') : process.cwd();
 const RHMI_RES = path.join(APP_ROOT, 'rhmiData', 'resources');
+// the car's time zone (carclock.js): set before the app's first Date, from where it was kept
+const carclock = require('./carclock');
+carclock.init(DATA_DIR);
 
 /* ---------------- logging: SDK logger (DLT) + small rotating file ---------------- */
 const LOG_FILE = path.join(DATA_DIR, SPEC.id + '.log');
@@ -682,6 +685,7 @@ async function run(impl) {
     }
 }
 async function runInner(impl) {
+    carclock.start(require('./signals'), log);
     const app = new OnlineApp();
     // start-up timing (#240): ms since Node started, on the lines that say where a start spends its time
     const upMs = () => Math.round(process.uptime() * 1000);
