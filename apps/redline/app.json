@@ -47,8 +47,9 @@
       "VehicleCondition": "s"
     },
     "de.bmw.infotainment.misc.MDrive": {
-      "_optional": "the gearbox programme (D / S / M): shift grades and learning only from shifts made by hand",
-      "dataDisplayGearbox": "s"
+      "_optional": "M Setup engine mode for the HUD, and the gearbox programme for shift grades and learning",
+      "dataDisplayGearbox": "s",
+      "controlDisplayMSystems": "rs"
     },
     "de.bmw.infrastructure.analytics.BasicDataSet": {
       "_optional": "gearbox oil temperature on the HUD when the gearbox unit doesn't answer",

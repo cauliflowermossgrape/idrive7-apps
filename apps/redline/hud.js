@@ -413,6 +413,17 @@ function hybridOn(settings, key) { return settings.get('hudHybridSeen') === true
 /** The electrical readouts that need UDS reads (electrical.js start()): { hv, v12 }. */
 function electricalWants(o) { return { hv: !!(o.hvSoc || o.hvPower || o.hvBar), hvSoc: !!o.hvSoc, hvKw: !!(o.hvPower || o.hvBar), v12: !!o.volt12 }; }
 
+// Legacy MDrive ControlDisplayMode, as used by controlDisplayMSystems.
+function mSetupEngineModeOf(raw) {
+    const value = raw && typeof raw === 'object' ? (raw.name === undefined ? raw.value : raw.name) : raw;
+    switch (value) {
+    case 1: case '1': case 'KOMFORT': return 'comfort';
+    case 2: case '2': case 'SPORT':
+    case 3: case '3': case 'SPORT_PLUS': return 'sport';
+    default: return null;
+    }
+}
+
 /**
  * The car's driving mode (FES statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience, a
  * name or a number, as Live Data and Live Adjustments read it) -> 'sport', 'comfort', 'eco' or null.
@@ -1315,4 +1326,4 @@ function start(ctx, src) {
 }
 
 // writeAtomic: kept here too (it moved to files.js in 2.0) for code that calls Hud.writeAtomic
-module.exports = { start, revOf, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, sceneOf, useScene, scene: () => SCENE, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };
+module.exports = { start, revOf, writeAtomic, navPlaceOf, BMW_SPEED, GLASS, sceneOf, useScene, scene: () => SCENE, optsFrom, PROFILE_KEYS, SETUPS, profileOf, comfortMode, setupMode, profileView, setComfortMode, setSetupMode, migrateProfiles, reactionMs, gearFontOf, M_STYLES, placeOf, outsideGlass, readoutsFor, rpmItem, electricalItems, electricalWants, MAX_READOUTS, METER_STYLES, driveModeOf, mSetupEngineModeOf, calmFor, calmOpts, demoAt, DEMO_MS, demoFrame, shiftCue, drawDown };

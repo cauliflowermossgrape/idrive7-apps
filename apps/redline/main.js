@@ -174,6 +174,7 @@ async function runRedline(ctx) {
         const boost = { v: null, t: 0, first: null, moved: false };
         const gearMode = { v: null, seen: [] };
         const driveMode = { v: null, seen: [] };
+        let mSetupEngine = null;
         /** 'M' (shifting by hand), 'S', 'D', or null when the car hasn't said (then nothing is held back). */
         const modeNow = () => (gearMode.v && !car.data().demo ? gearMode.v : null);
         // the HUD's extra readouts, as Live Data scales them: g sideways and forward, outside
@@ -182,6 +183,7 @@ async function runRedline(ctx) {
         const extra = { gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
         const keep = (e, v) => { e.v = v; e.t = Date.now(); };
         const fresh = (e, ms) => (e.v !== null && Date.now() - e.t < ms ? e.v : null);
+        const hudDriveMode = () => mSetupEngine || driveMode.v;
         const G0 = 9.80665;
         const torqueWatch = { 'de.bmw.infotainment.drivingexcitement.FES': {
             statusActualValueTorque2: (v) => {
@@ -212,8 +214,17 @@ async function runRedline(ctx) {
         'de.bmw.infrastructure.EnvironmentalInformation': {
             ExteriorTemperature: (v) => { const raw = v && v.temperatureExterior; if (typeof raw === 'number' && raw !== 255) keep(extra.outside, raw * 0.5 - 40); },
         },
-        // the gearbox programme the cluster shows by the gear (S / M, else D), as Car Vitals reads it
         'de.bmw.infotainment.misc.MDrive': {
+            controlDisplayMSystems: (v) => {
+                const raw = v && v.controlDisplayEngineMode;
+                const mode = Hud.mSetupEngineModeOf(raw);
+                // As with FES, keep the last valid mode through switch-off values.
+                if (mode && mode !== mSetupEngine) {
+                    mSetupEngine = mode;
+                    log.info('M Setup engine mode: ' + JSON.stringify(raw) + ' -> ' + mode);
+                }
+            },
+            // the gearbox programme the cluster shows by the gear (S / M, else D)
             dataDisplayGearbox: (v) => {
                 const raw = v && v.displayProgramGearbox;
                 // S / M as Car Vitals reads them; D only from a value that says so (0 or a D... name);
@@ -228,7 +239,7 @@ async function runRedline(ctx) {
             dataDir: ctx.dataDir,
             // only while the HUD is on and the setup in use (Sport or Comfort's own) shows the fuel readout or the
             // power bar (2026-11-10 review: it logged with the HUD off, and went by Sport's switches only)
-            wanted: () => { if (settings.get('hud') !== 'on') return false; const o = Hud.optsFrom(settings, driveMode.v || 'sport'); return !!(o.fuel || o.hvBar); },
+            wanted: () => { if (settings.get('hud') !== 'on') return false; const o = Hud.optsFrom(settings, hudDriveMode() || 'sport'); return !!(o.fuel || o.hvBar); },
             now: () => ({ hvKw: electrical.value().hvKw, lph: fuel.value().lph, kmh: car ? car.data().speed : null }),
         });
         // one watch per interface: handler sets that share an interface are merged field by field (a plain
@@ -733,7 +744,7 @@ async function runRedline(ctx) {
         function drawLooks(cv, t) {
             const now = Date.now();
             // back on the page after a while: edit the profile of the mode the car is in
-            if (now - studio.drawnAt > 3000) studio.profile = Hud.profileOf(driveMode.v, settings);
+            if (now - studio.drawnAt > 3000) studio.profile = Hud.profileOf(hudDriveMode(), settings);
             studio.drawnAt = now;
             // the Hybrid / Electric tab only on a car known to be a plug-in hybrid
             const hybrid = settings.get('hudHybridSeen') === true;
@@ -1254,7 +1265,7 @@ async function runRedline(ctx) {
             mode: modeNow,
             launch: (now, mph) => launch.last(now, mph),
             // 'sport', 'comfort', 'eco', 'hybrid' or null (unknown, the demo data): the HUD shows as set up
-            driveMode: () => (car.data().demo ? null : driveMode.v),
+            driveMode: () => (car.data().demo ? null : hudDriveMode()),
             boost: () => (boost.moved && Date.now() - boost.t < 2000 && !car.data().demo ? boost.v : null),
             // torque, pedal, g, outside for the extra readouts (none from the demo data)
             extras: () => (car.data().demo ? null : Object.assign(electrical.value(), { tyres: tyres.value() }, {
