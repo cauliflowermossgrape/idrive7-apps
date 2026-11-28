@@ -523,7 +523,7 @@ mgu.run({
             }
         }
         // Previous / Next: a drive, or on Before / After a mark (newest first); Drives view cycles the four views
-        ui.onClick('BTN_PREV', () => {
+        ui.onClick('BTN_PREV_DRIVE', () => {          // (not BTN_PREV: the kit leaves that page-turning id off its own bar)
             page = P.drives;
             if (dview === 3) markSel = Math.min(Math.max(0, markList(car.data()).length - 1), markSel + 1);
             else sel = Math.max(0, sel - 1);

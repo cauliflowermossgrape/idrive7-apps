@@ -164,7 +164,11 @@ const checks = [
         for (let i = 0; i < 12; i++) await clicks.BTN_NEXT();     // the oldest: none before it
         t = await render();
         assert(t.some((x) => /^Needs two drives: there is none before this one/.test(x)), 'Compare: the oldest drive has none to compare with: ' + t.join(' | '));
-        for (let i = 0; i < 12; i++) await clicks.BTN_PREV();
+        for (let i = 0; i < 12; i++) await clicks.BTN_PREV_DRIVE();
+        // (issue #273: BTN_PREV is a page-turning id the kit leaves off its own bar in the full-screen layout)
+        const pager = /const PAGER = (\[[^\]]*\])/.exec(fs.readFileSync(path.join(__dirname, '..', 'runtime', 'display.js'), 'utf8'));
+        const ids = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'apps', 'warmup', 'app.json'), 'utf8')).screens[0].buttons.map((b) => b[0]);
+        assert(pager && ids.every((id) => JSON.parse(pager[1].replace(/'/g, '"')).indexOf(id) < 0), 'no Warm-Up button is one the kit drops as a pager: ' + ids);
         S.compareWith = 'prev';
         await clicks.BTN_VIEW();
         t = await render();
