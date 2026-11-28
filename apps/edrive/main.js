@@ -887,7 +887,7 @@ mgu.run({
             });
         }
         /** km a charge of +pct % adds (charge log). */
-        const kmOf = (pct) => pct * estimate(null, live.ambient, null, paceNow(), comfortKw()).kpp;
+        const kmOf = (pct) => pct * estimate(null, live.ambient, live.climate, paceNow(), comfortKw()).kpp;
 
         /* ---------- units ---------- */
         const MI = () => settings.get('distUnit') === 'mi';
@@ -911,7 +911,7 @@ mgu.run({
         // the home-screen widget's range, as the Range page's figure; a plug-in hybrid's only
         const rangeText = (soc) => {
             if (!hasHv()) return '';
-            const km = G.isNum(soc) ? estimate(soc, live.ambient, null, paceNow(), comfortKw()).mid : null;
+            const km = G.isNum(soc) ? estimate(soc, live.ambient, live.climate, paceNow(), comfortKw()).mid : null;
             return (G.isNum(km) ? Math.round(D(km)) : '--') + ' ' + dU();
         };
         let share = () => {};          // (below) the power, charge and range for other apps
@@ -1068,8 +1068,8 @@ mgu.run({
         }
 
         function renderMain(cv, t, d) {
-            const e = estimate(d.soc, d.ambient, null, d.pace, comfortKw(d)), has = G.isNum(d.soc);
-            const ec = estimate(d.soc, d.ambient, d.climate, d.pace, comfortKw(d));      // the climate line's figures
+            const ec = estimate(d.soc, d.ambient, d.climate, d.pace, comfortKw(d));
+            const e = ec, has = G.isNum(d.soc);
 
             // ---- range: what is left until the engine starts
             // the room under the page (if any): the bars and the last charge go down with the panels' bottom

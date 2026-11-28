@@ -626,6 +626,18 @@ const checks = [
         assert.strictEqual(big && big.str, String(Math.round(40 * 0.74 / 0.195)), 'the 40 % above 10 %: ' + (big && big.str));
         replies = {};
     }],
+    ['B8a. the main range uses the current climate state', async () => {
+        const b = await boot(tmp('bev-climate'), { soc: 50, v12: 12.6 }, { demo: 'off', hybrid: 'bev' });
+        now += 20000; await b.read();
+        b.signal('statusClimateSystemOn', { airConditioningOn: false });
+        b.signal('statusACFront', { statusAircon: 0 });
+        await b.draw();
+        const range = () => Number(b.texts.find((x) => x.x === 48 && x.y === 196).str);
+        const off = range();
+        b.signal('statusACFront', { statusAircon: 1 });
+        await b.draw();
+        assert(range() < off, 'A/C should lower the main range estimate: ' + off + ' -> ' + range());
+    }],
     ['B10. a 12 V read that nobody answers never holds the link long (the live power reads between)', async () => {
         // an iX3 whose battery unit refuses F442 and has no engine or gearbox unit: before, all nine 12 V candidates
         // went in one turn on the link (27 s of timeouts), the live power waited behind it and blanked after 15 s
