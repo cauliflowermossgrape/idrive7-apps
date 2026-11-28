@@ -616,13 +616,16 @@ const checks = [
         assert.strictEqual(m.drivePctPerKm(50), null, '0.17 % per km is under the hybrid\'s floor');
         m.scale = 0.12 / 0.74;
         assert(Math.abs(m.drivePctPerKm(50) - 0.17) < 1e-9, 'the iX3 floor scales with usable battery capacity');
-        const low = new RangeModel({ learn: { km: 20, pct: 20 * 0.14 } });
+        const low = new RangeModel({ learn: { km: 20, pct: 20 * 0.10 } });     // 7.4 kWh/100 km
         low.scale = 0.12 / 0.74;
         assert.strictEqual(low.drivePctPerKm(50), null, 'implausibly low BEV consumption is rejected');
+        const thrifty = new RangeModel({ learn: { km: 20, pct: 20 * 0.13 } });   // 9.6 kWh/100 km: an efficient BEV in mild city driving
+        thrifty.scale = 0.12 / 0.74;
+        assert(Math.abs(thrifty.drivePctPerKm(50) - 0.13) < 1e-9, 'a thrifty but real BEV consumption is kept');
         const banded = new RangeModel({ learn: { km: 20, pct: 4 }, drive: { v3: { km: 30, pct: 4.5 } } });
         banded.scale = 0.12 / 0.74;
         assert(Math.abs(banded.drivePctPerKm(90) - (0.15 * 30 + 0.2 * 15) / 45) < 1e-9, 'the speed-band prior spans 15 km');
-        const off = new RangeModel({ driveOff: { v3: { km: 3, pct: 3 * 0.14 } } });
+        const off = new RangeModel({ driveOff: { v3: { km: 3, pct: 3 * 0.10 } } });
         off.scale = 0.12 / 0.74;
         assert.strictEqual(off.driveOffPctPerKm(90), null, 'the climate-off floor also scales for a BEV');
         const sample = { km: 10, h: 0.1, totalKwh: 1.9, climateKwh: 0, climateKnown: true, comfortKwh: 0 };
@@ -656,6 +659,21 @@ const checks = [
         now += 2000; await power();
         const flushed = engineLv.drainLearnBatch();
         assert(flushed && flushed.km >= 0.05 && flushed.km < 1 && flushed.h < 0.004, JSON.stringify(flushed));
+    }],
+    ['B17. the measured power checked against the charge level: off by more than 25 %, the charge level teaches', async () => {
+        const R = require(path.join(ROOT, 'apps', 'edrive', 'range.js'));
+        const st = {}, kpp = 0.74;
+        assert(R.powerTrusted(st), 'no ratio yet: the power teaches');
+        for (let i = 0; i < 4; i++) assert.strictEqual(R.powerCheck(st, 1, 1 * kpp, kpp), undefined, 'under 5 %: not measured yet');
+        assert.strictEqual(R.powerCheck(st, 1, 1 * kpp, kpp), 1, 'matches after 5 %');
+        assert(R.powerTrusted(st));
+        for (let i = 0; i < 5; i++) R.powerCheck(st, 1, 1.4 * kpp, kpp);       // kWh per % too high by 40 %
+        assert(st.powerFit === 1.4 && !R.powerTrusted(st), 'off by 40 %: the charge level teaches (' + st.powerFit + ')');
+        for (let i = 0; i < 5; i++) R.powerCheck(st, 1, 1.2 * kpp, kpp);
+        assert(R.powerTrusted(st), 'within 25 % again: the power teaches again (' + st.powerFit + ')');
+        R.powerCheck(st, -1, -0.5 * kpp, kpp);                                // regen down a hill: summed with the rest
+        assert(st.powerChk.pct === -1, JSON.stringify(st.powerChk));
+        assert.strictEqual(R.powerCheck(st, 1, 1, 0), undefined, 'no kWh per %: nothing');
     }],
     ['B16. range migration limits old learning and resets speed bands', async () => {
         const dir = tmp('range-migration'), file = path.join(dir, 'battery.json');

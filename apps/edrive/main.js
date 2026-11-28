@@ -58,7 +58,7 @@ const G = require('./kit/gauges');
 const { Diag, hex } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
 const { t: translate, plural } = require('./kit/i18n');
-const { RangeModel, curve } = require('./range');
+const { RangeModel, curve, powerCheck, powerTrusted } = require('./range');
 const startLive = require('./live');
 const startBattery12 = require('./battery12');
 const { linkQueue } = require('./linkqueue');
@@ -222,6 +222,8 @@ mgu.run({
             delete st.drive;
             delete st.driveOff;
         }
+        // (a fresh install has nothing to migrate: nothing written for it)
+        const hadLearning = needsRangeMigration && !!(st.learn || st.aux || st.acAux || st.base || st.evSpeed);
         st.rangeV = 3;
         const model = new RangeModel(st);
         let savedAt = 0, saved = JSON.stringify(st);
@@ -229,7 +231,7 @@ mgu.run({
             savedAt = Date.now(); saved = JSON.stringify(st);
             try { fs.writeFileSync(STATE, saved); } catch (e) { log.warn('save: ' + e); }
         };
-        if (needsRangeMigration) save();
+        if (hadLearning) save();
         // MainApp's shutdown: what changed since the last save (the last charge reading, learning) goes with it
         process.on('exit', () => { if (JSON.stringify(st) !== saved) save(); });
         const live = { soc: null, socT: 0, soh: G.isNum(st.soh) ? st.soh : null, sohT: st.sohT || 0, v12: null, v12T: 0, ambient: null, speed: null, rpm: null, rpmT: 0,
@@ -572,13 +574,23 @@ mgu.run({
             syncModel();
             const kpp = kwhPerPct();
             const powerReadings = lv && lv.hasPowerReadings();
-            const batch = !held && !st.session && diag.available && powerReadings && kpp > 0 ? lv.drainLearnBatch() : null;
+            const drained = !held && !st.session && diag.available && powerReadings && kpp > 0 ? lv.drainLearnBatch() : null;
+            // the measured power is only as good as kWh per % (the capacity and health estimate): checked against the
+            // charge level's own drop (range.js powerCheck); off by too much, the charge level teaches instead
+            if (powerReadings && kpp > 0) {
+                const segOk = G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session && !held;
+                const r = powerCheck(st, segOk ? prev - soc : 0, drained ? drained.totalKwh : 0, kpp);
+                if (r !== undefined) log.info('range: power vs charge level ' + (G.isNum(r) ? r.toFixed(2) : '--')
+                    + (powerTrusted(st) ? '' : ': off, the charge level teaches'));
+            }
+            const usePower = powerReadings && powerTrusted(st);
+            const batch = usePower ? drained : null;
             if (held) { /* the car manages the charge here: nothing to learn */ }
             else if (batch) {
                 model.learn(batch.totalKwh / kpp, batch.h, batch.km, live.ambient, kpp,
                     batch.mixedClimate ? 'mixed' : batch.climateState, batch.comfortKw, batch.speeds,
                     batch.climateKnown ? batch.climateKwh : null);
-            } else if (!powerReadings && G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session) {
+            } else if (!usePower && G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session) {
                 // seat / steering-wheel heating over the stretch: the mean of its start and end
                 if (lv) lv.discardLearnBatch();
                 model.learn(prev - soc, h, seg.km, live.ambient, kwhPerPct(), stretchClimate(), (seg.comfort + comfortKw()) / 2);

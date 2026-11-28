@@ -85,11 +85,11 @@ class RangeModel {
         const L = this.st.learn, s = this.scale;
         if (!L || L.km < 5 || L.pct < 2 * s) return null;
         const a = L.pct / L.km;
-        if (!(a > 0.9 * s && a < 10 * s)) return null;
+        if (!(a > 0.7 * s && a < 10 * s)) return null;
         const b = isNum(kmh) && kmh > 3 && this.st.drive && this.st.drive[speedBandOf(kmh)];
         if (!b || !(b.km > 0.5)) return a;
         const own = b.pct / b.km;
-        if (!(own > 0.9 * s && own < 15 * s)) return a;
+        if (!(own > 0.7 * s && own < 15 * s)) return a;
         const w = b.km / (b.km + BAND_PRIOR_KM);
         return own * w + a * (1 - w);
     }
@@ -99,7 +99,7 @@ class RangeModel {
         const b = this.st.driveOff && this.st.driveOff[speedBandOf(kmh)];
         if (!b || b.km < 3) return null;
         const a = b.pct / b.km;
-        return a > 0.9 * this.scale && a < 15 * this.scale ? a : null;
+        return a > 0.7 * this.scale && a < 15 * this.scale ? a : null;
     }
 
     /**
@@ -273,4 +273,25 @@ class RangeModel {
     }
 }
 
-module.exports = { RangeModel, curve, auxKwTypical, acKwTypical, bandOf, speedBandOf, LEARN_KM, AUX_KW, BASE_KW, AC_KW, SPEED_BANDS };
+/**
+ * The measured power against the charge level (fully electric, live power learning): the power's kWh over kWh per %
+ * should match the % the charge level dropped. st.powerChk sums both until the level has dropped PCHK_PCT %, then
+ * st.powerFit = their ratio. powerTrusted(st): no ratio yet, or within PCHK_TOL of 1 (a capacity or health estimate
+ * that far off would scale every learned % per km by it: the charge level teaches then). Returns the new ratio when
+ * one was measured (null: not a number), else undefined.
+ */
+const PCHK_PCT = 5, PCHK_TOL = 0.25;
+function powerCheck(st, dropPct, kwh, kwhPerPct) {
+    if (!(kwhPerPct > 0)) return undefined;
+    const c = st.powerChk && isNum(st.powerChk.kwh) && isNum(st.powerChk.pct) ? st.powerChk : (st.powerChk = { kwh: 0, pct: 0 });
+    if (isNum(dropPct)) c.pct += dropPct;
+    if (isNum(kwh)) c.kwh += kwh;
+    if (c.pct < PCHK_PCT) return undefined;
+    const r = c.kwh / kwhPerPct / c.pct;
+    st.powerFit = isNum(r) ? Math.round(r * 1000) / 1000 : null;
+    st.powerChk = { kwh: 0, pct: 0 };
+    return st.powerFit;
+}
+const powerTrusted = (st) => !isNum(st.powerFit) || Math.abs(st.powerFit - 1) <= PCHK_TOL;
+
+module.exports = { RangeModel, curve, powerCheck, powerTrusted, PCHK_PCT, PCHK_TOL, auxKwTypical, acKwTypical, bandOf, speedBandOf, LEARN_KM, AUX_KW, BASE_KW, AC_KW, SPEED_BANDS };
