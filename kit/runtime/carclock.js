@@ -1,17 +1,17 @@
 'use strict';
 /**
  * carclock.js - the app's local time as the car's clock shows it. The head unit's own clock runs in UTC, so
- * Date's hours were UTC (two hours early in Lithuania). The instrument cluster sends both the UTC time
- * (KombiIF.timeDateUTC) and the time it shows the driver (KombiIF.statusShowTimeDate, what BMW's own apps read): the
- * gap between the two, to 15 min, is the offset. No time zone table: it covers every region and summer time, and a
- * clock the driver set by hand too. The offset sets process.env.TZ, so every Date of the app is in it. Node reads TZ
- * when it first needs it (on the head unit's Node 8 at the app's start only): the offset is kept in the app's data
- * folder and in SHARED (any app that learned it), and set from there as the kit loads; a changed one applies at once
- * on a newer Node, else at the next start. So the cluster is read once per start and the watch let go after.
- * Without both times from the cluster nothing changes: the app stays on the head unit's clock, as before.
+ * Date's hours were UTC (two hours early in Lithuania). The instrument cluster shows the time in the time zone and
+ * summer time set in iDrive (KombiIF.statusShowTimeDate, its own setting, so cars without Connected Drive have it
+ * too): the offset is that time of day less UTC's, rounded to a quarter hour, as the Store's clock reads it. The
+ * offset sets process.env.TZ, so every Date of the app is in it. Node reads TZ when it first needs it (on the head
+ * unit's Node 8 at the app's start only): the offset is kept in the app's data folder and in SHARED (any app that
+ * read it), and set from there as the kit loads; an offset that changes applies at once on a newer Node, else at the
+ * next start. The cluster is read once a start: the watch ends with the first time it shows, or after WATCH_MS
+ * without one. Without a time from the cluster nothing changes: the app stays on the head unit's clock, as before.
  *
  *   carclock.init(dataDir, log)       as the kit loads: the offset kept
- *   carclock.start(signals, log)      the cluster read once (then let go, or after GIVE_UP_MS without an answer)
+ *   carclock.start(signals, log)      the cluster's time read once
  *   carclock.offset()                 minutes east of UTC in use, or null
  */
 const fs = require('fs');
@@ -19,12 +19,14 @@ const path = require('path');
 
 const KOMBI = 'de.bmw.infotainment.KombiIF';
 const SHARED = '/tmp/mgu-car-tz.json';
-const GIVE_UP_MS = 120000;           // no usable pair of times by then: the watch is let go all the same
-const PAIR_MS = 10000;               // the two times count as a pair when they came this close together
+const WATCH_MS = 120000;
+const DAY_MS = 86400000;
+const QUARTER_MS = 900000;
+// statusDisplayClockTimeDate: odd while the cluster shows the time, even while it shows --:--, 15 not filled in
+const UNFILLED = 15;
 
 let file = null, inUse = null;
 const valid = (m) => typeof m === 'number' && isFinite(m) && m >= -720 && m <= 840 && m % 15 === 0;
-const n = (x, lo, hi) => typeof x === 'number' && isFinite(x) && x >= lo && x <= hi;
 
 /* POSIX TZ for minutes east of UTC: its offset is west-positive ("CAR-2" = UTC+2, "CAR5" = UTC-5, "CAR-5:30"). */
 function tzOf(m) {
@@ -32,27 +34,16 @@ function tzOf(m) {
     return 'CAR' + (m > 0 ? '-' : '') + h + (mm ? ':' + (mm < 10 ? '0' : '') + mm : '');
 }
 
-/**
- * Minutes east of UTC from the cluster's two times, or null. utc: timeDateUTC (day and month from 0, year from
- * 2001, as BMW's own apps read it), shown: statusShowTimeDate (day and month from 1, the full year); lagMs: how much
- * later utc came than shown (shown is moved on by it). The time of day gives the offset, the dates the day it falls on.
- */
-function offsetFrom(utc, shown, lagMs) {
-    if (!utc || !shown) return null;
-    if (!n(utc.hourUTC, 0, 23) || !n(utc.minuteUTC, 0, 59) || !n(shown.displayHour, 0, 23) || !n(shown.displayMinute, 0, 59)) return null;
-    const us = n(utc.secondUTC, 0, 59) ? utc.secondUTC : 0, ss = n(shown.displaySecond, 0, 59) ? shown.displaySecond : 0;
-    let s = (shown.displayHour * 3600 + shown.displayMinute * 60 + ss + (lagMs || 0) / 1000) - (utc.hourUTC * 3600 + utc.minuteUTC * 60 + us);
-    let m = s / 60, day = null;
-    if (n(utc.dateDayUTC, 0, 30) && n(utc.dateMonthUTC, 0, 11) && n(utc.dateYearUTC, 0, 250)
-        && n(shown.displayDateDay, 1, 31) && n(shown.displayDateMonth, 1, 12) && n(shown.displayDateYear, 2001, 2251)) {
-        const d = (Date.UTC(shown.displayDateYear, shown.displayDateMonth - 1, shown.displayDateDay)
-            - Date.UTC(utc.dateYearUTC + 2001, utc.dateMonthUTC, utc.dateDayUTC + 1)) / 86400000;
-        if (d === -1 || d === 0 || d === 1) day = d;
-    }
-    if (day !== null) m += day * 1440;
-    else { while (m > 720) m -= 1440; while (m <= -720) m += 1440; }      // the dates no help: the nearer day
-    m = Math.round(m / 15) * 15;
-    if (m === 0) m = 0;                                                      // (no -0)
+/* Minutes east of UTC from the cluster's statusShowTimeDate at UTC time now (ms), or null: the time of day it shows
+ * less UTC's, to the nearest quarter hour, between UTC-12 and UTC+14. */
+function offsetOf(show, now) {
+    const status = show && show.statusDisplayClockTimeDate;
+    if (typeof status !== 'number' || status === UNFILLED || status % 2 !== 1) return null;
+    if (!(show.displayHour < 24 && show.displayMinute < 60)) return null;
+    const sec = show.displaySecond < 60 ? show.displaySecond : 0;
+    const diff = ((((show.displayHour * 60 + show.displayMinute) * 60 + sec) * 1000 - now) % DAY_MS + DAY_MS) % DAY_MS;
+    let m = Math.round(diff / QUARTER_MS) * 15 % 1440;
+    if (m > 840) m -= 1440;
     return valid(m) ? m : null;
 }
 
@@ -70,7 +61,7 @@ function init(dataDir, log) {
     if (process.env.TZ && process.env.TZ.indexOf('CAR') !== 0) return;   // a zone set on purpose stays
     let m = file ? read(file) : null;
     if (m === null) m = read(SHARED);
-    if (m !== null) { apply(m); if (log) log.info('clock: UTC' + (m >= 0 ? '+' : '') + m / 60 + ' (the car\'s clock, kept)'); }
+    if (m !== null) { apply(m); if (log) log.info('clock: UTC' + (m >= 0 ? '+' : '') + m / 60 + ' (the car\'s time, kept)'); }
 }
 
 function save(m) {
@@ -80,35 +71,32 @@ function save(m) {
     });
 }
 
-function start(signals, log, o) {
+function start(signals, log) {
     if (!signals || !signals.watch) return;
     if (process.env.TZ && process.env.TZ.indexOf('CAR') !== 0) return;
-    const giveUp = (o && o.giveUpMs) || GIVE_UP_MS;
-    let utc = null, shown = null, sub = null, done = false, timer = null;
-    const stop = () => {
+    let sub = null, done = false, timer = null;
+    const end = () => {
+        if (done) return;
         done = true;
-        if (timer) { clearTimeout(timer); timer = null; }
-        if (sub && sub.shutdown) { const s = sub; sub = null; Promise.resolve().then(() => s.shutdown()).catch(() => {}); }
+        clearTimeout(timer);
+        if (sub && sub.shutdown) sub.shutdown();
     };
-    const check = () => {
-        if (done || !utc || !shown || Math.abs(utc.t - shown.t) > PAIR_MS) return;
-        const m = offsetFrom(utc.v, shown.v, utc.t - shown.t);
-        if (m === null) return;
-        stop();
-        if (m === inUse) return;
-        const was = inUse;
-        apply(m);
-        save(m);
-        if (log) log.info('clock: UTC' + (m >= 0 ? '+' : '') + m / 60 + ' from the cluster' + (was === null ? '' : ', was UTC' + (was >= 0 ? '+' : '') + was / 60));
-    };
-    timer = setTimeout(stop, giveUp);
+    timer = setTimeout(end, WATCH_MS);
     if (timer.unref) timer.unref();
     Promise.resolve(signals.watch(KOMBI, '1', {
-        timeDateUTC: (v) => { utc = { v, t: Date.now() }; check(); },
-        statusShowTimeDate: (v) => { shown = { v, t: Date.now() }; check(); },
-    }, log)).then((s) => {
-        if (done) { if (s && s.shutdown) Promise.resolve().then(() => s.shutdown()).catch(() => {}); } else sub = s;
-    }).catch((e) => { stop(); if (log) log.warn('clock: ' + (e && e.message || e)); });
+        statusShowTimeDate: (v) => {
+            if (done) return;
+            const m = offsetOf(v, Date.now());
+            if (m === null) return;
+            const was = inUse;
+            if (m !== inUse) {
+                apply(m);
+                save(m);
+                if (log) log.info('clock: UTC' + (m >= 0 ? '+' : '') + m / 60 + ' from the cluster\'s time' + (was === null ? '' : ', was UTC' + (was >= 0 ? '+' : '') + was / 60));
+            }
+            end();
+        },
+    }, log)).then((s) => { sub = s; if (done && s && s.shutdown) s.shutdown(); }, (e) => { if (log) log.warn('clock: ' + (e && e.message || e)); end(); });
 }
 
-module.exports = { init, start, offset: () => inUse, offsetFrom, tzOf };
+module.exports = { init, start, offset: () => inUse, offsetOf, tzOf };

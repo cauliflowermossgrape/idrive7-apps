@@ -34,8 +34,9 @@ LANGS = ['ar_AE', 'cs_CZ', 'da_DK', 'de_DE', 'el_GR', 'en_GB', 'en_US', 'es_ES',
 NATIVE = ['certmgr', 'codings', 'ecu', 'nare_logging', 'necemapaths', 'personalization',
           'smrf-native-cpp', 'someip', 'wscpp-client']
 
+# The cluster's shown time, for the car's time zone (kit/runtime/carclock.js).
+CLOCK_IFACE, CLOCK_FIELD = 'de.bmw.infotainment.KombiIF', 'statusShowTimeDate'
 # Platform proxies every OAP app needs (same set BMW's apps declare).
-CLOCK_IFACE, CLOCK_FIELDS = 'de.bmw.infotainment.KombiIF', ('timeDateUTC', 'statusShowTimeDate')
 PLATFORM_PROXIES = {
     "de.bmw.infotainment.hmi.entrypoint.EntryPoint": "*",
     "de.bmw.infotainment.hmi.entrypoint.EntryPointManager": "*",
@@ -388,13 +389,12 @@ def manifest_for(spec):
         else:
             entry = '*'
         proxies[iface] = entry
-    # the car's clock for every app (kit/runtime/carclock.js): UTC and the time shown, beside the app's own KombiIF fields
+    # the car's time zone for every app (kit/runtime/carclock.js), beside the app's own KombiIF fields
     k = proxies.get(CLOCK_IFACE)
     if k is None:
-        proxies[CLOCK_IFACE] = {'instances': '1', 'attributes': {f: 'rs' for f in CLOCK_FIELDS}}
+        proxies[CLOCK_IFACE] = {'instances': '1', 'attributes': {CLOCK_FIELD: 'rs'}}
     elif isinstance(k, dict):
-        for f in CLOCK_FIELDS:
-            k.setdefault('attributes', {}).setdefault(f, 'rs')
+        k.setdefault('attributes', {}).setdefault(CLOCK_FIELD, 'rs')
     return {'proxies': proxies, 'services': PLATFORM_SERVICES}
 
 
