@@ -185,6 +185,11 @@ ok(c.every((q) => !q.shift && !q.limiter), 'no rpm: nothing lit');
     ['PHEV_SPORT_STANDARD', 'sport'], ['BOOST', 'sport'], ['PHEV_HYBRID_STANDARD', 'hybrid'], ['PHEV_HYBRID_ECO', 'hybrid'],
     ['PHEV_ELECTRIC_STANDARD', 'hybrid'], [null, null], [undefined, null], ['', null]]
     .forEach((c) => ok(Hud.driveModeOf(c[0]) === c[1], 'driving mode ' + JSON.stringify(c[0]) + ' -> ' + Hud.driveModeOf(c[0]) + ', not ' + c[1]));
+// Legacy M Setup engine mode uses 1 for Comfort and 4 for the dark display.
+[[1, 'comfort'], ['KOMFORT', 'comfort'], [{ name: 'SPORT' }, 'sport'], [2, 'sport'],
+    [{ value: 3 }, 'sport'], ['SPORT_PLUS', 'sport'], [4, null], [0, null], [undefined, null]]
+    .forEach(([raw, expected]) => ok(Hud.mSetupEngineModeOf(raw) === expected,
+        'M Setup engine mode ' + JSON.stringify(raw) + ' -> ' + expected));
 
 /* ---------- a plug-in hybrid's Hybrid / Electric modes: their own setup, once the car is known to be a hybrid ---------- */
 {

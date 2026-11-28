@@ -189,8 +189,9 @@ missing falls back to Ubuntu.
 - **Shake on the limiter** (off by default): the whole picture jitters a couple of pixels while
   the bar, lights and gear flash red.
 
-**Sport and Comfort** (two HUD setups): the car's driving mode (FES `statusFESVehicleDynamicSwitchHMI`,
-as Live Data shows it) picks which one shows.
+**Sport and Comfort** (two HUD setups): on cars that report M Setup's engine setting through
+`MDrive.controlDisplayMSystems`, Engine Comfort, Sport and Sport+ select the corresponding HUD setup.
+Otherwise the car's driving mode (FES `statusFESVehicleDynamicSwitchHMI`, as Live Data shows it) picks which one shows.
 
 - **Sport** is used in Sport, Sport+, Sport Individual and XtraBoost, a mode it doesn't know, or when the car
   doesn't send the mode, so the HUD never disappears for lack of a signal. Adaptive counts as Comfort, and so do a
