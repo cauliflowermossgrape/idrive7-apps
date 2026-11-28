@@ -86,5 +86,20 @@ for (let t = 0; t <= 120000; t += 100) {
     if (t % 1000 === 0 && t > 0) q.reading(realAt(t - 700), t, t - 700);
 }
 ok(Math.abs(q.fit.a - A) < 0.05 && Math.abs(q.fit.b - B) < 0.05, 'reads taken 700 ms early, said so: learned the car (' + q.fit.a.toFixed(2) + ' / ' + q.fit.b.toFixed(2) + ')');
+// a steady pedal: the needle sent once and held, the car drawing more than the fit says (a hill): the readings pull the
+// fast value to the battery, as they come, though they teach the fit nothing
+{
+    const g = new FastKw();
+    let t = 0;
+    for (let i = 0; i < 8; i++) { t += 1000; const d = 10 + i * 5; g.needle(d, 0, t - 400); g.reading(0.9 * d + 1, t, t - 200); }
+    let fit = null;
+    t += 500; g.needle(13, 0, t);
+    // (the first reading or two still fall within LEARN_MS of the needle's message, and are learned)
+    for (let i = 0; i < 15; i++) { t += 1000; g.reading(30, t, t - 250); if (i === 2) fit = g.fit; }
+    const v = g.now(t);
+    ok(v !== null && Math.abs(v - 30) < 1.5, 'a held needle: the readings pull the value (30 kW read, fast ' + v + ')');
+    ok(g.fit.a === fit.a && g.fit.b === fit.b && g.fit.n === fit.n, 'a held needle teaches the fit nothing');
+}
+
 console.log('fast kW: ' + checks + ' checks, ' + fails + ' failed');
 process.exit(fails ? 1 : 0);

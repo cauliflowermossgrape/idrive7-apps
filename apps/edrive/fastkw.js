@@ -13,7 +13,8 @@
  * readings by recursive least squares that slowly forgets (the car's state moves), each reading set against the
  * needle as it was when the reading was taken (LAG_MS before it arrived). The car sends the needle only when it
  * changes, so on a steady cruise it can say nothing for many seconds: a needle counts for HOLD_MS after the last one
- * (a needle that is really gone is caught by the readings, which pull the value). What the fit still misses in a
+ * (a needle that is really gone is caught by the readings, which pull the value: each reading against a held needle
+ * moves the offset, though only one against a needle just sent teaches the fit). What the fit still misses in a
  * steady state (the needle moves in coarse steps) is the offset: the readings' recent gap to the fit, added. Until a
  * few readings have been learned, or with no needle for HOLD_MS, there is no fast value and the readings are shown.
  *
@@ -68,8 +69,15 @@ class FastKw {
         if (!isNum(kw)) return;
         // learned only against a needle just sent: one held through a steady cruise or a stop says nothing new, and
         // learning from it again and again would wind the fit up
-        const h = this.at(isNum(taken) && taken <= t ? taken : t - this.lag, LEARN_MS);
-        if (!h) return;
+        const tk = isNum(taken) && taken <= t ? taken : t - this.lag;
+        const h = this.at(tk, LEARN_MS);
+        // against a held needle (a steady pedal, a cruise) the reading still pulls the offset: the value follows the
+        // battery, the fit is left as it is
+        if (!h) {
+            const held = this.at(tk, HOLD_MS);
+            if (held) this.off += OFFSET_K * (kw - this.acKw - this.fitAt(held) - this.off);
+            return;
+        }
         const x = [h[1], -h[2], 1], y = kw - this.acKw;
         const Px = this.P.map((r) => r[0] * x[0] + r[1] * x[1] + r[2] * x[2]);
         const den = FORGET + x[0] * Px[0] + x[1] * Px[1] + x[2] * Px[2];
@@ -89,6 +97,9 @@ class FastKw {
         this.off += OFFSET_K * (y - (this.theta[0] * x[0] + this.theta[1] * x[1] + this.theta[2] * x[2]) - this.off);
         this.n++;
     }
+
+    /** The fit's kW for needle h ([t, drive, recup]), without the AC and the offset. */
+    fitAt(h) { return this.theta[0] * h[1] - this.theta[1] * h[2] + this.theta[2]; }
 
     /** The power now (kW), or null: not learned yet, or no needle for HOLD_MS. */
     now(t) {
