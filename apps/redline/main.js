@@ -174,7 +174,7 @@ async function runRedline(ctx) {
         const boost = { v: null, t: 0, first: null, moved: false };
         const gearMode = { v: null, seen: [] };
         const driveMode = { v: null, seen: [] };
-        const mSetupEngine = { v: null, t: 0 };
+        let mSetupEngine = null;
         /** 'M' (shifting by hand), 'S', 'D', or null when the car hasn't said (then nothing is held back). */
         const modeNow = () => (gearMode.v && !car.data().demo ? gearMode.v : null);
         // the HUD's extra readouts, as Live Data scales them: g sideways and forward, outside
@@ -183,7 +183,7 @@ async function runRedline(ctx) {
         const extra = { gLat: { v: null, t: 0 }, gLong: { v: null, t: 0 }, outside: { v: null, t: 0 } };
         const keep = (e, v) => { e.v = v; e.t = Date.now(); };
         const fresh = (e, ms) => (e.v !== null && Date.now() - e.t < ms ? e.v : null);
-        const hudDriveMode = () => fresh(mSetupEngine, 15000) || driveMode.v;
+        const hudDriveMode = () => mSetupEngine || driveMode.v;
         const G0 = 9.80665;
         const torqueWatch = { 'de.bmw.infotainment.drivingexcitement.FES': {
             statusActualValueTorque2: (v) => {
@@ -213,13 +213,16 @@ async function runRedline(ctx) {
         },
         'de.bmw.infrastructure.EnvironmentalInformation': {
             ExteriorTemperature: (v) => { const raw = v && v.temperatureExterior; if (typeof raw === 'number' && raw !== 255) keep(extra.outside, raw * 0.5 - 40); },
-        } };
-        const mDriveWatch = {
+        },
+        'de.bmw.infotainment.misc.MDrive': {
             controlDisplayMSystems: (v) => {
                 const raw = v && v.controlDisplayEngineMode;
                 const mode = Hud.mSetupEngineModeOf(raw);
-                if (mode !== mSetupEngine.v) log.info('M Setup engine mode: ' + JSON.stringify(raw) + ' -> ' + (mode || 'unavailable'));
-                keep(mSetupEngine, mode);
+                // As with FES, keep the last valid mode through switch-off values.
+                if (mode && mode !== mSetupEngine) {
+                    mSetupEngine = mode;
+                    log.info('M Setup engine mode: ' + JSON.stringify(raw) + ' -> ' + mode);
+                }
             },
             // the gearbox programme the cluster shows by the gear (S / M, else D)
             dataDisplayGearbox: (v) => {
@@ -229,7 +232,7 @@ async function runRedline(ctx) {
                 gearMode.v = PROGRAMS[raw] || (raw === 0 || /^D/i.test(String(raw)) ? 'D' : null);
                 if (gearMode.seen.indexOf(String(raw)) < 0 && gearMode.seen.length < 12) { gearMode.seen.push(String(raw)); log.info('gearbox programme: ' + JSON.stringify(raw) + ' -> ' + gearMode.v); }
             },
-        };
+        } };
         let car = null;
         // the car's own power / fuel displays, logged raw for a drive while the readouts that would use them are on
         const powerLog = PowerLog.start({
@@ -248,8 +251,6 @@ async function runRedline(ctx) {
             Object.keys(set).forEach((iface) => { merged[iface] = Object.assign(merged[iface] || {}, set[iface]); });
         });
         car = new Car(ctx, ['rpm', 'speed', 'temps', 'gear', 'condition'], merged);
-        // Some MGUs provide M Setup through the getter without change notifications.
-        ctx.signals.watch('de.bmw.infotainment.misc.MDrive', '1', mDriveWatch, log, { pollMs: 5000 });
         // a car that sends no gear (a manual, #209): the engine unit's own, asked only while Redline's page or HUD is
         // in use, the engine running and the car still sending none (an automatic's gearbox gear is never replaced)
         const dmeGear = new DmeGear(ctx, () => gearbox.diag());
