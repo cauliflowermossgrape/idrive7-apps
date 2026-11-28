@@ -32,6 +32,7 @@ const G = require('./kit/gauges');
 const { hex } = require('./kit/diag');
 const { t: translate, plural } = require('./kit/i18n');
 const { FastKw } = require('./fastkw');
+const { speedBandOf } = require('./range');
 
 const W = 1600, H = 520;
 const GO = '#2fd27a';
@@ -240,29 +241,77 @@ module.exports = function live(ctx, sh) {
      * last minute (useNow). This is what "range at this rate" on the Energy page divides by. */
     const USE_KM = 10, NOW_S = 60, useNow = [];
     const KW_KEEP = 15000;           // a missed power read: the last value stays (dimmed) this long
+    const emptyLearnBatch = () => ({ km: 0, totalKwh: 0, climateKwh: 0, h: 0, speeds: {}, mixedClimate: false,
+        climateState: null, climateKnown: true, comfortKw: 0, comfortKwh: 0 });
+    const validLearnBatch = (b) => b && G.isNum(b.km) && G.isNum(b.totalKwh) && G.isNum(b.climateKwh)
+        && G.isNum(b.h) && G.isNum(b.comfortKw) && G.isNum(b.comfortKwh) && typeof b.mixedClimate === 'boolean'
+        && typeof b.climateKnown === 'boolean' && b.speeds && typeof b.speeds === 'object';
+    if (!validLearnBatch(st.learnBatch)) st.learnBatch = emptyLearnBatch();
+    let flushLearnBatch = false;
     function onPower(kw, now, taken) {
         // a gap in the power readings while shown: say how many were missed and how often the link was held
         if (live.kwT && now - live.kwT > 3000 && shown()) log.warn('power gap ' + (now - live.kwT) + ' ms' + (pMiss ? ', ' + pMiss + ' missed so far' : '') + ', stalls ' + (exclusive.stalls || 0));
         if (live.kwT && G.isNum(live.kw)) {
             const h = Math.min(now - live.kwT, 3 * Math.max(BG_POWER_S, POWER_S) * 1000) / 3600000;
             const moving = G.isNum(L.speed) && L.speed > 1;
+            const stepKwh = kw * h;
+            let climateSample;
+            const climateNow = () => {
+                if (!climateSample) {
+                    const d = data(), c = comfortKw(d), cp = climatePower(d, now);
+                    const fallback = cp.how === 'estimated' && !(cp.kw > 0) && sh.climateKw;
+                    const kw = fallback ? sh.climateKw() : cp.kw;
+                    climateSample = {
+                        kw: G.isNum(kw) ? Math.max(0, kw) : 0,
+                        auxKw: d.climate === false ? 0
+                            : G.isNum(kw) ? Math.max(0, kw - (fallback ? 0 : c.seats + c.wheel)) : 0,
+                        known: d.climate === false || cp.how !== 'estimated',
+                    };
+                }
+                return climateSample;
+            };
             if (kw > 0) {
-                trip.out += kw * h;
+                trip.out += stepKwh;
                 // the part of it the climate took (compressor, heater, blower, seats, pumps): never more than the battery gave
                 // (estimated from what the car reports, or that is nothing: eDrive's typical climate draw)
-                const cp = climatePower(data(), now);
-                const cl = cp.how === 'estimated' && !(cp.kw > 0) && sh.climateKw ? sh.climateKw() : cp.kw;
-                if (G.isNum(cl) && cl > 0) trip.climate += Math.min(cl, kw) * h;
+                trip.climate += Math.min(climateNow().kw, kw) * h;
             }
-            else if (moving) trip.regen -= kw * h;
-            else trip.charged -= kw * h;
+            else if (moving) trip.regen -= stepKwh;
+            else trip.charged -= stepKwh;
             if (!engineOn() && G.isNum(L.speed) && !(kw < 0 && !moving)) {     // not while plugged in
                 const km = moving ? L.speed * h : 0, u = st.use || (st.use = { km: 0, kwh: 0 });
-                u.km += km; u.kwh += kw * h;
+                u.km += km; u.kwh += stepKwh;
                 if (u.km > USE_KM) { u.kwh *= USE_KM / u.km; u.km = USE_KM; }
                 if (now - savedAt > USE_SAVE_MS) save();
-                useNow.push([now, km, kw * h]);
+                useNow.push([now, km, stepKwh]);
                 while (useNow.length && now - useNow[0][0] > NOW_S * 1000) useNow.shift();
+                if (!flushLearnBatch && h > 0) {
+                    const b = st.learnBatch, comfort = comfortKw(data()), comfortPower = comfort.seats + comfort.wheel;
+                    const climate = climateNow();
+                    if (b.h === 0) b.climateState = L.climate;
+                    else if (b.climateState !== L.climate) b.mixedClimate = true;
+                    if (!climate.known) b.climateKnown = false;
+                    b.km += km;
+                    b.totalKwh += stepKwh;
+                    b.climateKwh += climate.auxKw * h;
+                    b.comfortKwh += comfortPower * h;
+                    b.h += h;
+                    b.comfortKw = b.comfortKwh / b.h;
+                    if (moving) {
+                        const band = speedBandOf(L.speed);
+                        const s = b.speeds[band] || (b.speeds[band] = { km: 0, totalKwh: 0, climateKwh: 0, h: 0,
+                            climateKnown: true, comfortKwh: 0 });
+                        s.km += km;
+                        s.totalKwh += stepKwh;
+                        s.climateKwh += climate.auxKw * h;
+                        s.h += h;
+                        s.comfortKwh += comfortPower * h;
+                        if (!climate.known) s.climateKnown = false;
+                    }
+                }
+            } else if (engineOn() && st.learnBatch.h > 0) {
+                if (st.learnBatch.km >= 0.05) flushLearnBatch = true;
+                else st.learnBatch = emptyLearnBatch();
             }
         }
         trip.peakOut = Math.max(trip.peakOut, kw);
@@ -1080,6 +1129,24 @@ module.exports = function live(ctx, sh) {
             if (usingDemo()) return { perKm: 0.168, km: USE_KM, nowPerKm: 0.21, demo: true };
             const u = st.use, nk = useNow.reduce((a, s) => a + s[1], 0), ne = useNow.reduce((a, s) => a + s[2], 0);
             return { perKm: u && u.km >= 1 ? Math.max(0.02, u.kwh / u.km) : null, km: u ? u.km : 0, nowPerKm: nk >= 0.1 ? ne / nk : null };
+        },
+        /** Whether a real HV current reading has been received in this session. */
+        hasPowerReadings() { return live.kwT > 0; },
+        /** Drains a complete distance/time batch for RangeModel, or null until enough data is available. */
+        drainLearnBatch() {
+            const b = st.learnBatch, standing = b.km < 0.05 && b.h >= 5 / 60;
+            if (!(flushLearnBatch || b.km >= 1 || standing)) return null;
+            flushLearnBatch = false;
+            st.learnBatch = emptyLearnBatch();
+            save();
+            return b;
+        },
+        discardLearnBatch() {
+            if (st.learnBatch.h > 0) {
+                flushLearnBatch = false;
+                st.learnBatch = emptyLearnBatch();
+                save();
+            }
         },
         /** Draws page `name`; returns the data it showed. */
         draw(name, cv, t) {

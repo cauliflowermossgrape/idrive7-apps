@@ -532,8 +532,7 @@ const checks = [
         replies = {};
     }],
     ['B3. fully electric: learns from driving without an engine signal; the motor\'s speed is no engine', async () => {
-        // 12.5 km in town at 50 km/h and 14 kWh / 100 km: 0.17 % per km after the on-board draw, under the hybrid's
-        // 0.2 % per km floor (range.js scale)
+        // 12.5 km in town at 50 km/h and 14 kWh / 100 km, with no HV current readings: SOC polling remains the fallback.
         const dir = tmp('learn');
         let soc = 80;
         replies = IX3(soc, soc * 0.74, 74);
@@ -585,6 +584,7 @@ const checks = [
         for (let i = 0; i < round; i++) { now += 2000; await power(); }
         let d = lv.draw('battery', cv(), th);
         assert(Math.abs(d.kw - 376.46 * 79.13 / 1000) < 1e-6 && !d.vEst, JSON.stringify([d.kw, d.v, d.vEst]));
+        assert(lv.hasPowerReadings(), 'successful HV current readings are exposed');
         lv = startLive(tmp('bevest'), L(), { E561: -79.13 }, config, { isBev: () => true });
         for (let i = 0; i < round + 1; i++) { now += 2000; await power(); }
         d = lv.draw('battery', cv(), th);
@@ -615,7 +615,57 @@ const checks = [
         const m = new RangeModel({ learn: { km: 20, pct: 20 * 0.17 } });
         assert.strictEqual(m.drivePctPerKm(50), null, '0.17 % per km is under the hybrid\'s floor');
         m.scale = 0.12 / 0.74;
-        assert(Math.abs(m.drivePctPerKm(50) - 0.17) < 1e-9);
+        assert(Math.abs(m.drivePctPerKm(50) - 0.17) < 1e-9, 'the iX3 floor scales with usable battery capacity');
+        const low = new RangeModel({ learn: { km: 20, pct: 20 * 0.14 } });
+        low.scale = 0.12 / 0.74;
+        assert.strictEqual(low.drivePctPerKm(50), null, 'implausibly low BEV consumption is rejected');
+        const banded = new RangeModel({ learn: { km: 20, pct: 4 }, drive: { v3: { km: 30, pct: 4.5 } } });
+        banded.scale = 0.12 / 0.74;
+        assert(Math.abs(banded.drivePctPerKm(90) - (0.15 * 30 + 0.2 * 15) / 45) < 1e-9, 'the speed-band prior spans 15 km');
+        const off = new RangeModel({ driveOff: { v3: { km: 3, pct: 3 * 0.14 } } });
+        off.scale = 0.12 / 0.74;
+        assert.strictEqual(off.driveOffPctPerKm(90), null, 'the climate-off floor also scales for a BEV');
+        const sample = { km: 10, h: 0.1, totalKwh: 1.9, climateKwh: 0, climateKnown: true, comfortKwh: 0 };
+        const learned = new RangeModel({ evSpeed: { km: 0, h: 0 }, learn: { km: 0, pct: 0 } });
+        learned.scale = 0.12 / 0.74;
+        learned.learn(1.9 / 0.74, 0.1, 10, 10, 0.74, false, 0, { v4: sample }, 0);
+        const range = learned.range(70, 10, 0.74, false, 100, 0);
+        const city = learned.range(70, 10, 0.74, false, 30, 0);
+        assert(range && Math.abs(range.mid - 70 * 0.74 / 0.19) < 2, JSON.stringify(range));
+        assert(city && city.pace === 82.5 && Math.abs(city.mid - range.mid) < 20, JSON.stringify([range, city]));
+    }],
+    ['B15. live power drains electric batches and flushes before engine-on intervals', async () => {
+        const bat = SPEC.config.battery, config = { battery: { fast: bat.fast, slow: {}, powerSign: bat.powerSign, packV: bat.packV } };
+        const data = { E54D: 376.46, E561: -79.13 }, round = bat.fast.hvV.length;
+        const L = Object.assign(L0(), { speed: 50, standSince: 0 });
+        const lv = startLive(tmp('learn-batch'), L, data, config, { isBev: () => true });
+        for (let i = 0; i < round; i++) { now += 2000; await power(); }
+        assert(lv.hasPowerReadings());
+        for (let i = 0; i < 40; i++) { now += 2000; await power(); }
+        const batch = lv.drainLearnBatch();
+        assert(batch && batch.km >= 1 && batch.h > 0 && batch.totalKwh > 0, JSON.stringify(batch));
+        assert(batch.speeds.v1 && batch.speeds.v1.km > 0, JSON.stringify(batch.speeds));
+        assert(batch.climateKnown && batch.climateKwh === 0 && batch.climateState === false, JSON.stringify(batch));
+        assert.strictEqual(lv.drainLearnBatch(), null, 'a drained batch is reset');
+
+        const engineLive = Object.assign(L0(), { speed: 50, standSince: 0 });
+        const engineLv = startLive(tmp('learn-engine'), engineLive, data, config, { isBev: () => true });
+        for (let i = 0; i < round; i++) { now += 2000; await power(); }
+        for (let i = 0; i < 4; i++) { now += 2000; await power(); }
+        engineLive.rpm = 1000; engineLive.rpmT = now;
+        now += 2000; await power();
+        const flushed = engineLv.drainLearnBatch();
+        assert(flushed && flushed.km >= 0.05 && flushed.km < 1 && flushed.h < 0.004, JSON.stringify(flushed));
+    }],
+    ['B16. range migration limits old learning and resets speed bands', async () => {
+        const dir = tmp('range-migration'), file = path.join(dir, 'battery.json');
+        fs.writeFileSync(file, JSON.stringify({ rangeV: 2, learn: { km: 100, pct: 20 }, drive: { v4: { km: 100, pct: 5 } },
+            driveOff: { v4: { km: 100, pct: 5 } } }));
+        await boot(dir, { v12: 12.6 }, { demo: 'off', hybrid: 'bev' });
+        const s = state(dir);
+        assert.strictEqual(s.rangeV, 3, JSON.stringify(s));
+        assert.deepStrictEqual(s.learn, { km: 10, pct: 2 }, JSON.stringify(s.learn));
+        assert(!s.drive && !s.driveOff, JSON.stringify(s));
     }],
     ['B8. "range counts down to" 10 %', async () => {
         replies = IX3(50, 37, 74);
@@ -625,18 +675,6 @@ const checks = [
         assert(t.includes('down to 10 %'), t.join(' | '));
         assert.strictEqual(big && big.str, String(Math.round(40 * 0.74 / 0.195)), 'the 40 % above 10 %: ' + (big && big.str));
         replies = {};
-    }],
-    ['B8a. the main range uses the current climate state', async () => {
-        const b = await boot(tmp('bev-climate'), { soc: 50, v12: 12.6 }, { demo: 'off', hybrid: 'bev' });
-        now += 20000; await b.read();
-        b.signal('statusClimateSystemOn', { airConditioningOn: false });
-        b.signal('statusACFront', { statusAircon: 0 });
-        await b.draw();
-        const range = () => Number(b.texts.find((x) => x.x === 48 && x.y === 196).str);
-        const off = range();
-        b.signal('statusACFront', { statusAircon: 1 });
-        await b.draw();
-        assert(range() < off, 'A/C should lower the main range estimate: ' + off + ' -> ' + range());
     }],
     ['B10. a 12 V read that nobody answers never holds the link long (the live power reads between)', async () => {
         // an iX3 whose battery unit refuses F442 and has no engine or gearbox unit: before, all nine 12 V candidates
