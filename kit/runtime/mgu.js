@@ -495,7 +495,6 @@ function patchStartWidgetEvents(app) {
     };
 }
 
-const WIDGET_CPU = 0.15;              // the share of the app's thread a widget's PNG frames may take (Widget.loop)
 class Widget {
     constructor(spec) {
         this.spec = spec || {};
@@ -580,7 +579,7 @@ class Widget {
             file = writeFrame(file, png);
             try { await rb.createResourceHandles([file]); } catch (e) { frameRefused(file, e); throw e; }
             await this.comp.setValue(Number(spawnId), cell, rb.getResourceHandle(file), 'Asset');
-            this.timing.png += t1 - t0; this.timing.push += Date.now() - t1; this.pngMs = t1 - t0;
+            this.timing.png += t1 - t0; this.timing.push += Date.now() - t1;
             if (!st.lastPush) log.info('widget ' + spawnId + ': first image in ' + (Date.now() - t0) + ' ms');
             st.lastPx = Buffer.from(px); st.lastPush = Date.now();
             st.live = st.live.filter((f) => f !== file).concat([file]);
@@ -611,10 +610,7 @@ class Widget {
                     this.timing.png = 0; this.timing.push = 0;
                 }
             }
-            // a frame's PNG is encoded on the app's own thread (75-100 ms on the head unit): at most WIDGET_CPU of the
-            // time goes to it, so a widget that changes every frame does not hold up the app's reads and timers
-            const want = 1000 / Math.max(1, typeof fps === 'function' ? fps() : fps);
-            setTimeout(tick, list.length ? Math.max(want, (this.pngMs || 0) / WIDGET_CPU) : 1000);
+            setTimeout(tick, list.length ? 1000 / Math.max(1, typeof fps === 'function' ? fps() : fps) : 1000);
         };
         setTimeout(tick, 0);
     }
