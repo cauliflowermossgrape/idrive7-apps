@@ -58,7 +58,7 @@ const G = require('./kit/gauges');
 const { Diag, hex } = require('./kit/diag');
 const { DidReader } = require('./kit/dids');
 const { t: translate, plural } = require('./kit/i18n');
-const { RangeModel, curve } = require('./range');
+const { RangeModel, curve, powerCheck, powerTrusted } = require('./range');
 const startLive = require('./live');
 const startBattery12 = require('./battery12');
 const { linkQueue } = require('./linkqueue');
@@ -215,15 +215,23 @@ mgu.run({
         let st = {};
         try { st = JSON.parse(fs.readFileSync(STATE, 'utf8')) || {}; } catch (e) { /* first run */ }
         if (st.lastCharge && !st.log) st.log = [st.lastCharge];      // saved by v1.1 (no log yet)
-        // learned before 1.8 the use per km also held the climate draw: keep it, but light, so it relearns soon
-        if (st.learn && st.rangeV !== 2) { const f = Math.min(1, 10 / st.learn.km); st.learn.km *= f; st.learn.pct *= f; }
-        st.rangeV = 2;
+        // Earlier speed-band learning could be corrupted by short SOC intervals and speed changes.
+        const needsRangeMigration = st.rangeV !== 3;
+        if (needsRangeMigration) {
+            if (st.learn && st.learn.km > 10) { const f = 10 / st.learn.km; st.learn.km *= f; st.learn.pct *= f; }
+            delete st.drive;
+            delete st.driveOff;
+        }
+        // (a fresh install has nothing to migrate: nothing written for it)
+        const hadLearning = needsRangeMigration && !!(st.learn || st.aux || st.acAux || st.base || st.evSpeed);
+        st.rangeV = 3;
         const model = new RangeModel(st);
         let savedAt = 0, saved = JSON.stringify(st);
         const save = () => {
             savedAt = Date.now(); saved = JSON.stringify(st);
             try { fs.writeFileSync(STATE, saved); } catch (e) { log.warn('save: ' + e); }
         };
+        if (hadLearning) save();
         // MainApp's shutdown: what changed since the last save (the last charge reading, learning) goes with it
         process.on('exit', () => { if (JSON.stringify(st) !== saved) save(); });
         const live = { soc: null, socT: 0, soh: G.isNum(st.soh) ? st.soh : null, sohT: st.sohT || 0, v12: null, v12T: 0, ambient: null, speed: null, rpm: null, rpmT: 0,
@@ -552,6 +560,7 @@ mgu.run({
                 log.info('charge ' + s.from.toFixed(1) + ' -> ' + s.to.toFixed(1) + ' %');
             }
         }
+        let lv = null;
         function onSoc(soc, now) {
             const prev = st.lastSoc, open = st.session, logged = st.lastCharge, moving = G.isNum(live.speed) && live.speed > 3;
             const engineRunning = G.isNum(live.rpm) && live.rpm > 400 && now - live.rpmT < 5000;
@@ -563,11 +572,30 @@ mgu.run({
             // (its distance in seg.km comes from that signal: a stretch without it would teach a drive as standing)
             const awake = bev ? now - live.speedT < 5000 : now - live.rpmT < 5000;
             syncModel();
+            const kpp = kwhPerPct();
+            const powerReadings = lv && lv.hasPowerReadings();
+            const drained = !held && !st.session && diag.available && powerReadings && kpp > 0 ? lv.drainLearnBatch() : null;
+            // the measured power is only as good as kWh per % (the capacity and health estimate): checked against the
+            // charge level's own drop (range.js powerCheck); off by too much, the charge level teaches instead
+            if (powerReadings && kpp > 0) {
+                const segOk = G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session && !held;
+                const r = powerCheck(st, segOk ? prev - soc : 0, drained ? drained.totalKwh : 0, kpp);
+                if (r !== undefined) log.info('range: power vs charge level ' + (G.isNum(r) ? r.toFixed(2) : '--')
+                    + (powerTrusted(st) ? '' : ': off, the charge level teaches'));
+            }
+            const usePower = powerReadings && powerTrusted(st);
+            const batch = usePower ? drained : null;
             if (held) { /* the car manages the charge here: nothing to learn */ }
-            else if (G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session) {
+            else if (batch) {
+                model.learn(batch.totalKwh / kpp, batch.h, batch.km, live.ambient, kpp,
+                    batch.mixedClimate ? 'mixed' : batch.climateState, batch.comfortKw, batch.speeds,
+                    batch.climateKnown ? batch.climateKwh : null);
+            } else if (!usePower && G.isNum(prev) && h < 120000 / 3600000 && !seg.engine && awake && !st.session) {
                 // seat / steering-wheel heating over the stretch: the mean of its start and end
+                if (lv) lv.discardLearnBatch();
                 model.learn(prev - soc, h, seg.km, live.ambient, kwhPerPct(), stretchClimate(), (seg.comfort + comfortKw()) / 2);
-            } else if (!bev && G.isNum(prev) && h < 120000 / 3600000 && seg.engine && seg.engineAll && awake && !st.session) {
+            }
+            if (!held && !bev && G.isNum(prev) && h < 120000 / 3600000 && seg.engine && seg.engineAll && awake && !st.session) {
                 // the engine ran the whole stretch: what the battery did meanwhile (drained or charged), on its own
                 model.learnEngine(prev - soc, h, seg.km);
             }
@@ -915,7 +943,7 @@ mgu.run({
             return (G.isNum(km) ? Math.round(D(km)) : '--') + ' ' + dU();
         };
         let share = () => {};          // (below) the power, charge and range for other apps
-        const lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, kind: () => kind(), isBev, fullKwh: () => kwhPerPct() * 100,
+        lv = startLive(ctx, { diag, reader, exclusive, live, climateKw, rangeText, kind: () => kind(), isBev, fullKwh: () => kwhPerPct() * 100,
             page: () => (pages()[page] === 'diag' ? 'scan' : pages()[page]), onPower: () => share() });
         const isLive = (p) => lv.PAGES.indexOf(p) >= 0;
 
@@ -1068,7 +1096,7 @@ mgu.run({
         }
 
         function renderMain(cv, t, d) {
-            const e = estimate(d.soc, d.ambient, null, d.pace, comfortKw(d)), has = G.isNum(d.soc);
+            const e = estimate(d.soc, d.ambient, d.climate, d.pace, comfortKw(d)), has = G.isNum(d.soc);
             const ec = estimate(d.soc, d.ambient, d.climate, d.pace, comfortKw(d));      // the climate line's figures
 
             // ---- range: what is left until the engine starts

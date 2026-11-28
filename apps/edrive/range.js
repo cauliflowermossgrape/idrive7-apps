@@ -36,8 +36,8 @@ const SPEED_H = 3;               // hours of electric driving remembered for the
 const BANDS = [-5, 5, 15, 25];   // outside-temperature bands (°C)
 const STOP_H = 5 / 60;           // standing this long after moving still counts as a stop in traffic
 const SPEED_BANDS = [35, 60, 85, 110];   // km/h: city / town / country / fast / motorway
-const BAND_KM = 30;              // km remembered per speed band
-const BAND_PRIOR_KM = 5;         // a band's own value counts fully from about this much driving in it
+const BAND_KM = 60;              // km remembered per speed band
+const BAND_PRIOR_KM = 15;        // a band's own value counts fully from about this much driving in it
 /** Typical climate control + on-board draw (kW) by outside temperature: [°C, kW]. */
 const AUX_KW = [[-10, 3.0], [0, 2.2], [10, 1.0], [18, 0.5], [24, 0.5], [30, 1.2], [38, 2.0]];
 /** Typical on-board draw (kW) with climate control off: control units, screens, pumps, fans. */
@@ -85,11 +85,11 @@ class RangeModel {
         const L = this.st.learn, s = this.scale;
         if (!L || L.km < 5 || L.pct < 2 * s) return null;
         const a = L.pct / L.km;
-        if (!(a > 0.2 * s && a < 10 * s)) return null;
+        if (!(a > 0.7 * s && a < 10 * s)) return null;
         const b = isNum(kmh) && kmh > 3 && this.st.drive && this.st.drive[speedBandOf(kmh)];
         if (!b || !(b.km > 0.5)) return a;
         const own = b.pct / b.km;
-        if (!(own > 0.1 * s && own < 15 * s)) return a;
+        if (!(own > 0.7 * s && own < 15 * s)) return a;
         const w = b.km / (b.km + BAND_PRIOR_KM);
         return own * w + a * (1 - w);
     }
@@ -99,7 +99,7 @@ class RangeModel {
         const b = this.st.driveOff && this.st.driveOff[speedBandOf(kmh)];
         if (!b || b.km < 3) return null;
         const a = b.pct / b.km;
-        return a > 0.1 * this.scale && a < 15 * this.scale ? a : null;
+        return a > 0.7 * this.scale && a < 15 * this.scale ? a : null;
     }
 
     /**
@@ -171,11 +171,16 @@ class RangeModel {
      * (regen makes it smaller), over h hours and km, at tC outside. Standing / creeping teaches the
      * climate draw, driving the use per km (the climate draw meanwhile taken out) and the speed.
      * climate: on / off throughout (true / false), not known (null), or 'mixed' (switched during
-     * the stretch: it counts for the speed, but teaches neither draw nor use per km).
+     * the stretch: measured climate energy still permits use-per-km learning).
      */
-    learn(used, h, km, tC, kwhPerPct, climate, comfortKw) {
-        if (!isNum(used) || !(h > 0)) return;
+    /** Optional raw speed buckets and climate-only kWh let live pack energy replace SOC deltas without double-counting auxiliaries. */
+    learn(used, h, km, tC, kwhPerPct, climate, comfortKw, speeds, climateKwh) {
+        if (!isNum(used) || !(h > 0) || !(kwhPerPct > 0)) return;
         const st = this.st, mixed = climate === 'mixed';
+        const baseAux = this.auxRate(tC, kwhPerPct, false).rate;
+        const auxUsed = (hours, climateEnergy) => isNum(climateEnergy)
+            ? baseAux * hours + climateEnergy / kwhPerPct
+            : this.auxRate(tC, kwhPerPct, climate).rate * hours;
         // seat / steering-wheel heating: on with or without the climate - not part of what is learned
         if (isNum(comfortKw) && comfortKw > 0 && kwhPerPct > 0) used -= comfortKw * h / kwhPerPct;
         if (km < 0.05) {
@@ -187,7 +192,8 @@ class RangeModel {
                     const key = climate === 'ac' ? 'acAux' : 'aux', bands = st[key] || (st[key] = {});
                     b = bands[bandOf(tC)] || (bands[bandOf(tC)] = { h: 0, pct: 0 });
                 }
-                b.h += h; b.pct += used;
+                b.h += h;
+                b.pct += isNum(climateKwh) && climate !== false ? auxUsed(h, climateKwh) : used;
                 fade(b, 'h', AUX_H);
             }
             // a stop in traffic is part of the trip's time (its climate draw is too); parking is not
@@ -196,29 +202,46 @@ class RangeModel {
             return;
         }
         this.stoodH = 0;
-        if (!mixed) {
-            const net = used - this.auxRate(tC, kwhPerPct, climate).rate * h, band = speedBandOf(km / h);
-            const L = st.learn || (st.learn = { km: 0, pct: 0 });
+        const learnDriving = !mixed || isNum(climateKwh);
+        if (learnDriving) {
+            const net = used - auxUsed(h, climateKwh), L = st.learn || (st.learn = { km: 0, pct: 0 });
             L.km += km; L.pct += net;
             fade(L, 'km', LEARN_KM);
-            const D = st.drive || (st.drive = {}), b = D[band] || (D[band] = { km: 0, pct: 0 });
-            b.km += km; b.pct += net;
-            fade(b, 'km', BAND_KM);
-            if (climate === false) {
-                // the same speed with the climate off: the yardstick for the climate's draw while driving
-                const O = st.driveOff || (st.driveOff = {}), o = O[band] || (O[band] = { km: 0, pct: 0 });
-                o.km += km; o.pct += net;
-                fade(o, 'km', BAND_KM);
-            } else if ((climate === true || climate === 'ac') && isNum(tC)) {
-                // climate on while driving: what it used above that yardstick is the climate (+ on-board) draw
-                const off = this.driveOffPctPerKm(km / h);
-                if (off !== null) {
+            const samples = speeds && Object.keys(speeds).length
+                ? Object.keys(speeds).map((band) => ({ band, sample: speeds[band] }))
+                : [{ band: speedBandOf(km / h), sample: { km, h, totalKwh: (used + (comfortKw || 0) * h / kwhPerPct) * kwhPerPct,
+                    comfortKwh: (comfortKw || 0) * h, climateKwh, climateKnown: isNum(climateKwh) } }];
+            samples.forEach(({ band, sample }) => {
+                if (!sample || !(sample.km > 0) || !(sample.h > 0) || !isNum(sample.totalKwh)) return;
+                const sampleClimate = sample.climateKnown ? sample.climateKwh : null;
+                const sampleUsed = sample.totalKwh / kwhPerPct;
+                const sampleComfort = isNum(sample.comfortKwh) ? sample.comfortKwh / kwhPerPct
+                    : (comfortKw || 0) * sample.h / kwhPerPct;
+                const sampleNet = sampleUsed - sampleComfort - auxUsed(sample.h, sampleClimate);
+                const D = st.drive || (st.drive = {}), b = D[band] || (D[band] = { km: 0, pct: 0 });
+                b.km += sample.km; b.pct += sampleNet;
+                fade(b, 'km', BAND_KM);
+                if (climate === false) {
+                    // the same speed with the climate off: the yardstick for the climate's draw while driving
+                    const O = st.driveOff || (st.driveOff = {}), o = O[band] || (O[band] = { km: 0, pct: 0 });
+                    o.km += sample.km; o.pct += sampleNet;
+                    fade(o, 'km', BAND_KM);
+                } else if ((climate === true || climate === 'ac') && isNum(tC)) {
                     const key = climate === 'ac' ? 'acAux' : 'aux', bands = st[key] || (st[key] = {});
                     const c = bands[bandOf(tC)] || (bands[bandOf(tC)] = { h: 0, pct: 0 });
-                    c.h += h; c.pct += Math.max(0, used - off * km);
-                    fade(c, 'h', AUX_H);
+                    if (sample.climateKnown) {
+                        c.h += sample.h;
+                        c.pct += Math.max(0, baseAux * sample.h + sample.climateKwh / kwhPerPct);
+                        fade(c, 'h', AUX_H);
+                    } else {
+                        const off = this.driveOffPctPerKm(sample.km / sample.h);
+                        if (off !== null) {
+                            c.h += sample.h; c.pct += Math.max(0, sampleUsed - sampleComfort - off * sample.km);
+                            fade(c, 'h', AUX_H);
+                        }
+                    }
                 }
-            }
+            });
         }
         const v = st.evSpeed || (st.evSpeed = { km: 0, h: 0 });
         v.km += km; v.h += h;
@@ -233,7 +256,8 @@ class RangeModel {
      * seat / steering-wheel heating now.
      */
     range(use, tC, kwhPerPct, climate, pace, comfortKw) {
-        const v = isNum(pace) && pace > 3 ? clamp(pace, 8, 150) : this.evSpeed();
+        const typical = this.evSpeed();
+        const v = isNum(pace) && pace > 3 ? clamp(0.25 * pace + 0.75 * typical, 8, 150) : typical;
         const a = this.drivePctPerKm(v);
         if (!a) return null;
         const aux = this.auxRate(tC, kwhPerPct, climate), off = this.auxRate(tC, kwhPerPct, false);
@@ -249,4 +273,25 @@ class RangeModel {
     }
 }
 
-module.exports = { RangeModel, curve, auxKwTypical, acKwTypical, bandOf, speedBandOf, LEARN_KM, AUX_KW, BASE_KW, AC_KW, SPEED_BANDS };
+/**
+ * The measured power against the charge level (fully electric, live power learning): the power's kWh over kWh per %
+ * should match the % the charge level dropped. st.powerChk sums both until the level has dropped PCHK_PCT %, then
+ * st.powerFit = their ratio. powerTrusted(st): no ratio yet, or within PCHK_TOL of 1 (a capacity or health estimate
+ * that far off would scale every learned % per km by it: the charge level teaches then). Returns the new ratio when
+ * one was measured (null: not a number), else undefined.
+ */
+const PCHK_PCT = 5, PCHK_TOL = 0.25;
+function powerCheck(st, dropPct, kwh, kwhPerPct) {
+    if (!(kwhPerPct > 0)) return undefined;
+    const c = st.powerChk && isNum(st.powerChk.kwh) && isNum(st.powerChk.pct) ? st.powerChk : (st.powerChk = { kwh: 0, pct: 0 });
+    if (isNum(dropPct)) c.pct += dropPct;
+    if (isNum(kwh)) c.kwh += kwh;
+    if (c.pct < PCHK_PCT) return undefined;
+    const r = c.kwh / kwhPerPct / c.pct;
+    st.powerFit = isNum(r) ? Math.round(r * 1000) / 1000 : null;
+    st.powerChk = { kwh: 0, pct: 0 };
+    return st.powerFit;
+}
+const powerTrusted = (st) => !isNum(st.powerFit) || Math.abs(st.powerFit - 1) <= PCHK_TOL;
+
+module.exports = { RangeModel, curve, powerCheck, powerTrusted, PCHK_PCT, PCHK_TOL, auxKwTypical, acKwTypical, bandOf, speedBandOf, LEARN_KM, AUX_KW, BASE_KW, AC_KW, SPEED_BANDS };
