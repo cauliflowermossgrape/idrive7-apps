@@ -34,8 +34,9 @@ LANGS = ['ar_AE', 'cs_CZ', 'da_DK', 'de_DE', 'el_GR', 'en_GB', 'en_US', 'es_ES',
 NATIVE = ['certmgr', 'codings', 'ecu', 'nare_logging', 'necemapaths', 'personalization',
           'smrf-native-cpp', 'someip', 'wscpp-client']
 
+# The cluster's shown time, for the car's time zone (kit/runtime/carclock.js).
+CLOCK_IFACE, CLOCK_FIELD = 'de.bmw.infotainment.KombiIF', 'statusShowTimeDate'
 # Platform proxies every OAP app needs (same set BMW's apps declare).
-CLOCK_IFACE, CLOCK_FIELD = 'de.bmw.infotainment.KombiIF', 'timeDateUTC'
 PLATFORM_PROXIES = {
     "de.bmw.infotainment.hmi.entrypoint.EntryPoint": "*",
     "de.bmw.infotainment.hmi.entrypoint.EntryPointManager": "*",
